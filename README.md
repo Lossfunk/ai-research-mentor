@@ -23,17 +23,6 @@ uv run academic-research-mentor
 academic-research-mentor --prompt mentor
 academic-research-mentor --prompt system
 
-# ASCII-normalized prompts
-academic-research-mentor --ascii
-
-# Verify environment setup
-academic-research-mentor --check-env
-
-# Show environment configuration help
-academic-research-mentor --env-help
-
-# Enable debug mode for .env loading
-ARM_DEBUG_ENV=1 academic-research-mentor
 ```
 
 ## Environment Configuration
@@ -57,7 +46,3 @@ Model selection environment variables:
 Agent behavior:
 - `LC_AGENT_MODE`: "chat" (default), "react", or "router"
 - `ARM_PROMPT`/`LC_PROMPT`: "mentor" or "system"
-- `ARM_PROMPT_ASCII`/`LC_PROMPT_ASCII`: ASCII normalization flag
-
-Debug options:
-- `ARM_DEBUG_ENV`: Set to "1" to show .env file loading debug information
