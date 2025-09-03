@@ -2,6 +2,21 @@
 
 This is an Academic Research Mentor application that provides AI-powered assistance for academic research tasks. It's built with Python using LangChain for LLM integration and Rich for enhanced console formatting.
 
+## Project layout (WS1)
+
+Key directories introduced to improve structure and maintainability:
+
+- `src/academic_research_mentor/core/`
+  - `orchestrator.py`: central coordinator (scaffold)
+  - `transparency.py`: in-memory event/run store (scaffold)
+  - `agent.py`: agent scaffold (non-functional placeholder)
+- `src/academic_research_mentor/tools/`
+  - `base_tool.py`: minimal tool interface (scaffold)
+  - `__init__.py`: simple registry with register/get/list (scaffold)
+  - `o3_search/`: O3 search tool scaffold (no behavior yet)
+
+The existing CLI remains the entrypoint via `academic_research_mentor.cli:main`. A root-level `main.py` shim is also provided for convenience.
+
 ## Installation & Setup
 ```bash
 # Install dependencies using uv (preferred)
@@ -22,6 +37,9 @@ uv run academic-research-mentor
 # With specific prompt variant
 academic-research-mentor --prompt mentor
 academic-research-mentor --prompt system
+
+# Alternative: use the shimmed entrypoint
+uv run python main.py
 
 ```
 
@@ -46,3 +64,21 @@ Model selection environment variables:
 Agent behavior:
 - `LC_AGENT_MODE`: "chat" (default), "react", or "router"
 - `ARM_PROMPT`/`LC_PROMPT`: "mentor" or "system"
+
+## Development
+
+### Environment
+- Conda env: `conda activate lossfunk`
+- Use uv for tasks: `uv sync`, `uv run ...`
+
+### Tests
+```bash
+uv run pytest -q
+```
+
+### Architecture docs
+See `docs/architecture/` for ADRs and checklists:
+- ADR-001: Directory structure and namespacing
+- ADR-002: Tool interface and registry (scaffold)
+- ADR-003: Orchestrator and agent integration (phased)
+- tools-migration-checklist.md
