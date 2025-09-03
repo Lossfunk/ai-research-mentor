@@ -49,8 +49,21 @@ class Orchestrator:
                     # type: ignore[attr-defined]
                     can = getattr(tool, "can_handle", lambda *_: True)(context or {})
                     if can:
-                        # Basic scoring: prefer tools that explicitly matched keywords (boolean -> score)
+                        # Prefer O3 as primary; legacy as fallback
                         score = 1.0
+                        if name == "o3_search":
+                            score = 10.0
+                            # If O3 client unavailable, reduce score but keep as candidate
+                            try:
+                                from ..literature_review.o3_client import get_o3_client  # type: ignore
+
+                                if not get_o3_client().is_available():
+                                    score = 2.0
+                            except Exception:
+                                # If import fails, keep default O3 priority
+                                pass
+                        elif name.startswith("legacy_"):
+                            score = 0.5
                         candidates.append((name, score))
             except Exception:
                 pass

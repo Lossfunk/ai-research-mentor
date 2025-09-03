@@ -207,6 +207,12 @@ def main() -> None:
         action="store_true",
         help="Discover and list available tools (ignores FF_REGISTRY_ENABLED), then exit",
     )
+    parser.add_argument(
+        "--show-candidates",
+        type=str,
+        default=None,
+        help="Show tool candidates for a goal (uses orchestrator selection), then exit",
+    )
 
     try:
         args, _unknown = parser.parse_known_args()
@@ -241,6 +247,25 @@ def main() -> None:
                 print_info("No tools discovered.")
         except Exception as e:  # noqa: BLE001
             print_error(f"Tool listing failed: {e}")
+        return
+
+    # Handle candidates display (forces discovery, runs selection-only)
+    if getattr(args, 'show_candidates', None):
+        goal = str(getattr(args, 'show_candidates'))
+        try:
+            from .tools import auto_discover as _auto
+            from .core.orchestrator import Orchestrator
+            _auto()
+            orch = Orchestrator()
+            out = orch.run_task("literature_search", context={"goal": goal})
+            cands = out.get("candidates", [])
+            if cands:
+                pretty = ", ".join(f"{n}:{s}" for n, s in cands)
+                print_info(f"Candidates for goal -> {goal}: {pretty}")
+            else:
+                print_info(f"No candidates for goal -> {goal}")
+        except Exception as e:  # noqa: BLE001
+            print_error(f"Show candidates failed: {e}")
         return
 
     # Prefer new env vars; keep backward-compatible AGNO_* fallback
