@@ -84,3 +84,99 @@ class Orchestrator:
             "candidates": sorted(candidates, key=lambda x: x[1], reverse=True),
             "note": "Orchestrator scaffold active. Selection-only; no execution.",
         }
+    
+    def execute_task(self, task: str, inputs: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Execute a task using the best available tool.
+        
+        This extends run_task by actually executing the selected tool.
+        Returns both selection metadata and execution results.
+        """
+        # Step 1: Get tool candidates
+        selection_result = self.run_task(task, context)
+        candidates = selection_result.get("candidates", [])
+        
+        if not candidates:
+            return {
+                **selection_result,
+                "execution": {"executed": False, "reason": "No suitable tools found"},
+                "results": None
+            }
+        
+        # Step 2: Try to execute with the best candidate
+        best_tool_name, best_score = candidates[0]
+        
+        if list_tools is not None:
+            try:
+                tools = list_tools()
+                tool = tools.get(best_tool_name)
+                
+                if tool and hasattr(tool, "execute"):
+                    print(f"🔧 Executing with {best_tool_name} (score: {best_score:.1f})")
+                    
+                    # Execute the tool
+                    execution_result = tool.execute(inputs, context)
+                    
+                    return {
+                        **selection_result,
+                        "execution": {
+                            "executed": True,
+                            "tool_used": best_tool_name,
+                            "tool_score": best_score,
+                            "success": True
+                        },
+                        "results": execution_result,
+                        "note": f"Task executed successfully with {best_tool_name}"
+                    }
+                else:
+                    return {
+                        **selection_result,
+                        "execution": {"executed": False, "reason": f"Tool {best_tool_name} not executable"},
+                        "results": None
+                    }
+                    
+            except Exception as e:
+                # Tool execution failed, try fallback if available
+                if len(candidates) > 1:
+                    fallback_name, fallback_score = candidates[1]
+                    try:
+                        tools = list_tools()
+                        fallback_tool = tools.get(fallback_name)
+                        
+                        if fallback_tool and hasattr(fallback_tool, "execute"):
+                            print(f"⚠️  {best_tool_name} failed, trying fallback {fallback_name}")
+                            execution_result = fallback_tool.execute(inputs, context)
+                            
+                            return {
+                                **selection_result,
+                                "execution": {
+                                    "executed": True,
+                                    "tool_used": fallback_name,
+                                    "tool_score": fallback_score,
+                                    "success": True,
+                                    "primary_failed": best_tool_name,
+                                    "failure_reason": str(e)
+                                },
+                                "results": execution_result,
+                                "note": f"Task executed with fallback {fallback_name} after {best_tool_name} failed"
+                            }
+                    except Exception as fallback_error:
+                        return {
+                            **selection_result,
+                            "execution": {
+                                "executed": False,
+                                "reason": f"Primary tool {best_tool_name} failed: {e}. Fallback {fallback_name} also failed: {fallback_error}"
+                            },
+                            "results": None
+                        }
+                
+                return {
+                    **selection_result,
+                    "execution": {"executed": False, "reason": f"Tool {best_tool_name} failed: {e}"},
+                    "results": None
+                }
+        
+        return {
+            **selection_result,
+            "execution": {"executed": False, "reason": "No tools available"},
+            "results": None
+        }

@@ -184,10 +184,62 @@ def _perform_literature_searches(topics: List[str], relax: bool = False) -> Dict
     """Perform literature searches across multiple sources.
 
     When relax=True, broaden the search: drop year filter and increase limits.
+    Uses the orchestrator for tool selection when available, falls back to legacy.
     """
     # Create search query from topics (sanitized)
     query = _topics_to_search_query(topics)
     
+    # Try using orchestrator-based tool selection if available
+    use_orchestrator = os.getenv("FF_REGISTRY_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    
+    if use_orchestrator:
+        try:
+            from ..core.orchestrator import Orchestrator
+            from ..tools import auto_discover
+            
+            # Ensure tools are discovered
+            auto_discover()
+            
+            # Set up search parameters
+            from_year = None if relax else 2020
+            limit = 15 if relax else 10
+            or_limit = 10 if relax else 8
+            
+            orch = Orchestrator()
+            result = orch.execute_task(
+                task="literature_search",
+                inputs={
+                    "query": query,
+                    "from_year": from_year,
+                    "limit": limit,
+                    "or_limit": or_limit
+                },
+                context={"goal": f"find papers about {' '.join(topics)}"}
+            )
+            
+            if result["execution"]["executed"] and result["results"]:
+                # Convert orchestrator result back to expected format
+                tool_result = result["results"]
+                
+                # Extract papers by source
+                arxiv_papers = [p for p in tool_result.get("results", []) if p.get("source") == "arxiv"]
+                openreview_papers = [p for p in tool_result.get("results", []) if p.get("source") == "openreview"]
+                
+                return {
+                    "arxiv": {"papers": arxiv_papers},
+                    "openreview": {"threads": openreview_papers},
+                    "orchestrator_used": True,
+                    "tool_used": result["execution"]["tool_used"]
+                }
+            else:
+                print(f"Orchestrator execution failed: {result['execution'].get('reason', 'Unknown')}")
+                # Fall through to legacy implementation
+                
+        except Exception as e:
+            print(f"Orchestrator search failed, falling back to legacy: {e}")
+            # Fall through to legacy implementation
+    
+    # Legacy implementation (fallback or when orchestrator disabled)
     search_results = {
         "arxiv": {},
         "openreview": {}
@@ -210,6 +262,7 @@ def _perform_literature_searches(topics: List[str], relax: bool = False) -> Dict
         print(f"OpenReview search failed: {e}")
         search_results["openreview"] = {"threads": [], "note": f"Search failed: {e}"}
     
+    search_results["orchestrator_used"] = False
     return search_results
 
 

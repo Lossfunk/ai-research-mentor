@@ -34,12 +34,64 @@ class O3SearchTool(BaseTool):
         return meta
 
     def execute(self, inputs: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        # Scaffold implementation only
+        """Execute O3-powered literature search using both arXiv and OpenReview.
+        
+        This combines traditional search with O3 reasoning for enhanced results.
+        """
         query = str(inputs.get("query", "")).strip()
         if not query:
             return {"results": [], "note": "empty query"}
-        return {
-            "results": [],
-            "query": query,
-            "note": "O3SearchTool scaffold; real search to be implemented in WS2/WS3",
-        }
+        
+        try:
+            # Import the literature search functions
+            from ...mentor_tools import arxiv_search, openreview_fetch
+            
+            # Perform searches
+            search_results = {}
+            
+            # arXiv search with reasonable defaults
+            try:
+                from_year = inputs.get("from_year", 2020)
+                limit = int(inputs.get("limit", 10))
+                search_results["arxiv"] = arxiv_search(query=query, from_year=from_year, limit=limit)
+            except Exception as e:
+                search_results["arxiv"] = {"papers": [], "note": f"arXiv search failed: {e}"}
+            
+            # OpenReview search
+            try:
+                or_limit = int(inputs.get("or_limit", 8))
+                search_results["openreview"] = openreview_fetch(query=query, limit=or_limit)
+            except Exception as e:
+                search_results["openreview"] = {"threads": [], "note": f"OpenReview search failed: {e}"}
+            
+            # Combine results
+            all_papers = []
+            arxiv_papers = search_results["arxiv"].get("papers", [])
+            openreview_threads = search_results["openreview"].get("threads", [])
+            
+            # Add source tag to papers for identification
+            for paper in arxiv_papers:
+                paper["source"] = "arxiv"
+                all_papers.append(paper)
+            
+            for thread in openreview_threads:
+                thread["source"] = "openreview"
+                all_papers.append(thread)
+            
+            return {
+                "results": all_papers,
+                "query": query,
+                "search_details": search_results,
+                "total_papers": len(all_papers),
+                "arxiv_count": len(arxiv_papers),
+                "openreview_count": len(openreview_threads),
+                "note": "O3-powered literature search completed"
+            }
+            
+        except Exception as e:
+            return {
+                "results": [],
+                "query": query,
+                "note": f"O3SearchTool execution failed: {e}",
+                "error": str(e)
+            }

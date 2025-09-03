@@ -36,11 +36,21 @@ Plan for WS3 (next incremental changes):
 - CLI: add `--recommend "<goal>"` to print top tool and reasons.
 - Tests: validate scoring orders `o3_search` > `legacy_arxiv_search`.
 
-WS3 progress:
+WS3 Decisions & Actions (completed):
 - Implemented `core/recommendation.py` and wired orchestrator under `FF_AGENT_RECOMMENDATION`.
 - Added CLI `--recommend` to print top tool and rationale.
+- Added WS3 tests:
+  - Recommender prefers o3_search over legacy.
+  - Orchestrator uses recommender when FF_AGENT_RECOMMENDATION=1.
+- Updated scratchpad.md with WS3 progress and next tasks.
+- All tests pass (7 total).
 
-Next small tasks (now):
-- Add unit tests:
-  - `test_recommendation_prefers_o3_over_legacy` validates order/rationale.
-  - `test_orchestrator_uses_flagged_recommender` validates candidate ordering when flag on.
+WS3 Extension - Tool Integration (completed):
+- Enhanced O3SearchTool: Implemented real execution combining arXiv + OpenReview searches.
+- Extended Orchestrator: Added `execute_task()` method with tool execution + fallback logic.
+- Integrated Context Builder: Modified literature search to use orchestrator-based tool selection when `FF_REGISTRY_ENABLED=1`.
+- Maintained backward compatibility: Falls back to legacy search when orchestrator unavailable.
+- End-to-end testing: CLI queries now use dynamic tool selection (o3_search preferred, score: 2.1).
+- Real literature search results: Papers returned from actual searches via orchestrator.
+
+Next: Consider fallback policy improvements, additional tools, or execution optimization. The foundation is ready for further tool ecosystem expansion.
