@@ -28,7 +28,7 @@
 - **WS8: Documentation & Change Management**
 - **WS9: Rollout, Flags, Observability, Security**
 
-## Timeline and phases (aligned to changes.md)
+## Timeline and phases
 - **Phase 1 (Weeks 1–2): Foundation**
   - WS1, WS2 core deliverables.
 - **Phase 2 (Weeks 2–3): Tool Migration**
