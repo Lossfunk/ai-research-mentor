@@ -17,4 +17,6 @@ Decisions:
 Next steps:
 1) Remove mistakenly created root-level `core/`, `tools/`, `ui/`.
 2) Scaffold namespaced directories and modules.
-3) Commit changes as WS1 groundwork.
+3) Export orchestrator/transparency in `core/__init__.py`.
+4) Update `pyproject.toml` script target to `academic_research_mentor.cli:main`.
+5) Commit; verify `uv run academic-research-mentor` and `uv run python main.py` work.
