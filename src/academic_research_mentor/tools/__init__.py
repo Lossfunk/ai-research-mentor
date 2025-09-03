@@ -57,7 +57,26 @@ def auto_discover(package: str = __name__) -> None:
                 try:
                     instance: BaseTool = obj()
                     instance.initialize({})
-                    register_tool(instance)
+                    if validate_tool_instance(instance):
+                        register_tool(instance)
                 except Exception:
                     # Skip tools that fail to initialize
                     continue
+
+
+def validate_tool_instance(tool: BaseTool) -> bool:
+    """Basic sanity checks for a tool instance and its metadata."""
+    try:
+        if not isinstance(tool.name, str) or not tool.name:
+            return False
+        meta = tool.get_metadata() or {}
+        ident = meta.get("identity", {}) if isinstance(meta, dict) else {}
+        if ident.get("name") != tool.name:
+            return False
+        # Optional minimal IO schema presence
+        io = meta.get("io", {})
+        if not isinstance(io, dict):
+            return False
+        return True
+    except Exception:
+        return False
