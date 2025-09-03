@@ -35,3 +35,12 @@ Plan for WS3 (next incremental changes):
 - Orchestrator: call recommender when flag on; return candidates with rationales (no execution yet).
 - CLI: add `--recommend "<goal>"` to print top tool and reasons.
 - Tests: validate scoring orders `o3_search` > `legacy_arxiv_search`.
+
+WS3 progress:
+- Implemented `core/recommendation.py` and wired orchestrator under `FF_AGENT_RECOMMENDATION`.
+- Added CLI `--recommend` to print top tool and rationale.
+
+Next small tasks (now):
+- Add unit tests:
+  - `test_recommendation_prefers_o3_over_legacy` validates order/rationale.
+  - `test_orchestrator_uses_flagged_recommender` validates candidate ordering when flag on.
