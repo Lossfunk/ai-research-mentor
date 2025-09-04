@@ -50,7 +50,7 @@ class Orchestrator:
                 # Use recommender when flag enabled
                 import os
 
-                if score_tools is not None and os.getenv("FF_AGENT_RECOMMENDATION", "false").lower() in ("1", "true", "yes", "on"):
+                if score_tools is not None and os.getenv("FF_AGENT_RECOMMENDATION", "true").lower() in ("1", "true", "yes", "on"):
                     scored = score_tools(str((context or {}).get("goal", "")), tools)
                     candidates = [(n, s) for (n, s, _r) in scored]
                 else:

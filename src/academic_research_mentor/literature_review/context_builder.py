@@ -190,7 +190,7 @@ def _perform_literature_searches(topics: List[str], relax: bool = False) -> Dict
     query = _topics_to_search_query(topics)
     
     # Try using orchestrator-based tool selection if available
-    use_orchestrator = os.getenv("FF_REGISTRY_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    use_orchestrator = os.getenv("FF_REGISTRY_ENABLED", "true").lower() in ("1", "true", "yes", "on")
     
     if use_orchestrator:
         try:

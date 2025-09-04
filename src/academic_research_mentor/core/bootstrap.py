@@ -11,7 +11,7 @@ import os
 
 
 def bootstrap_registry_if_enabled() -> List[str]:
-    enabled = os.getenv("FF_REGISTRY_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    enabled = os.getenv("FF_REGISTRY_ENABLED", "true").lower() in ("1", "true", "yes", "on")
     if not enabled:
         return []
     try:
