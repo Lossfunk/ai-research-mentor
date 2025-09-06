@@ -65,3 +65,41 @@ WS3 Fallback Policy Enhancement (completed):
 - All 7 tests still passing.
 
 Next: WS4 (Transparency & Streaming) per TODO.md timeline, or additional tool ecosystem expansion.
+
+Guidelines Tool Integration (Starting):
+- Goal: Integrate complete guidelines-based mentor from agent-mentor-guidelines-test/ as a BaseTool
+- Key Features to Preserve: Caching (24h TTL), cost monitoring, curated research sources (Hamming, LessWrong, etc.)
+- Integration Strategy: Create tools/guidelines/ package following existing patterns
+- Dependencies: LangChain tools (DuckDuckGoSearchRun), file-based caching, usage tracking
+- Router Integration: Detect research methodology/advice/problem selection queries
+- Agent Modes: Support chat (manual routing), react (auto tool selection), router (specialized routing)
+
+Understanding from Codebase Analysis:
+- BaseTool interface: name, version, initialize(), can_handle(), execute(), get_metadata()
+- Tool registry: auto_discover() looks for subpackages with 'tool.py' containing BaseTool subclasses
+- Existing patterns: o3_search/, legacy/arxiv/ show structure conventions
+- Router patterns: regex-based detection in router.py for tool routing
+- CLI integration: Environment vars, --check-env, --list-tools commands available
+
+Implementation Plan - Phase 1 Step 1 (COMPLETED):
+1. ✅ Read existing BaseTool implementations to understand patterns
+2. ✅ Create tools/guidelines/ package structure  
+3. ✅ Port configuration from test project (curated URLs, sources)
+4. ✅ Implement basic GuidelinesTool class with BaseTool interface
+5. ✅ Test auto-discovery and registration
+
+Guidelines Tool Integration Progress:
+- Created tools/guidelines/ package: __init__.py, config.py, tool.py
+- Implemented GuidelinesTool as RAG-style retrieval component (not advice generator)
+- Tool returns raw guidelines content with guide IDs for agent reasoning
+- Enhanced recommendation.py with guidelines-specific keyword matching
+- Improved can_handle() patterns to recognize PhD/career/mentoring queries
+- Tool successfully discovered by auto_discover(): "research_guidelines"
+- Scoring working: PhD career guidance -> research_guidelines (score=0.85)
+- Research methodology -> o3_search preferred (score=2.70) but guidelines available (score=0.75)
+
+Next Steps:
+- Test actual tool execution with search functionality
+- Add router integration for automatic detection in chat mode  
+- Test end-to-end CLI integration
+- Add caching and cost monitoring features

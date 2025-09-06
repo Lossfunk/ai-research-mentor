@@ -22,9 +22,22 @@ def _keyword_match_score(goal: str, tool_name: str) -> float:
     score = 0.0
     if tool_name in g:
         score += 0.5
+    
+    # Literature search keywords
     for kw in ("literature", "papers", "search", "review", "arxiv", "openreview"):
         if kw in g:
             score += 0.2
+    
+    # Research guidelines keywords
+    guidelines_keywords = (
+        "methodology", "advice", "guidance", "mentor", "best practices", 
+        "research taste", "problem selection", "academic", "phd", "career",
+        "how to", "strategy", "planning", "principles"
+    )
+    for kw in guidelines_keywords:
+        if kw in g:
+            score += 0.3  # Higher weight for guidelines-specific terms
+    
     return score
 
 
