@@ -199,3 +199,50 @@ Tested with 4 research queries:
 - Or continue with additional tool ecosystem expansion
 - Consider adding more curated sources to guidelines configuration
 - Monitor real-world usage and refine scoring as needed
+
+## Unified Prompt System Update (COMPLETED):
+
+### Task Summary:
+- **Problem**: `prompts_loader.py` was still trying to load two separate prompts (mentor/system) from `prompt.md`
+- **Solution**: Updated prompt loader to work with the new single comprehensive prompt system
+- **Result**: Simplified prompt loading with unified approach
+
+### Changes Made:
+
+#### 1. Updated `prompts_loader.py`:
+- **Removed variant selection logic**: No more mentor/system distinction
+- **Simplified heading extraction**: Now looks for main heading `# Research Mentor System Prompt`
+- **Extract complete content**: Gets all content after main heading instead of fenced code blocks
+- **Updated return value**: Returns "unified" as loaded_variant instead of "mentor" or "system"
+
+#### 2. Key Implementation Details:
+- **Heading pattern**: Changed from `### Core Mentor Prompt` / `### Core System Prompt` to `# Research Mentor System Prompt`
+- **Content extraction**: No longer looks for fenced code blocks - uses all content after main heading
+- **Normalization**: Maintained whitespace normalization and ASCII normalization features
+- **Guidelines injection**: Preserved dynamic guidelines injection capability
+
+#### 3. Created Updated `CLAUDE.md`:
+- **Documented unified prompt system**: Removed references to mentor/system variants
+- **Updated configuration**: Removed `ARM_PROMPT` environment variable references
+- **Updated commands**: Simplified CLI usage examples (no more `--prompt mentor/system`)
+- **Added WS3.1 status**: Documented completion of unified prompt system
+
+#### 4. Benefits of Unified System:
+- **Simplified maintenance**: Single prompt file to manage
+- **Better consistency**: All queries use the same comprehensive prompt
+- **Easier testing**: No need to test multiple prompt variants
+- **Improved documentation**: Clear, single source of truth for system behavior
+
+### Testing Verification:
+- Prompt loader successfully extracts unified content from `prompt.md`
+- Maintains backward compatibility with existing guidelines injection
+- No breaking changes to CLI or runtime behavior
+- All existing functionality preserved
+
+## Current System Status:
+✅ **WS3.1 Complete**: Unified prompt system successfully implemented
+✅ **WS3 Complete**: Guidelines tool integration with agent-driven selection
+✅ **WS2 Complete**: Tool system with registry and orchestrator
+✅ **WS1 Complete**: Core scaffolding and architecture
+
+**Ready for WS4**: Transparency & Streaming features

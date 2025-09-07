@@ -13,7 +13,7 @@ except ImportError:
 
 
 def load_instructions_from_prompt_md(variant: str, ascii_normalize: bool) -> Tuple[Optional[str], str]:
-    """Extract fenced code under selected prompt heading from prompt.md.
+    """Extract the complete prompt from prompt.md.
 
     Returns (instructions, loaded_variant).
     """
@@ -39,29 +39,17 @@ def load_instructions_from_prompt_md(variant: str, ascii_normalize: bool) -> Tup
     if text is None:
         return None, variant
 
-    if variant not in {"mentor", "system"}:
-        variant = "mentor"
-    heading_re = (
-        r"^###\s+Core\s+Mentor\s+Prompt.*$"
-        if variant == "mentor"
-        else r"^###\s+Core\s+System\s+Prompt.*$"
-    )
-
+    # Extract content after the main heading
+    heading_re = r"^#\s+Research\s+Mentor\s+System\s+Prompt.*$"
     m = re.search(heading_re, text, flags=re.MULTILINE)
     if not m:
         return None, variant
 
-    tail = text[m.end() :]
-    code_start = tail.find("```")
-    if code_start == -1:
-        return None, variant
-    code_tail = tail[code_start + 3 :]
-    code_end = code_tail.find("```")
-    if code_end == -1:
-        return None, variant
-    block = code_tail[:code_end]
-
-    block = _normalize_whitespace(block)
+    # Get all content after the main heading
+    tail = text[m.end():].strip()
+    
+    # Normalize the content
+    block = _normalize_whitespace(tail)
     if ascii_normalize:
         block = _ascii_normalize(block)
 
@@ -77,7 +65,7 @@ def load_instructions_from_prompt_md(variant: str, ascii_normalize: bool) -> Tup
             # Log warning but don't break functionality
             print(f"Warning: Failed to inject guidelines: {e}")
 
-    return block.strip(), variant
+    return block.strip(), "unified"
 
 
 def _normalize_whitespace(text: str) -> str:
