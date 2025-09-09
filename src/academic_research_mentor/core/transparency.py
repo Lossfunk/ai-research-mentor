@@ -73,3 +73,14 @@ class TransparencyStore:
     def list_runs(self) -> List[ToolRun]:
         # Most-recent first
         return sorted(self._runs.values(), key=lambda r: r.started_ms, reverse=True)
+
+
+_global_store: Optional[TransparencyStore] = None
+
+
+def get_transparency_store() -> TransparencyStore:
+    """Return a process-wide transparency store (in-memory)."""
+    global _global_store
+    if _global_store is None:
+        _global_store = TransparencyStore()
+    return _global_store

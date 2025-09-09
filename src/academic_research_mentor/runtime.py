@@ -9,7 +9,8 @@ from .rich_formatter import (
     print_streaming_chunk, 
     print_error,
     start_streaming_response,
-    end_streaming_response
+    end_streaming_response,
+    print_info,
 )
 
 

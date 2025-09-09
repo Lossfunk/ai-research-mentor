@@ -322,3 +322,8 @@ Tested with 4 research queries:
 
 Housekeeping (WS3):
 - Removed redundant `core/fallback.py` in favor of `core/fallback_policy.py` + `core/execution_engine.py` per RULES.md (avoid duplication, keep files <200 LOC). All tests still pass.
+
+Planned next (keep simple; no new env flags):
+- Recommendation: boost `research_guidelines` for mentorship queries and `searchthearxiv_search` for natural language queries. Keep defaults simple; no flags.
+- Transparency: record ToolRun start/end events by default (in-memory) during execution. View via `--show-runs`. No streaming yet.
+- Tests: add unit for guidelines prioritization and for transparency run recording.
