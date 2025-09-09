@@ -247,6 +247,11 @@ def main() -> None:
         default=None,
         help="Recommend the best tool for a goal (uses recommender), then exit",
     )
+    parser.add_argument(
+        "--show-runs",
+        action="store_true",
+        help="Show recent tool runs from transparency store (in-memory)",
+    )
 
     try:
         args, _unknown = parser.parse_known_args()
@@ -320,6 +325,21 @@ def main() -> None:
                 print_info(f"No suitable tools for goal -> {goal}")
         except Exception as e:  # noqa: BLE001
             print_error(f"Recommend failed: {e}")
+        return
+
+    # Show recent runs from transparency (if any)
+    if getattr(args, 'show_runs', False):
+        try:
+            from .core.transparency import get_transparency_store
+            store = get_transparency_store()
+            runs = store.list_runs()[:10]
+            if not runs:
+                print_info("No tool runs recorded in this session.")
+            else:
+                for r in runs:
+                    print_info(f"run={r.run_id} tool={r.tool_name} status={r.status} events={len(r.events)}")
+        except Exception as e:  # noqa: BLE001
+            print_error(f"Show runs failed: {e}")
         return
 
     # Prefer new env vars; keep backward-compatible AGNO_* fallback

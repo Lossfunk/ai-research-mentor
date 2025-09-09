@@ -322,3 +322,37 @@ Tested with 4 research queries:
 
 Housekeeping (WS3):
 - Removed redundant `core/fallback.py` in favor of `core/fallback_policy.py` + `core/execution_engine.py` per RULES.md (avoid duplication, keep files <200 LOC). All tests still pass.
+
+Planned next (keep simple; no new env flags):
+- Recommendation: boost `research_guidelines` for mentorship queries and `searchthearxiv_search` for natural language queries. Keep defaults simple; no flags.
+- Transparency: record ToolRun start/end events by default (in-memory) during execution. View via `--show-runs`. No streaming yet.
+- Tests: add unit for guidelines prioritization and for transparency run recording.
+
+## WS4 – Transparency (ReAct mode) Progress
+
+Status: Partial. Implemented CLI transparency for both chat and ReAct modes; persistence/streaming/UI still pending per TODO.
+
+- What’s implemented
+  - ReAct wrappers in `runtime.py` now log:
+    - "Using tool: <name>" when a tool is invoked
+    - "Found:" top items and "Sources:" URLs/domains
+  - Covered tools: `o3_search`, `searchthearxiv_search`, `research_guidelines`, and legacy wrappers (arxiv/openreview)
+  - In-memory transparency store records events (start, error, final_result, end); surfaced via `--show-runs`
+  - Orchestrator + execution engine print tool selection, retries, and summary/sources
+
+- How to verify
+  - Set `FF_REGISTRY_ENABLED=true LC_AGENT_MODE=react`
+  - Run: `uv run academic-research-mentor`
+  - Example queries:
+    - Literature: "I want to know about transformer architecture …" → logs from `o3_search` (and fallbacks)
+    - Mentorship: "How do I develop research taste?" → logs from `research_guidelines`
+  - Show recorded runs: `uv run academic-research-mentor --show-runs`
+
+- Remaining WS4 items (not done)
+  - Persistence backend for transparency (filesystem/sqlite) with retention
+  - Event bus abstraction and real-time streaming (WebSocket/SSE)
+  - UI panels: results list, execution timeline, live indicator
+  - Export of run data (JSON/CSV) with redaction
+  - Tests for persistence and stream coalescing/backpressure
+
+Decision: Treat current logging and in-memory runs as WS4-MVP for CLI; defer persistence/streaming/UI to subsequent WS4 steps.

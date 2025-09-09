@@ -9,7 +9,8 @@ from .rich_formatter import (
     print_streaming_chunk, 
     print_error,
     start_streaming_response,
-    end_streaming_response
+    end_streaming_response,
+    print_info,
 )
 
 
@@ -493,8 +494,71 @@ def get_langchain_tools() -> list[Any]:
     except Exception:
         return []
 
+    # --- Helpers for transparency in ReAct tool wrappers ---
+    def _print_summary_and_sources(result: dict | None) -> None:
+        try:
+            if not isinstance(result, dict):
+                return
+            summary_lines: list[str] = []
+            sources: list[str] = []
+            papers = result.get("papers")
+            results = result.get("results")
+            threads = result.get("threads")
+            retrieved = result.get("retrieved_guidelines")
+            if isinstance(papers, list) and papers:
+                for p in papers[:3]:
+                    title = p.get("title") or p.get("paper_title") or "paper"
+                    url = p.get("url") or (p.get("urls", {}) or {}).get("paper")
+                    if url:
+                        sources.append(url)
+                    summary_lines.append(f"- {title}")
+            elif isinstance(results, list) and results:
+                for r in results[:3]:
+                    title = r.get("title") or r.get("paper_title") or "result"
+                    url = r.get("url") or (r.get("urls", {}) or {}).get("paper")
+                    if url:
+                        sources.append(url)
+                    summary_lines.append(f"- {title}")
+            elif isinstance(threads, list) and threads:
+                for t in threads[:3]:
+                    title = t.get("paper_title") or "thread"
+                    url = (t.get("urls", {}) or {}).get("paper")
+                    if url:
+                        sources.append(url)
+                    summary_lines.append(f"- {title}")
+            elif isinstance(retrieved, list) and retrieved:
+                for g in retrieved[:3]:
+                    src = g.get("source_domain") or g.get("search_query") or "guideline"
+                    sources.append(src)
+                    summary_lines.append(f"- {src}")
+            if summary_lines:
+                print_info("Found:\n" + "\n".join(summary_lines[:3]))
+            if sources:
+                print_info("Sources: " + ", ".join(sources[:5]))
+        except Exception:
+            # Transparency is best-effort; never fail the interaction
+            pass
+
+    def _registry_tool_call(tool_name: str, payload: dict) -> dict:
+        try:
+            from .tools import auto_discover as _auto, get_tool as _get
+            _auto()
+            tool = _get(tool_name)
+            if tool is None:
+                print_info(f"Using tool: {tool_name} (unavailable)")
+                return {"note": f"tool {tool_name} unavailable"}
+            print_info(f"Using tool: {tool_name}")
+            result = tool.execute(payload, {"goal": payload.get("query", "")})
+            _print_summary_and_sources(result if isinstance(result, dict) else {})
+            return result if isinstance(result, dict) else {"note": "non-dict result"}
+        except Exception as e:
+            return {"note": f"{tool_name} failed: {e}"}
+
     def _arxiv_tool_fn(q: str) -> str:
+        # Legacy direct call (no registry). Add transparency prints.
+        print_info("Using tool: legacy_arxiv_search")
         res = arxiv_search(query=q, from_year=None, limit=5)
+        _print_summary_and_sources(res if isinstance(res, dict) else {})
         papers = (res or {}).get("papers", [])
         if not papers:
             return (res or {}).get("note", "No results")
@@ -507,7 +571,9 @@ def get_langchain_tools() -> list[Any]:
         return "\n".join(lines)
 
     def _openreview_tool_fn(q: str) -> str:
+        print_info("Using tool: legacy_openreview_fetch")
         res = openreview_fetch(query=q, limit=5)
+        _print_summary_and_sources(res if isinstance(res, dict) else {})
         threads = (res or {}).get("threads", [])
         if not threads:
             return (res or {}).get("note", "No results")
@@ -618,6 +684,40 @@ def get_langchain_tools() -> list[Any]:
         except Exception as e:
             return f"Error searching guidelines: {str(e)}"
 
+    def _o3_search_tool_fn(q: str) -> str:
+        """Registry-backed O3 literature search with transparency printing."""
+        result = _registry_tool_call("o3_search", {"query": q, "limit": 8})
+        items = (result.get("results") if isinstance(result, dict) else []) or []
+        if not items:
+            note = (result or {}).get("note", "No results") if isinstance(result, dict) else "No results"
+            return str(note)
+        lines: list[str] = []
+        for it in items[:5]:
+            title = it.get("title") or it.get("paper_title") or "result"
+            year = it.get("year") or it.get("published") or ""
+            url = it.get("url") or (it.get("urls", {}) or {}).get("paper") or ""
+            suffix = f" ({year})" if year else ""
+            link = f" -> {url}" if url else ""
+            lines.append(f"- {title}{suffix}{link}")
+        return "\n".join(lines)
+
+    def _searchthearxiv_tool_fn(q: str) -> str:
+        """Registry-backed semantic arXiv search (searchthearxiv.com) with transparency printing."""
+        result = _registry_tool_call("searchthearxiv_search", {"query": q, "limit": 10})
+        papers = (result.get("papers") if isinstance(result, dict) else []) or []
+        if not papers:
+            note = (result or {}).get("note", "No results") if isinstance(result, dict) else "No results"
+            return str(note)
+        lines: list[str] = []
+        for p in papers[:5]:
+            title = p.get("title") or "paper"
+            year = p.get("year") or ""
+            url = p.get("url") or ""
+            suffix = f" ({year})" if year else ""
+            link = f" -> {url}" if url else ""
+            lines.append(f"- {title}{suffix}{link}")
+        return "\n".join(lines)
+
     tools: list[Any] = [
         Tool(
             name="arxiv_search",
@@ -628,6 +728,15 @@ def get_langchain_tools() -> list[Any]:
                 "related work, or wants to understand what's been done in a field. "
                 "Input: research topic or keywords (e.g. 'transformer models', 'deep reinforcement learning'). "
                 "Returns: list of relevant papers with titles, years, and URLs."
+            ),
+        ),
+        Tool(
+            name="o3_search",
+            func=_o3_search_tool_fn,
+            description=(
+                "Consolidated literature search using O3 reasoning across arXiv and OpenReview. "
+                "Prefer this over legacy arxiv_search; includes transparency logs and sources. "
+                "Input: research topic. Returns key papers with links."
             ),
         ),
         Tool(
@@ -684,6 +793,14 @@ def get_langchain_tools() -> list[Any]:
                 "'I have some interesting results but I\'m not sure they\'re \'novel\' enough for publication. How do I evaluate this?', "
                 "'How do I know if a research problem is worth pursuing vs just a distraction?' "
                 "Returns: structured guidelines from authoritative sources with source attribution."
+            ),
+        ),
+        Tool(
+            name="searchthearxiv_search",
+            func=_searchthearxiv_tool_fn,
+            description=(
+                "Semantic arXiv search via searchthearxiv.com. Use for natural language queries. "
+                "Includes transparency logs and sources. Input: research query."
             ),
         ),
     ]

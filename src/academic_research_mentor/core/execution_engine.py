@@ -6,12 +6,15 @@ Tool execution engine with retry logic (WS3 extension).
 Handles the actual tool execution with retries, keeping orchestrator.py under 200 LOC.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import time
 
+from ..rich_formatter import print_info, print_error
+from .transparency import get_transparency_store
 
-def execute_with_policy(selection_result: Dict[str, Any], strategy: Dict[str, Any], 
-                       inputs: Dict[str, Any], context: Optional[Dict[str, Any]], 
+
+def execute_with_policy(selection_result: Dict[str, Any], strategy: Dict[str, Any],
+                       inputs: Dict[str, Any], context: Optional[Dict[str, Any]],
                        policy, list_tools_func) -> Dict[str, Any]:
     """Execute tools using fallback policy."""
     if list_tools_func is None:
@@ -40,7 +43,7 @@ def execute_with_policy(selection_result: Dict[str, Any], strategy: Dict[str, An
     fallback_info = strategy.get("fallback")
     if fallback_info:
         fallback_name, fallback_score = fallback_info
-        print(f"⚠️  {primary_name} failed, trying fallback {fallback_name}")
+        print_info(f"Trying fallback tool: {fallback_name} (after {primary_name} failed)")
         
         fallback_result = try_tool_with_retries(
             tools, fallback_name, fallback_score, inputs, context, policy
@@ -79,20 +82,27 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
             "execution": {"executed": False, "reason": f"Tool {tool_name} not executable"}
         }
     
+    # Transparency: start run
+    store = get_transparency_store()
+    run_id = f"run-{tool_name}-{int(time.time()*1000)}"
+    store.start_run(tool_name, run_id, metadata={"score": score, "inputs_keys": sorted(list(inputs.keys()))})
+    print_info(f"Using tool: {tool_name} (score={score:.2f})")
+
     attempt = 0
     last_error = ""
     
     while attempt < 3:  # Max 3 attempts total
         try:
             if attempt == 0:
-                print(f"🔧 Executing with {tool_name} (score: {score:.1f})")
+                pass
             else:
-                print(f"🔄 Retry {attempt} for {tool_name}")
+                print_info(f"Retry {attempt} for {tool_name}")
             
             execution_result = tool.execute(inputs, context)
             
             # Success!
             policy.record_success(tool_name)
+            _log_tool_success(store, run_id, execution_result)
             return {
                 "success": True,
                 "execution": {
@@ -109,11 +119,12 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
         except Exception as e:
             last_error = str(e)
             attempt += 1
+            store.append_event(run_id, "error", {"attempt": attempt, "error": last_error})
             
             # Check if we should retry
             should_retry, delay = policy.should_retry(tool_name, attempt, last_error)
             if should_retry and attempt < 3:
-                print(f"🕐 Retrying {tool_name} in {delay:.1f}s...")
+                print_info(f"Retrying {tool_name} in {delay:.1f}s...")
                 time.sleep(delay)
                 continue
             else:
@@ -121,6 +132,8 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
     
     # All retries failed
     policy.record_failure(tool_name, last_error)
+    store.end_run(run_id, success=False, extra_metadata={"error": last_error})
+    print_error(f"Tool {tool_name} failed after {attempt} attempts: {last_error}")
     return {
         "success": False,
         "execution": {
@@ -129,3 +142,57 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
             "attempts": attempt
         }
     }
+
+
+def _log_tool_success(store, run_id: str, result: Dict[str, Any]) -> None:
+    """Append transparency events and print a brief summary and sources."""
+    # Summarize findings
+    summary_lines: List[str] = []
+    sources: List[str] = []
+
+    if isinstance(result, dict):
+        # Common schemas we handle
+        papers = result.get("papers")
+        results = result.get("results")
+        threads = result.get("threads")
+        retrieved = result.get("retrieved_guidelines")
+
+        if isinstance(papers, list) and papers:
+            take = papers[:3]
+            for p in take:
+                title = p.get("title") or p.get("paper_title") or "paper"
+                url = p.get("url") or (p.get("urls", {}) or {}).get("paper")
+                if url:
+                    sources.append(url)
+                summary_lines.append(f"- {title}")
+        elif isinstance(results, list) and results:
+            take = results[:3]
+            for r in take:
+                title = r.get("title") or r.get("paper_title") or "result"
+                url = r.get("url") or (r.get("urls", {}) or {}).get("paper")
+                if url:
+                    sources.append(url)
+                summary_lines.append(f"- {title}")
+        elif isinstance(threads, list) and threads:
+            take = threads[:3]
+            for t in take:
+                title = t.get("paper_title") or "thread"
+                url = (t.get("urls", {}) or {}).get("paper")
+                if url:
+                    sources.append(url)
+                summary_lines.append(f"- {title}")
+        elif isinstance(retrieved, list) and retrieved:
+            take = retrieved[:3]
+            for g in take:
+                src = g.get("source_domain") or g.get("search_query") or "guideline"
+                sources.append(src)
+                summary_lines.append(f"- {src}")
+
+    # Log final result
+    store.append_event(run_id, "final_result", {"summary": summary_lines[:3], "sources": sources[:5]})
+    store.end_run(run_id, success=True, extra_metadata={"num_sources": len(sources)})
+
+    if summary_lines:
+        print_info("Found:\n" + "\n".join(summary_lines[:3]))
+    if sources:
+        print_info("Sources: " + ", ".join(sources[:5]))
