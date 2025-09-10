@@ -460,8 +460,8 @@ def build_agent(instructions: str) -> Tuple[Optional[Any], Optional[str]]:
     if llm is None:
         return None, reason
 
-    # Toggle ReAct agent via env var; default to simple chat wrapper
-    mode = os.environ.get("LC_AGENT_MODE", "chat").strip().lower()
+    # Toggle ReAct agent via env var; default to react for fresh clones
+    mode = os.environ.get("LC_AGENT_MODE", "react").strip().lower()
     if mode in {"react", "tools"}:
         tools = get_langchain_tools()
         agent = _LangChainReActAgentWrapper(llm=llm, system_instructions=instructions, tools=tools)

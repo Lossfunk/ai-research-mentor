@@ -159,8 +159,8 @@ Place your .env file in the project root directory or any parent directory.
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Agent configuration
-LC_AGENT_MODE=chat
-ARM_PROMPT=mentor
+LC_AGENT_MODE=react
+ARM_PROMPT=system
 
 # Optional: Custom models
 OPENROUTER_MODEL=anthropic/claude-sonnet-4
