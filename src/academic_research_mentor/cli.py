@@ -404,10 +404,11 @@ def main() -> None:
         # Non-fatal: proceed without injected guidelines
         pass
 
+    # Require environment to be set for any agent to run
     agent, offline_reason = build_agent(effective_instructions)
-
     if agent is None:
-        _offline_repl(offline_reason or "Unknown reason")
+        # Fail fast with instructions instead of entering offline mode
+        print_error(offline_reason or "Model initialization failed. Set one of the API keys in your .env (OPENROUTER_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, or MISTRAL_API_KEY). Then re-run: uv run academic-research-mentor --check-env")
         return
 
     # Initialize chat logger
@@ -418,6 +419,7 @@ def main() -> None:
         agent.set_chat_logger(chat_logger)
 
     # Check agent mode to determine routing behavior
+    # Default to react for fresh clones
     agent_mode = os.environ.get("LC_AGENT_MODE", "react").strip().lower()
     use_manual_routing = agent_mode == "chat"
 
