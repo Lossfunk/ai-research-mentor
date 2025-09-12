@@ -14,10 +14,41 @@ This is an Academic Research Mentor application that provides AI-powered assista
 - **Python version**: >=3.11
 
 ### Environment Configuration
-The application automatically loads environment variables from `.env` files. Required configuration:
-- **API Keys**: At least one of `OPENROUTER_API_KEY` (recommended), `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY`
-- **Agent Mode**: `LC_AGENT_MODE` (default: "react", options: "chat", "react", "router")
-- **Prompt Variant**: `ARM_PROMPT` or `LC_PROMPT` (default: "mentor", options: "mentor", "system")
+The application automatically loads environment variables from `.env` files from current or parent directories. Required configuration:
+
+#### API Keys (At least one required)
+- **OPENROUTER_API_KEY**: Strongly recommended for O3-powered literature review
+- **OPENAI_API_KEY**: Alternative for OpenAI GPT models
+- **GOOGLE_API_KEY**: Alternative for Google Gemini models
+- **ANTHROPIC_API_KEY**: Alternative for Anthropic Claude models
+- **MISTRAL_API_KEY**: Alternative for Mistral models
+
+#### Agent Configuration
+- **LC_AGENT_MODE**: Controls agent behavior (default: "react", options: "chat", "react", "router")
+- **ARM_PROMPT`/`LC_PROMPT`: Prompt variant (default: "mentor", options: "mentor", "system")
+- **OPENROUTER_MODEL**: Default model for OpenRouter (default: "anthropic/claude-sonnet-4")
+
+#### Guidelines Engine Configuration
+- **ARM_GUIDELINES_MODE**: Guidelines integration mode (**default: "dynamic"**, options: "off", "static", "dynamic")
+  - **dynamic**: Uses Guidelines Tool for real-time guideline retrieval (preferred)
+  - **static**: Uses cached/unified_guidelines.json (legacy)
+  - **off**: Disables guidelines injection
+- **ARM_GUIDELINES_MAX**: Maximum number of guidelines to include (optional)
+- **ARM_GUIDELINES_CATEGORIES**: Comma-separated filter for guideline categories (optional)
+- **ARM_GUIDELINES_FORMAT**: Format style (default: "comprehensive", options: "concise")
+- **ARM_GUIDELINES_INCLUDE_STATS**: Include guideline statistics (default: false)
+- **ARM_GUIDELINES_PATH**: Custom guidelines file path (optional)
+
+#### Reliability & Transparency Configuration
+- **FF_TRANSPARENCY_PERSIST**: Enable JSON persistence of tool runs (default: false)
+- **ARM_RUNLOG_DIR**: Directory for storing run logs (default: ~/.cache/academic-research-mentor/runs/)
+- **ARM_DEBUG_ENV**: Enable environment loading debug output (default: false)
+
+#### Environment Gating
+Many features are controlled by environment variables to enable gradual rollout and debugging:
+- Use environment variables for feature flags and configuration
+- Graceful degradation when optional features are disabled
+- Debug mode available for troubleshooting environment issues
 
 ### Testing
 ```bash
@@ -104,16 +135,33 @@ tools/
 ### Guidelines Engine
 
 Located in `src/academic_research_mentor/guidelines_engine/`:
-- Injects research guidelines into system prompts
-- Supports dynamic and cached guideline modes
-- Configurable through environment variables
+- **Dynamic Mode**: Default behavior using Guidelines Tool for real-time guideline retrieval
+- **Static Mode**: Legacy support for unified_guidelines.json file
+- **Configuration**: Environment-controlled behavior and filtering
+- **Graceful Degradation**: Continues operation when guidelines are unavailable
+- **Categories**: Supports filtering guidelines by research categories
+
+#### Key Features
+- **Default Dynamic**: Fresh clones prefer dynamic mode over static files
+- **Configurable**: Environment variables control mode, categories, and formatting
+- **Extensible**: Easy to add new guideline sources and formats
+- **Performance**: Caching and optimization for frequent guideline access
 
 ### Transparency Layer
 
 `src/academic_research_mentor/core/transparency.py`:
-- In-memory event/run store
-- Tracks tool execution and performance
-- Provides debugging and monitoring capabilities
+- **Event Model**: ToolRun and ToolEvent entities for comprehensive execution tracking
+- **In-Memory Store**: Process-wide transparency store with global singleton access
+- **Optional Persistence**: JSON-based persistence controlled by `FF_TRANSPARENCY_PERSIST`
+- **Real-time Streaming**: In-process pub/sub system for live event broadcasting
+- **ReAct Integration**: Streaming support for agent execution with incremental updates
+- **Export Capabilities**: JSON export for external analysis and debugging
+
+#### Key Features
+- **Automatic Tracking**: Tool executions automatically logged with metadata
+- **Health Monitoring**: Tool state, backoff status, and performance metrics
+- **Debugging Support**: Rich metadata for troubleshooting and optimization
+- **Extensible**: Pluggable backend architecture for future storage options
 
 ## Key Development Patterns
 
@@ -140,9 +188,37 @@ Located in `src/academic_research_mentor/guidelines_engine/`:
 - Debug mode via `ARM_DEBUG_ENV=1`
 
 ### Error Handling
-- Graceful degradation when tools fail
-- Circuit breaker patterns for unreliable services
-- Comprehensive logging and transparency
+- **Graceful Degradation**: Tools fail gracefully without breaking user experience
+- **Circuit Breaker Patterns**: Prevent cascading failures with automatic recovery
+- **Comprehensive Logging**: Rich transparency data for debugging and monitoring
+- **Retry Logic**: Intelligent retry with exponential backoff for transient failures
+
+### WS6 Reliability Enhancements
+
+#### O3 Search Reliability
+- **Timeout Protection**: 15-second timeout using signal.alarm() to prevent hanging
+- **Automatic Fallback**: Falls back to arXiv search when O3 is unavailable
+- **Degraded Mode Notes**: Clear user messaging when fallback occurs
+- **Exception Handling**: Comprehensive exception handling for various failure scenarios
+
+#### Backoff & Circuit Breaker System
+- **Per-Tool Backoff Counters**: Track consecutive failures for each tool
+- **Exponential Backoff**: 5s, 10s, 20s, 40s, 60s (capped) delays
+- **Recovery Mechanism**: 3 consecutive successes reset backoff counters
+- **Circuit Breaker Integration**: Coordinates backoff with circuit breaker states
+- **Health States**: HEALTHY, DEGRADED, CIRCUIT_OPEN with automatic transitions
+
+#### Transparency Enhancements
+- **Real-time Status**: Live display of tool health and backoff status
+- **Metadata Enrichment**: Execution context includes tool state and backoff information
+- **Monitoring**: Comprehensive tool health metrics for operational awareness
+- **Debug Support**: Rich metadata for troubleshooting reliability issues
+
+#### Testing Coverage
+- **O3 Fallback Tests**: Timeout and exception scenarios with fallback verification
+- **Backoff Policy Tests**: Counter logic, circuit breaker integration, health summaries
+- **Recommender Tests**: Scoring behavior under degraded tool conditions
+- **Integration Tests**: End-to-end reliability with transparency verification
 
 ## Common Commands
 
@@ -175,11 +251,17 @@ uv run academic-research-mentor --recommend "search academic literature"
 # Enable debug output for environment loading
 ARM_DEBUG_ENV=1 uv run academic-research-mentor
 
-# Show recent tool runs
+# Show recent tool runs (requires FF_TRANSPARENCY_PERSIST=true)
 uv run academic-research-mentor --show-runs
 
 # Test specific tool registration
 python -c "from src.academic_research_mentor.tools import auto_discover; auto_discover(); print(list_tools().keys())"
+
+# Test reliability features
+uv run pytest tests/test_o3_fallback_reliability.py tests/test_fallback_policy_backoff.py -q
+
+# Check transparency store status
+python -c "from src.academic_research_mentor.core.transparency import get_transparency_store; store = get_transparency_store(); print(f'Runs in memory: {len(store.list_runs())}')"
 ```
 
 ## Important Notes
@@ -187,6 +269,10 @@ python -c "from src.academic_research_mentor.tools import auto_discover; auto_di
 - The project uses **uv** as the primary package management tool
 - **OpenRouter API key** is strongly recommended for O3-powered literature review
 - The tool registry system uses **auto-discovery** - tools are automatically registered when placed in the correct directory structure
-- **Agent mode** significantly changes behavior - understand the differences between "chat" and "react" modes
-- **Guidelines engine** is optional and will gracefully degrade if not configured
+- **Agent mode** significantly changes behavior - understand the differences between "chat", "react", and "router" modes
+- **Guidelines engine** defaults to dynamic mode, gracefully degrading when unavailable
+- **Environment gating** controls many features - use environment variables for configuration and debugging
+- **Reliability features** include timeout protection, backoff counters, and circuit breakers for robust operation
 - All tools should implement the **BaseTool interface** for consistency
+- **Transparency system** provides comprehensive monitoring and debugging capabilities
+- **WS6 enhancements** significantly improve system reliability and user experience
