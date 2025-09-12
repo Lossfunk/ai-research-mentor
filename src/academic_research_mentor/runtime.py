@@ -219,7 +219,7 @@ class _LangChainReActAgentWrapper:
 class _LangChainSpecialistRouterWrapper:
     """Specialist router using LangGraph StateGraph with simple triggers.
 
-    Routes to venue, openreview, math, methodology, or default chat.
+    Routes to venue, math, methodology, or default chat.
     """
 
     def __init__(self, llm: Any, system_instructions: str) -> None:

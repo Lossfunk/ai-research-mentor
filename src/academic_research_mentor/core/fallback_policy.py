@@ -25,13 +25,19 @@ class FallbackPolicy:
         self._tool_states: Dict[str, ToolState] = {}
         self._failure_counts: Dict[str, int] = {}
         self._last_failure_time: Dict[str, float] = {}
+        self._backoff_counts: Dict[str, int] = {}  # Track consecutive backoff attempts
+        self._backoff_start_time: Dict[str, float] = {}  # When backoff period started
         self._circuit_breaker_threshold = 3
         self._circuit_breaker_timeout = 300  # 5 minutes
+        self._backoff_base_delay = 5.0  # 5 second base backoff
+        self._backoff_max_delay = 60.0  # 1 minute maximum backoff
+        self._backoff_reset_threshold = 3  # Successes needed to reset backoff
         
     def should_try_tool(self, tool_name: str) -> bool:
-        """Check if tool should be attempted based on circuit breaker state."""
+        """Check if tool should be attempted based on circuit breaker and backoff state."""
         state = self._tool_states.get(tool_name, ToolState.HEALTHY)
         
+        # Check circuit breaker first
         if state == ToolState.CIRCUIT_OPEN:
             # Check if timeout has passed
             last_failure = self._last_failure_time.get(tool_name, 0)
@@ -39,8 +45,24 @@ class FallbackPolicy:
                 # Reset to degraded for testing
                 self._tool_states[tool_name] = ToolState.DEGRADED
                 self._failure_counts[tool_name] = max(0, self._failure_counts.get(tool_name, 0) - 1)
+                # Reset backoff on circuit breaker reset
+                self._backoff_counts[tool_name] = 0
                 return True
             return False
+        
+        # Check backoff state for degraded tools
+        if state == ToolState.DEGRADED and tool_name in self._backoff_counts:
+            backoff_count = self._backoff_counts[tool_name]
+            if backoff_count > 0:
+                # Calculate backoff delay
+                backoff_delay = min(
+                    self._backoff_base_delay * (2 ** (backoff_count - 1)),
+                    self._backoff_max_delay
+                )
+                
+                backoff_start = self._backoff_start_time.get(tool_name, 0)
+                if time.time() - backoff_start < backoff_delay:
+                    return False  # Still in backoff period
             
         return True
     
@@ -51,6 +73,11 @@ class FallbackPolicy:
             self._failure_counts[tool_name] = max(0, self._failure_counts[tool_name] - 1)
             if self._failure_counts[tool_name] == 0:
                 self._tool_states[tool_name] = ToolState.HEALTHY
+                # Reset backoff counters on full recovery
+                self._backoff_counts[tool_name] = 0
+            elif tool_name in self._backoff_counts and self._backoff_counts[tool_name] > 0:
+                # Reduce backoff counter on success during degraded mode
+                self._backoff_counts[tool_name] = max(0, self._backoff_counts[tool_name] - 1)
     
     def record_failure(self, tool_name: str, error: str) -> None:
         """Record tool failure and update circuit breaker state."""
@@ -61,6 +88,9 @@ class FallbackPolicy:
             self._tool_states[tool_name] = ToolState.CIRCUIT_OPEN
         else:
             self._tool_states[tool_name] = ToolState.DEGRADED
+            # Start or increment backoff counter for degraded tools
+            self._backoff_counts[tool_name] = self._backoff_counts.get(tool_name, 0) + 1
+            self._backoff_start_time[tool_name] = time.time()
     
     def get_execution_strategy(self, candidates: List[Tuple[str, float]]) -> Dict[str, Any]:
         """Determine execution strategy based on tool health and candidates."""
@@ -117,9 +147,14 @@ class FallbackPolicy:
         return {
             "tool_states": dict(self._tool_states),
             "failure_counts": dict(self._failure_counts),
+            "backoff_counts": dict(self._backoff_counts),
             "circuit_breakers_open": [
                 name for name, state in self._tool_states.items() 
                 if state == ToolState.CIRCUIT_OPEN
+            ],
+            "tools_in_backoff": [
+                name for name, count in self._backoff_counts.items() 
+                if count > 0
             ]
         }
 

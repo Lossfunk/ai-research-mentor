@@ -82,11 +82,36 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
             "execution": {"executed": False, "reason": f"Tool {tool_name} not executable"}
         }
     
+    # Get fallback policy for health status
+    from .fallback_policy import get_fallback_policy
+    fallback_policy = get_fallback_policy()
+    health_summary = fallback_policy.get_tool_health_summary()
+    
+    # Check if tool is in backoff or degraded mode
+    tool_state = health_summary["tool_states"].get(tool_name, "healthy")
+    backoff_count = health_summary["backoff_counts"].get(tool_name, 0)
+    
     # Transparency: start run
     store = get_transparency_store()
     run_id = f"run-{tool_name}-{int(time.time()*1000)}"
-    store.start_run(tool_name, run_id, metadata={"score": score, "inputs_keys": sorted(list(inputs.keys()))})
-    print_info(f"Using tool: {tool_name} (score={score:.2f})")
+    metadata = {
+        "score": score, 
+        "inputs_keys": sorted(list(inputs.keys())),
+        "tool_state": tool_state,
+        "backoff_count": backoff_count
+    }
+    store.start_run(tool_name, run_id, metadata=metadata)
+    
+    # Print status information if tool is degraded or in backoff
+    status_note = ""
+    if tool_state == "degraded":
+        status_note = " [DEGRADED]"
+        if backoff_count > 0:
+            status_note += f" (backoff #{backoff_count})"
+    elif tool_state == "circuit_open":
+        status_note = " [CIRCUIT OPEN - testing]"
+    
+    print_info(f"Using tool: {tool_name} (score={score:.2f}){status_note}")
 
     attempt = 0
     last_error = ""
