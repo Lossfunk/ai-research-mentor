@@ -95,12 +95,40 @@ def get_langchain_tools() -> list[Any]:
         # ResponseFormat control via inline directive
         q_lower = (q or "").lower()
         detailed = "format:detailed" in q_lower or "response:detailed" in q_lower
-        clean_q = q.replace("format:detailed", "").replace("response:detailed", "").strip()
-        results = attachments_search(clean_q, k=6)
+        # Token efficiency controls via inline directives: k:<int> page:<int> size:<int>
+        def _extract_int(token: str, default_val: int) -> int:
+            try:
+                import re
+                m = re.search(rf"{token}\s*:\s*(\d+)", q_lower)
+                return int(m.group(1)) if m else default_val
+            except Exception:
+                return default_val
+        req_k = max(1, min(_extract_int("k", 4), 8))
+        page = max(1, min(_extract_int("page", 1), 50))
+        size = max(1, min(_extract_int("size", req_k), 8))
+        clean_q = (
+            q.replace("format:detailed", "")
+             .replace("response:detailed", "")
+             .replace("k:", " k:")
+             .replace("page:", " page:")
+             .replace("size:", " size:")
+        )
+        # Strip directive patterns
+        try:
+            import re as _re
+            clean_q = _re.sub(r"\b(k|page|size)\s*:\s*\d+", "", clean_q).strip()
+        except Exception:
+            clean_q = clean_q.strip()
+
+        results = attachments_search(clean_q, k=req_k * page)
+        # Apply pagination window
+        start = (page - 1) * size
+        end_idx = start + size
+        window = results[start:end_idx] if start < len(results) else []
         if not results:
             return f"{begin}No relevant snippets found in attached PDFs{end}" if begin or end else "No relevant snippets found in attached PDFs"
         lines: list[str] = ["Context snippets from attachments:"]
-        for r in results[:6]:
+        for r in (window or results)[:size]:
             file = r.get("file", "file.pdf")
             page = r.get("page", 1)
             snippet = (r.get("snippet") or r.get("text") or "").strip().replace("\n", " ")
@@ -119,10 +147,8 @@ def get_langchain_tools() -> list[Any]:
             name="attachments_search",
             func=wrap(_attachments_tool_fn),
             description=(
-                "GROUNDING FIRST: When user-attached PDFs are present, use this FIRST to retrieve relevant "
-                "snippets and ground your answer with [file:page] citations. Only use external tools if the "
-                "attached context is insufficient. Input: research question. Output: snippets with citations. "
-                "Add 'format:detailed' in your query for full passages; default is concise snippets."
+                "GROUNDING FIRST: Use this FIRST to retrieve relevant snippets from attached PDFs and cite [file:page]. "
+                "Defaults: concise, k=4. Controls via inline directives: k:<1-8>, page:<n>, size:<1-8>, format:detailed."
             ),
         ),
     )
