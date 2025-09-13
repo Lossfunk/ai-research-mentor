@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from .prompts_loader import load_instructions_from_prompt_md
 from .runtime import build_agent
 from .router import route_and_maybe_run_tool
-from .rich_formatter import print_formatted_response, print_info, print_error, get_formatter
+from .rich_formatter import print_formatted_response, print_info, print_error, get_formatter, print_user_input
 from .core.bootstrap import bootstrap_registry_if_enabled
 from .literature_review import build_research_context
 from .chat_logger import ChatLogger
@@ -437,6 +437,7 @@ def main() -> None:
                 # Use Rich console for input prompt
                 formatter.console.print("[bold cyan]You:[/bold cyan] ", end="")
                 user = input().strip()
+                print_user_input(user)
             except EOFError:
                 # Handle Ctrl+D (EOF)
                 print_info("\n📝 EOF received. Saving chat session...")
@@ -515,6 +516,7 @@ def _offline_repl(reason: str) -> None:
             try:
                 formatter.console.print("[bold cyan]You:[/bold cyan] ", end="")
                 user = input().strip()
+                print_user_input(user)
             except EOFError:
                 print_info("\n📝 EOF received. Saving chat session...")
                 _cleanup_and_save_session(chat_logger, "EOF (Ctrl+D)")

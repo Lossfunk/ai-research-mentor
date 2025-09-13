@@ -290,3 +290,12 @@ def print_agent_reasoning(content: str) -> None:
         content: Reasoning or tool traces to show as internal context.
     """
     get_formatter().print_section(content, "Agent's reasoning", border_style="magenta")
+
+
+def print_user_input(content: str) -> None:
+    """Print the user's prompt in a consistent panel.
+    
+    Args:
+        content: The user's input message.
+    """
+    get_formatter().print_section(content, "You", border_style="cyan")
