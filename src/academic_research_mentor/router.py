@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
+from .rich_formatter import print_agent_reasoning
 
 
 def _run_arxiv_search_and_print(query: str) -> None:
@@ -12,12 +13,12 @@ def _run_arxiv_search_and_print(query: str) -> None:
         note = result.get("note") if isinstance(result, dict) else None
         print(f"Mentor.tools: No papers found. {note or ''}")
         return
-    print("Mentor.tools (arXiv):")
+    print_agent_reasoning("Mentor.tools (arXiv):")
     for p in papers[:5]:
         title = p.get("title")
         year = p.get("year")
         url = p.get("url")
-        print(f"- {title} ({year}) → {url}")
+        print_agent_reasoning(f"- {title} ({year}) → {url}")
 
     # The following block seems out of place and references 'urls' which is undefined.
     # Commenting it out to fix indentation and undefined variable issues.
@@ -29,11 +30,11 @@ def _run_math_ground_and_print(text: str) -> None:
     from .mentor_tools import math_ground  # lazy import
     result: Dict[str, Any] = math_ground(text_or_math=text, options={})
     findings = (result or {}).get("findings", {})
-    print("Mentor.tools (Math Ground):")
+    print_agent_reasoning("Mentor.tools (Math Ground):")
     for key in ["assumptions", "symbol_glossary", "dimensional_issues", "proof_skeleton"]:
         items = findings.get(key) or []
         if items:
-            print(f"- {key}: {', '.join(str(x) for x in items[:3])}{'...' if len(items) > 3 else ''}")
+            print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items[:3])}{'...' if len(items) > 3 else ''}")
 
 
 def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
@@ -51,26 +52,26 @@ def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
         
         guidelines = result.get("retrieved_guidelines", [])
         if guidelines:
-            print("Mentor.tools (Research Guidelines):")
+            print_agent_reasoning("Mentor.tools (Research Guidelines):")
             for guideline in guidelines[:3]:
                 source = guideline.get("source_domain", "Research guidance")
                 content = guideline.get("content", "")[:100]
-                print(f"- {source}: {content}...")
+                print_agent_reasoning(f"- {source}: {content}...")
         else:
-            print("Mentor.tools: No specific guidelines found.")
+            print_agent_reasoning("Mentor.tools: No specific guidelines found.")
     except Exception as e:
-        print(f"Mentor.tools: Guidelines search failed: {e}")
+        print_agent_reasoning(f"Mentor.tools: Guidelines search failed: {e}")
 
 
 def _run_methodology_validate_and_print(plan: str) -> None:
     from .mentor_tools import methodology_validate  # lazy import
     result: Dict[str, Any] = methodology_validate(plan=plan, checklist=[])
     report = (result or {}).get("report", {})
-    print("Mentor.tools (Methodology Validate):")
+    print_agent_reasoning("Mentor.tools (Methodology Validate):")
     for key in ["risks", "missing_controls", "ablation_suggestions", "reproducibility_gaps"]:
         items = report.get(key) or []
         if items:
-            print(f"- {key}: {', '.join(str(x) for x in items)}")
+            print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items)}")
 
 
 def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
@@ -87,22 +88,22 @@ def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
         
         if result.get("execution", {}).get("executed"):
             guidelines_result = result.get("results", {})
-            print("Mentor.tools (Research Guidelines):")
+            print_agent_reasoning("Mentor.tools (Research Guidelines):")
             
             if guidelines_result.get("retrieved_guidelines"):
                 for guideline in guidelines_result["retrieved_guidelines"]:
                     source_type = guideline.get("source_type", "Unknown source")
                     guide_id = guideline.get("guide_id", "unknown")
-                    print(f"- {source_type} [ID: {guide_id}]")
+                    print_agent_reasoning(f"- {source_type} [ID: {guide_id}]")
                     
                 if guidelines_result.get("formatted_content"):
                     content = guidelines_result["formatted_content"]
                     # Show first 500 chars of formatted content
                     if len(content) > 500:
                         content = content[:500] + "..."
-                    print(f"\nGuidelines summary: {content}")
+                    print_agent_reasoning(f"\nGuidelines summary: {content}")
             else:
-                print("- No guidelines found for this query")
+                print_agent_reasoning("- No guidelines found for this query")
         else:
             # Fallback to direct tool usage
             _run_guidelines_fallback(query, topic)
@@ -234,7 +235,7 @@ def route_and_maybe_run_tool(user: str) -> Optional[Dict[str, str]]:
     
     topic = _extract_topic_from_text(s)
     if topic:
-        print(f"Mentor.tools: Detected topic → {topic}")
+        print_agent_reasoning(f"Mentor.tools: Detected topic → {topic}")
         _run_arxiv_search_and_print(topic)
         return {"tool_name": "arxiv_search", "topic": topic}
     

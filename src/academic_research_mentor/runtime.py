@@ -555,14 +555,19 @@ def get_langchain_tools() -> list[Any]:
         _print_summary_and_sources(res if isinstance(res, dict) else {})
         papers = (res or {}).get("papers", [])
         if not papers:
-            return (res or {}).get("note", "No results")
+            note = (res or {}).get("note", "No results")
+            reasoning = f"Legacy arXiv search: {note}"
+            print_agent_reasoning(reasoning)
+            return f"{self._internal_begin}\n{reasoning}\n{self._internal_end}"
         lines = []
         for p in papers[:5]:
             title = p.get("title")
             year = p.get("year")
             url = p.get("url")
             lines.append(f"- {title} ({year}) -> {url}")
-        return "\n".join(lines)
+        reasoning = "\n".join(["Legacy arXiv results:"] + lines)
+        print_agent_reasoning(reasoning)
+        return f"{self._internal_begin}\n{reasoning}\n{self._internal_end}"
 
     
 
@@ -577,7 +582,9 @@ def get_langchain_tools() -> list[Any]:
             vals = findings.get(k) or []
             if vals:
                 lines.append(f"- {k}: {', '.join(str(x) for x in vals[:3])}")
-        return "\n".join(lines) or "No findings"
+        reasoning = "\n".join(["Math grounding findings:"] + (lines or ["No findings"]))
+        print_agent_reasoning(reasoning)
+        return f"{self._internal_begin}\n{reasoning}\n{self._internal_end}"
 
     def _method_tool_fn(text: str) -> str:
         res = methodology_validate(plan=text, checklist=[])
@@ -588,7 +595,9 @@ def get_langchain_tools() -> list[Any]:
             vals = report.get(k) or []
             if vals:
                 lines.append(f"- {k}: {', '.join(str(x) for x in vals)}")
-        return "\n".join(lines) or "No issues detected"
+        reasoning = "\n".join(["Methodology validation:"] + (lines or ["No issues detected"]))
+        print_agent_reasoning(reasoning)
+        return f"{self._internal_begin}\n{reasoning}\n{self._internal_end}"
 
     def _guidelines_tool_fn(query: str) -> str:
         """Search for research methodology and mentorship guidelines from curated sources."""
