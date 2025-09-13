@@ -11,6 +11,7 @@ from .tool_impls import (
     method_tool_fn,
     guidelines_tool_fn,
 )
+from ..attachments import has_attachments, search as attachments_search
 
 
 def get_langchain_tools() -> list[Any]:
@@ -93,4 +94,34 @@ def get_langchain_tools() -> list[Any]:
             ),
         ),
     ]
+    # Always add attachments_search tool (it handles empty attachments gracefully)
+    def _attachments_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
+        begin, end = internal_delimiters or ("", "")
+        print_agent_reasoning("Using tool: attachments_search")
+        if not has_attachments():
+            return f"{begin}No attachments loaded. Use --attach-pdf to add documents.{end}" if begin or end else "No attachments loaded. Use --attach-pdf to add documents."
+        results = attachments_search(q, k=6)
+        if not results:
+            return f"{begin}No relevant snippets found in attached PDFs{end}" if begin or end else "No relevant snippets found in attached PDFs"
+        lines: list[str] = ["Context snippets from attachments:"]
+        for r in results[:6]:
+            file = r.get("file", "file.pdf")
+            page = r.get("page", 1)
+            text = (r.get("text", "") or "").strip().replace("\n", " ")
+            if len(text) > 220:
+                text = text[:220] + "…"
+            lines.append(f"- [{file}:{page}] {text}")
+        reasoning = "\n".join(lines)
+        return f"{begin}{reasoning}{end}" if begin or end else reasoning
+
+    tools.append(
+        Tool(
+            name="attachments_search",
+            func=wrap(_attachments_tool_fn),
+            description=(
+                "Search attached PDF documents for relevant snippets. "
+                "Input: a natural language query. Returns context lines with [file:page] citations."
+            ),
+        )
+    )
     return tools

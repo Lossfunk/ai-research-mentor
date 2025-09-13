@@ -9,6 +9,15 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Environment variables are automatically loaded from .env file. Use --env-help for configuration details.",
     )
     parser.add_argument(
+        "--attach-pdf",
+        action="append",
+        default=None,
+        help=(
+            "Attach one or more PDF files for this session (repeat flag for multiple). "
+            "The mentor will retrieve from these documents to ground answers."
+        ),
+    )
+    parser.add_argument(
         "--prompt",
         choices=["mentor", "system"],
         default=None,

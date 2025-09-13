@@ -97,7 +97,8 @@ def main() -> None:
 
     runtime_prelude = (
         "Use the selected core prompt variant only; never combine prompts. "
-        "Default to conversational answers; call tools only when they would materially change advice."
+        "Default to conversational answers; call tools only when they would materially change advice. "
+        "When user-attached PDFs are present, FIRST use the attachments_search tool to ground your answer with [file:page] citations before any external search."
     )
     effective_instructions = f"{runtime_prelude}\n\n{instructions}"
 
@@ -128,6 +129,26 @@ def main() -> None:
     if agent is None:
         print_error(offline_reason or "Model initialization failed. Set one of the API keys in your .env (OPENROUTER_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, or MISTRAL_API_KEY). Then re-run: uv run academic-research-mentor --check-env")
         return
+
+    # Attach PDFs if provided
+    try:
+        pdfs = getattr(args, 'attach_pdf', None)
+        if pdfs:
+            from ..attachments import attach_pdfs, get_summary
+            attach_pdfs([str(p) for p in pdfs if p])
+            from ..rich_formatter import print_info
+            summ = get_summary()
+            msg = (
+                f"Attachments loaded: files={summ.get('files')}, pages={summ.get('pages')}, chunks={summ.get('chunks')} "
+                f"(backend={summ.get('backend')})"
+            )
+            if (summ.get('skipped_large') or 0) > 0:
+                msg += f" | skipped_large={summ.get('skipped_large')} (> {50} MB)"
+            if (summ.get('truncated') or 0) > 0:
+                msg += f" | truncated_files={summ.get('truncated')} (> 500 pages)"
+            print_info(msg)
+    except Exception:
+        pass
 
     # REPL
     online_repl(agent, loaded_variant)

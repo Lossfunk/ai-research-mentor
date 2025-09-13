@@ -55,7 +55,35 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
                 else:
                     enhanced_user_input = user
             else:
-                enhanced_user_input = user
+                # For ReAct/default mode, enrich the user input with attached PDF context if available
+                try:
+                    from ..attachments import has_attachments as _has_att, search as _att_search
+                    if _has_attachments := _has_att():
+                        results = _att_search(user, k=6)
+                        if results:
+                            lines: list[str] = [
+                                "Attached PDF context (top snippets):",
+                            ]
+                            for r in results[:6]:
+                                file = r.get("file", "file.pdf")
+                                page = r.get("page", 1)
+                                text = (r.get("text", "") or "").strip().replace("\n", " ")
+                                if len(text) > 220:
+                                    text = text[:220] + "…"
+                                lines.append(f"- [{file}:{page}] {text}")
+                            context_block = "\n".join(lines)
+                            enhanced_user_input = (
+                                f"{context_block}\n\n"
+                                f"Instruction: Ground your answer ONLY on the attached PDF context above when making claims; "
+                                f"if insufficient, say so. Always include [file:page] citations.\n\n"
+                                f"User Question: {user}"
+                            )
+                        else:
+                            enhanced_user_input = user
+                    else:
+                        enhanced_user_input = user
+                except Exception:
+                    enhanced_user_input = user
 
             try:
                 agent.print_response(enhanced_user_input, stream=True)  # type: ignore[attr-defined]
