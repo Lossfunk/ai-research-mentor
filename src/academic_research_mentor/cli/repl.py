@@ -8,6 +8,7 @@ from ..router import route_and_maybe_run_tool
 from ..literature_review import build_research_context
 from ..chat_logger import ChatLogger
 from .session import cleanup_and_save_session
+from ..runtime.telemetry import get_usage as _telemetry_usage, get_metrics as _telemetry_metrics
 """REPL with optional context enrichment from attachments and tools."""
 
 
@@ -156,6 +157,18 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
 
             formatter.console.print("")
     finally:
+        try:
+            from .args import build_parser as _bp
+            p = _bp()
+            # crude parse to check flag presence in argv
+            import sys as _sys
+            if "--telemetry" in (_sys.argv or []):
+                u = _telemetry_usage()
+                m = _telemetry_metrics()
+                if u or m:
+                    print_info(f"Telemetry: tools={u}, metrics={m}")
+        except Exception:
+            pass
         if not any(turn.get("user_prompt", "").lower() in {"exit", "quit", "eof (ctrl+d)"} for turn in chat_logger.current_session):
             cleanup_and_save_session(chat_logger, "unexpected_exit")
 

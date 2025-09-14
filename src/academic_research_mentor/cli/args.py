@@ -63,4 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show recent tool runs from transparency store (in-memory)",
     )
+    parser.add_argument(
+        "--telemetry",
+        action="store_true",
+        help="Print per-session tool usage and basic success/failure counts on exit",
+    )
     return parser
