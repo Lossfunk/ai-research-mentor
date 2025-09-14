@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..rich_formatter import print_agent_reasoning
+from .telemetry import record_tool_usage
 
 
 def print_summary_and_sources(result: dict | None) -> None:
@@ -62,6 +63,7 @@ def registry_tool_call(tool_name: str, payload: dict) -> dict:
             print_agent_reasoning(f"Using tool: {tool_name} (unavailable)")
             return {"note": f"tool {tool_name} unavailable"}
         print_agent_reasoning(f"Using tool: {tool_name}")
+        record_tool_usage(tool_name)
         result = tool.execute(payload, {"goal": payload.get("query", "")})
         print_summary_and_sources(result if isinstance(result, dict) else {})
         return result if isinstance(result, dict) else {"note": "non-dict result"}

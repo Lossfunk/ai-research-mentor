@@ -155,6 +155,32 @@ def _keyword_rank(query: str, k: int = 6) -> list[Tuple[int, float]]:
     return scored[:k]
 
 
+def _make_snippet(text: str, query: str, max_len: int = 240) -> str:
+    if not text:
+        return ""
+    t = text.strip().replace("\n", " ")
+    if len(t) <= max_len:
+        return t
+    # Center around first occurrence of any query term
+    terms = [w.lower() for w in (query or "").split() if len(w) > 2]
+    idx = -1
+    lower = t.lower()
+    for term in terms:
+        idx = lower.find(term)
+        if idx != -1:
+            break
+    if idx == -1:
+        return t[: max_len - 1] + "…"
+    start = max(0, idx - max_len // 2)
+    end = min(len(t), start + max_len)
+    snippet = t[start:end]
+    if start > 0:
+        snippet = "…" + snippet
+    if end < len(t):
+        snippet = snippet + "…"
+    return snippet
+
+
 def search(query: str, k: int = 6) -> list[dict[str, Any]]:
     """Retrieve top-k chunks with metadata and snippet text."""
     if not has_attachments():
@@ -162,17 +188,20 @@ def search(query: str, k: int = 6) -> list[dict[str, Any]]:
 
     try:
         if _retriever is not None:
-            docs = _retriever.get_relevant_documents(query)
+            docs = _retriever.invoke(query) if hasattr(_retriever, "invoke") else _retriever.get_relevant_documents(query)
             results: list[dict[str, Any]] = []
             for d in docs[:k]:
                 meta = d.metadata or {}
                 page = meta.get("page") or meta.get("page_number") or 1
+                file_name = meta.get("file_name") or os.path.basename(meta.get("source", "")) or "file.pdf"
                 results.append(
                     {
                         "text": d.page_content,
-                        "file": meta.get("file_name") or os.path.basename(meta.get("source", "")) or "file.pdf",
+                        "snippet": _make_snippet(d.page_content or "", query),
+                        "file": file_name,
                         "page": int(page) if isinstance(page, int) else 1,
                         "source": meta.get("source", ""),
+                        "anchor": f"{file_name}#page={int(page) if isinstance(page, int) else 1}",
                     }
                 )
             return results
@@ -185,12 +214,15 @@ def search(query: str, k: int = 6) -> list[dict[str, Any]]:
     for idx, _s in ranked:
         meta = _chunk_meta[idx] if idx < len(_chunk_meta) else {}
         page = meta.get("page") or meta.get("page_number") or 1
+        file_name = meta.get("file_name") or os.path.basename(meta.get("source", "")) or "file.pdf"
         results_k.append(
             {
                 "text": _chunk_texts[idx],
-                "file": meta.get("file_name") or os.path.basename(meta.get("source", "")) or "file.pdf",
+                "snippet": _make_snippet(_chunk_texts[idx] or "", query),
+                "file": file_name,
                 "page": int(page) if isinstance(page, int) else 1,
                 "source": meta.get("source", ""),
+                "anchor": f"{file_name}#page={int(page) if isinstance(page, int) else 1}",
             }
         )
     return results_k

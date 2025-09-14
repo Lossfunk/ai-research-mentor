@@ -98,7 +98,10 @@ def main() -> None:
     runtime_prelude = (
         "Use the selected core prompt variant only; never combine prompts. "
         "Default to conversational answers; call tools only when they would materially change advice. "
-        "When user-attached PDFs are present, FIRST use the attachments_search tool to ground your answer with [file:page] citations before any external search."
+        "When user-attached PDFs are present, FIRST use attachments_search to ground your answer with [file:page] citations. "
+        "For novelty/experiments/methodology/related-work: AFTER grounding, consult mentorship_guidelines BEFORE any literature_search; "
+        "then, if helpful, run literature_search. In your final answer include (1) at least three concrete, falsifiable experiments and (2) one to two literature anchors (titles with links). "
+        "Always keep claims grounded in attached snippets with [file:page] citations."
     )
     effective_instructions = f"{runtime_prelude}\n\n{instructions}"
 
@@ -121,6 +124,26 @@ def main() -> None:
         else:
             from ..rich_formatter import print_info
             print_info("Guidelines: disabled")
+    except Exception:
+        pass
+
+    # Attach PDFs if provided (do this BEFORE building the agent so tools can reflect attachment presence)
+    try:
+        pdfs = getattr(args, 'attach_pdf', None)
+        if pdfs:
+            from ..attachments import attach_pdfs, get_summary
+            attach_pdfs([str(p) for p in pdfs if p])
+            from ..rich_formatter import print_info
+            summ = get_summary()
+            msg = (
+                f"Attachments loaded: files={summ.get('files')}, pages={summ.get('pages')}, chunks={summ.get('chunks')} "
+                f"(backend={summ.get('backend')})"
+            )
+            if (summ.get('skipped_large') or 0) > 0:
+                msg += f" | skipped_large={summ.get('skipped_large')} (> {50} MB)"
+            if (summ.get('truncated') or 0) > 0:
+                msg += f" | truncated_files={summ.get('truncated')} (> 500 pages)"
+            print_info(msg)
     except Exception:
         pass
 

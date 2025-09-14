@@ -151,6 +151,40 @@ def o3_search_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = N
     return f"{begin}{reasoning}{end}" if begin or end else reasoning
 
 
+def experiment_planner_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
+    """Propose 3 concrete, falsifiable experiments grounded in attached snippets.
+
+    Input: user question or goal. Reads attached snippets via attachments.search.
+    Output: numbered experiments with hypothesis, variables, metric, expected outcome, and [file:page] anchors.
+    """
+    begin, end = internal_delimiters or ("", "")
+    try:
+        from ..attachments import has_attachments, search as att_search
+        if not has_attachments():
+            return f"{begin}No attachments loaded; cannot generate grounded experiments{end}" if begin or end else "No attachments loaded; cannot generate grounded experiments"
+        detailed = "format:detailed" in (q or "").lower()
+        clean_q = q.replace("format:detailed", "").replace("response:detailed", "").strip()
+        snippets = att_search(clean_q, k=6)
+        if not snippets:
+            return f"{begin}No relevant snippets found in attachments{end}" if begin or end else "No relevant snippets found in attachments"
+        lines: list[str] = ["Grounded experiment plan (3 items):"]
+        for i, s in enumerate(snippets[:3], 1):
+            anchor = f"[{s.get('file','file.pdf')}:{s.get('page',1)}]"
+            base_text = (s.get("text") if detailed else s.get("snippet")) or s.get("text") or ""
+            snippet = base_text.strip().replace("\n", " ")
+            if not detailed and len(snippet) > 160:
+                snippet = snippet[:160] + "…"
+            lines.append(f"{i}. Hypothesis: A design that avoids response-diversity reliance improves robustness {anchor}")
+            lines.append(f"   Basis: {snippet}")
+            lines.append("   Variables: (a) detector signal type, (b) alignment strength, (c) sampling temperature")
+            lines.append("   Metric: AUROC, FNR at fixed FPR; report CI over seeds")
+            lines.append("   Expected outcome: non-diversity signals degrade less under stronger alignment")
+        reasoning = "\n".join(lines)
+        print_agent_reasoning(reasoning)
+        return f"{begin}{reasoning}{end}" if begin or end else reasoning
+    except Exception as e:
+        return f"Experiment planner failed: {e}"
+
 def searchthearxiv_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
     result = registry_tool_call("searchthearxiv_search", {"query": q, "limit": 10})
     papers = (result.get("papers") if isinstance(result, dict) else []) or []

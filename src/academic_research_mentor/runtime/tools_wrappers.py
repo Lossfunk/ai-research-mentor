@@ -6,10 +6,11 @@ from ..rich_formatter import print_agent_reasoning
 from .tool_impls import (
     arxiv_tool_fn,
     o3_search_tool_fn,
-    searchthearxiv_tool_fn,
+    # searchthearxiv_tool_fn,  # Disabled - tool not working properly
     math_tool_fn,
     method_tool_fn,
     guidelines_tool_fn,
+    experiment_planner_tool_fn,
 )
 from ..attachments import has_attachments, search as attachments_search
 
@@ -39,12 +40,19 @@ def get_langchain_tools() -> list[Any]:
             ),
         ),
         Tool(
-            name="o3_search",
-            func=wrap(o3_search_tool_fn),
+            name="mentorship_guidelines",
+            func=wrap(guidelines_tool_fn),
             description=(
-                "Consolidated literature search using O3 reasoning across arXiv and OpenReview. "
-                "Prefer this over legacy arxiv_search; includes transparency logs and sources. "
-                "Input: research topic. Returns key papers with links."
+                "Mentorship guidelines from curated sources. For novelty/methodology/experiments questions, use this "
+                "IMMEDIATELY AFTER attachments_search to establish best-practice principles BEFORE any literature search."
+            ),
+        ),
+        Tool(
+            name="experiments_plan",
+            func=wrap(experiment_planner_tool_fn),
+            description=(
+                "Propose 3 concrete, falsifiable experiments grounded in attached snippets. "
+                "Use AFTER attachments_search (and optionally mentorship_guidelines); returns numbered experiments with hypothesis, variables, metrics, expected outcome, and [file:page] anchors."
             ),
         ),
         Tool(
@@ -61,38 +69,14 @@ def get_langchain_tools() -> list[Any]:
                 "Validate an experiment plan for risks/controls/ablations/reproducibility gaps."
             ),
         ),
-        Tool(
-            name="research_guidelines",
-            func=wrap(guidelines_tool_fn),
-            description=(
-                "Search curated research methodology and mentorship guidelines from expert sources. "
-                "USE THIS TOOL FOR ALL RESEARCH MENTORSHIP QUESTIONS including: "
-                "research advice, methodology guidance, PhD help, problem selection, research taste development, academic career guidance, "
-                "research strategy decisions, publication dilemmas, research evaluation questions, and academic career planning. "
-                "Specifically use when users ask about: "
-                "- Research direction uncertainty ('no one else is working on this', 'red flag or opportunity', 'unique research direction') "
-                "- Problem worthiness ('worth pursuing vs distraction', 'should I work on this problem', 'is this important') "
-                "- Negative results ('approach doesn't work', 'should I publish negative results', 'my method failed') "
-                "- Novelty concerns ('not sure novel enough', 'how to evaluate novelty', 'is this contribution significant') "
-                "- Publication decisions ('should I publish this', 'where to publish', 'ready for publication') "
-                "- Research taste and judgment ('developing research taste', 'how to choose problems', 'research intuition') "
-                "- Academic career guidance ('career planning', 'PhD advice', 'research skills development') "
-                "Input: any research mentorship question, dilemma, or uncertainty. Examples: "
-                "'I found an interesting research direction but I'm worried no one else is working on it. Is that a red flag or an opportunity?', "
-                "'My results are negative - my approach doesn't work. Should I publish this or try something else?', "
-                "'I have some interesting results but I'm not sure they're 'novel' enough for publication. How do I evaluate this?', "
-                "'How do I know if a research problem is worth pursuing vs just a distraction?' "
-                "Returns: structured guidelines from authoritative sources with source attribution."
-            ),
-        ),
-        Tool(
-            name="searchthearxiv_search",
-            func=wrap(searchthearxiv_tool_fn),
-            description=(
-                "Semantic arXiv search via searchthearxiv.com. Use for natural language queries. "
-                "Includes transparency logs and sources. Input: research query."
-            ),
-        ),
+        # Tool(
+        #     name="searchthearxiv_search",
+        #     func=wrap(searchthearxiv_tool_fn),
+        #     description=(
+        #         "Semantic arXiv search via searchthearxiv.com. Use for natural language queries. "
+        #         "Includes transparency logs and sources. Input: research query."
+        #     ),
+        # ),
     ]
     # Always add attachments_search tool (it handles empty attachments gracefully)
     def _attachments_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
@@ -100,28 +84,64 @@ def get_langchain_tools() -> list[Any]:
         print_agent_reasoning("Using tool: attachments_search")
         if not has_attachments():
             return f"{begin}No attachments loaded. Use --attach-pdf to add documents.{end}" if begin or end else "No attachments loaded. Use --attach-pdf to add documents."
-        results = attachments_search(q, k=6)
+        # ResponseFormat control via inline directive
+        q_lower = (q or "").lower()
+        detailed = "format:detailed" in q_lower or "response:detailed" in q_lower
+        # Token efficiency controls via inline directives: k:<int> page:<int> size:<int>
+        def _extract_int(token: str, default_val: int) -> int:
+            try:
+                import re
+                m = re.search(rf"{token}\s*:\s*(\d+)", q_lower)
+                return int(m.group(1)) if m else default_val
+            except Exception:
+                return default_val
+        req_k = max(1, min(_extract_int("k", 4), 8))
+        page = max(1, min(_extract_int("page", 1), 50))
+        size = max(1, min(_extract_int("size", req_k), 8))
+        clean_q = (
+            q.replace("format:detailed", "")
+             .replace("response:detailed", "")
+             .replace("k:", " k:")
+             .replace("page:", " page:")
+             .replace("size:", " size:")
+        )
+        # Strip directive patterns
+        try:
+            import re as _re
+            clean_q = _re.sub(r"\b(k|page|size)\s*:\s*\d+", "", clean_q).strip()
+        except Exception:
+            clean_q = clean_q.strip()
+
+        results = attachments_search(clean_q, k=req_k * page)
+        # Apply pagination window
+        start = (page - 1) * size
+        end_idx = start + size
+        window = results[start:end_idx] if start < len(results) else []
         if not results:
             return f"{begin}No relevant snippets found in attached PDFs{end}" if begin or end else "No relevant snippets found in attached PDFs"
         lines: list[str] = ["Context snippets from attachments:"]
-        for r in results[:6]:
+        for r in (window or results)[:size]:
             file = r.get("file", "file.pdf")
             page = r.get("page", 1)
-            text = (r.get("text", "") or "").strip().replace("\n", " ")
-            if len(text) > 220:
+            snippet = (r.get("snippet") or r.get("text") or "").strip().replace("\n", " ")
+            text = snippet if not detailed else (r.get("text") or snippet)
+            if not detailed and len(text) > 220:
                 text = text[:220] + "…"
-            lines.append(f"- [{file}:{page}] {text}")
+            anchor = r.get("anchor") or f"{file}#page={page}"
+            lines.append(f"- [{file}:{page}] {text} (anchor: {anchor})")
         reasoning = "\n".join(lines)
         return f"{begin}{reasoning}{end}" if begin or end else reasoning
 
-    tools.append(
+    # Prefer attachments_search first in the tool list so agents try it before external search
+    tools.insert(
+        0,
         Tool(
             name="attachments_search",
             func=wrap(_attachments_tool_fn),
             description=(
-                "Search attached PDF documents for relevant snippets. "
-                "Input: a natural language query. Returns context lines with [file:page] citations."
+                "GROUNDING FIRST: Use this FIRST to retrieve relevant snippets from attached PDFs and cite [file:page]. "
+                "Defaults: concise, k=4. Controls via inline directives: k:<1-8>, page:<n>, size:<1-8>, format:detailed."
             ),
-        )
+        ),
     )
     return tools

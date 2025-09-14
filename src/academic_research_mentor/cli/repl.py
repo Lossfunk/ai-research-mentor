@@ -8,6 +8,10 @@ from ..router import route_and_maybe_run_tool
 from ..literature_review import build_research_context
 from ..chat_logger import ChatLogger
 from .session import cleanup_and_save_session
+"""REPL with optional context enrichment from attachments and tools."""
+
+
+## get_langchain_tools is defined in runtime/tools_wrappers.py; no duplication here.
 
 
 def online_repl(agent: Any, loaded_variant: str) -> None:
@@ -58,6 +62,28 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
                 # For ReAct/default mode, enrich the user input with attached PDF context if available
                 try:
                     from ..attachments import has_attachments as _has_att, search as _att_search
+                    from ..runtime.tool_impls import (
+                        guidelines_tool_fn as _guidelines_tool,  # type: ignore
+                        experiment_planner_tool_fn as _exp_plan,  # type: ignore
+                    )
+                    from ..runtime.tool_helpers import registry_tool_call as _tool_call
+                    # Simple contextual triggers
+                    lower_q = user.lower()
+                    mentorship_triggers = [
+                        "novel", "novelty", "methodology", "publish", "publication",
+                        "problem selection", "career", "taste", "mentor", "guideline",
+                    ]
+                    literature_triggers = [
+                        "related work", "literature", "papers", "sota", "baseline",
+                        "survey", "prior work",
+                    ]
+                    experiment_triggers = [
+                        "experiment", "experiments", "hypothesis", "ablation",
+                        "evaluation plan", "setup", "metrics",
+                    ]
+                    wants_guidelines = any(k in lower_q for k in mentorship_triggers)
+                    wants_literature = any(k in lower_q for k in literature_triggers)
+                    wants_experiments = any(k in lower_q for k in experiment_triggers)
                     if _has_attachments := _has_att():
                         results = _att_search(user, k=6)
                         if results:
@@ -71,11 +97,42 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
                                 if len(text) > 220:
                                     text = text[:220] + "…"
                                 lines.append(f"- [{file}:{page}] {text}")
+                            # Optional: add mentorship guidelines context
+                            if wants_guidelines:
+                                try:
+                                    gl = _guidelines_tool(user) or ""
+                                    gl = str(gl).strip()
+                                    if gl:
+                                        lines.append("")
+                                        lines.append("Mentorship guidelines context (summary):")
+                                        for ln in gl.splitlines()[:8]:
+                                            if ln.strip():
+                                                lines.append(ln.strip())
+                                except Exception:
+                                    pass
+                            # Defer literature review to the agent; do not call o3_search here
+                            if wants_literature:
+                                lines.append("")
+                                lines.append("Note: After grounding and mentorship guidance, consult literature_search to add 1–2 anchors.")
+                            # Optional: add experiment plan preview
+                            if wants_experiments:
+                                try:
+                                    plan = _exp_plan(user) or ""
+                                    plan = str(plan).strip()
+                                    if plan:
+                                        lines.append("")
+                                        lines.append("Experiment plan (preview):")
+                                        for ln in plan.splitlines()[:12]:
+                                            if ln.strip():
+                                                lines.append(ln.strip())
+                                except Exception:
+                                    pass
                             context_block = "\n".join(lines)
                             enhanced_user_input = (
                                 f"{context_block}\n\n"
-                                f"Instruction: Ground your answer ONLY on the attached PDF context above when making claims; "
-                                f"if insufficient, say so. Always include [file:page] citations.\n\n"
+                                f"Instruction: Ground your answer FIRST on the attached PDF context above when making claims; "
+                                f"include [file:page] citations. THEN, if it strengthens mentorship advice, incorporate insights from the "
+                                f"guidelines and literature context (summarize briefly and avoid over-citation).\n\n"
                                 f"User Question: {user}"
                             )
                         else:
