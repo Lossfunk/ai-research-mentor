@@ -20,6 +20,7 @@ from .commands import (
     show_runs_command,
 )
 from .repl import online_repl, offline_repl
+from ..integrations.slack import run_slack_bot
 from .session import load_env_file, signal_handler
 
 
@@ -71,6 +72,14 @@ def main() -> None:
         return
     if getattr(args, 'show_runs', False):
         show_runs_command()
+        return
+
+    # Slack mode (bypass local REPL and start the Slack bot)
+    if getattr(args, 'slack', False):
+        # Ensure registry feature flags are enabled by default as preferred
+        os.environ.setdefault("FF_REGISTRY_ENABLED", "1")
+        os.environ.setdefault("FF_AGENT_RECOMMENDATION", "1")
+        run_slack_bot()
         return
 
     # Prompt selection

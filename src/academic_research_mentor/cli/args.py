@@ -68,4 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print per-session tool usage and basic success/failure counts on exit",
     )
+    parser.add_argument(
+        "slack",
+        action="store_true",
+        help="Run the Slack bot (Socket Mode). Requires SLACK_APP_TOKEN and SLACK_BOT_TOKEN",
+    )
     return parser
