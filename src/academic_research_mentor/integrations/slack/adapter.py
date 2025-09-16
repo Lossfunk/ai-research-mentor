@@ -7,6 +7,7 @@ from typing import Any
 from .session_store import GLOBAL_SESSION_STORE
 from ...prompts_loader import load_instructions_from_prompt_md
 from ...runtime import build_agent
+from .context import build_thread_prelude
 
 
 def _build_agent_for_slack() -> tuple[Any | None, str]:
@@ -44,13 +45,22 @@ def run_agent_async(team_id: str, channel_id: str, thread_ts: str, user_text: st
             except Exception:
                 pass
             return
+        # Build a concise prelude from the recent thread on first run per session
+        prelude = ""
+        if not sess.history:
+            try:
+                prelude = build_thread_prelude(client, channel_id, thread_ts or None)
+            except Exception:
+                prelude = ""
         try:
-            reply = sess.agent.run(user_text)
+            effective_input = (prelude + "\n\n" + user_text).strip() if prelude else user_text
+            reply = sess.agent.run(effective_input)
             content = getattr(reply, "content", None) or getattr(reply, "text", None) or str(reply)
         except Exception as exc:  # noqa: BLE001
             content = f"Mentor failed to respond: {exc}"
         try:
-            client.chat_update(channel=channel_id, ts=message_ts, text=content)
+            final_text = f"Q: {user_text}\n\n{content}"
+            client.chat_update(channel=channel_id, ts=message_ts, text=final_text)
         except Exception:
             pass
 
