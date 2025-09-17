@@ -2,12 +2,82 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from typing import Any
 
 from .session_store import GLOBAL_SESSION_STORE
 from ...prompts_loader import load_instructions_from_prompt_md
 from ...runtime import build_agent
 from .context import build_thread_prelude
+
+
+def _strip_wrapping_code_fence(text: str) -> str:
+    try:
+        s = (text or "").strip()
+        if s.startswith("```") and s.endswith("```"):
+            # Remove the first line fence and trailing fence
+            lines = s.splitlines()
+            if len(lines) >= 3:
+                # Drop first and last line
+                inner = "\n".join(lines[1:-1])
+                return inner
+        return text
+    except Exception:
+        return text
+
+
+def _stream_llm_to_slack(agent: Any, effective_input: str, client, channel_id: str, message_ts: str, user_text: str) -> None:
+    """Token-stream to Slack via chat.update with simple throttling. Falls back to single-shot if streaming not supported."""
+    try:
+        llm = getattr(agent, "_llm", None)
+        build_messages = getattr(agent, "_build_messages", None)
+        if llm is None or not hasattr(llm, "stream") or build_messages is None:
+            # Fallback to single invoke
+            reply = agent.run(effective_input)
+            content = getattr(reply, "content", None) or getattr(reply, "text", None) or str(reply)
+            content = _strip_wrapping_code_fence(content)
+            final_text = f"Q: {user_text}\n\n{content}"
+            client.chat_update(channel=channel_id, ts=message_ts, text=final_text, mrkdwn=True)
+            return
+
+        accumulated: list[str] = []
+        last_sent = 0.0
+        try:
+            from langchain_core.messages import AIMessageChunk  # type: ignore
+        except Exception:  # pragma: no cover
+            AIMessageChunk = None  # type: ignore
+        for chunk in llm.stream(build_messages(effective_input)):
+            piece = None
+            if AIMessageChunk is not None and isinstance(chunk, AIMessageChunk):
+                piece = getattr(chunk, "content", "") or ""
+            else:
+                # Some providers stream dict-like objects
+                piece = getattr(chunk, "content", None)
+                if not isinstance(piece, str):
+                    piece = None
+            if not piece:
+                continue
+            accumulated.append(piece)
+            now = time.time()
+            if (now - last_sent) >= 0.8:
+                preview = _strip_wrapping_code_fence("".join(accumulated))
+                body = f"Q: {user_text}\n\n{preview}"
+                client.chat_update(channel=channel_id, ts=message_ts, text=body, mrkdwn=True)
+                last_sent = now
+        # Final flush
+        content = _strip_wrapping_code_fence("".join(accumulated))
+        final_text = f"Q: {user_text}\n\n{content}"
+        client.chat_update(channel=channel_id, ts=message_ts, text=final_text, mrkdwn=True)
+    except Exception:
+        # Best-effort fallback
+        try:
+            reply = agent.run(effective_input)
+            content = getattr(reply, "content", None) or getattr(reply, "text", None) or str(reply)
+            content = _strip_wrapping_code_fence(content)
+            final_text = f"Q: {user_text}\n\n{content}"
+            client.chat_update(channel=channel_id, ts=message_ts, text=final_text, mrkdwn=True)
+        except Exception:
+            pass
 
 
 def _build_agent_for_slack() -> tuple[Any | None, str]:
@@ -52,17 +122,8 @@ def run_agent_async(team_id: str, channel_id: str, thread_ts: str, user_text: st
                 prelude = build_thread_prelude(client, channel_id, thread_ts or None)
             except Exception:
                 prelude = ""
-        try:
-            effective_input = (prelude + "\n\n" + user_text).strip() if prelude else user_text
-            reply = sess.agent.run(effective_input)
-            content = getattr(reply, "content", None) or getattr(reply, "text", None) or str(reply)
-        except Exception as exc:  # noqa: BLE001
-            content = f"Mentor failed to respond: {exc}"
-        try:
-            final_text = f"Q: {user_text}\n\n{content}"
-            client.chat_update(channel=channel_id, ts=message_ts, text=final_text)
-        except Exception:
-            pass
+        effective_input = (prelude + "\n\n" + user_text).strip() if prelude else user_text
+        _stream_llm_to_slack(sess.agent, effective_input, client, channel_id, message_ts, user_text)
 
     t = threading.Thread(target=_task, daemon=True)
     t.start()
