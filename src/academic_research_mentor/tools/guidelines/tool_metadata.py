@@ -45,7 +45,9 @@ class ToolMetadata:
                         "formatted_content": {"type": "string"},
                         "total_guidelines": {"type": "integer"},
                         "cached": {"type": "boolean"},
-                        "cache_note": {"type": "string"}
+                        "cache_note": {"type": "string"},
+                        "citations": {"type": "object", "description": "Structured citations with validation"},
+                        "citation_quality": {"type": "object", "description": "Citation quality metrics"}
                     }
                 }
             },
@@ -60,6 +62,14 @@ class ToolMetadata:
                 "ideal_inputs": ["research methodology questions", "academic career advice", "problem selection guidance"],
                 "anti_patterns": ["very broad questions", "non-research topics"],
                 "prerequisites": ["internet connection for search"]
+            },
+            "citations": {
+                "supports_citations": True,
+                "citation_format": "structured",
+                "citation_validation": True,
+                "citation_aggregation": True,
+                "citation_sources": ["curated", "search"],
+                "citation_quality_metrics": ["completeness", "validity", "relevance"]
             }
         }
         return meta

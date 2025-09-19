@@ -17,6 +17,7 @@ from .evidence_collector import EvidenceCollector
 from .query_builder import QueryBuilder
 from .formatter import GuidelinesFormatter
 from .tool_metadata import ToolMetadata
+from .citation_handler import GuidelinesCitationHandler
 
 
 class GuidelinesTool(BaseTool):
@@ -34,6 +35,7 @@ class GuidelinesTool(BaseTool):
         self._query_builder = None
         self._formatter = None
         self._metadata_handler = None
+        self._citation_handler = None
     
     def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize the guidelines tool with optional configuration."""
@@ -53,6 +55,7 @@ class GuidelinesTool(BaseTool):
         self._query_builder = QueryBuilder(self.config)
         self._formatter = GuidelinesFormatter(self.config)
         self._metadata_handler = ToolMetadata(self.config, self._cache, self._cost_tracker)
+        self._citation_handler = GuidelinesCitationHandler()
     
     def can_handle(self, task_context: Optional[Dict[str, Any]] = None) -> bool:
         """Check if this tool can handle research guidelines queries."""
@@ -174,6 +177,10 @@ class GuidelinesTool(BaseTool):
             return result_v2
 
         result_v2 = self._formatter.format_v2_response(topic, evidence, sources_covered, response_format, page_size, next_token)
+        
+        # Add citation validation and formatting
+        result_v2 = self._citation_handler.add_citation_metadata(result_v2, evidence)
+        
         if self._cache:
             self._cache.set(cache_key, result_v2)
         return result_v2
@@ -238,3 +245,4 @@ class GuidelinesTool(BaseTool):
     def clear_cache(self) -> Dict[str, Any]:
         """Clear all cached results."""
         return self._metadata_handler.clear_cache()
+    

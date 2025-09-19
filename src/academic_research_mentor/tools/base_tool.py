@@ -52,4 +52,10 @@ class BaseTool:
             "operational": {"cost_estimate": "unknown", "latency_profile": "unknown", "rate_limits": None},
             "quality": {"reliability_score": None, "confidence_estimation": False},
             "usage": {"ideal_inputs": [], "anti_patterns": [], "prerequisites": []},
+            "citations": {
+                "supports_citations": False,
+                "citation_format": "none",
+                "citation_validation": False,
+                "citation_aggregation": False
+            },
         }

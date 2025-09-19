@@ -11,6 +11,7 @@ from .tool_impls import (
     method_tool_fn,
     guidelines_tool_fn,
     experiment_planner_tool_fn,
+    unified_research_tool_fn,
 )
 from ..attachments import has_attachments, search as attachments_search
 
@@ -67,6 +68,15 @@ def get_langchain_tools() -> list[Any]:
             func=wrap(method_tool_fn),
             description=(
                 "Validate an experiment plan for risks/controls/ablations/reproducibility gaps."
+            ),
+        ),
+        Tool(
+            name="unified_research",
+            func=wrap(unified_research_tool_fn),
+            description=(
+                "Unified research tool that combines papers and guidelines with [P#] and [G#] citations. "
+                "Use this for comprehensive research queries that need both literature and methodology guidance. "
+                "Returns papers with [P1], [P2]... and guidelines with [G1], [G2]... for proper citation."
             ),
         ),
         # Tool(
