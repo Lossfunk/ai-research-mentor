@@ -4,6 +4,8 @@ import os
 from typing import Any
 
 from ..rich_formatter import print_formatted_response, print_info, print_error, get_formatter, print_user_input
+from ..rich_ui.io_helpers import print_stage_badge
+from ..core.stage_detector import detect_stage
 from .resume import handle_resume_command
 from ..router import route_and_maybe_run_tool
 from ..literature_review import build_research_context
@@ -37,6 +39,14 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
             try:
                 formatter.console.print("[bold cyan]You:[/bold cyan] ", end="")
                 user = input().strip()
+                # Detect and show stage badge before echoing user content
+                try:
+                    st = detect_stage(user)
+                    if hasattr(chat_logger, "set_pending_stage"):
+                        chat_logger.set_pending_stage(st)
+                    print_stage_badge(str(st.get("code", "")).upper() or "A", str(st.get("name", "")).strip() or "Pre idea", float(st.get("confidence", 0.0)))
+                except Exception:
+                    pass
                 print_user_input(user)
             except EOFError:
                 print_info("\n📝 EOF received. Saving chat session...")
@@ -203,6 +213,13 @@ def offline_repl(reason: str) -> None:
             try:
                 formatter.console.print("[bold cyan]You:[/bold cyan] ", end="")
                 user = input().strip()
+                try:
+                    st = detect_stage(user)
+                    if hasattr(chat_logger, "set_pending_stage"):
+                        chat_logger.set_pending_stage(st)
+                    print_stage_badge(str(st.get("code", "")).upper() or "A", str(st.get("name", "")).strip() or "Pre idea", float(st.get("confidence", 0.0)))
+                except Exception:
+                    pass
                 print_user_input(user)
             except EOFError:
                 print_info("\n📝 EOF received. Saving chat session...")

@@ -39,3 +39,9 @@ def print_agent_reasoning(content: str) -> None:
 
 def print_user_input(content: str) -> None:
     get_formatter().print_section(content, "You", border_style="cyan")
+
+
+def print_stage_badge(stage_code: str, stage_name: str, confidence: float) -> None:
+    title = f"Stage {stage_code} — {stage_name} (conf {confidence:.2f})"
+    # Use a minimal visible glyph to ensure the panel renders even without content
+    get_formatter().print_section("—", title, border_style="yellow")

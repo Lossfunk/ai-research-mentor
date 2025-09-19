@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from ...rich_formatter import print_formatted_response, print_error, print_agent_reasoning
+from ...core.stage_detector import detect_stage
 
 
 class LangChainReActAgentWrapper:
@@ -64,9 +65,13 @@ class LangChainReActAgentWrapper:
                 content = getattr(last_msg, "content", None) or getattr(last_msg, "text", None) or str(last_msg)
             tool_calls = self._extract_tool_calls(result)
 
-            # Log the conversation turn (after content determined)
+            # Log the conversation turn (after content determined) with stage detection
             if self._chat_logger:
-                self._chat_logger.add_turn(user_text, tool_calls, self._clean_for_display(content, user_text))
+                try:
+                    stage = detect_stage(self._current_user_input or user_text)
+                except Exception:
+                    stage = None
+                self._chat_logger.add_turn(user_text, tool_calls, self._clean_for_display(content, user_text), stage=stage)
 
             # Update bounded history (Human -> AI)
             if self._history_enabled and self._HumanMessage and self._AIMessage:
