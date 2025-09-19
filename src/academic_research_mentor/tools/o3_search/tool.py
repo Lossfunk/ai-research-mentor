@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 import time
 import signal
 from contextlib import contextmanager
 
 from ..base_tool import BaseTool
+from ...citations import Citation, CitationFormatter
 
 
 class _O3SearchTool(BaseTool):
@@ -101,15 +102,35 @@ class _O3SearchTool(BaseTool):
             paper["source"] = "arxiv"
             all_papers.append(paper)
         
-        return {
+        # Build citations block from arXiv results
+        citations: List[Citation] = []
+        for p in arxiv_papers:
+            url = str(p.get("url", "")).strip()
+            title = str(p.get("title", "")).strip() or "Untitled"
+            cid = f"arxiv_{abs(hash(url or title)) & 0xfffffff:x}"
+            citations.append(Citation(
+                id=cid,
+                title=title,
+                url=url or "https://arxiv.org",
+                source="arxiv",
+                authors=[str(a) for a in p.get("authors", []) if a],
+                year=p.get("year"),
+                venue=p.get("venue", "arXiv"),
+                snippet=(p.get("summary") or "")[:300] or None,
+            ))
+
+        out = {
             "results": all_papers,
             "query": query,
             "search_details": search_results,
             "total_papers": len(all_papers),
             "arxiv_count": len(arxiv_papers),
             "openreview_count": 0,
-            "note": "O3-powered literature search completed (OpenReview deprecated)"
+            "note": "O3-powered literature search completed (OpenReview deprecated)",
         }
+        if citations:
+            out["citations"] = CitationFormatter().to_output_block(citations)
+        return out
     
     def _execute_fallback_arxiv_search(self, query: str, inputs: Dict[str, Any], context: Optional[Dict[str, Any]], fallback_reason: str) -> Dict[str, Any]:
         """Execute fallback arxiv_search with degraded mode note."""
