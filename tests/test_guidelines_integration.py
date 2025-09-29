@@ -22,7 +22,3 @@ def test_dynamic_banner_nonzero_total(monkeypatch):
     gs = stats.get("guidelines_stats", {})
     assert gs.get("total_guidelines", 0) >= 1
 
-
-
-
-

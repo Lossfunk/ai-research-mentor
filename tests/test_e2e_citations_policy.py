@@ -12,8 +12,3 @@ def test_orchestrator_sets_citation_policy_for_mentorship(monkeypatch):
     out = orch.run_task("mentor_guidance", context={"goal": "research methodology and problem selection advice"})
     policy = out.get("policy", {})
     assert policy.get("must_include_citations") is True
-
-
-
-
-
