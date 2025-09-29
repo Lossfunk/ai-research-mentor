@@ -16,47 +16,55 @@ def generate_document_summary(docs: list[Any]) -> str:
     - Research questions being investigated
     """
     try:
-        # Sample first N pages for summary (avoid token overload)
-        sample_pages = docs[:min(20, len(docs))]
-        combined_text = "\n\n".join([d.page_content[:1500] for d in sample_pages if d.page_content])
+        # Sample pages strategically for better coverage
+        sample_pages = docs[:min(30, len(docs))]
+        combined_text = "\n\n".join([d.page_content[:2000] for d in sample_pages if d.page_content])
         
         if len(combined_text) < 100:
             return "Insufficient content for summary generation."
         
-        # Build prompt for LLM to extract key information
-        prompt = f"""Analyze this research document and extract:
+        # Build detailed prompt for comprehensive extraction
+        prompt = f"""Analyze this research document and extract detailed, structured information. Be SPECIFIC and preserve important details.
 
-1. EXPERIMENTS CONDUCTED: List specific experiments, evaluations, or validations already performed (with brief descriptions)
-2. KEY FINDINGS: Main results, conclusions, or discoveries
-3. RESEARCH METHODS: Methodologies, datasets, models, or techniques used
-4. RESEARCH QUESTIONS: Questions or hypotheses being investigated
-
-Be specific and concise. If a section is not present, write "Not found".
+CRITICAL: For each experiment, include:
+- Sub-experiments or variants (e.g., "Experiment 1a: score-based", "Experiment 1b: ranking-based")
+- Evaluation dimensions/metrics used
+- Explicit findings and verdicts (what was learned?)
+- Numerical results when mentioned
+- Important caveats or limitations
 
 Document excerpt:
-{combined_text[:8000]}
+{combined_text[:12000]}
 
-Provide structured output in this format:
+Provide output in this EXACT format:
 
 EXPERIMENTS CONDUCTED:
-- [experiment 1]
-- [experiment 2]
-...
+For each experiment, include:
+- Experiment N: [Title/objective]
+  * Setup: [What was tested, how many variants, evaluation metrics]
+  * Key finding: [Explicit verdict - what was learned?]
+  * Details: [Specific results, numbers, language-specific findings if any]
+  
+Example format:
+- Experiment 1: Multilingual judge configuration
+  * Setup: Tested score-based (Cohere, translated, English query with 2/4/8 examples) vs ranking-based (Judge score 4 and 8)
+  * Key finding: More examples improve results; translation does not help evaluation
+  * Details: Score-based showed X pattern, ranking-based showed Y pattern
 
 KEY FINDINGS:
-- [finding 1]
-- [finding 2]
-...
+List explicit verdicts, conclusions, and numerical results:
+- [Specific finding with numbers/languages if mentioned]
+- [Correlations found or NOT found]
+- [Caveats and limitations explicitly stated]
 
 RESEARCH METHODS:
-- [method 1]
-- [method 2]
-...
+- Datasets: [Names, sizes, languages]
+- Models: [Names, versions, configurations]
+- Evaluation metrics: [Specific metrics used]
+- Analysis techniques: [Statistical tests, visualizations]
 
 RESEARCH QUESTIONS:
-- [question 1]
-- [question 2]
-..."""
+- [Specific questions or hypotheses tested]"""
 
         # Try to get LLM for summarization (prefer OpenRouter for consistency)
         llm = None
