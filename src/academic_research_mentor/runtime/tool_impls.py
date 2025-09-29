@@ -144,30 +144,61 @@ def experiment_planner_tool_fn(q: str, *, internal_delimiters: tuple[str, str] |
 
     Input: user question or goal. Reads attached snippets via attachments.search.
     Output: numbered experiments with hypothesis, variables, metric, expected outcome, and [file:page] anchors.
+    Uses document summary to avoid suggesting already-conducted experiments.
     """
     begin, end = internal_delimiters or ("", "")
     try:
-        from ..attachments import has_attachments, search as att_search
+        from ..attachments import has_attachments, search as att_search, get_document_summary
         if not has_attachments():
             return f"{begin}No attachments loaded; cannot generate grounded experiments{end}" if begin or end else "No attachments loaded; cannot generate grounded experiments"
+        
+        # Get document summary for context about what's already been done
+        doc_summary = get_document_summary()
+        
         detailed = "format:detailed" in (q or "").lower()
         clean_q = q.replace("format:detailed", "").replace("response:detailed", "").strip()
-        snippets = att_search(clean_q, k=6)
+        snippets = att_search(clean_q, k=12)
         if not snippets:
             return f"{begin}No relevant snippets found in attachments{end}" if begin or end else "No relevant snippets found in attachments"
-        lines: list[str] = ["Grounded experiment plan (3 items):"]
-        for i, s in enumerate(snippets[:3], 1):
+        
+        # Build context with document summary and snippets
+        context_lines = []
+        if doc_summary and "LLM unavailable" not in doc_summary and "failed" not in doc_summary:
+            context_lines.append("=== DOCUMENT CONTEXT (What's already done) ===")
+            context_lines.append(doc_summary[:1500])
+            context_lines.append("\n=== RELEVANT DOCUMENT EXCERPTS ===")
+        
+        for i, s in enumerate(snippets[:6], 1):
             anchor = f"[{s.get('file','file.pdf')}:{s.get('page',1)}]"
             base_text = (s.get("text") if detailed else s.get("snippet")) or s.get("text") or ""
             snippet = base_text.strip().replace("\n", " ")
-            if not detailed and len(snippet) > 160:
-                snippet = snippet[:160] + "…"
-            lines.append(f"{i}. Hypothesis: A design that avoids response-diversity reliance improves robustness {anchor}")
-            lines.append(f"   Basis: {snippet}")
-            lines.append("   Variables: (a) detector signal type, (b) alignment strength, (c) sampling temperature")
-            lines.append("   Metric: AUROC, FNR at fixed FPR; report CI over seeds")
-            lines.append("   Expected outcome: non-diversity signals degrade less under stronger alignment")
-        reasoning = "\n".join(lines)
+            if not detailed and len(snippet) > 200:
+                snippet = snippet[:200] + "…"
+            context_lines.append(f"{i}. {anchor}: {snippet}")
+        
+        full_context = "\n".join(context_lines)
+        
+        # Prefix with clear instruction to avoid duplication
+        instruction = f"""Based on the user query: "{clean_q}"
+
+Review the document context carefully to understand what experiments have ALREADY been conducted.
+
+Propose 3 NEW experiments that:
+1. Are NOT duplicates of already-conducted experiments
+2. Build on or complement the existing work
+3. Address gaps or next steps
+
+{full_context}
+
+Format each experiment as:
+Experiment N: [Brief title]
+- Hypothesis: [What you're testing]
+- Variables: [What you'll manipulate and measure]
+- Method: [How you'll conduct it]
+- Expected outcome: [What results would support/refute hypothesis]
+- Grounding: [Cite relevant pages from document]"""
+
+        reasoning = f"Generating experiments with context awareness...\n\n{instruction[:1200]}"
         print_agent_reasoning(reasoning)
         return f"{begin}{reasoning}{end}" if begin or end else reasoning
     except Exception as e:
