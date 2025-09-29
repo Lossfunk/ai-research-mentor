@@ -58,25 +58,22 @@ RESEARCH QUESTIONS:
 - [question 2]
 ..."""
 
-        # Try to get LLM for summarization
+        # Try to get LLM for summarization (prefer OpenRouter for consistency)
         llm = None
         try:
             from langchain_openai import ChatOpenAI  # type: ignore
-            if os.environ.get("OPENAI_API_KEY"):
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            if os.environ.get("OPENROUTER_API_KEY"):
+                llm = ChatOpenAI(
+                    model="google/gemini-2.5-flash-preview-09-2025",
+                    api_key=os.environ.get("OPENROUTER_API_KEY"),
+                    base_url="https://openrouter.ai/api/v1",
+                    temperature=0
+                )
         except Exception:
             pass
         
         if llm is None:
-            try:
-                from langchain_anthropic import ChatAnthropic  # type: ignore
-                if os.environ.get("ANTHROPIC_API_KEY"):
-                    llm = ChatAnthropic(model="claude-3-5-haiku-latest", temperature=0)
-            except Exception:
-                pass
-        
-        if llm is None:
-            return "LLM unavailable for summary generation. Ensure OPENAI_API_KEY or ANTHROPIC_API_KEY is set."
+            return "LLM unavailable for summary generation. Ensure OPENROUTER_API_KEY is set."
         
         response = llm.invoke(prompt)
         summary_text = response.content if hasattr(response, 'content') else str(response)
