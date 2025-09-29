@@ -25,6 +25,14 @@ def _import_langchain_models() -> Tuple[Optional[Any], Optional[Any], Optional[A
     return ChatOpenAI, ChatGoogleGenerativeAI, ChatAnthropic, ChatMistralAI
 
 
+def _resolve_openrouter_max_tokens(model_id: str) -> Optional[int]:
+    """Return a safe max_tokens value for OpenRouter models with tighter limits."""
+    model_overrides = {
+        "moonshotai/kimi-k2": 160_000,
+    }
+    return model_overrides.get(model_id)
+
+
 def resolve_model() -> Tuple[Optional[Any], Optional[str]]:
     ChatOpenAI, ChatGoogleGenerativeAI, ChatAnthropic, ChatMistralAI = _import_langchain_models()
     try:
@@ -32,12 +40,16 @@ def resolve_model() -> Tuple[Optional[Any], Optional[str]]:
         if os.environ.get("OPENROUTER_API_KEY") and ChatOpenAI is not None:
             model_id = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
             base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-            llm = ChatOpenAI(
-                model=model_id,
-                api_key=os.environ.get("OPENROUTER_API_KEY"),
-                base_url=base_url,
-                temperature=0,
-            )
+            max_tokens = _resolve_openrouter_max_tokens(model_id)
+            llm_kwargs: dict[str, Any] = {
+                "model": model_id,
+                "api_key": os.environ.get("OPENROUTER_API_KEY"),
+                "base_url": base_url,
+                "temperature": 0,
+            }
+            if max_tokens is not None:
+                llm_kwargs["max_tokens"] = max_tokens
+            llm = ChatOpenAI(**llm_kwargs)
             return llm, None
 
         # OpenAI

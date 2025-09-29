@@ -39,3 +39,4 @@ def test_multi_source_coverage_and_caps(monkeypatch):
     counts = Counter(item.get("domain") for item in evidence)
     assert all(c <= 1 for c in counts.values())
 
+
