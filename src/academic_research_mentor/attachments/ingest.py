@@ -6,6 +6,7 @@ from typing import Any, Tuple
 import os
 
 from .summarizer import generate_document_summary
+from .pdf_loader import load_pdfs
 
 # ---- Module state (session-scoped) ----
 _chunk_texts: list[str] = []
@@ -68,38 +69,8 @@ def _split_documents(docs: list[Any]) -> list[Any]:
 
 
 def _load_pdfs(paths: list[str]) -> tuple[list[Any], dict[str, int]]:
-    from langchain_community.document_loaders import PyPDFLoader  # type: ignore
-
-    documents: list[Any] = []
-    stats = {"skipped_large": 0, "truncated": 0}
-    for p in paths:
-        try:
-            abs_path = os.path.abspath(os.path.expanduser(p))
-            if not os.path.exists(abs_path):
-                continue
-            # Simple guard: skip overly large files (>50MB)
-            try:
-                if os.path.getsize(abs_path) > _LIMITS["max_mb"] * 1024 * 1024:
-                    stats["skipped_large"] += 1
-                    continue
-            except Exception:
-                pass
-
-            loader = PyPDFLoader(abs_path)
-            pages = loader.load()
-            if len(pages) > _LIMITS["max_pages"]:
-                pages = pages[: _LIMITS["max_pages"]]
-                stats["truncated"] += 1
-            for d in pages:
-                meta = d.metadata or {}
-                meta["source"] = abs_path
-                meta["file_name"] = os.path.basename(abs_path)
-                d.metadata = meta
-                documents.append(d)
-        except Exception:
-            # Skip unreadable file; keep MVP resilient
-            continue
-    return documents, stats
+    """Load PDFs using PyMuPDF for better extraction. Delegates to pdf_loader module."""
+    return load_pdfs(paths, _LIMITS)
 
 
 def attach_pdfs(paths: list[str]) -> dict[str, Any]:
