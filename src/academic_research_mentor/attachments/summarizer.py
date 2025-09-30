@@ -22,75 +22,26 @@ def _get_llm() -> Any | None:
     return None
 
 
-def _extract_experiment_structure(text: str, llm: Any) -> str:
-    """Pass 1: Identify experiment boundaries and structure."""
-    prompt = f"""Analyze this research document and identify ALL experiments/studies conducted.
-
-TASK: List each experiment with:
-1. Experiment number and title
-2. Where it appears in the document (section/paragraph markers)
-3. Brief objective (1 sentence)
-
-Be careful NOT to conflate multiple experiments into one. If you see sub-variants (e.g., score-based vs ranking-based), list them as separate items.
-
-Document excerpt:
-{text[:15000]}
-
-Output format:
-- Experiment 1: [Title] - [Location] - [Objective]
-- Experiment 2: [Title] - [Location] - [Objective]
-..."""
-    
-    response = llm.invoke(prompt)
-    return response.content if hasattr(response, 'content') else str(response)
-
-
-def _extract_experiment_details(text: str, exp_summary: str, llm: Any) -> str:
-    """Pass 2: Extract detailed info for each identified experiment."""
-    prompt = f"""Based on the identified experiments below, extract DETAILED information for each one.
-
-IDENTIFIED EXPERIMENTS:
-{exp_summary}
-
-For EACH experiment, find and extract:
-- Experiment N: [Title from above]
-  * Setup: What was tested? How many variants/conditions? What evaluation metrics?
-  * Key finding: What specific verdict or conclusion was reached? Use exact phrasing from document.
-  * Details: Numerical results, language-specific findings, comparisons between conditions.
-  * Caveats: Any limitations or warnings mentioned.
-
-CRITICAL: Do NOT mix details from different experiments. Quote specific findings verbatim where possible.
-
-Full document excerpt:
-{text[:15000]}
-
-Output format:
-- Experiment 1: [Title]
-  * Setup: [Detailed setup]
-  * Key finding: [Explicit verdict from document]
-  * Details: [Specific results with numbers]
-  * Caveats: [Limitations if mentioned]
-
-- Experiment 2: ...
-"""
-    
-    response = llm.invoke(prompt)
-    return response.content if hasattr(response, 'content') else str(response)
-
-
 def generate_document_summary(docs: list[Any]) -> str:
-    """Generate LLM-based summary using multi-pass extraction.
+    """Generate grounded summary by extracting document content as-written.
     
-    Pass 1: Identify experiment boundaries and structure
-    Pass 2: Extract detailed info for each experiment
-    Pass 3: Extract methods, findings, and questions
-    
-    This prevents experiment conflation and misattribution.
+    Uses single-pass extraction with explicit grounding requirements:
+    - Extract experiments as they appear in document (don't reorganize)
+    - Include page numbers for all claims
+    - Quote key findings verbatim
+    - Preserve document structure and experiment labels
     """
     try:
-        # Sample pages strategically for better coverage
+        # Use maximum available content for grounding
         sample_pages = docs[:min(30, len(docs))]
-        combined_text = "\n\n".join([d.page_content[:2000] for d in sample_pages if d.page_content])
+        # Include page metadata for grounding
+        page_texts = []
+        for page in sample_pages:
+            page_num = page.metadata.get("page", "?")
+            content = page.page_content[:2500] if page.page_content else ""
+            page_texts.append(f"[Page {page_num}]\n{content}")
+        
+        combined_text = "\n\n".join(page_texts)
         
         if len(combined_text) < 100:
             return "Insufficient content for summary generation."
@@ -99,45 +50,47 @@ def generate_document_summary(docs: list[Any]) -> str:
         if llm is None:
             return "LLM unavailable for summary generation. Ensure OPENROUTER_API_KEY is set."
         
-        # Pass 1: Identify experiment structure
-        exp_structure = _extract_experiment_structure(combined_text, llm)
-        
-        # Pass 2: Extract detailed info for each experiment
-        exp_details = _extract_experiment_details(combined_text, exp_structure, llm)
-        
-        # Pass 3: Extract methods, key findings, research questions
-        methods_prompt = f"""Based on this research document, extract:
+        # Grounded single-pass extraction
+        prompt = f"""Extract information from this research document EXACTLY as written. Do NOT reorganize, infer, or combine information.
 
-1. RESEARCH METHODS:
-   - Datasets: Names, sizes, languages
-   - Models: Names, versions, configurations
-   - Evaluation metrics: Specific metrics used
-   - Analysis techniques: Statistical tests, visualizations
+CRITICAL INSTRUCTIONS:
+1. If the document labels experiments (e.g., "Experiment 1:", "Study 2:"), use those EXACT labels
+2. For each experiment, include the PAGE NUMBER where it's described
+3. Quote key findings VERBATIM from the document - use quotation marks
+4. Preserve the document's organization - extract in the order things appear
+5. Do NOT combine separate experiments into one
+6. Do NOT split one experiment into multiple entries
+7. If evaluation dimensions are listed (e.g., "Detailedness, Language Quality"), list them ALL
 
-2. KEY FINDINGS (cross-experiment):
-   - Overall conclusions
-   - Correlations found or NOT found
-   - Important caveats and limitations
+Document with page markers:
+{combined_text[:20000]}
 
-3. RESEARCH QUESTIONS:
-   - Main questions or hypotheses tested
+Output format:
 
-Document excerpt:
-{combined_text[:15000]}
+EXPERIMENTS CONDUCTED:
+- Experiment N: [Exact title/objective from document] (Page X)
+  * Setup: [What was tested - languages, configurations, metrics AS LISTED in doc]
+  * Key finding: "[Direct quote of verdict/conclusion from document]"
+  * Details: [Specific results with numbers, language-specific findings]
+  * Caveats: [Any limitations mentioned]
 
-Previous experiment extraction:
-{exp_details[:2000]}"""
+RESEARCH METHODS:
+- Datasets: [Names, sizes, languages AS STATED]
+- Models: [Names, versions AS STATED]
+- Evaluation metrics: [ALL metrics listed in document]
 
-        methods_response = llm.invoke(methods_prompt)
-        methods_text = methods_response.content if hasattr(methods_response, 'content') else str(methods_response)
-        
-        # Combine into structured output
-        final_summary = f"""EXPERIMENTS CONDUCTED:
-{exp_details}
+KEY FINDINGS:
+- [Direct quotes or paraphrases with page numbers]
+- [Correlations found/not found with page numbers]
 
-{methods_text}"""
-        
-        return final_summary.strip()
+RESEARCH QUESTIONS:
+- [Questions as stated in document]
+
+Remember: EXTRACT, don't reorganize. Quote verbatim when possible. Include page numbers."""
+
+        response = llm.invoke(prompt)
+        summary_text = response.content if hasattr(response, 'content') else str(response)
+        return summary_text.strip()
         
     except Exception as e:
         return f"Summary generation failed: {str(e)}"
