@@ -5,12 +5,17 @@ from __future__ import annotations
 from typing import Any, Tuple
 import os
 
+from .summarizer import generate_document_summary
+from .pdf_loader import load_pdfs
+
 # ---- Module state (session-scoped) ----
 _chunk_texts: list[str] = []
 _chunk_meta: list[dict] = []
 _retriever: Any | None = None
 _summary: dict[str, Any] = {"files": 0, "pages": 0, "chunks": 0}
+_doc_summary: str = ""
 _LIMITS = {"max_mb": 50, "max_pages": 500}
+_DEFAULT_K = 12
 
 
 def _try_build_vector_retriever(chunks: list[Any]) -> tuple[str, Any | None]:
@@ -46,7 +51,7 @@ def _try_build_vector_retriever(chunks: list[Any]) -> tuple[str, Any | None]:
         from langchain_community.vectorstores import FAISS  # type: ignore
 
         index = FAISS.from_documents(chunks, embeddings)
-        retriever = index.as_retriever(search_type="mmr", search_kwargs={"k": 6, "fetch_k": 24})
+        retriever = index.as_retriever(search_type="mmr", search_kwargs={"k": _DEFAULT_K, "fetch_k": 48})
         return backend, retriever
     except Exception:
         return "keyword", None
@@ -64,38 +69,8 @@ def _split_documents(docs: list[Any]) -> list[Any]:
 
 
 def _load_pdfs(paths: list[str]) -> tuple[list[Any], dict[str, int]]:
-    from langchain_community.document_loaders import PyPDFLoader  # type: ignore
-
-    documents: list[Any] = []
-    stats = {"skipped_large": 0, "truncated": 0}
-    for p in paths:
-        try:
-            abs_path = os.path.abspath(os.path.expanduser(p))
-            if not os.path.exists(abs_path):
-                continue
-            # Simple guard: skip overly large files (>50MB)
-            try:
-                if os.path.getsize(abs_path) > _LIMITS["max_mb"] * 1024 * 1024:
-                    stats["skipped_large"] += 1
-                    continue
-            except Exception:
-                pass
-
-            loader = PyPDFLoader(abs_path)
-            pages = loader.load()
-            if len(pages) > _LIMITS["max_pages"]:
-                pages = pages[: _LIMITS["max_pages"]]
-                stats["truncated"] += 1
-            for d in pages:
-                meta = d.metadata or {}
-                meta["source"] = abs_path
-                meta["file_name"] = os.path.basename(abs_path)
-                d.metadata = meta
-                documents.append(d)
-        except Exception:
-            # Skip unreadable file; keep MVP resilient
-            continue
-    return documents, stats
+    """Load PDFs using PyMuPDF for better extraction. Delegates to pdf_loader module."""
+    return load_pdfs(paths, _LIMITS)
 
 
 def attach_pdfs(paths: list[str]) -> dict[str, Any]:
@@ -103,13 +78,14 @@ def attach_pdfs(paths: list[str]) -> dict[str, Any]:
 
     Returns summary with counts. Safe to call multiple times; rebuilds index.
     """
-    global _retriever, _chunk_texts, _chunk_meta, _summary
+    global _retriever, _chunk_texts, _chunk_meta, _summary, _doc_summary
 
     docs, stats = _load_pdfs(paths)
     if not docs:
         _retriever = None
         _chunk_texts = []
         _chunk_meta = []
+        _doc_summary = ""
         _summary = {"files": 0, "pages": 0, "chunks": 0, "backend": "none", "skipped_large": 0, "truncated": 0}
         return _summary
 
@@ -124,6 +100,9 @@ def attach_pdfs(paths: list[str]) -> dict[str, Any]:
 
     backend_name, retr = _try_build_vector_retriever(chunks)
     _retriever = retr
+
+    # Generate document summary for context awareness
+    _doc_summary = generate_document_summary(docs)
 
     _summary = {
         "files": len({(d.metadata or {}).get("source") for d in docs}),
@@ -140,7 +119,7 @@ def has_attachments() -> bool:
     return bool(_chunk_texts)
 
 
-def _keyword_rank(query: str, k: int = 6) -> list[Tuple[int, float]]:
+def _keyword_rank(query: str, k: int = 12) -> list[Tuple[int, float]]:
     """Very simple keyword ranker when vectors are unavailable."""
     if not query:
         return []
@@ -181,7 +160,7 @@ def _make_snippet(text: str, query: str, max_len: int = 240) -> str:
     return snippet
 
 
-def search(query: str, k: int = 6) -> list[dict[str, Any]]:
+def search(query: str, k: int = 12) -> list[dict[str, Any]]:
     """Retrieve top-k chunks with metadata and snippet text."""
     if not has_attachments():
         return []
@@ -230,3 +209,12 @@ def search(query: str, k: int = 6) -> list[dict[str, Any]]:
 
 def get_summary() -> dict[str, Any]:
     return dict(_summary)
+
+
+def get_document_summary() -> str:
+    """Get the LLM-generated summary of attached documents.
+    
+    Returns structured summary with experiments, findings, methods, and questions.
+    Empty string if no attachments or summary generation failed.
+    """
+    return _doc_summary
