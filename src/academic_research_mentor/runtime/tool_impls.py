@@ -140,20 +140,38 @@ def o3_search_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = N
 
 
 def experiment_planner_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
-    """Propose 3 concrete, falsifiable experiments grounded in attached snippets.
+    """List existing experiments from attached documents OR propose new ones.
 
     Input: user question or goal. Reads attached snippets via attachments.search.
-    Output: numbered experiments with hypothesis, variables, metric, expected outcome, and [file:page] anchors.
-    Uses document summary to avoid suggesting already-conducted experiments.
+    
+    If user asks to "list", "show", "what experiments", return existing experiments from document.
+    If user asks to "propose", "suggest", "design new", generate new experiment proposals.
+    
+    Uses document summary to provide accurate information about experiments.
     """
     begin, end = internal_delimiters or ("", "")
     try:
         from ..attachments import has_attachments, search as att_search, get_document_summary
         if not has_attachments():
-            return f"{begin}No attachments loaded; cannot generate grounded experiments{end}" if begin or end else "No attachments loaded; cannot generate grounded experiments"
+            return f"{begin}No attachments loaded; cannot access experiments{end}" if begin or end else "No attachments loaded; cannot access experiments"
         
         # Get document summary for context about what's already been done
         doc_summary = get_document_summary()
+        
+        # Detect if user wants to LIST existing experiments or PROPOSE new ones
+        query_lower = q.lower()
+        wants_list = any(keyword in query_lower for keyword in [
+            "list", "show", "what", "which", "all the", "describe", "summary", "summarize", "done", "conducted"
+        ])
+        wants_new = any(keyword in query_lower for keyword in [
+            "propose", "suggest", "new", "next", "future", "design", "plan", "recommend"
+        ])
+        
+        # If user wants list and has valid summary, return it directly
+        if wants_list and not wants_new and doc_summary and "LLM unavailable" not in doc_summary:
+            reasoning = f"Document contains the following experiments:\n\n{doc_summary}"
+            print_agent_reasoning(reasoning)
+            return f"{begin}{reasoning}{end}" if begin or end else reasoning
         
         detailed = "format:detailed" in (q or "").lower()
         clean_q = q.replace("format:detailed", "").replace("response:detailed", "").strip()
