@@ -38,7 +38,7 @@ uv run python main.py
 ```
 
 ## Showcase Video
-![Demo Video](Ghostty.mp4)
+[![Watch Demo](https://img.youtube.com/vi/xupym38Ms4g/maxresdefault.jpg)](https://youtu.be/xupym38Ms4g)
 
 ## Use Cases
 - **Brainstorming and discussing a research proposal (no PDF):** Kick off an idea sprint, explore literature leads, and co-develop an initial plan directly in the CLI.
