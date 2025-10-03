@@ -38,7 +38,7 @@ uv run python main.py
 ```
 
 ## Showcase Video
-A full end-to-end walkthrough video will be added here once recorded to demonstrate both brainstorming and document-review workflows.
+![Demo Video](Ghostty.mp4)
 
 ## Use Cases
 - **Brainstorming and discussing a research proposal (no PDF):** Kick off an idea sprint, explore literature leads, and co-develop an initial plan directly in the CLI.
