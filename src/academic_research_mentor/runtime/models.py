@@ -47,6 +47,11 @@ def resolve_model() -> Tuple[Optional[Any], Optional[str]]:
                 "base_url": base_url,
                 "temperature": 0,
             }
+            use_responses_env = os.environ.get("OPENROUTER_USE_RESPONSES_API")
+            if use_responses_env is not None:
+                llm_kwargs["use_responses_api"] = use_responses_env.lower() in {"1", "true", "yes"}
+            else:
+                llm_kwargs["use_responses_api"] = False
             if max_tokens is not None:
                 llm_kwargs["max_tokens"] = max_tokens
             llm = ChatOpenAI(**llm_kwargs)
