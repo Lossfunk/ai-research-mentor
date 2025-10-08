@@ -131,10 +131,8 @@ def _get_config_env_path() -> Path:
     override = os.environ.get("ARM_CONFIG_HOME")
     if override:
         base = Path(override).expanduser()
-    elif sys.platform.startswith("win"):
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        base = Path.cwd() / ".config"
     return base / "academic-research-mentor" / ".env"
 
 

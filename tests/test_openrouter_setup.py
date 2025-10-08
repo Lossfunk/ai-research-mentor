@@ -56,3 +56,26 @@ def test_auto_setup_skipped_when_other_provider(monkeypatch: pytest.MonkeyPatch)
     assert not inputs_called
 
     monkeypatch.delenv("OPENAI_API_KEY")
+
+
+def test_persist_defaults_to_local_config(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    inputs = iter(["", "y"])
+
+    def fake_input(_prompt: str) -> str:
+        return next(inputs)
+
+    def fake_getpass(_prompt: str) -> str:
+        return "sk-openrouter-local"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ARM_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+
+    applied = maybe_run_openrouter_setup(force=True, input_fn=fake_input, getpass_fn=fake_getpass)
+
+    assert applied is True
+    config_path = tmp_path / ".config" / "academic-research-mentor" / ".env"
+    assert config_path.exists()
+    content = config_path.read_text()
+    assert "OPENROUTER_API_KEY=sk-openrouter-local" in content
