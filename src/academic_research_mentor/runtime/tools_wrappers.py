@@ -5,8 +5,8 @@ from typing import Any
 from ..rich_formatter import print_agent_reasoning
 from .tool_impls import (
     arxiv_tool_fn,
-    o3_search_tool_fn,
-    # searchthearxiv_tool_fn,  # Disabled - tool not working properly
+    web_search_tool_fn,
+    searchthearxiv_tool_fn,
     math_tool_fn,
     method_tool_fn,
     guidelines_tool_fn,
@@ -41,7 +41,7 @@ def get_langchain_tools() -> list[Any]:
             ),
         ),
         Tool(
-            name="mentorship_guidelines",
+            name="research_guidelines",
             func=wrap(guidelines_tool_fn),
             description=(
                 "Mentorship guidelines from curated sources. For novelty/methodology/experiments questions, use this "
@@ -77,6 +77,22 @@ def get_langchain_tools() -> list[Any]:
                 "Unified research tool that combines papers and guidelines with [P#] and [G#] citations. "
                 "Use this for comprehensive research queries that need both literature and methodology guidance. "
                 "Returns papers with [P1], [P2]... and guidelines with [G1], [G2]... for proper citation."
+            ),
+        ),
+        Tool(
+            name="web_search",
+            func=wrap(web_search_tool_fn),
+            description=(
+                "Tavily-powered web search for recent information, news, and non-arXiv sources. "
+                "Use when the user asks for up-to-date context, real-world events, or resources outside academic archives. "
+                "Returns top web results with titles, links, and brief summaries."
+            ),
+        ),
+        Tool(
+            name="searchthearxiv_search",
+            func=wrap(searchthearxiv_tool_fn),
+            description=(
+                "Semantic arXiv search placeholder. Provides the historical searchthearxiv entry point; currently returns no results but keeps agent workflows consistent."
             ),
         ),
         # Tool(

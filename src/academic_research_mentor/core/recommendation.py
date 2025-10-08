@@ -13,7 +13,7 @@ Kept under 200 LOC; simple heuristic combining:
 from typing import Any, Dict, List, Tuple
 import re
 
-PRIMARY_NAMES = {"o3_search"}
+PRIMARY_NAMES = {"web_search"}
 SEMANTIC_SEARCH_NAMES = {"searchthearxiv_search"}
 LEGACY_PREFIX = "legacy_"
 GUIDELINES_NAMES = {"research_guidelines"}
@@ -93,7 +93,7 @@ def score_tools(goal: str, tools: Dict[str, Any]) -> List[Tuple[str, float, str]
                     score += 0.9  # Higher priority for explicit arxiv searches
                     rationale_parts.append("explicit_arxiv_priority")
                 else:
-                    score += 0.5  # Standard priority for O3 search
+                    score += 0.5  # Standard priority for primary web search
                 rationale_parts.append("primary")
             elif name in SEMANTIC_SEARCH_NAMES:
                 # Check if this is a natural language/semantic query

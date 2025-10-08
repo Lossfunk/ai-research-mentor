@@ -58,17 +58,17 @@ class Orchestrator:
                         # type: ignore[attr-defined]
                         can = getattr(tool, "can_handle", lambda *_: True)(context or {})
                         if can:
-                            # Prefer O3 as primary; legacy as fallback
+                            # Prefer web search as primary; legacy as fallback
                             score = 1.0
-                            if name == "o3_search":
+                            if name == "web_search":
                                 score = 10.0
-                                # If O3 client unavailable, reduce score but keep as candidate
+                                # If web search unavailable, reduce score but keep as candidate
                                 try:
-                                    from ..literature_review.o3_client import get_o3_client  # type: ignore
-                                    if not get_o3_client().is_available():
+                                    from ..tools.web_search.tool import WebSearchTool  # type: ignore
+                                    if isinstance(tool, WebSearchTool) and not getattr(tool, "is_available", lambda: True)():
                                         score = 2.0
                                 except Exception:
-                                    # If import fails, keep default O3 priority
+                                    # If import fails, keep default priority
                                     pass
                             elif name.startswith("legacy_"):
                                 score = 0.5

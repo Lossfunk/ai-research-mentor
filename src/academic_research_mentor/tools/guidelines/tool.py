@@ -8,7 +8,6 @@ academic mentoring advice on methodology, problem selection, and research taste.
 from __future__ import annotations
 
 import os
-import re
 from typing import Any, Dict, Optional
 
 from ..base_tool import BaseTool
@@ -25,6 +24,7 @@ from .search_providers import (
     TavilySearchProvider,
 )
 from .tool_metadata import ToolMetadata
+from .utils import enforce_domain_cap, matches_guidelines_query
 
 
 class GuidelinesTool(BaseTool):
@@ -73,7 +73,6 @@ class GuidelinesTool(BaseTool):
         self._metadata_handler = ToolMetadata(self.config, self._cache, self._cost_tracker)
         self._citation_handler = GuidelinesCitationHandler()
 
-    
     def can_handle(self, task_context: Optional[Dict[str, Any]] = None) -> bool:
         """Check if this tool can handle research guidelines queries."""
         if not task_context:
@@ -89,18 +88,7 @@ class GuidelinesTool(BaseTool):
             return False
             
         # Detect research guidance patterns
-        guidelines_patterns = [
-            r'\b(research\s+methodology|problem\s+selection|research\s+taste)\b',
-            r'\b(academic\s+advice|phd\s+guidance|research\s+strategy)\b',
-            r'\b(how\s+to\s+choose|develop\s+taste|research\s+skills)\b',
-            r'\b(research\s+best\s+practices|methodology\s+advice)\b',
-            r'\b(academic\s+career|research\s+planning|project\s+selection)\b',
-            r'\b(hamming|effective\s+research|research\s+principles)\b',
-            r'\bphd\b|\bcareer\s+guidance\b|\bmentoring\b|\bacademic\s+guidance\b',
-            r'\bresearch\s+advice\b|\bgraduate\s+school\b|\bacademic\s+career\b'
-        ]
-        
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in guidelines_patterns)
+        return matches_guidelines_query(text)
     
     def execute(self, inputs: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Search research guidelines and return evidence or v1 formatted content.
@@ -141,7 +129,7 @@ class GuidelinesTool(BaseTool):
             # Add cache note and return cached result
             cached_result["cached"] = True
             cached_result["cache_note"] = "Result served from cache"
-            return cached_result
+            return enforce_domain_cap(cached_result, max_per_source)
         
         # Record cache miss
         if self._cost_tracker:
@@ -162,14 +150,17 @@ class GuidelinesTool(BaseTool):
                     self._cache,
                     self._search_tool,
                 )
-                return executor.run(
+                return enforce_domain_cap(
+                    executor.run(
                     topic,
                     mode,
                     max_per_source,
                     response_format,
                     page_size,
                     next_token,
-                    cache_key,
+                        cache_key,
+                    ),
+                    max_per_source,
                 )
             if not (self._query_builder and self._formatter):
                 raise RuntimeError("Guidelines V1 dependencies not initialized")
@@ -181,7 +172,7 @@ class GuidelinesTool(BaseTool):
                 self._cache,
                 self._cost_tracker,
             )
-            return executor.run(topic, cache_key)
+            return enforce_domain_cap(executor.run(topic, cache_key), max_per_source)
         except Exception as e:
             error_result = {
                 "retrieved_guidelines": [],

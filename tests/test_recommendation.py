@@ -28,11 +28,11 @@ def test_orchestrator_uses_flagged_recommender(monkeypatch) -> None:  # type: ig
     assert cands[0][0] == "searchthearxiv_search", f"expected searchthearxiv_search first, got {cands}"
 
 
-def test_recommendation_prefers_o3_for_keyword_search() -> None:
+def test_recommendation_prefers_web_search_for_keyword_search() -> None:
     auto_discover()
     tools = list_tools()
-    # For keyword-only queries with literature terms, o3_search should be preferred
+    # For keyword-only queries with literature terms, web_search should be preferred
     scored = score_tools("arxiv search transformer", tools)
     assert scored, "Expected at least one tool"
     names = [n for n, _s, _r in scored]
-    assert names[0] == "o3_search"
+    assert names[0] == "web_search"
