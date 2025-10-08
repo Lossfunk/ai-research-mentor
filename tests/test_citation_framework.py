@@ -5,7 +5,7 @@ Tests the unified citation system across all tools.
 """
 
 import pytest
-from src.academic_research_mentor.citations import Citation, CitationFormatter, CitationValidator, CitationAggregator
+from academic_research_mentor.citations import Citation, CitationFormatter, CitationValidator, CitationAggregator
 
 
 class TestCitation:
@@ -206,7 +206,7 @@ class TestCitationIntegration:
     
     def test_guidelines_tool_citations(self):
         """Test that guidelines tool produces valid citations."""
-        from src.academic_research_mentor.tools.guidelines.tool import GuidelinesTool
+        from academic_research_mentor.tools.guidelines.tool import GuidelinesTool
         
         tool = GuidelinesTool()
         tool.initialize()
@@ -222,7 +222,7 @@ class TestCitationIntegration:
     
     def test_arxiv_tool_citations(self):
         """Test that arXiv tools produce valid citations."""
-        from src.academic_research_mentor.tools.legacy.arxiv.tool import ArxivSearchTool
+        from academic_research_mentor.tools.legacy.arxiv.tool import ArxivSearchTool
         
         tool = ArxivSearchTool()
         tool.initialize()
@@ -236,11 +236,11 @@ class TestCitationIntegration:
             assert "count" in result["citations"]
             assert isinstance(result["citations"]["citations"], list)
     
-    def test_o3_search_tool_citations(self):
-        """Test that O3 search tool produces valid citations."""
-        from src.academic_research_mentor.tools.o3_search.tool import _O3SearchTool
-        
-        tool = _O3SearchTool()
+    def test_web_search_tool_citations(self):
+        """Test that web search tool produces valid citations."""
+        from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+        tool = WebSearchTool()
         tool.initialize()
         
         # Test with a simple query

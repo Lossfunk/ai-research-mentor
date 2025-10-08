@@ -29,6 +29,7 @@ class ChatLogger:
         self.current_session = []
         self._exit_handler_registered = False
         self._pending_stage: Optional[Dict[str, Any]] = None
+        self._real_turns: int = 0
 
     def _log_path(self) -> Path:
         """Return the path for the primary chat log file."""
@@ -60,6 +61,7 @@ class ChatLogger:
         # Clear pending stage after consumption
         self._pending_stage = None
         self.current_session.append(turn_data)
+        self._real_turns += 1
         if self._session_logger:
             self._session_logger.finalize_turn(turn_number, {
                 "user_prompt": user_prompt,
@@ -107,6 +109,9 @@ class ChatLogger:
 
     def next_turn_number(self) -> int:
         return len(self.current_session) + 1
+
+    def has_user_turns(self) -> bool:
+        return self._real_turns > 0
         
     def get_session_summary(self) -> Dict[str, Any]:
         """Get a summary of the current session."""

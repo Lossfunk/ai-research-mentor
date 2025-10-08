@@ -55,6 +55,23 @@ class GuidelinesV2Executor:
                 if domain and domain not in sources_covered:
                     sources_covered.append(domain)
 
+        if max_per_source > 0:
+            capped: List[Dict[str, Any]] = []
+            counts: Dict[str, int] = {}
+            canonical: Dict[str, str] = {}
+            for entry in evidence:
+                domain_raw = str(entry.get("domain") or "").strip()
+                key = domain_raw.lower()
+                if key:
+                    canonical.setdefault(key, domain_raw)
+                    if counts.get(key, 0) >= max_per_source:
+                        continue
+                    counts[key] = counts.get(key, 0) + 1
+                capped.append(entry)
+            evidence = capped
+            if canonical:
+                sources_covered = sorted({canonical[k] for k, count in counts.items() if count > 0})
+
         if not evidence:
             result: Dict[str, Any] = {
                 "topic": topic,
@@ -72,6 +89,37 @@ class GuidelinesV2Executor:
         result = self._formatter.format_v2_response(
             topic, evidence, sources_covered, response_format, page_size, next_token
         )
+
+        if max_per_source > 0:
+            capped_evidence: List[Dict[str, Any]] = []
+            final_counts: Dict[str, int] = {}
+            for item in result.get("evidence", []):
+                domain_raw = str(item.get("domain") or "").strip()
+                key = domain_raw.lower()
+                if key and final_counts.get(key, 0) >= max_per_source:
+                    continue
+                if key:
+                    final_counts[key] = final_counts.get(key, 0) + 1
+                capped_evidence.append(item)
+
+            if capped_evidence != result.get("evidence", []):
+                result["evidence"] = capped_evidence
+                result["total_evidence"] = len(capped_evidence)
+                pagination = result.get("pagination", {})
+                pagination["has_more"] = False
+                pagination["next_token"] = None
+                result["pagination"] = pagination
+                normalized_sources = []
+                seen_sources = set()
+                for entry in capped_evidence:
+                    domain_val = str(entry.get("domain") or "").strip()
+                    key = domain_val.lower()
+                    if key and key not in seen_sources:
+                        seen_sources.add(key)
+                        normalized_sources.append(domain_val)
+                if normalized_sources:
+                    result["sources_covered"] = sorted(normalized_sources, key=str.lower)
+
         result = self._citation_handler.add_citation_metadata(result, evidence)
 
         if self._cache:

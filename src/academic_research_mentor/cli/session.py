@@ -40,13 +40,21 @@ def load_env_file() -> None:
 
 
 def cleanup_and_save_session(chat_logger: ChatLogger, exit_command: str = "exit", session_logger: SessionLogManager | None = None) -> None:
-    chat_logger.add_exit_turn(exit_command)
-    log_file = chat_logger.save_session()
-    if log_file:
-        summary = chat_logger.get_session_summary()
-        print_info(f"Chat session saved to: {log_file}")
-        print_info(f"Session summary: {summary['total_turns']} turns, {summary['session_start'][:10]}")
+    saved = False
+    if chat_logger.has_user_turns():
+        chat_logger.add_exit_turn(exit_command)
+        log_file = chat_logger.save_session()
+        if log_file:
+            summary = chat_logger.get_session_summary()
+            print_info(f"Chat session saved to: {log_file}")
+            print_info(f"Session summary: {summary['total_turns']} turns, {summary['session_start'][:10]}")
+            saved = True
+    else:
+        print_info("No conversation turns recorded; skipping chat log save.")
+
     if session_logger:
+        if not saved:
+            session_logger.log_event("session_discarded", {"reason": "no_turns_recorded", "exit_command": exit_command})
         session_logger.finalize(exit_command)
         set_active_session_logger(None)
 

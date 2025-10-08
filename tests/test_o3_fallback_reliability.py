@@ -1,156 +1,159 @@
 from __future__ import annotations
 
-import time
-from unittest.mock import patch, MagicMock
-from typing import Any, Dict, Optional
+import json
+from typing import Any, Dict
 
 
-def test_o3_timeout_falls_back_to_arxiv(monkeypatch):
-    """Test that O3 timeout triggers fallback to arxiv_search with degraded mode note."""
-    # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
-    
-    from academic_research_mentor.tools.o3_search.tool import _O3SearchTool
-    
-    # Create O3 tool 
-    tool = _O3SearchTool()
-    
-    # Mock the timeout context to raise TimeoutError
-    mock_timeout_context = MagicMock()
-    mock_timeout_context.__enter__ = MagicMock()
-    mock_timeout_context.__exit__ = MagicMock(side_effect=lambda exc_type, exc_val, exc_tb: None)
-    
-    with patch.object(tool, '_timeout_context', return_value=mock_timeout_context):
-        with patch.object(tool, '_execute_o3_search_with_timeout', side_effect=TimeoutError("Operation timed out")):
-            with patch.object(tool, '_execute_fallback_arxiv_search') as mock_fallback:
-                # Setup mock fallback result
-                mock_fallback.return_value = {
-                    "papers": [
-                        {"title": "Test Paper 1", "url": "http://arxiv.org/abs/1"},
-                        {"title": "Test Paper 2", "url": "http://arxiv.org/abs/2"}
-                    ],
-                    "_fallback_reason": "O3 timeout: Operation timed out after 15 seconds",
-                    "_fallback_from": "o3_search",
-                    "_degraded_mode": True,
-                    "note": "Fallback to arXiv search (O3 unavailable: O3 timeout: Operation timed out after 15 seconds)"
-                }
-                
-                # Execute O3 search - should timeout and fall back to arxiv
-                result = tool.execute(
-                    inputs={"query": "machine learning", "limit": 5},
-                    context={"goal": "find papers on machine learning"}
-                )
-    
-    # Verify fallback metadata is present
-    assert result["_fallback_reason"] is not None
-    assert "timeout" in result["_fallback_reason"].lower()
-    assert result["_fallback_from"] == "o3_search"
-    assert result["_degraded_mode"] is True
-    
-    # Verify fallback to arxiv results
-    assert len(result["papers"]) == 2
-    assert result["papers"][0]["title"] == "Test Paper 1"
-    
-    # Verify note indicates fallback
-    assert "Fallback to arXiv search" in result["note"]
-    assert "O3 unavailable" in result["note"]
+class _DummyTavilyClient:
+    def __init__(self, response: Dict[str, Any], *, should_raise: bool = False) -> None:
+        self.response = response
+        self.should_raise = should_raise
+        self.calls: list[Dict[str, Any]] = []
+
+    def search(self, **kwargs: Any) -> Dict[str, Any]:
+        self.calls.append(kwargs)
+        if self.should_raise:
+            raise RuntimeError("tavily failure")
+        return self.response
 
 
-def test_o3_exception_falls_back_to_arxiv(monkeypatch):
-    """Test that O3 exception triggers fallback to arxiv_search with degraded mode note."""
-    # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
-    
-    from academic_research_mentor.tools.o3_search.tool import _O3SearchTool
-    
-    tool = _O3SearchTool()
-    
-    # Mock the timeout context
-    mock_timeout_context = MagicMock()
-    mock_timeout_context.__enter__ = MagicMock()
-    mock_timeout_context.__exit__ = MagicMock(side_effect=lambda exc_type, exc_val, exc_tb: None)
-    
-    with patch.object(tool, '_timeout_context', return_value=mock_timeout_context):
-        with patch.object(tool, '_execute_o3_search_with_timeout', side_effect=Exception("O3 processing error")):
-            with patch.object(tool, '_execute_fallback_arxiv_search') as mock_fallback:
-                # Setup mock fallback result
-                mock_fallback.return_value = {
-                    "papers": [{"title": "Exception Test Paper", "url": "http://arxiv.org/abs/123"}],
-                    "_fallback_reason": "O3 error: O3 processing error",
-                    "_fallback_from": "o3_search",
-                    "_degraded_mode": True,
-                    "note": "Fallback to arXiv search (O3 unavailable: O3 error: O3 processing error)"
-                }
-                
-                # Execute O3 search with exception
-                result = tool.execute(
-                    inputs={"query": "test query", "limit": 3},
-                    context={"goal": "test"}
-                )
-    
-    # Verify fallback occurred
-    assert "_fallback_reason" in result
-    assert result["_fallback_from"] == "o3_search"
-    assert result["_degraded_mode"] is True
-    
-    # Verify the fallback result contains arxiv data
-    assert len(result["papers"]) == 1
-    assert result["papers"][0]["title"] == "Exception Test Paper"
+def test_web_search_returns_structured_results() -> None:
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
 
-
-def test_o3_fallback_failure_handling(monkeypatch):
-    """Test handling when both O3 and arxiv fallback fail."""
-    # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
-    
-    from academic_research_mentor.tools.o3_search.tool import _O3SearchTool
-    
-    tool = _O3SearchTool()
-    tool._timeout_seconds = 0.1
-    
-    # Mock arxiv_search to raise an exception
-    with patch('academic_research_mentor.mentor_tools.arxiv_search', side_effect=Exception("arXiv failed")):
-        result = tool.execute(
-            inputs={"query": "test", "limit": 5},
-            context={"goal": "test"}
-        )
-    
-    # Verify complete failure is handled gracefully
-    assert result["_fallback_failed"] is True
-    assert "_fallback_reason" in result
-    assert "Complete failure" in result["note"]
-    assert "arXiv fallback failed" in result["note"]
-    assert len(result["results"]) == 0
-
-
-def test_o3_successful_execution_no_fallback(monkeypatch):
-    """Test that successful O3 execution doesn't trigger fallback."""
-    # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
-    
-    from academic_research_mentor.tools.o3_search.tool import _O3SearchTool
-    
-    tool = _O3SearchTool()
-    tool._timeout_seconds = 30  # Long enough to avoid timeout
-    
-    # Mock successful arxiv_search (this simulates O3 working)
-    mock_arxiv_result = {
-        "papers": [{"title": "Successful O3 Paper", "url": "http://arxiv.org/abs/success"}],
-        "total": 1
+    response = {
+        "answer": "AI regulation is evolving rapidly with new policy drafts in the EU.",
+        "results": [
+            {
+                "title": "EU unveils new AI regulation",
+                "url": "https://example.com/eu-ai-regulation",
+                "content": "The European Union released a draft update to its AI Act...",
+                "source": "news",
+                "score": 0.92,
+            }
+        ],
     }
-    
-    with patch('academic_research_mentor.mentor_tools.arxiv_search', return_value=mock_arxiv_result):
-        result = tool.execute(
-            inputs={"query": "successful query", "limit": 1},
-            context={"goal": "test"}
-        )
-    
-    # Verify no fallback occurred
-    assert "_fallback_reason" not in result
-    assert "_fallback_from" not in result
-    assert "_degraded_mode" not in result
-    
-    # Verify normal O3 result
-    assert len(result["results"]) == 1
-    assert result["results"][0]["title"] == "Successful O3 Paper"
-    assert "O3-powered literature search completed" in result["note"]
+
+    client = _DummyTavilyClient(response)
+    tool = WebSearchTool()
+    tool.initialize({"client": client})
+
+    result = tool.execute({"query": "latest ai regulation", "limit": 5})
+
+    assert result["results"], "Expected at least one result"
+    top = result["results"][0]
+    assert top["title"] == "EU unveils new AI regulation"
+    assert top["url"].startswith("https://example.com")
+    assert "citations" in result and result["citations"]["count"] == 1
+    assert result.get("summary") == response["answer"]
+    assert client.calls, "Expected Tavily client to be invoked"
+
+
+def test_web_search_handles_missing_api_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    tool = WebSearchTool()
+    tool.initialize()
+
+    result = tool.execute({"query": "test query"})
+
+    assert result["results"] == []
+    assert result.get("_degraded_mode") is True
+    note = result.get("note", "")
+    assert "Web search unavailable" in note
+    assert "Tavily" in note and "OpenRouter" in note
+
+
+def test_web_search_handles_client_exception(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    client = _DummyTavilyClient({}, should_raise=True)
+    tool = WebSearchTool()
+    tool.initialize({"client": client})
+
+    result = tool.execute({"query": "ai research trends"})
+
+    assert result["results"] == []
+    assert result.get("_degraded_mode") is True
+    note = result.get("note", "")
+    assert "Web search unavailable" in note
+    assert "Tavily" in note
+
+
+def test_web_search_fallbacks_to_openrouter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    response_payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "summary": "Latest AI policy updates from trusted sources.",
+                            "results": [
+                                {
+                                    "title": "Policy board approves AI charter",
+                                    "url": "https://example.org/ai-charter",
+                                    "snippet": "Summary of the newly approved AI governance charter.",
+                                    "source": "example.org",
+                                }
+                            ],
+                        }
+                    )
+                }
+            }
+        ]
+    }
+
+    class _DummyResponse:
+        status_code = 200
+
+        def json(self):
+            return response_payload
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.requests: list[Dict[str, Any]] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url: str, headers: Dict[str, Any], json: Dict[str, Any]) -> _DummyResponse:
+            self.requests.append({"url": url, "headers": headers, "json": json})
+            return _DummyResponse()
+
+    monkeypatch.setattr(
+        "academic_research_mentor.tools.web_search.providers.httpx.Client",
+        _DummyClient,
+        raising=False,
+    )
+
+    tool = WebSearchTool()
+    tool.initialize()
+
+    result = tool.execute({"query": "latest ai policy", "limit": 3})
+
+    assert result["results"], "Fallback should yield results"
+    assert result["metadata"]["provider"] == "openrouter-web"
+    assert "OpenRouter" in result["note"]
+    assert "citations" in result and result["citations"]["count"] == 1
+
+
+def test_web_search_reports_available_with_openrouter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    tool = WebSearchTool()
+    tool.initialize()
+
+    assert tool.is_available() is True

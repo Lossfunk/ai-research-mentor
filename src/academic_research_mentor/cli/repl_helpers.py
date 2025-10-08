@@ -74,7 +74,7 @@ def handle_system_command(user: str, agent: Any, session_logger: SessionLogManag
         session_logger.log_event("system_command_result", {"command": "resume", "status": "handled"})
         return CommandOutcome(handled=True)
 
-    if lower_user in {"exit", "quit"}:
+    if lower_user in {"exit", "quit", "/exit", "/quit"}:
         session_logger.log_event("system_command", {"command": lower_user})
         return CommandOutcome(handled=True, exit_command=lower_user)
 

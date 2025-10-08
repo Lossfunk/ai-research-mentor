@@ -1,32 +1,28 @@
 from __future__ import annotations
 
-import time
-from unittest.mock import patch, MagicMock
-from typing import Any, Dict, Optional
-
 
 def test_recommender_scoring_with_degraded_tools(monkeypatch):
     """Test that recommender properly scores tools under degraded conditions."""
     # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
+    monkeypatch.setenv("TAVILY_API_KEY", "fake_key_for_testing")
     
     from academic_research_mentor.core.fallback_policy import get_fallback_policy
     from academic_research_mentor.core.recommendation import score_tools
     from academic_research_mentor.tools.base_tool import BaseTool
     
-    # Set up policy with degraded O3 tool
+    # Set up policy with degraded web search tool
     policy = get_fallback_policy()
     
     # Create mock tools
-    class MockO3Tool(BaseTool):
-        name = "o3_search"
+    class MockWebTool(BaseTool):
+        name = "web_search"
         version = "1.0"
         
         def can_handle(self, task_context=None):
             return True
             
         def execute(self, inputs, context=None):
-            return {"results": ["o3 result"]}
+            return {"results": ["web result"]}
         
         def get_metadata(self):
             return {"capabilities": {"task_types": ["literature_search"]}}
@@ -58,7 +54,7 @@ def test_recommender_scoring_with_degraded_tools(monkeypatch):
             return {"capabilities": {"task_types": ["guidelines_search"]}}
     
     tools = {
-        "o3_search": MockO3Tool(),
+        "web_search": MockWebTool(),
         "legacy_arxiv_search": MockArxivTool(),
         "research_guidelines": MockGuidelinesTool()
     }
@@ -67,33 +63,33 @@ def test_recommender_scoring_with_degraded_tools(monkeypatch):
     goal = "find recent papers on transformers"
     scored = score_tools(goal, tools)
     
-    # O3 should be highest score for literature queries when healthy
-    o3_score = next(score for name, score, reason in scored if name == "o3_search")
+    # Web search should be highest score for literature queries when healthy
+    web_score = next(score for name, score, reason in scored if name == "web_search")
     arxiv_score = next(score for name, score, reason in scored if name == "legacy_arxiv_search")
     guidelines_score = next(score for name, score, reason in scored if name == "research_guidelines")
     
-    assert o3_score > arxiv_score
-    assert o3_score > guidelines_score
+    assert web_score > arxiv_score
+    assert web_score > guidelines_score
     
-    # Now degrade O3 tool
-    policy.record_failure("o3_search", "timeout error")
-    policy.record_failure("o3_search", "another timeout")  # Backoff count = 2
+    # Now degrade web search tool
+    policy.record_failure("web_search", "timeout error")
+    policy.record_failure("web_search", "another timeout")  # Backoff count = 2
     
-    # Test scoring again with degraded O3
+    # Test scoring again with degraded web search
     scored_degraded = score_tools(goal, tools)
-    o3_score_degraded = next(score for name, score, reason in scored_degraded if name == "o3_search")
+    web_score_degraded = next(score for name, score, reason in scored_degraded if name == "web_search")
     arxiv_score_degraded = next(score for name, score, reason in scored_degraded if name == "legacy_arxiv_search")
     
-    # O3 should still be recommended but with potentially lower confidence
-    # (the actual scoring logic may vary, but O3 should remain available)
-    assert o3_score_degraded > 0
+    # Web search should still be recommended but with potentially lower confidence
+    # (the actual scoring logic may vary, but web_search should remain available)
+    assert web_score_degraded > 0
     # Arxiv might have negative score in some scoring scenarios, that's okay
 
 
 def test_recommender_scoring_mentorship_queries_under_degraded(monkeypatch):
     """Test that recommender properly handles mentorship queries under degraded conditions."""
     # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
+    monkeypatch.setenv("TAVILY_API_KEY", "fake_key_for_testing")
     
     from academic_research_mentor.core.fallback_policy import get_fallback_policy
     from academic_research_mentor.core.recommendation import score_tools
@@ -102,15 +98,15 @@ def test_recommender_scoring_mentorship_queries_under_degraded(monkeypatch):
     policy = get_fallback_policy()
     
     # Create mock tools
-    class MockO3Tool(BaseTool):
-        name = "o3_search"
+    class MockWebTool(BaseTool):
+        name = "web_search"
         version = "1.0"
         
         def can_handle(self, task_context=None):
             return True
             
         def execute(self, inputs, context=None):
-            return {"results": ["o3 result"]}
+            return {"results": ["web result"]}
         
         def get_metadata(self):
             return {"capabilities": {"task_types": ["literature_search"]}}
@@ -129,7 +125,7 @@ def test_recommender_scoring_mentorship_queries_under_degraded(monkeypatch):
             return {"capabilities": {"task_types": ["guidelines_search"]}}
     
     tools = {
-        "o3_search": MockO3Tool(),
+        "web_search": MockWebTool(),
         "research_guidelines": MockGuidelinesTool()
     }
     
@@ -139,7 +135,7 @@ def test_recommender_scoring_mentorship_queries_under_degraded(monkeypatch):
     
     # Verify we get scores for both tools
     tool_names = [name for name, score, reason in scored]
-    assert "o3_search" in tool_names
+    assert "web_search" in tool_names
     assert "research_guidelines" in tool_names
     
     # Research guidelines should be present and have some score
@@ -160,7 +156,7 @@ def test_recommender_scoring_mentorship_queries_under_degraded(monkeypatch):
 def test_recommender_handles_all_tools_blocked(monkeypatch):
     """Test recommender behavior when all relevant tools are blocked."""
     # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
+    monkeypatch.setenv("TAVILY_API_KEY", "fake_key_for_testing")
     
     from academic_research_mentor.core.fallback_policy import get_fallback_policy
     from academic_research_mentor.core.recommendation import score_tools
@@ -169,27 +165,27 @@ def test_recommender_handles_all_tools_blocked(monkeypatch):
     policy = get_fallback_policy()
     
     # Create mock tool
-    class MockO3Tool(BaseTool):
-        name = "o3_search"
+    class MockWebTool(BaseTool):
+        name = "web_search"
         version = "1.0"
         
         def can_handle(self, task_context=None):
             return True
             
         def execute(self, inputs, context=None):
-            return {"results": ["o3 result"]}
+            return {"results": ["web result"]}
         
         def get_metadata(self):
             return {"capabilities": {"task_types": ["literature_search"]}}
     
-    tools = {"o3_search": MockO3Tool()}
+    tools = {"web_search": MockWebTool()}
     
-    # Completely block O3 tool (circuit breaker)
+    # Completely block web search tool (circuit breaker)
     for i in range(3):
-        policy.record_failure("o3_search", f"critical error {i+1}")
+        policy.record_failure("web_search", f"critical error {i+1}")
     
     # Ensure it's circuit open
-    assert policy.should_try_tool("o3_search") is False
+    assert policy.should_try_tool("web_search") is False
     
     # Test scoring with blocked tool
     goal = "find papers on machine learning"
@@ -197,14 +193,14 @@ def test_recommender_handles_all_tools_blocked(monkeypatch):
     
     # Should still return O3 with some score (for fallback consideration)
     assert len(scored) > 0
-    o3_entry = next(entry for entry in scored if entry[0] == "o3_search")
-    assert o3_entry[1] > 0  # Some positive score even when blocked
+    web_entry = next(entry for entry in scored if entry[0] == "web_search")
+    assert web_entry[1] > 0  # Some positive score even when blocked
 
 
 def test_recommender_fallback_awareness(monkeypatch):
     """Test that recommender is aware of fallback relationships."""
     # Mock environment to avoid API key requirements
-    monkeypatch.setenv("OPENROUTER_API_KEY", "fake_key_for_testing")
+    monkeypatch.setenv("TAVILY_API_KEY", "fake_key_for_testing")
     
     from academic_research_mentor.core.fallback_policy import get_fallback_policy
     from academic_research_mentor.core.recommendation import score_tools
@@ -213,15 +209,15 @@ def test_recommender_fallback_awareness(monkeypatch):
     policy = get_fallback_policy()
     
     # Create tools with fallback relationship
-    class MockO3Tool(BaseTool):
-        name = "o3_search"
+    class MockWebTool(BaseTool):
+        name = "web_search"
         version = "1.0"
         
         def can_handle(self, task_context=None):
             return True
             
         def execute(self, inputs, context=None):
-            return {"results": ["o3 result"]}
+            return {"results": ["web result"]}
         
         def get_metadata(self):
             return {
@@ -243,7 +239,7 @@ def test_recommender_fallback_awareness(monkeypatch):
             return {"capabilities": {"task_types": ["literature_search"]}}
     
     tools = {
-        "o3_search": MockO3Tool(),
+        "web_search": MockWebTool(),
         "legacy_arxiv_search": MockArxivTool()
     }
     
@@ -253,19 +249,19 @@ def test_recommender_fallback_awareness(monkeypatch):
     
     # Verify both tools get scores
     tool_names_healthy = [name for name, score, reason in scored_healthy]
-    assert "o3_search" in tool_names_healthy
+    assert "web_search" in tool_names_healthy
     assert "legacy_arxiv_search" in tool_names_healthy
     
     # Degrade O3
-    policy.record_failure("o3_search", "timeout")
-    policy.record_failure("o3_search", "another timeout")
+    policy.record_failure("web_search", "timeout")
+    policy.record_failure("web_search", "another timeout")
     
     # Test with degraded O3
     scored_degraded = score_tools(goal, tools)
     
     # Verify both tools still get scores even when O3 is degraded
     tool_names_degraded = [name for name, score, reason in scored_degraded]
-    assert "o3_search" in tool_names_degraded
+    assert "web_search" in tool_names_degraded
     assert "legacy_arxiv_search" in tool_names_degraded
     
     # Verify scores are reasonable (negative scores are possible in some scenarios)

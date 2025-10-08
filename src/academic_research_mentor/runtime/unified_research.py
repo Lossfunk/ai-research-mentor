@@ -39,15 +39,15 @@ def unified_research_tool_fn(query: str, *, internal_delimiters: tuple[str, str]
         except Exception:
             pass
         
-        # Try O3 search
+        # Try web search
         try:
-            o3_result = orch.execute_task(
-                task="o3_search",
+            web_result = orch.execute_task(
+                task="web_search",
                 inputs={"query": query, "limit": 8},
                 context={"goal": f"find papers about {query}"}
             )
-            if o3_result["execution"]["executed"] and o3_result["results"]:
-                paper_results.append(o3_result["results"])
+            if web_result["execution"]["executed"] and web_result["results"]:
+                paper_results.append(web_result["results"])
         except Exception:
             pass
         
