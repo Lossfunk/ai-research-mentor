@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Tuple
 import re
 
 PRIMARY_NAMES = {"web_search"}
-SEMANTIC_SEARCH_NAMES = {"searchthearxiv_search"}
 LEGACY_PREFIX = "legacy_"
 GUIDELINES_NAMES = {"research_guidelines"}
 
@@ -95,21 +94,6 @@ def score_tools(goal: str, tools: Dict[str, Any]) -> List[Tuple[str, float, str]
                 else:
                     score += 0.5  # Standard priority for primary web search
                 rationale_parts.append("primary")
-            elif name in SEMANTIC_SEARCH_NAMES:
-                # Check if this is a natural language/semantic query
-                g_lower = goal.lower()
-                semantic_keywords = ["find papers", "search for", "look for", "i need", "help me", "what are", "explain", "describe", "similar to"]
-                explicit_arxiv_keywords = ["arxiv search", "arxiv papers", "search arxiv"]
-                
-                if any(kw in g_lower for kw in explicit_arxiv_keywords):
-                    score += 0.3  # Lower priority for explicit arxiv searches (O3 should handle these)
-                    rationale_parts.append("explicit_arxiv")
-                elif any(kw in g_lower for kw in semantic_keywords):
-                    score += 0.8  # Higher priority for semantic search on natural language queries
-                    rationale_parts.append("semantic_priority")
-                else:
-                    score += 0.3  # Standard priority for semantic search
-                rationale_parts.append("semantic_search")
             elif name.startswith(LEGACY_PREFIX):
                 score -= 0.5
                 rationale_parts.append("legacy")

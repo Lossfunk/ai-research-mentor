@@ -23,8 +23,8 @@ def test_react_toolset_excludes_openreview_includes_arxiv(monkeypatch):
     # Verify other expected tools are included
     expected_tools = [
         "web_search",
-        "research_guidelines", 
-        "searchthearxiv_search"
+        "research_guidelines",
+        "unified_research"
     ]
     
     for expected_tool in expected_tools:
