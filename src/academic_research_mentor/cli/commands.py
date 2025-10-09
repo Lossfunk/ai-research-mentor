@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
-
 from ..rich_formatter import print_info, print_error, get_formatter
 
 
@@ -11,11 +9,7 @@ def verify_environment() -> None:
     formatter.print_rule("Environment Configuration Status")
 
     api_keys = [
-        ("OPENROUTER_API_KEY", "OpenRouter (recommended for O3 access)"),
-        ("OPENAI_API_KEY", "OpenAI GPT models"),
-        ("GOOGLE_API_KEY", "Google Gemini models"),
-        ("ANTHROPIC_API_KEY", "Anthropic Claude models"),
-        ("MISTRAL_API_KEY", "Mistral models"),
+        ("OPENROUTER_API_KEY", "OpenRouter (required)"),
     ]
 
     configured_keys = []
@@ -29,17 +23,13 @@ def verify_environment() -> None:
             print_error(f"✗ {key}: Not configured ({description})")
 
     if not configured_keys:
-        print_error("No API keys configured! Please set at least one API key in your .env file.")
+        print_error("OpenRouter API key missing. Set OPENROUTER_API_KEY in your .env file.")
         return
 
     formatter.console.print("")
 
     model_configs = [
         ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4"),
-        ("OPENAI_MODEL", "gpt-4o-mini"),
-        ("GEMINI_MODEL", "gemini-2.5-flash-latest"),
-        ("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
-        ("MISTRAL_MODEL", "mistral-large-latest"),
     ]
 
     print_info("Model Configuration:")
@@ -50,12 +40,10 @@ def verify_environment() -> None:
 
     formatter.console.print("")
 
-    agent_mode = os.environ.get("LC_AGENT_MODE", "react")
     prompt_variant = os.environ.get("ARM_PROMPT", os.environ.get("LC_PROMPT", "mentor"))
     ascii_mode = bool(os.environ.get("ARM_PROMPT_ASCII", os.environ.get("LC_PROMPT_ASCII")))
 
     print_info("Agent Configuration:")
-    print_info(f"  Agent Mode: {agent_mode}")
     print_info(f"  Prompt Variant: {prompt_variant}")
     print_info(f"  ASCII Mode: {ascii_mode}")
 
@@ -73,25 +61,16 @@ def show_env_help() -> None:
 The Academic Research Mentor automatically loads environment variables from a .env file.
 Place your .env file in the project root directory or any parent directory.
 
-[bold cyan]Required API Keys (at least one):[/bold cyan]
+[bold cyan]Required API Keys:[/bold cyan]
 
-• [bold]OPENROUTER_API_KEY[/bold] - Recommended for O3-powered literature review
-• [bold]OPENAI_API_KEY[/bold] - For OpenAI GPT models
-• [bold]GOOGLE_API_KEY[/bold] - For Google Gemini models
-• [bold]ANTHROPIC_API_KEY[/bold] - For Anthropic Claude models
-• [bold]MISTRAL_API_KEY[/bold] - For Mistral models
+• [bold]OPENROUTER_API_KEY[/bold] - Required for OpenRouter-based mentoring
 
 [bold cyan]Optional Model Configuration:[/bold cyan]
 
 • [bold]OPENROUTER_MODEL[/bold] (default: anthropic/claude-sonnet-4)
-• [bold]OPENAI_MODEL[/bold] (default: gpt-4o-mini)
-• [bold]GEMINI_MODEL[/bold] (default: gemini-2.5-flash-latest)
-• [bold]ANTHROPIC_MODEL[/bold] (default: claude-3-5-sonnet-latest)
-• [bold]MISTRAL_MODEL[/bold] (default: mistral-large-latest)
 
 [bold cyan]Agent Configuration:[/bold cyan]
 
-• [bold]LC_AGENT_MODE[/bold] - "chat" (default), "react", or "router"
 • [bold]ARM_PROMPT[/bold] - "mentor" or "system" prompt variant
 • [bold]ARM_PROMPT_ASCII[/bold] - Set to "1" for ASCII-friendly symbols
 
@@ -102,11 +81,10 @@ Place your .env file in the project root directory or any parent directory.
 [bold cyan]Example .env file:[/bold cyan]
 
 ```
-# Primary API key (recommended)
+# Primary API key (required)
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
 # Agent configuration
-LC_AGENT_MODE=react
 ARM_PROMPT=system
 
 # Optional: Custom models

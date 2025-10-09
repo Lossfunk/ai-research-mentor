@@ -96,7 +96,7 @@ def main() -> None:
     prep = prepare_agent(prompt_arg=getattr(args, "prompt", None), ascii_override=ascii_override)
 
     if prep.agent is None:
-        print_error(prep.offline_reason or "Model initialization failed. Set one of the API keys in your .env (OPENROUTER_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, or MISTRAL_API_KEY). Then re-run: uv run academic-research-mentor --check-env")
+        print_error(prep.offline_reason or "Model initialization failed. Set OPENROUTER_API_KEY in your .env and re-run: uv run academic-research-mentor --check-env")
         return
 
     # REPL

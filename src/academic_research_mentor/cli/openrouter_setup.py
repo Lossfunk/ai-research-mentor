@@ -144,13 +144,7 @@ def _is_interactive_terminal() -> bool:
 
 
 def _has_alternative_provider_configured() -> bool:
-    other_keys = (
-        "OPENAI_API_KEY",
-        "GOOGLE_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "MISTRAL_API_KEY",
-    )
-    return any(os.environ.get(name) for name in other_keys)
+    return False
 
 
 __all__ = ["maybe_run_openrouter_setup"]

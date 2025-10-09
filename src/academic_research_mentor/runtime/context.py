@@ -15,7 +15,6 @@ class AgentPreparationResult:
     agent: Optional[Any]
     offline_reason: Optional[str]
     loaded_variant: str
-    agent_mode: str
     effective_instructions: str
 
 
@@ -87,8 +86,7 @@ def prepare_agent(prompt_arg: Optional[str] = None, ascii_override: Optional[boo
         print_error(f"Guidelines injector error: {exc}")
 
     agent, offline_reason = build_agent(effective_instructions)
-    agent_mode = os.environ.get("LC_AGENT_MODE", "react").strip().lower()
-    return AgentPreparationResult(agent, offline_reason, loaded_variant, agent_mode, effective_instructions)
+    return AgentPreparationResult(agent, offline_reason, loaded_variant, effective_instructions)
 
 
 __all__ = ["AgentPreparationResult", "prepare_agent"]

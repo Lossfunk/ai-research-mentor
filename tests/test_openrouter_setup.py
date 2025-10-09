@@ -33,15 +33,14 @@ def test_force_setup_applies_env_and_persists(monkeypatch: pytest.MonkeyPatch, t
     assert "OPENROUTER_MODEL=openai/gpt-5" in content
 
 
-def test_auto_setup_skipped_when_other_provider(monkeypatch: pytest.MonkeyPatch):
-    inputs_called = False
+def test_auto_setup_prompts_when_missing_key(monkeypatch: pytest.MonkeyPatch):
+    inputs = iter(["n"])
+    prompts: list[str] = []
 
-    def fake_input(_prompt: str) -> str:
-        nonlocal inputs_called
-        inputs_called = True
-        return ""
+    def fake_input(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(inputs)
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
     monkeypatch.setenv("ARM_SKIP_INTERACTIVE_SETUP", "")
@@ -53,9 +52,7 @@ def test_auto_setup_skipped_when_other_provider(monkeypatch: pytest.MonkeyPatch)
     applied = maybe_run_openrouter_setup(force=False, input_fn=fake_input)
 
     assert applied is False
-    assert not inputs_called
-
-    monkeypatch.delenv("OPENAI_API_KEY")
+    assert any("Configure it now" in prompt for prompt in prompts)
 
 
 def test_persist_defaults_to_local_config(monkeypatch: pytest.MonkeyPatch, tmp_path):

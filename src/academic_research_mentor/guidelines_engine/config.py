@@ -8,8 +8,7 @@ from enum import Enum
 class GuidelinesMode(Enum):
     """Guidelines integration modes."""
     OFF = "off"
-    STATIC = "static"
-    DYNAMIC = "dynamic"  # Future implementation
+    DYNAMIC = "dynamic"
 
 
 class GuidelinesConfig:
@@ -27,15 +26,12 @@ class GuidelinesConfig:
     def _get_guidelines_mode(self) -> GuidelinesMode:
         """Get guidelines mode from environment.
 
-        Default to 'dynamic' so fresh clones prefer the Guidelines Tool
-        instead of static unified_guidelines.json injection.
+        Default to 'dynamic' so fresh clones prefer the Guidelines Tool.
         """
         mode_str = os.getenv('ARM_GUIDELINES_MODE', 'dynamic').lower()
-        try:
-            return GuidelinesMode(mode_str)
-        except ValueError:
-            # Fall back to dynamic on invalid values
-            return GuidelinesMode.DYNAMIC
+        if mode_str == GuidelinesMode.OFF.value:
+            return GuidelinesMode.OFF
+        return GuidelinesMode.DYNAMIC
     
     def _get_max_guidelines(self) -> Optional[int]:
         """Get maximum guidelines count from environment."""
@@ -71,11 +67,6 @@ class GuidelinesConfig:
     def is_enabled(self) -> bool:
         """Check if guidelines are enabled."""
         return self.mode != GuidelinesMode.OFF
-    
-    @property
-    def is_static_mode(self) -> bool:
-        """Check if in static mode."""
-        return self.mode == GuidelinesMode.STATIC
     
     @property
     def is_dynamic_mode(self) -> bool:

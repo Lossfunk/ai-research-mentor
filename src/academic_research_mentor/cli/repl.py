@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from ..rich_formatter import print_formatted_response, print_info, print_error, get_formatter, print_user_input
@@ -22,11 +21,8 @@ from .repl_helpers import (
 
 
 def online_repl(agent: Any, loaded_variant: str) -> None:
-    agent_mode = os.environ.get("LC_AGENT_MODE", "react").strip().lower()
-    use_manual_routing = agent_mode == "chat"
-
     session_logger, chat_logger = create_session_stack(
-        {"loaded_prompt_variant": loaded_variant, "agent_mode": agent_mode}
+        {"loaded_prompt_variant": loaded_variant}
     )
 
     if hasattr(agent, 'set_chat_logger'):
@@ -40,7 +36,6 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
     formatter = get_formatter()
     formatter.print_rule("Academic Research Mentor")
     print_info(f"Loaded prompt variant: {loaded_variant}")
-    print_info(f"Agent mode: {agent_mode}")
     print_info("Type 'exit' to quit")
     formatter.console.print("")
 
@@ -75,21 +70,13 @@ def online_repl(agent: Any, loaded_variant: str) -> None:
                 )
             print_user_input(user)
 
-            if use_manual_routing:
-                manual = process_manual_turn(user, session_logger, enable_research_context=True)
-                if manual.consumed:
-                    chat_logger.add_turn(user, manual.tool_calls)
-                    formatter.console.print("")
-                    continue
-                enhanced_user_input = manual.enhanced_input
-            else:
-                enhanced_user_input = build_react_enhanced_input(user, session_logger)
+            enhanced_user_input = build_react_enhanced_input(user, session_logger)
 
             run_agent_turn(
                 agent,
                 user,
                 enhanced_user_input,
-                use_manual_routing=use_manual_routing,
+                use_manual_routing=False,
                 chat_logger=chat_logger,
                 session_logger=session_logger,
                 turn_number=turn_number,

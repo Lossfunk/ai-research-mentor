@@ -9,11 +9,9 @@ from ..session_logging import SessionLogManager
 from ..chat_logger import ChatLogger
 from ..cli.repl_helpers import (
     CommandOutcome,
-    ManualRoutingResult,
     build_react_enhanced_input,
     create_session_stack,
     handle_system_command,
-    process_manual_turn,
     run_agent_turn,
     safe_detect_stage,
 )
@@ -29,12 +27,10 @@ class ConversationOutcome:
 class TUISessionManager:
     """Session orchestration for the Textual front-end."""
 
-    def __init__(self, agent: Any, loaded_variant: str, agent_mode: str) -> None:
+    def __init__(self, agent: Any, loaded_variant: str) -> None:
         self._agent = agent
         self._loaded_variant = loaded_variant
-        self._agent_mode = agent_mode
-        self._use_manual_routing = agent_mode == "chat"
-        metadata = {"loaded_prompt_variant": loaded_variant, "agent_mode": agent_mode}
+        metadata = {"loaded_prompt_variant": loaded_variant}
         self._session_logger, self._chat_logger = create_session_stack(metadata)
         if hasattr(agent, "set_chat_logger"):
             agent.set_chat_logger(self._chat_logger)
@@ -44,7 +40,6 @@ class TUISessionManager:
             except Exception:  # pragma: no cover - defensive fallback
                 pass
         print_info(f"Loaded prompt variant: {loaded_variant}")
-        print_info(f"Agent mode: {agent_mode}")
         print_info("Type 'exit' to quit")
         self._closed = False
 
@@ -79,20 +74,13 @@ class TUISessionManager:
 
         print_user_input(user)
 
-        if self._use_manual_routing:
-            manual = process_manual_turn(user, self._session_logger, enable_research_context=True)
-            if manual.consumed:
-                self._chat_logger.add_turn(user, manual.tool_calls)
-                return ConversationOutcome()
-            enhanced_input = manual.enhanced_input
-        else:
-            enhanced_input = build_react_enhanced_input(user, self._session_logger)
+        enhanced_input = build_react_enhanced_input(user, self._session_logger)
 
         run_agent_turn(
             self._agent,
             user,
             enhanced_input,
-            use_manual_routing=self._use_manual_routing,
+            use_manual_routing=False,
             chat_logger=self._chat_logger,
             session_logger=self._session_logger,
             turn_number=turn_number,

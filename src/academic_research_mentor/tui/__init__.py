@@ -43,7 +43,7 @@ def main() -> None:
         session = None
         offline_reason = prep.offline_reason
         if prep.agent is not None:
-            session = TUISessionManager(prep.agent, prep.loaded_variant, prep.agent_mode)
+            session = TUISessionManager(prep.agent, prep.loaded_variant)
             offline_reason = None
 
         app = MentorTUI(session=session, subscription=subscription, offline_reason=offline_reason)

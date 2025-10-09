@@ -25,7 +25,7 @@ def _result_slots(stage: str) -> dict[str, Path]:
 
 def print_checklist() -> None:
     print("Manual Evaluation Checklist\n")
-    print("1. Set required environment variables (e.g., LC_AGENT_MODE=react).")
+    print("1. Set required environment variables (e.g., OPENROUTER_API_KEY=sk-or-...).")
     print("2. Launch the mentor CLI: 'uv run academic-research-mentor'.")
     print("3. For each prompt in evaluation/data/evals_single_turn.jsonl:")
     print("   a. Ask the prompt and save the full response text to evaluation/results/raw_logs/<stage>/<prompt_id>.txt.")
