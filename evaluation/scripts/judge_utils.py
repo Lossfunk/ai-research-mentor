@@ -181,11 +181,14 @@ def score_citation_validity(answer_text: str) -> Dict[str, Any]:
             "issues": ["no_citations_found"],
         }
     validation = _citation_validator.validate_citations(citations)
-    score = 1.0 if validation.get("valid") else 0.0
-    return {
-        "score": score,
-        **validation,
-    }
+    validity_score = 1.0 if validation.get("valid") else 0.0
+    # Do not overwrite the metric 'score' with the validator's numeric quality score.
+    # Expose it separately as 'quality_score'.
+    out = dict(validation)
+    if "score" in out:
+        out["quality_score"] = out.pop("score")
+    out["score"] = validity_score
+    return out
 
 
 def heuristic_fallback_robustness(runs: Sequence[Dict[str, Any]]) -> float:

@@ -46,9 +46,22 @@ ANNOTATION_COLUMNS: Sequence[str] = (
     "response_path",
     "tool_trace_path",
     "tool_routing",
+    # Meta capability metrics (binary)
+    "citation_presence",
+    "citation_validity",
+    "fallback_robustness",
+    "asks_questions",
+    # Meta capability metrics (scaled)
+    "rag_fidelity_score",
+    "citation_relevance_score",
+    "source_fit_score",
     "actionability_score",
     "question_quality_score",
     "citation_quality_score",
+    # Mentorship capability metrics
+    "persona_compliance_score",
+    "stage_awareness_score",
+    "tone_constructive_score",
     "constraint_handling",
     "timeline_guidance",
     "expectation_management",

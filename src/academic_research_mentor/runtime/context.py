@@ -35,7 +35,9 @@ def _compose_runtime_prelude() -> str:
         "When using unified_research tool: embed inline bracketed citations [P#] for papers and [G#] for guidelines right after the specific sentences they support. "
         "When using other tools: embed inline bracketed citations [n] right after the specific sentences they support, where [n] refers to the numbered source from the tool output. "
         "Soft guidance: Prefer citing relevant papers [P#] when available for research recommendations. If no relevant papers exist, use guidelines [G#] for methodology advice. "
-        "Also include a final 'Citations' section listing [ID] Title — URL."
+        "Also include a final 'Citations' section listing [ID] Title — URL. "
+        "NEVER invent [P#]/[G#] markers or bibliography lines not present in tool outputs. If tools return no sources, explicitly state 'No sources found for X' and avoid inline citations; label speculative content as 'Conjecture'. "
+        "For Stage A–C style mentorship queries, attempt both research_guidelines and web_search when available; if either fails, note the failure and continue with the remaining evidence."
     )
     return prelude
 

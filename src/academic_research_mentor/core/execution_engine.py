@@ -34,11 +34,30 @@ def execute_with_policy(selection_result: Dict[str, Any], strategy: Dict[str, An
     )
     
     if execution_result["success"]:
-        return {
+        # Optional: if the fallback is a complementary evidence tool (guidelines/web_search),
+        # run it as well to enrich transparency/evidence even when primary succeeded.
+        secondary_result = None
+        fallback_info = strategy.get("fallback")
+        if fallback_info:
+            fb_name, _fb_score = fallback_info
+            primary_name_lower = str(primary_name).lower()
+            fb_name_lower = str(fb_name).lower()
+            pair = {primary_name_lower, fb_name_lower}
+            if pair == {"web_search", "research_guidelines"}:
+                try:
+                    secondary_result = try_tool_with_retries(
+                        tools, fb_name, _fb_score, inputs, context, policy
+                    )
+                except Exception:
+                    secondary_result = None
+        out = {
             **selection_result,
             **execution_result,
-            "fallback_strategy": strategy
+            "fallback_strategy": strategy,
         }
+        if secondary_result and secondary_result.get("success"):
+            out["secondary_execution"] = secondary_result.get("execution")
+        return out
     
     # Primary failed, try fallback if available
     fallback_info = strategy.get("fallback")
