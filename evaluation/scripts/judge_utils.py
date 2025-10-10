@@ -3,11 +3,15 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
+
+from academic_research_mentor.citations import Citation, CitationValidator
+from urllib.parse import urlparse
 
 try:  # pragma: no cover
     from langchain_anthropic import ChatAnthropic
@@ -44,6 +48,184 @@ def load_tool_runs(path: Path) -> List[Dict[str, Any]]:
     except Exception:
         return []
 
+
+def _collect_sources_from_runs(runs: Sequence[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+    """Extract evidence summaries and source URLs from transparency runs.
+
+    Returns (summaries, sources).
+    """
+    summaries: List[str] = []
+    sources: List[str] = []
+    for run in runs or []:
+        # Events may contain a final_result payload with 'summary' and 'sources'
+        events = run.get("events") or []
+        for evt in events:
+            payload = evt.get("payload") or {}
+            if not isinstance(payload, dict):
+                continue
+            if evt.get("event_type") == "final_result":
+                sm = payload.get("summary")
+                if isinstance(sm, list):
+                    for s in sm:
+                        if isinstance(s, str) and s not in summaries:
+                            summaries.append(s)
+                sc = payload.get("sources")
+                if isinstance(sc, list):
+                    for url in sc:
+                        if isinstance(url, str) and url not in sources:
+                            sources.append(url)
+    return summaries, sources
+
+
+def make_evidence_summary(runs: Sequence[Dict[str, Any]], limit: int = 8) -> str:
+    """Format a short evidence block for judge prompts from transparency runs."""
+    summaries, sources = _collect_sources_from_runs(runs)
+    lines: List[str] = []
+    if summaries:
+        lines.append("Top findings:")
+        lines.extend(f"- {s}" for s in summaries[: max(1, min(5, limit))])
+    if sources:
+        lines.append("Sources:")
+        lines.extend(f"- {u}" for u in sources[: max(1, min(5, limit))])
+    return "\n".join(lines) if lines else "(no evidence summary available)"
+
+
+def heuristic_citation_presence(answer_text: str) -> float:
+    """Binary: 1 if inline citations or a 'Citations' section present."""
+    text = (answer_text or "").lower()
+    if not text:
+        return 0.0
+    # Inline patterns: [P1], [G2], [1], etc.
+    if re.search(r"\[(?:p\d+|g\d+|\d+)\]", text):
+        return 1.0
+    if "citations" in text and ("http://" in text or "https://" in text or "arxiv" in text or "doi" in text):
+        return 1.0
+    return 0.0
+
+
+_citation_validator = CitationValidator()
+
+
+_CITATION_LINE_PATTERN = re.compile(
+    r"\[(?P<id>[A-Za-z0-9#]+)\]\s*(?P<title>[^\n]+?)\s*[\-–—]\s*(?P<url>https?://\S+)",
+    re.IGNORECASE,
+)
+
+
+def extract_citations_from_answer(answer_text: str) -> List[Citation]:
+    """Parse the final answer for a Citations section and return Citation objects."""
+    citations: List[Citation] = []
+    if not answer_text:
+        return citations
+    for match in _CITATION_LINE_PATTERN.finditer(answer_text):
+        stable_id = match.group("id") or "source"
+        title = match.group("title") or "Untitled"
+        url = match.group("url")
+        source = urlparse(url).netloc if url else "unknown"
+        citations.append(
+            Citation(
+                id=stable_id.strip(),
+                title=title.strip(),
+                url=url.strip(),
+                source=source.strip(),
+            )
+        )
+    if citations:
+        return citations
+
+    # Fallback: look for any URLs in a citations section (lines after "Citations")
+    section = answer_text
+    lower = answer_text.lower()
+    marker_index = lower.find("citations")
+    if marker_index != -1:
+        section = answer_text[marker_index:]
+
+    url_pattern = re.compile(r"https?://\S+")
+    seen_urls: set[str] = set()
+    for url_match in url_pattern.finditer(section):
+        url = url_match.group(0)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        # Grab the line containing the URL to attempt a title extraction
+        start = section.rfind("\n", 0, url_match.start()) + 1
+        end = section.find("\n", url_match.end())
+        if end == -1:
+            end = len(section)
+        line = section[start:end].strip()
+        title_part = line.replace(url, "").strip(" -–—")
+        if not title_part:
+            title_part = "Source"
+        citations.append(
+            Citation(
+                id=f"url{len(citations)+1}",
+                title=title_part.strip(),
+                url=url.strip(),
+                source=urlparse(url).netloc,
+            )
+        )
+    return citations
+
+
+def score_citation_validity(answer_text: str) -> Dict[str, Any]:
+    """Use CitationValidator to score validity of cited sources.
+
+    Returns a dict containing score (1 valid / 0 otherwise) and validator details.
+    """
+    citations = extract_citations_from_answer(answer_text)
+    if not citations:
+        return {
+            "score": 0.0,
+            "valid": False,
+            "total_count": 0,
+            "issues": ["no_citations_found"],
+        }
+    validation = _citation_validator.validate_citations(citations)
+    score = 1.0 if validation.get("valid") else 0.0
+    return {
+        "score": score,
+        **validation,
+    }
+
+
+def heuristic_fallback_robustness(runs: Sequence[Dict[str, Any]]) -> float:
+    """Binary: 1 if any error occurred followed by a success (possibly with a different tool),
+    or success under degraded/backoff conditions.
+    """
+    had_error = False
+    success_after = False
+    tool_names: List[str] = []
+    for run in runs or []:
+        name = run.get("tool_name")
+        if name:
+            tool_names.append(name)
+        status = (run.get("status") or "").lower()
+        if status == "failure":
+            had_error = True
+        if status == "success" and had_error:
+            success_after = True
+        meta = run.get("metadata") or {}
+        if str(meta.get("tool_state", "")).lower() == "degraded" and status == "success":
+            return 1.0
+        if (meta.get("backoff_count") or 0) > 0 and status == "success":
+            return 1.0
+    if success_after and len(set(tool_names)) >= 2:
+        return 1.0
+    return 0.0
+
+
+def heuristic_asks_questions(answer_text: str) -> float:
+    """Binary: 1 if the agent asks at least one targeted question."""
+    text = (answer_text or "").strip()
+    if not text:
+        return 0.0
+    qm = text.count("?")
+    if qm == 0:
+        return 0.0
+    import re
+    if re.search(r"\b(what|how|which|could|would|can|are you|do you|have you|might you)\b", text.lower()):
+        return 1.0
+    return 0.0
 
 def aggregate_tool_routing(expected: Sequence[str], runs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     expected_set = [t.strip() for t in (expected or []) if t]
@@ -125,6 +307,8 @@ def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> str:
         f"{context['user_prompt']}\n\n"
         "### Agent Response\n"
         f"{context['agent_response']}\n\n"
+        "### Evidence Summary\n"
+        f"{context.get('evidence', '(none)')}\n\n"
         "### Metadata\n"
         f"{json.dumps(context.get('metadata', {}), ensure_ascii=False, indent=2)}\n\n"
         "### Tool Runs (trimmed)\n"
@@ -282,12 +466,14 @@ def upsert_annotation(
     write_annotation_rows(path, rows, headers)
 
 
-def build_context(meta: dict[str, Any], response: str, tool_runs: str) -> dict[str, Any]:
+def build_context(meta: dict[str, Any], response: str, tool_runs: str, raw_runs: Optional[Sequence[Dict[str, Any]]] = None) -> dict[str, Any]:
+    evidence = make_evidence_summary(raw_runs or [])
     return {
         "user_prompt": meta.get("prompt", ""),
         "agent_response": response,
         "metadata": dict(meta.get("metadata") or {}),
         "tool_runs": tool_runs,
+        "evidence": evidence,
     }
 
 

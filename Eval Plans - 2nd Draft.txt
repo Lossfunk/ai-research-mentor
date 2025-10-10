@@ -1,0 +1,83 @@
+﻿The objective is to produce a repeatable and defensible evaluation suite to measure the Research Mentor Agent's effectiveness. This evaluation will assess two distinct but related areas:
+● Agentic Capabilities: The technical execution of tasks, including tool routing, RAG fidelity, and robustness.
+● Mentorship Quality: The fulfillment of core mentorship duties, such as providing actionable advice, adhering to the mentor persona, and guiding the researcher through each stage of the research lifecycle.
+○ The suite will produce structured outputs for deriving quantitative metrics.
+
+Longitudinal Evaluation
+● What it is: A series of multi-turn test scenarios that simulate a realistic, non-linear research project.
+● Why add it: Research isn't a straight line. A great mentor adapts when a researcher gets stuck, changes their mind, or has an experiment fail. This tests the agent's memory, context-awareness, and flexibility over an entire conversation.
+● How to implement:
+○ Create 3-5 long test scripts where the user persona starts in one stage, moves forward, and then deliberately regresses.
+○ Example Test Case:
+■ User (Stage B): "Here's my hypothesis about sparse transformers."
+■ Agent: Provides guidance.
+■ User (Stage C): "Okay, I've created a research plan based on that."
+■ Agent: Gives feedback on the plan.
+■ User (Simulated Failure): "Update: I tried the main experiment and the results are no better than the baseline. I think my core hypothesis was wrong. Can we go back to the drawing board? What did we miss?"
+● Metrics: A rubric to score the agent's ability to seamlessly re-engage with the earlier context and provide constructive guidance on the pivot without losing track of the overall goal.
+
+
+
+
+MECE: Meta Capabilities (Evaluated at every stage)
+Agentic Capability
+CapabilityHow to measureCheck TypeTool RoutingDid the agent select the correct tool(s) for the user's query? (Example: o3_search for literature, mentor_guidelines for advising)Binary RAG fidelityHow accurate and complete is the response synthesized from sources?
+Sub-Question: Are there any hallucinations?Rubric
+(Rubric should explicitly score for synthesis over mere summary)Fallbacks and RobustnessIf a tool fails, is the agent able to provide a helpful alternate path to the user query?BinaryCitations presenceDid the agent provide a citation?	BinaryCitation ValidityIf present, is it a real, published work (not hallucinated)?	BinaryCitation Relevance Is the citation's topic directly related to the user's query?	RubricSource FitIs the citation the right type of resource for the user's specific goal and expertise (take a look at recency, paper type, etc.)?	Rubric
+
+
+Mentorship Capability[1]
+Persona ComplianceDoes the response adhere to the mentor persona? 
+For example: Encouraging and guiding, not just giving answersRubricActionability/Feasibility of AdviceIs the guidance provided concrete with clear next steps? (Corresponds to Actionability scale)Rubric
+0-2 scale -> more details belowStage AwarenessDoes the agent accurately infer the user's current research stage and tailor its response accordingly?
+
+Example: For a user query like "What is a dataset?", does the agent recognize this as Stage A: Pre-Idea and respond with foundational explanations and clarifying questions, rather than jumping to complex methods?LLM-as-a-judgeInquisitive nature (Quality of questions asked)If questions are asked, do they demonstrate a deep understanding of the user's context and help narrow the scope effectively? (Corresponds to the Question Quality Scale)Rubric
+0-2 scale -> more details belowInquisitive Nature (Asks Questions or Not?) When the user's prompt is vague or lacks context, does the agent ask clarifying questions? BinaryConstructive and Engaging ToneDoes the agent deliver criticism constructively and maintain a positive, motivating tone? (Combines "Humility" and "Positive Motivation")Rubric
+
+Scale for Actionability [2]
+● 2.0 (Fully Actionable): Executable commands with specific parameters, timelines and expected outcomes. 
+Example: Clone repository github.com/user/project, install requirements.txt, run python train.py --epochs 50 --lr 0.001 on dataset X, expect 12-hour training time on V100."
+● 1.5 - 1.9 (Highly Actionable): Specific Tools/Methods with clear next steps, but missing 1-2 implementation details.
+Example: "Run BERT baseline on your dataset using HuggingFace Transformers, compare F1 scores against your current model, document results in Table 2."
+● 1.0 - 1.4 (Moderate Actionable): Clear direction with concrete methods, but user must fill some implementation gaps.
+Example: "Try baseline A and ablation B, compare results using metric C, run significance tests."
+● 0.5-0.9 (Partially Actionable): General direction provided but lacks specific methods or tools.
+Example: "Consider running some baselines and ablations to validate your results."
+● 0.1-0.4 (Minimally Actionable): Vague suggestions with little guidance.
+Example: "You should think about baselines and consider additional experiments."
+● 0.0 (Non-Actionable): Abstract advice with no clear next steps.
+Example: "Research is iterative and requires careful consideration."
+
+Scale for Question Quality[3]
+● 2.0: Demonstrates deep understanding of user context, asks targeted clarifying questions that directly impact recommendations. Example: "Given your physics background, are you more interested in applying physical priors to neural architectures, or using ML to solve inverse problems in physics?"
+● 1.0: Generic but relevant questions that help narrow scope. Example: "What's your programming experience level? Do you prefer theoretical or applied work?"
+● 0.0: Irrelevant or overly broad questions. Example: "What do you think about AI?"
+
+
+MECE: Stage Specific Capabilities (Evaluated per stage)
+
+StagePrimary GoalKey EvaluationCheck TypeStage A: Pre IdeaIdea Generation & Scoping	Did the agent successfully convert a vague interest into 2-3 focused, actionable research directions?
+
+Scaffolding Check: For beginner users, does the agent provide foundational steps like replicating papers or citing a well known tutorial?RubricStage B: Idea	Novelty & Hypothesis Nudging	How effectively did the agent use literature to identify novelty gaps and guide the user to a testable hypothesis?RubricStage C: Research Plan	Structured Plan Development	Did the agent produce a plan containing the core components: hypothesis, methods, metrics, timeline, and resource estimates?Binary/Rubric (Binary for presence check, rubrics for quality)
+
+Rubric also assesses the "Coherence" of the plan - are the components logically interconnected?Stage D: First DraftExperiment ValidationHow relevant and appropriate were the recommended baselines, ablations, and statistical tests for the user's preliminary results?RubricStage E: Second DraftAnticipating Reviewer Critique	Did the agent identify at least 2-3 plausible weaknesses or likely reviewer questions for a given draft excerpt or figure?RubricStage F: Final SubmissionVenue & Ethics ComplianceHow accurately did the agent provide venue-specific constraints and simulate a realistic review?Binary/Rubric (Static checks for accuracy, rubric for review quality)
+
+All things we are testing (unorganized)
+Agentic CapabilitiesTool CallsStatic CheckBinary/RubricRAG Fidelity (Source Pull, Complete of Response)Static Check, LLM-as-a-JudgeSource Pull = Binary
+Completeness = RubricPersona ComplianceLLM-as-a-JudgeRubricRobustness and Fallbacks (tool call failing)Static CheckBinaryResearch Mentor Tone / Behaviour CapabilitiesAsking for Additional Information with Insufficient InformationLLM-as-a-JudgeRubricPositive Motivation / Beacon of HopeLLM-as-a-JudgeRubricHumility / Constructive Criticism LLM-as-a-JudgeRubricCalling out Errors (Its own, and the researchers)LLM-as-a-Judge, StaticBinary to see if an error was identified, rubric to see how was it communicated?Stage 1 - Pre-Idea StageSharing Understandable Technical Definitions and Explanations  LLM-as-a-JudgeRubricRecommendation for Exploratory ReadingStatic, LLM-as-a-JudgeBinary to see if it was done
+Rubric to see what was given and its relevanceStage 2 - Idea StageNovelty Gap Search (Queries / Scope of Search) Static, LLM-as-a-JudgeBinary to see if search was done
+Rubric to see quality of queriesFocus on Research Community / Uncertainty / SignificanceLLM-as-a-JugeRubricGrounding / Scoping Down Ideas to Implementable HypothesesStatic, LLM-as-a-JudgePresence of Hyp = Binary
+To assess feasibility, need rubricStage 3 - Idea to Research PlanCreating an Experimental Plan (Timelines, Metrics, Tied to Research Plan) Static, LLM-as-a-JudgeInclusion of elements like timeline and metrics = Binary
+Completeness and Feasibility = RubricFocus on Feasibility Static, LLM-as-a-JudgeSame as aboveStage 4 - Research Plan to Draft 1 Early result verificationStatic, LLM-as-a-JudgeBinary to check if verification was done
+Rubric to assess HOW the verification was doneRecommend baselines and ablationsLLM-as-a-JudgeRubricStatistical validityStatic, LLM-as-a-JudgeBinary to see if a check was done
+Rubric to see how it was done
+
+
+
+should we add groundedness?
+
+something related to this
+
+Please add to instructions of our system: "IMPORTANT: your advice be aligned towards avoiding hyperbole, ensuring that claims made are sufficiently substantiated by evidence presented. Science is evidence-based, so at no time should the user make unsubstantiated claims. If an substantiated claim has to be made, it needs to be posed as conjecture and not a conclusion"
+good
+good

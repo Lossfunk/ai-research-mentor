@@ -16,10 +16,14 @@ from .judge_utils import (
     build_context,
     build_judge_clients,
     call_judge,
+    heuristic_asks_questions,
+    heuristic_citation_presence,
+    heuristic_fallback_robustness,
     iso_timestamp,
     load_tool_runs,
     parse_score,
     save_judge_payload,
+    score_citation_validity,
     truncate_text,
     upsert_annotation,
 )
@@ -120,13 +124,14 @@ def run_judges(
             print_error(f"Missing response file for {prompt_id}: {response_path}")
             continue
 
-        response_text = truncate_text(response_path.read_text(encoding="utf-8"))
+        full_response_text = response_path.read_text(encoding="utf-8")
+        response_text = truncate_text(full_response_text)
         tool_runs = load_tool_runs(tool_path)
         tool_runs_str = truncate_text(json.dumps(tool_runs, ensure_ascii=False, indent=2))
 
         expected_checks = list(meta.get("expected_checks") or [])
         metadata = dict(meta.get("metadata") or {})
-        context = build_context(meta, response_text, tool_runs_str)
+        context = build_context(meta, response_text, tool_runs_str, raw_runs=tool_runs)
 
         metric_results: Dict[str, Dict[str, Any]] = {}
         metric_scores: Dict[str, Optional[float]] = {}
@@ -136,8 +141,31 @@ def run_judges(
             metric_results["tool_routing"] = routing
             metric_scores["tool_routing"] = routing.get("score")
 
+        if "citation_presence" in expected_checks:
+            val = heuristic_citation_presence(full_response_text)
+            metric_results["citation_presence"] = {"score": val}
+            metric_scores["citation_presence"] = val
+
+        if "citation_validity" in expected_checks:
+            validity = score_citation_validity(full_response_text)
+            metric_results["citation_validity"] = validity
+            metric_scores["citation_validity"] = validity.get("score")
+
+        if "fallback_robustness" in expected_checks:
+            val = heuristic_fallback_robustness(tool_runs)
+            metric_results["fallback_robustness"] = {"score": val}
+            metric_scores["fallback_robustness"] = val
+
+        if "asks_questions" in expected_checks:
+            val = heuristic_asks_questions(full_response_text)
+            metric_results["asks_questions"] = {"score": val}
+            metric_scores["asks_questions"] = val
+
         for metric_key in expected_checks:
             if metric_key == "tool_routing":
+                continue
+            if metric_key in {"citation_presence", "citation_validity", "fallback_robustness", "asks_questions"}:
+                # Already scored by heuristic above
                 continue
             spec = METRIC_SPECS.get(metric_key)
             if not spec:
