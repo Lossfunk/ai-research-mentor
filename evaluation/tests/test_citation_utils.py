@@ -5,9 +5,12 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from evaluation.scripts.judge_utils import (
     apply_evidence_integrity,
+    build_context,
     extract_citations_from_answer,
+    make_evidence_summary,
     score_citation_validity,
     score_citation_validity_v2,
+    truncate_text,
 )
 
 
@@ -85,3 +88,24 @@ def test_apply_evidence_integrity_scales_with_rag() -> None:
     assert evidence["score"] == 0.6
     assert evidence["details"]["validity"] == 1.0
     assert evidence["details"]["rag_fidelity"] == 0.6
+
+
+def test_truncate_text_preserves_citation_tail() -> None:
+    long_body = "x" * 11980
+    text = f"{long_body}\nCitations\n[G1] Example — https://example.com"
+    trimmed = truncate_text(text)
+
+    assert trimmed.endswith("https://example.com")
+
+
+def test_make_evidence_summary_empty_returns_blank() -> None:
+    summary = make_evidence_summary([])
+    assert summary == ""
+
+
+def test_build_context_includes_parsed_citations() -> None:
+    meta = {"prompt": "Question?", "metadata": {}}
+    response = "Answer\n\nCitations\n[G1] Example — https://example.com"
+    context = build_context(meta, response, tool_runs="[]", raw_runs=[], full_response=response)
+
+    assert "example.com" in context["citations"]

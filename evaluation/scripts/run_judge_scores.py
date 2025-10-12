@@ -188,7 +188,13 @@ def run_judges(
 
         expected_checks = list(meta.get("expected_checks") or [])
         metadata = dict(meta.get("metadata") or {})
-        context = build_context(meta, response_text, tool_runs_str, raw_runs=tool_runs)
+        context = build_context(
+            meta,
+            response_text,
+            tool_runs_str,
+            raw_runs=tool_runs,
+            full_response=full_response_text,
+        )
 
         metric_results: Dict[str, Dict[str, Any]] = {}
         metric_scores: Dict[str, Optional[float]] = {}

@@ -23,7 +23,7 @@ METRIC_SPECS: dict[str, MetricSpec] = {
     # Additional Agentic Capability metrics from eval plan
     "rag_fidelity": MetricSpec(
         "rag_fidelity",
-        "2.0: synthesizes evidence accurately with full coverage; 1.0: largely faithful but missing key pieces; 0.0: hallucinated or unsupported claims. Score synthesis over mere summary.",
+        "2.0: synthesizes cited evidence accurately with clear attribution and no contradictions; 1.0: largely faithful with minor omissions or heuristic thresholds; 0.5: general best-practice guidance with limited grounding but no fabrications; 0.0: hallucinated, contradicts evidence, or ignores cited material.",
         "scaled",
         0.0,
         2.0,
@@ -102,7 +102,7 @@ METRIC_SPECS: dict[str, MetricSpec] = {
     ),
     "citation_quality": MetricSpec(
         "citation_quality",
-        "2.0: citations real, recent, and directly support claims. 1.0: citations real but outdated or tangential. 0.0: missing, hallucinated, or irrelevant citations.",
+        "2.0: citations are real, well-formatted, and directly support claims (scholarly or authoritative guideline/portal). 1.0: citations real but less authoritative (e.g., blogs/portals) or partially aligned. 0.0: missing, fabricated, or clearly irrelevant citations.",
         "scaled",
         0.0,
         2.0,

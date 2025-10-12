@@ -54,9 +54,18 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def truncate_text(text: str, limit: int = 6000) -> str:
+def truncate_text(text: str, limit: int = 12000) -> str:
     if len(text) <= limit:
         return text
+    # Preserve trailing citations if present by keeping the tail block intact
+    lower = text.lower()
+    citations_marker = lower.rfind("citations")
+    if citations_marker != -1:
+        tail = text[citations_marker:]
+        if len(tail) < limit // 2:
+            available = max(limit - len(tail) - 20, 0)
+            head = text[:available] + "\n...[TRUNCATED]\n"
+            return head + tail
     return text[:limit] + "\n...[TRUNCATED]"
 
 
@@ -77,13 +86,14 @@ def _collect_sources_from_runs(runs: Sequence[Dict[str, Any]]) -> Tuple[List[str
     summaries: List[str] = []
     sources: List[str] = []
     for run in runs or []:
-        # Events may contain a final_result payload with 'summary' and 'sources'
         events = run.get("events") or []
         for evt in events:
             payload = evt.get("payload") or {}
             if not isinstance(payload, dict):
                 continue
-            if evt.get("event_type") == "final_result":
+
+            event_type = evt.get("event_type")
+            if event_type == "final_result":
                 sm = payload.get("summary")
                 if isinstance(sm, list):
                     for s in sm:
@@ -92,6 +102,28 @@ def _collect_sources_from_runs(runs: Sequence[Dict[str, Any]]) -> Tuple[List[str
                 sc = payload.get("sources")
                 if isinstance(sc, list):
                     for url in sc:
+                        if isinstance(url, str) and url not in sources:
+                            sources.append(url)
+            elif event_type == "tool_call_finished":
+                result = payload.get("result") or {}
+                if isinstance(result, dict):
+                    findings = result.get("summary") or result.get("findings")
+                    if isinstance(findings, list):
+                        for f in findings:
+                            if isinstance(f, str) and f not in summaries:
+                                summaries.append(f)
+                    result_sources = []
+                    if "sources" in result and isinstance(result["sources"], list):
+                        result_sources.extend(result["sources"])
+                    for key in ("papers", "retrieved_guidelines", "citations"):
+                        entries = result.get(key)
+                        if isinstance(entries, list):
+                            for entry in entries:
+                                if isinstance(entry, dict):
+                                    url = entry.get("url") or entry.get("link")
+                                    if isinstance(url, str):
+                                        result_sources.append(url)
+                    for url in result_sources:
                         if isinstance(url, str) and url not in sources:
                             sources.append(url)
     return summaries, sources
@@ -107,7 +139,7 @@ def make_evidence_summary(runs: Sequence[Dict[str, Any]], limit: int = 8) -> str
     if sources:
         lines.append("Sources:")
         lines.extend(f"- {u}" for u in sources[: max(1, min(5, limit))])
-    return "\n".join(lines) if lines else "(no evidence summary available)"
+    return "\n".join(lines)
 
 
 def heuristic_citation_presence(answer_text: str) -> float:
@@ -446,21 +478,38 @@ def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> str:
         "You are an evaluation assistant scoring AI mentor responses according to a rubric. "
         "Be strict, cite rubric criteria, and output only JSON."
     )
-    user_prompt = (
-        f"Metric: {spec.key}\n"
-        f"Rubric: {spec.description}\n"
-        f"{metric_instruction(spec)}\n\n"
-        "### User Prompt\n"
-        f"{context['user_prompt']}\n\n"
-        "### Agent Response\n"
-        f"{context['agent_response']}\n\n"
-        "### Evidence Summary\n"
-        f"{context.get('evidence', '(none)')}\n\n"
-        "### Metadata\n"
-        f"{json.dumps(context.get('metadata', {}), ensure_ascii=False, indent=2)}\n\n"
-        "### Tool Runs (trimmed)\n"
-        f"{context['tool_runs']}"
+    sections: List[str] = [
+        f"Metric: {spec.key}",
+        f"Rubric: {spec.description}",
+        metric_instruction(spec),
+        "",
+        "### User Prompt",
+        context["user_prompt"],
+        "",
+        "### Agent Response",
+        context["agent_response"],
+        "",
+    ]
+
+    evidence_block = (context.get("evidence") or "").strip()
+    if evidence_block:
+        sections.extend(["### Evidence Summary", evidence_block, ""])
+
+    citations_block = (context.get("citations") or "").strip()
+    if citations_block:
+        sections.extend(["### Extracted Citations", citations_block, ""])
+
+    sections.extend(
+        [
+            "### Metadata",
+            json.dumps(context.get("metadata", {}), ensure_ascii=False, indent=2),
+            "",
+            "### Tool Runs (trimmed)",
+            context["tool_runs"],
+        ]
     )
+
+    user_prompt = "\n".join(sections)
 
     result = client.invoke(
         [
@@ -617,14 +666,35 @@ def upsert_annotation(
     write_annotation_rows(path, rows, headers)
 
 
-def build_context(meta: dict[str, Any], response: str, tool_runs: str, raw_runs: Optional[Sequence[Dict[str, Any]]] = None) -> dict[str, Any]:
+def build_context(
+    meta: dict[str, Any],
+    response: str,
+    tool_runs: str,
+    raw_runs: Optional[Sequence[Dict[str, Any]]] = None,
+    full_response: Optional[str] = None,
+) -> dict[str, Any]:
     evidence = make_evidence_summary(raw_runs or [])
+    response_for_citations = full_response or response
+    extracted = extract_citations_from_answer(response_for_citations)
+    citation_lines: List[str] = []
+    for citation in extracted:
+        url = citation.url or ""
+        domain = _normalize_domain(urlparse(url).netloc) if url else ""
+        kind = _classify_domain(domain) if url else "other"
+        parts = [f"[{citation.id}] {citation.title}".strip()]
+        if url:
+            parts[-1] += f" — {url}"
+        if kind != "other" and url:
+            parts[-1] += f" (kind: {kind})"
+        citation_lines.append(parts[-1])
+
     return {
         "user_prompt": meta.get("prompt", ""),
         "agent_response": response,
         "metadata": dict(meta.get("metadata") or {}),
         "tool_runs": tool_runs,
         "evidence": evidence,
+        "citations": "\n".join(citation_lines),
     }
 
 
