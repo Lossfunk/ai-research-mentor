@@ -11,18 +11,27 @@ Usage:
 """
 
 import argparse
+import itertools
 import json
+import random
 import time
+from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
+
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from academic_research_mentor.cli.session import load_env_file
 from academic_research_mentor.rich_formatter import print_error, print_info, print_success
 
+from .config_loader import compute_file_digest, load_metrics_config
 from .judge_utils import build_judge_clients
 from .run_judge_scores import run_judges
 from .run_manual_stage import ensure_stage_directories, normalize_stage
 from .single_turn_orchestrator import SingleTurnOrchestrator
+
+
+PAIRWISE_PROMPT_PATH = Path("evaluation/judges/pairwise_judge_prompt.md")
 
 
 def load_test_data(data_path: Path) -> List[Dict]:
@@ -39,72 +48,315 @@ def load_test_data(data_path: Path) -> List[Dict]:
 
 
 def run_system_responses(
-    prompts: List[Dict],
-    systems: Sequence[str],
-    stage: str,
-    output_base: Path,
+    prompts: List[Dict[str, Any]],
+    orchestrator: SingleTurnOrchestrator,
+    *,
+    stage_letter: str,
+    raw_dir: Path,
+    analysis_dir: Path,
 ) -> Dict[str, List[str]]:
-    """
-    Generate responses from all target systems for each prompt.
-    
-    Returns mapping of system_id -> list of prompt_ids processed
-    """
-    orchestrator = SingleTurnOrchestrator(systems_to_test=systems)
-    stage_letter, stage_folder = normalize_stage(stage)
-    _, raw_dir, _ = ensure_stage_directories(stage_folder)
-    
-    system_results = {system: [] for system in systems}
+    """Generate responses from all target systems for each prompt."""
+
+    system_results: Dict[str, List[str]] = {system: [] for system in orchestrator.systems_to_test}
     total_prompts = len(prompts)
+
+    print_info(
+        f"Generating responses for {total_prompts} prompts across {len(orchestrator.systems_to_test)} systems..."
+    )
     
-    print_info(f"Generating responses for {total_prompts} prompts across {len(systems)} systems...")
-    
-    for i, prompt_data in enumerate(prompts, 1):
+    for index, prompt_data in enumerate(prompts, start=1):
         prompt_id = prompt_data["prompt_id"]
         prompt_text = prompt_data["prompt"]
-        print_info(f"[{i}/{total_prompts}] Processing {prompt_id}...")
-        
+        metadata = dict(prompt_data.get("metadata") or {})
+        expected_tools = list(metadata.get("expected_tools", []))
+        expected_checks = list(prompt_data.get("expected_checks", []))
+
+        print_info(f"[{index}/{total_prompts}] Processing {prompt_id}...")
+
         system_responses = orchestrator.process_single_prompt(
             prompt_id=prompt_id,
             prompt_text=prompt_text,
-            expected_tools=prompt_data.get("metadata", {}).get("expected_tools", []),
-            stage=stage_letter
+            expected_tools=expected_tools,
+            expected_checks=expected_checks,
+            stage=stage_letter,
+            metadata=metadata,
         )
-        
-        # Save responses to raw logs directory
+
         for system_id, response_data in system_responses.items():
-            if response_data:
-                # Save raw response
-                response_path = raw_dir / f"{prompt_id}_{system_id.replace('/', '_')}.txt"
-                response_path.write_text(response_data["response"], encoding="utf-8")
-                
-                # Save tool trace
-                if response_data.get("tool_trace"):
-                    tool_path = raw_dir / f"{prompt_id}_{system_id.replace('/', '_')}_tools.json"
-                    tool_path.write_text(json.dumps(response_data["tool_trace"], indent=2), encoding="utf-8")
-                
-                # Create meta file
-                meta_file = raw_dir / f"{prompt_id}_{system_id.replace('/', '_')}_meta.json"
-                meta_data = {
-                    "prompt_id": prompt_id,
-                    "stage": stage_letter,
-                    "prompt": prompt_text,
-                    "system": system_id,
-                    "expected_checks": prompt_data.get("expected_checks", []),
-                    "metadata": prompt_data.get("metadata", {}),
-                    "response_path": str(response_path),
-                    "tool_trace_path": str(tool_path) if response_data.get("tool_trace") else None,
-                    "run_timestamp": response_data.get("timestamp"),
-                    "elapsed_seconds": response_data.get("elapsed", 0),
-                    "tool_runs_count": len(response_data.get("tool_trace", [])),
-                }
-                meta_file.write_text(json.dumps(meta_data, indent=2), encoding="utf-8")
-                
-                system_results[system_id].append(prompt_id)
+            meta_payload = dict(response_data.get("meta") or {})
+            alias = meta_payload.get("system_alias") or system_id.replace("/", "_")
+
+            response_success = response_data.get("success", False)
+            response_text = response_data.get("response", "")
+
+            if response_success and response_text:
+                response_path = raw_dir / f"{prompt_id}_{alias}.txt"
+                response_path.write_text(response_text, encoding="utf-8")
+
+                tool_trace = response_data.get("tool_trace") or []
+                tool_trace_path: Optional[Path] = None
+                if tool_trace:
+                    tool_trace_path = raw_dir / f"{prompt_id}_{alias}_tools.json"
+                    tool_trace_path.write_text(
+                        json.dumps(tool_trace, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+
+                meta_payload.update(
+                    {
+                        "prompt_id": prompt_id,
+                        "stage": stage_letter,
+                        "prompt": prompt_text,
+                        "expected_checks": expected_checks,
+                        "metadata": metadata,
+                        "system": system_id,
+                        "response_path": str(response_path),
+                        "tool_trace_path": str(tool_trace_path) if tool_trace_path else None,
+                        "run_timestamp": response_data.get("timestamp") or meta_payload.get("generated_at"),
+                        "elapsed_seconds": response_data.get("elapsed"),
+                        "tool_runs_count": len(tool_trace),
+                        "success": True,
+                        "error": None,
+                    }
+                )
+
+                meta_path = analysis_dir / f"{prompt_id}_{alias}_meta.json"
+                meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+                system_results.setdefault(system_id, []).append(prompt_id)
                 print_success(f"  ✓ {system_id}: Response saved")
             else:
-                print_error(f"  ✗ {system_id}: Failed to generate response")
+                print_error(f"  ✗ {system_id}: Generation failed ({response_data.get('error') or 'unknown error'})")
     
     return system_results
+
+
+def load_meta_index(analysis_dir: Path) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    meta_index: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for meta_file in analysis_dir.glob("*_meta.json"):
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            print_error(f"Failed to load meta file {meta_file}: {exc}")
+            continue
+        prompt_id = meta.get("prompt_id")
+        system_id = meta.get("system_id") or meta.get("system")
+        if not prompt_id or not system_id:
+            continue
+        meta_index.setdefault(prompt_id, {})[system_id] = meta
+    return meta_index
+
+
+def parse_pairwise_output(raw: str) -> Optional[Dict[str, Any]]:
+    candidate = raw.strip()
+    if not candidate:
+        return None
+    if candidate.startswith("```"):
+        candidate = candidate.split("\n", 1)[1]
+        candidate = candidate.strip("`\n ")
+    try:
+        parsed = json.loads(candidate)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    winner = parsed.get("winner")
+    if winner not in {"A", "B", "Tie"}:
+        parsed["winner"] = "Tie"
+    aspect_votes = parsed.get("aspect_votes")
+    if not isinstance(aspect_votes, dict):
+        parsed["aspect_votes"] = {}
+    return parsed
+
+
+def run_pairwise_comparisons(
+    meta_index: Dict[str, Dict[str, Dict[str, Any]]],
+    *,
+    systems: Sequence[str],
+    judge_specs: Sequence[str],
+    analysis_dir: Path,
+    output_label: str,
+    random_seed: Optional[int] = None,
+) -> None:
+    if not judge_specs:
+        return
+
+    if not meta_index:
+        print_error("Pairwise comparisons skipped: no metadata found")
+        return
+
+    if not PAIRWISE_PROMPT_PATH.exists():
+        print_error(f"Pairwise judge prompt missing: {PAIRWISE_PROMPT_PATH}")
+        return
+
+    try:
+        pairwise_template = PAIRWISE_PROMPT_PATH.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print_error(f"Unable to read pairwise judge prompt: {exc}")
+        return
+
+    judge_clients = build_judge_clients(judge_specs)
+    if not judge_clients:
+        print_error("No pairwise judge clients could be initialized")
+        return
+
+    metrics_config = load_metrics_config()
+    pairwise_aspects = (metrics_config.get("pairwise", {}) or {}).get("aspects", {})
+    pairwise_digest = compute_file_digest(PAIRWISE_PROMPT_PATH)
+
+    rng = random.Random(random_seed or 0)
+    overall_wins: Counter[str] = Counter()
+    pair_stats: Dict[tuple[str, str], Dict[str, Any]] = {}
+
+    pairwise_root = analysis_dir / output_label / "pairwise"
+    pairwise_root.mkdir(parents=True, exist_ok=True)
+
+    for prompt_id in sorted(meta_index.keys()):
+        system_map = meta_index[prompt_id]
+        available_systems = [system for system in systems if system in system_map]
+        for sys_a, sys_b in itertools.combinations(available_systems, 2):
+            order_map = {"A": sys_a, "B": sys_b}
+            if rng.random() < 0.5:
+                order_map = {"A": sys_b, "B": sys_a}
+
+            try:
+                meta_a = system_map[order_map["A"]]
+                meta_b = system_map[order_map["B"]]
+            except KeyError:
+                continue
+
+            response_a = Path(meta_a.get("response_path", ""))
+            response_b = Path(meta_b.get("response_path", ""))
+            if not response_a.exists() or not response_b.exists():
+                print_error(f"Missing response files for pairwise comparison on {prompt_id}")
+                continue
+
+            try:
+                text_a = response_a.read_text(encoding="utf-8")
+                text_b = response_b.read_text(encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                print_error(f"Failed reading responses for {prompt_id}: {exc}")
+                continue
+
+            persona_blob = meta_a.get("metadata") or {}
+            human_sections = [
+                "### Persona & Metadata",
+                json.dumps(persona_blob, ensure_ascii=False, indent=2),
+                "\n### User Prompt",
+                meta_a.get("prompt", ""),
+                "\n### System A Response",
+                text_a,
+                "\n### System B Response",
+                text_b,
+            ]
+            human_message = "\n".join(human_sections)
+
+            judge_outputs: List[Dict[str, Any]] = []
+            for name, client in judge_clients:
+                try:
+                    result = client.invoke(
+                        [
+                            SystemMessage(content=pairwise_template),
+                            HumanMessage(content=human_message),
+                        ]
+                    )
+                    raw = getattr(result, "content", None) or getattr(result, "text", None) or str(result)
+                except Exception as exc:  # noqa: BLE001
+                    raw = json.dumps({"winner": "Tie", "error": str(exc)})
+                parsed = parse_pairwise_output(raw) or {"winner": "Tie"}
+                judge_outputs.append({"judge": name, "raw": raw, "parsed": parsed})
+
+            vote_counts = Counter()
+            for output in judge_outputs:
+                winner = (output.get("parsed") or {}).get("winner", "Tie")
+                if winner in {"A", "B", "Tie"}:
+                    vote_counts[winner] += 1
+
+            if vote_counts:
+                majority_vote, majority_count = vote_counts.most_common(1)[0]
+                if majority_count == vote_counts["Tie"] and majority_vote != "Tie":
+                    majority_vote = "Tie"
+            else:
+                majority_vote = "Tie"
+
+            winning_system: Optional[str]
+            if majority_vote == "A":
+                winning_system = order_map["A"]
+            elif majority_vote == "B":
+                winning_system = order_map["B"]
+            else:
+                winning_system = None
+
+            pair_key = tuple(sorted((sys_a, sys_b)))
+            pair_entry = pair_stats.setdefault(
+                pair_key,
+                {
+                    "comparisons": [],
+                    "wins": Counter(),
+                    "ties": 0,
+                },
+            )
+
+            if winning_system:
+                overall_wins[winning_system] += 1
+                pair_entry["wins"][winning_system] += 1
+            else:
+                pair_entry["ties"] += 1
+
+            safe_pair = tuple(s.replace("/", "_") for s in pair_key)
+            pair_dir = pairwise_root / f"{safe_pair[0]}__vs__{safe_pair[1]}"
+            pair_dir.mkdir(parents=True, exist_ok=True)
+
+            comparison_payload = {
+                "prompt_id": prompt_id,
+                "order": order_map,
+                "winner": majority_vote,
+                "winner_system_id": winning_system,
+                "judge_outputs": judge_outputs,
+                "pairwise_prompt_digest": pairwise_digest,
+            }
+            comparison_path = pair_dir / f"{prompt_id}.json"
+            comparison_path.write_text(json.dumps(comparison_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            pair_entry["comparisons"].append(
+                {
+                    "prompt_id": prompt_id,
+                    "winner": majority_vote,
+                    "winner_system_id": winning_system,
+                }
+            )
+
+    for pair_key, stats in pair_stats.items():
+        safe_pair = tuple(s.replace("/", "_") for s in pair_key)
+        pair_dir = pairwise_root / f"{safe_pair[0]}__vs__{safe_pair[1]}"
+        pair_dir.mkdir(parents=True, exist_ok=True)
+        summary_payload = {
+            "systems": list(pair_key),
+            "total_comparisons": len(stats["comparisons"]),
+            "wins": {k: v for k, v in stats["wins"].items()},
+            "ties": stats["ties"],
+            "judges": list(judge_specs),
+            "pairwise_prompt_digest": pairwise_digest,
+            "pairwise_aspects": pairwise_aspects,
+        }
+        summary_path = pair_dir / "summary.json"
+        summary_path.write_text(json.dumps(summary_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if pair_stats:
+        overall_path = pairwise_root / "overall_summary.json"
+        overall_payload = {
+            "wins": {k: v for k, v in overall_wins.items()},
+            "judges": list(judge_specs),
+            "pairwise_prompt_digest": pairwise_digest,
+            "pairwise_aspects": pairwise_aspects,
+            "seed": random_seed,
+        }
+        overall_path.write_text(json.dumps(overall_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print_success(
+            f"Pairwise comparisons completed across {len(pair_stats)} system pair(s); summary -> {overall_path}"
+        )
+    else:
+        print_info("No eligible system pairs found for pairwise comparisons")
 
 
 def generate_summary_report(
@@ -115,6 +367,8 @@ def generate_summary_report(
     output_dir: Path
 ) -> None:
     """Generate summary report for the batch run."""
+    summary_dir = output_dir / output_label
+    summary_dir.mkdir(parents=True, exist_ok=True)
     summary = {
         "run_type": "single_turn_batch",
         "stage": stage,
@@ -131,7 +385,7 @@ def generate_summary_report(
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     
-    summary_path = output_dir / f"{output_label}_batch_summary.json"
+    summary_path = summary_dir / "batch_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print_success(f"Batch summary saved: {summary_path}")
 
@@ -145,6 +399,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--judge", required=True, help="Judge model for scoring")
     parser.add_argument("--output-label", default="batch_run", help="Label for organizing outputs")
     parser.add_argument("--skip-generation", action="store_true", help="Skip system response generation, only run scoring")
+    parser.add_argument("--temperature", type=float, default=0.0, help="LLM generation temperature")
+    parser.add_argument("--max-output-tokens", type=int, help="Maximum tokens per response")
+    parser.add_argument("--seed", type=int, help="Random seed for deterministic runs")
+    parser.add_argument(
+        "--pairwise-judge",
+        dest="pairwise_judges",
+        action="append",
+        help="Optional judge spec for pairwise preference scoring (repeatable)",
+    )
     args = parser.parse_args(argv)
     
     # Setup directories
@@ -155,9 +418,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     prompts = load_test_data(Path(args.input))
     print_info(f"Loaded {len(prompts)} test prompts from {args.input}")
     
+    system_results: Dict[str, List[str]] = {system: [] for system in args.systems}
+    orchestrator: Optional[SingleTurnOrchestrator] = None
+
     # Phase 1: Generate system responses (unless skipped)
     if not args.skip_generation:
-        system_results = run_system_responses(prompts, args.systems, args.stage, raw_dir)
+        orchestrator = SingleTurnOrchestrator(
+            systems_to_test=args.systems,
+            temperature=args.temperature,
+            max_output_tokens=args.max_output_tokens,
+            seed=args.seed,
+        )
+        system_results = run_system_responses(
+            prompts,
+            orchestrator,
+            stage_letter=stage_letter,
+            raw_dir=raw_dir,
+            analysis_dir=analysis_dir,
+        )
         generate_summary_report(system_results, len(prompts), args.stage, args.output_label, analysis_dir)
     else:
         print_info("Skipping response generation (--skip-generation)")
@@ -166,50 +444,50 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print_info(f"Running judge scoring with model: {args.judge}")
     
     # Find all meta files for the stage (including from multiple systems)
-    all_meta_files = []
-    for system in args.systems:
-        system_safe = system.replace("/", "_")
-        all_meta_files.extend(raw_dir.glob(f"*_{system_safe}_meta.json"))
-    
-    if not all_meta_files:
+    meta_files = list(analysis_dir.glob("*_meta.json"))
+
+    if not meta_files:
         print_error("No meta files found. Run with --skip-generation=false first.")
         return 1
+
+    print_info(f"Found {len(meta_files)} meta files for scoring")
     
-    print_info(f"Found {len(all_meta_files)} meta files for scoring")
-    
+    # Ensure root output directory exists
+    (analysis_dir / args.output_label).mkdir(parents=True, exist_ok=True)
+
     # Score each system separately
     for system in args.systems:
         system_safe = system.replace("/", "_")
-        system_meta_files = [f for f in all_meta_files if f.name.endswith(f"_{system_safe}_meta.json")]
-        
-        print_info(f"Scoring {system} ({len(system_meta_files)} prompts)...")
-        
-        # Create temporary directory for this system's judge outputs
-        system_output_dir = analysis_dir / args.output_label / system_safe
-        system_output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Move relevant meta files to temporary location for scoring
-        temp_meta_dir = system_output_dir / "meta_temp"
-        temp_meta_dir.mkdir(exist_ok=True)
-        
-        for meta_file in system_meta_files:
-            import shutil
-            shutil.copy2(meta_file, temp_meta_dir / meta_file.name)
-        
-        # Judge scoring (modifying run_judges to use our temp meta files)
+        print_info(f"Scoring {system}...")
+
         try:
             summary = run_judges(
                 stage=args.stage,
-                prompt_ids=None,  # Process all
+                prompt_ids=None,
                 judge_specs=[args.judge],
                 annotator=f"batch_{system_safe}",
                 force=False,
-                output_label=f"{args.output_label}/{system_safe}"
+                output_label=f"{args.output_label}/absolute/{system_safe}",
+                system_filter=system,
             )
-            print_success(f"Completed scoring for {system}")
+            print_success(
+                f"Completed scoring for {system} — processed {summary.get('processed', 0)} prompt(s)"
+            )
         except Exception as exc:
             print_error(f"Scoring failed for {system}: {exc}")
     
+    if args.pairwise_judges:
+        meta_index = load_meta_index(analysis_dir)
+        run_pairwise_comparisons(
+            meta_index,
+            systems=args.systems,
+            judge_specs=args.pairwise_judges,
+            analysis_dir=analysis_dir,
+            output_label=args.output_label,
+            random_seed=args.seed,
+        )
+        print_info(f"Pairwise outputs stored under: {analysis_dir / args.output_label / 'pairwise'}")
+
     print_success("Batch evaluation completed!")
     print_info(f"Results available in: {analysis_dir / args.output_label}")
     

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -9,10 +10,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from academic_research_mentor.rich_formatter import print_error, print_info
 from academic_research_mentor.cli.session import load_env_file
 
+from .config_loader import (
+    citation_domains_digest,
+    compute_file_digest,
+    load_metrics_config,
+    metrics_config_digest,
+)
 from .judge_metrics import METRIC_SPECS, MetricSpec
 from .judge_utils import (
     aggregate_scores,
     aggregate_tool_routing,
+    apply_evidence_integrity,
     build_context,
     build_judge_clients,
     call_judge,
@@ -28,6 +36,36 @@ from .judge_utils import (
     upsert_annotation,
 )
 from .run_manual_stage import ensure_stage_directories, normalize_stage
+
+
+ABSOLUTE_PROMPT_PATH = Path("evaluation/judges/single_turn_absolute_prompt.md")
+
+
+def metric_prompt_digest(spec: MetricSpec) -> str:
+    payload = json.dumps(
+        {
+            "key": spec.key,
+            "description": spec.description,
+            "kind": spec.kind,
+            "min_score": spec.min_score,
+            "max_score": spec.max_score,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _safe_model_param(client: Any, attr_names: Sequence[str]) -> Optional[Any]:
+    for name in attr_names:
+        if not hasattr(client, name):
+            continue
+        value = getattr(client, name)
+        if callable(value):
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+    return None
 
 
 def evaluate_metric(
@@ -94,17 +132,33 @@ def run_judges(
     annotator: str,
     force: bool,
     output_label: Optional[str],
+    system_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not judge_specs:
         raise ValueError("At least one --judge is required")
 
     judge_clients = build_judge_clients(judge_specs)
+    judge_metadata = []
+    for spec, client in judge_clients:
+        judge_metadata.append(
+            {
+                "spec": spec,
+                "temperature": _safe_model_param(client, ("temperature",)),
+                "max_tokens": _safe_model_param(client, ("max_tokens", "max_output_tokens")),
+            }
+        )
     stage_letter, stage_folder = normalize_stage(stage)
     _, analysis_dir, _ = ensure_stage_directories(stage_folder)
     label = _derive_label(judge_specs, output_label)
     output_dir = analysis_dir / label
     output_dir.mkdir(parents=True, exist_ok=True)
     placeholder_csv = output_dir / "annotation_placeholders.csv"
+
+    metrics_config = load_metrics_config()
+    metrics_version = metrics_config.get("version")
+    metrics_digest = metrics_config_digest()
+    absolute_prompt_digest = compute_file_digest(ABSOLUTE_PROMPT_PATH)
+    domain_config_digest = citation_domains_digest()
 
     meta_files = sorted(analysis_dir.glob("*_meta.json"))
     prompt_filter = set(prompt_ids) if prompt_ids else None
@@ -116,6 +170,9 @@ def run_judges(
         if not prompt_id:
             continue
         if prompt_filter and prompt_id not in prompt_filter:
+            continue
+        meta_system_id = meta.get("system_id") or meta.get("system")
+        if system_filter and meta_system_id != system_filter:
             continue
 
         response_path = Path(meta.get("response_path", ""))
@@ -135,31 +192,37 @@ def run_judges(
 
         metric_results: Dict[str, Dict[str, Any]] = {}
         metric_scores: Dict[str, Optional[float]] = {}
+        metric_digests: Dict[str, Optional[str]] = {}
 
         if "tool_routing" in expected_checks:
             routing = aggregate_tool_routing(metadata.get("expected_tools", []), tool_runs)
             metric_results["tool_routing"] = routing
             metric_scores["tool_routing"] = routing.get("score")
+            metric_digests["tool_routing"] = None
 
         if "citation_presence" in expected_checks:
             val = heuristic_citation_presence(full_response_text)
             metric_results["citation_presence"] = {"score": val}
             metric_scores["citation_presence"] = val
+            metric_digests["citation_presence"] = None
 
         if "citation_validity" in expected_checks:
             validity = score_citation_validity(full_response_text)
             metric_results["citation_validity"] = validity
             metric_scores["citation_validity"] = validity.get("score")
+            metric_digests["citation_validity"] = None
 
         if "fallback_robustness" in expected_checks:
             val = heuristic_fallback_robustness(tool_runs)
             metric_results["fallback_robustness"] = {"score": val}
             metric_scores["fallback_robustness"] = val
+            metric_digests["fallback_robustness"] = None
 
         if "asks_questions" in expected_checks:
             val = heuristic_asks_questions(full_response_text)
             metric_results["asks_questions"] = {"score": val}
             metric_scores["asks_questions"] = val
+            metric_digests["asks_questions"] = None
 
         for metric_key in expected_checks:
             if metric_key == "tool_routing":
@@ -174,6 +237,13 @@ def run_judges(
             result = evaluate_metric(spec, context, judge_clients)
             metric_results[metric_key] = result
             metric_scores[metric_key] = result.get("score")
+            metric_digests[metric_key] = metric_prompt_digest(spec)
+
+        if metric_scores.get("citation_validity") is not None:
+            evidence_metric = apply_evidence_integrity(metric_scores, metric_results)
+            metric_results["evidence_integrity"] = evidence_metric
+            metric_scores["evidence_integrity"] = evidence_metric.get("score")
+            metric_digests["evidence_integrity"] = None
 
         timestamp = iso_timestamp()
         upsert_annotation(
@@ -181,6 +251,7 @@ def run_judges(
             prompt_id,
             stage_letter,
             annotator,
+            meta.get("system_id"),
             metric_scores,
             timestamp,
             str(response_path),
@@ -195,6 +266,20 @@ def run_judges(
             "metrics": metric_results,
             "judge_models": [name for name, _ in judge_clients],
             "output_label": label,
+            "metrics_version": metrics_version,
+            "metrics_config_digest": metrics_digest,
+            "judge_prompt_digest": absolute_prompt_digest,
+             "citation_domains_digest": domain_config_digest,
+            "metric_prompt_digests": {k: v for k, v in metric_digests.items() if v},
+            "model_params": meta.get("model_params"),
+            "model_spec": {
+                "provider": meta.get("provider"),
+                "model": meta.get("model"),
+                "system_id": meta.get("system_id"),
+                "system_alias": meta.get("system_alias"),
+            },
+            "expected_checks": expected_checks,
+            "judge_parameters": judge_metadata,
         }
         save_judge_payload(output_dir / f"{prompt_id}_judges.json", payload)
         summaries.append(payload)
@@ -230,6 +315,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional label for organizing outputs under evaluation/results/analysis_reports/<stage>/<label>",
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing annotator rows")
+    parser.add_argument("--system", dest="system_filter", help="Optional system identifier to filter meta files")
     return parser.parse_args(argv)
 
 
@@ -244,6 +330,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             annotator=args.annotator,
             force=args.force,
             output_label=args.label,
+            system_filter=args.system_filter,
         )
     except Exception as exc:  # noqa: BLE001
         print_error(f"Judge run failed: {exc}")

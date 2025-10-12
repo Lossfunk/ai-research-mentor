@@ -32,6 +32,26 @@ from academic_research_mentor.rich_formatter import print_error
 
 from .judge_metrics import METRIC_SPECS, MetricSpec, metric_instruction
 from .run_manual_stage import ANNOTATION_COLUMNS
+from .config_loader import (
+    citation_domains_digest,
+    load_citation_domains,
+)
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe(val) for key, val in value.items()}
+    if hasattr(value, "__dict__"):
+        return _json_safe(vars(value))
+    if hasattr(value, "name") and isinstance(getattr(value, "name"), str):
+        return getattr(value, "name")
+    if hasattr(value, "value") and isinstance(getattr(value, "value"), str):
+        return getattr(value, "value")
+    return str(value)
 
 
 def truncate_text(text: str, limit: int = 6000) -> str:
@@ -112,6 +132,25 @@ _CITATION_LINE_PATTERN = re.compile(
 )
 
 
+def _normalize_domain(netloc: str) -> str:
+    value = (netloc or "").lower().strip()
+    if value.startswith("www."):
+        value = value[4:]
+    return value
+
+
+def _classify_domain(domain: str) -> str:
+    config = load_citation_domains()
+    for kind, domains in config.items():
+        for candidate in domains:
+            candidate = candidate.strip().lower()
+            if not candidate:
+                continue
+            if domain == candidate or domain.endswith(f".{candidate}"):
+                return kind
+    return "other"
+
+
 def extract_citations_from_answer(answer_text: str) -> List[Citation]:
     """Parse the final answer for a Citations section and return Citation objects."""
     citations: List[Citation] = []
@@ -167,28 +206,96 @@ def extract_citations_from_answer(answer_text: str) -> List[Citation]:
     return citations
 
 
-def score_citation_validity(answer_text: str) -> Dict[str, Any]:
-    """Use CitationValidator to score validity of cited sources.
+def _serialize_citation(citation: Citation, kind: str, domain: str, malformed: bool) -> Dict[str, Any]:
+    return {
+        "id": citation.id,
+        "title": citation.title,
+        "url": citation.url,
+        "domain": domain,
+        "kind": kind,
+        "malformed": malformed,
+    }
 
-    Returns a dict containing score (1 valid / 0 otherwise) and validator details.
-    """
-    citations = extract_citations_from_answer(answer_text)
+
+def score_citation_validity_v2(citations: Sequence[Citation]) -> Dict[str, Any]:
     if not citations:
         return {
             "score": 0.0,
-            "valid": False,
-            "total_count": 0,
-            "issues": ["no_citations_found"],
+            "details": {
+                "total_count": 0,
+                "scholarly_count": 0,
+                "guideline_count": 0,
+                "portal_count": 0,
+                "other_count": 0,
+                "malformed_count": 0,
+            },
+            "citations": [],
         }
-    validation = _citation_validator.validate_citations(citations)
-    validity_score = 1.0 if validation.get("valid") else 0.0
-    # Do not overwrite the metric 'score' with the validator's numeric quality score.
-    # Expose it separately as 'quality_score'.
-    out = dict(validation)
-    if "score" in out:
-        out["quality_score"] = out.pop("score")
-    out["score"] = validity_score
-    return out
+
+    config_digest = citation_domains_digest()
+    typed: List[Dict[str, Any]] = []
+    counts = {
+        "scholarly": 0,
+        "guideline": 0,
+        "portal": 0,
+        "other": 0,
+    }
+    malformed_count = 0
+
+    for citation in citations:
+        url = citation.url or ""
+        parsed = urlparse(url)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+            malformed_count += 1
+            typed.append(_serialize_citation(citation, "malformed", "", True))
+            continue
+        domain = _normalize_domain(parsed.netloc)
+        kind = _classify_domain(domain)
+        if kind in counts:
+            counts[kind] += 1
+        else:
+            counts["other"] += 1
+        typed.append(_serialize_citation(citation, kind, domain, False))
+
+    total_count = len(citations)
+    valid_links = total_count - malformed_count
+    has_scholarly = counts["scholarly"] > 0
+    score = 0.0
+    if has_scholarly:
+        score = 1.0
+    elif valid_links >= 2 and malformed_count == 0:
+        score = 1.0
+
+    return {
+        "score": score,
+        "details": {
+            "total_count": total_count,
+            "scholarly_count": counts["scholarly"],
+            "guideline_count": counts["guideline"],
+            "portal_count": counts["portal"],
+            "other_count": counts["other"],
+            "malformed_count": malformed_count,
+            "domain_config_digest": config_digest,
+        },
+        "citations": typed,
+    }
+
+
+def score_citation_validity(answer_text: str) -> Dict[str, Any]:
+    citations = extract_citations_from_answer(answer_text)
+    result = score_citation_validity_v2(citations)
+    legacy: Dict[str, Any] = {}
+    if citations:
+        try:
+            legacy = dict(_citation_validator.validate_citations(citations))
+        except Exception as exc:  # pragma: no cover - validator fallback
+            legacy = {"error": str(exc)}
+    if legacy:
+        quality_score = legacy.pop("score", None)
+        if quality_score is not None:
+            result["legacy_quality_score"] = quality_score
+        result["legacy_validator"] = legacy
+    return result
 
 
 def heuristic_fallback_robustness(runs: Sequence[Dict[str, Any]]) -> float:
@@ -229,6 +336,43 @@ def heuristic_asks_questions(answer_text: str) -> float:
     if re.search(r"\b(what|how|which|could|would|can|are you|do you|have you|might you)\b", text.lower()):
         return 1.0
     return 0.0
+
+
+def apply_evidence_integrity(metric_scores: Dict[str, Optional[float]], metric_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    validity_score = metric_scores.get("citation_validity")
+    rag_score = metric_scores.get("rag_fidelity")
+
+    if validity_score is None:
+        return {
+            "score": None,
+            "details": {
+                "reason": "no_citation_validity_metric",
+            },
+        }
+
+    if validity_score == 0:
+        for key in ("citation_relevance", "citation_quality"):
+            if key in metric_results:
+                metric_results[key]["score"] = 0.0
+            metric_scores[key] = 0.0
+        return {
+            "score": 0.0,
+            "details": {
+                "reason": "invalid_citations",
+            },
+        }
+
+    evidence_score = float(validity_score)
+    if rag_score is not None:
+        evidence_score = float(min(evidence_score, rag_score))
+
+    return {
+        "score": evidence_score,
+        "details": {
+            "validity": validity_score,
+            "rag_fidelity": rag_score,
+        },
+    }
 
 def aggregate_tool_routing(expected: Sequence[str], runs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     expected_set = [t.strip() for t in (expected or []) if t]
@@ -411,6 +555,7 @@ def upsert_annotation(
     prompt_id: str,
     stage: str,
     annotator: str,
+    system_id: Optional[str],
     metric_scores: Dict[str, Optional[float]],
     run_timestamp: str,
     response_path: str,
@@ -429,6 +574,8 @@ def upsert_annotation(
             continue
         row["annotator"] = annotator
         row["run_timestamp"] = run_timestamp
+        if "system_id" in row:
+            row["system_id"] = system_id or row.get("system_id") or "unknown"
         row["response_path"] = response_path
         row["tool_trace_path"] = tool_trace_path
         if "stage" in row:
@@ -451,6 +598,7 @@ def upsert_annotation(
                 "prompt_id": prompt_id,
                 "stage": stage,
                 "annotator": annotator,
+                "system_id": system_id or "unknown",
                 "run_timestamp": run_timestamp,
                 "response_path": response_path,
                 "tool_trace_path": tool_trace_path,
@@ -481,7 +629,8 @@ def build_context(meta: dict[str, Any], response: str, tool_runs: str, raw_runs:
 
 
 def save_judge_payload(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_payload = _json_safe(payload)
+    path.write_text(json.dumps(safe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def iso_timestamp() -> str:

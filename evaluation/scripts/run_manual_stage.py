@@ -42,6 +42,7 @@ ANNOTATION_COLUMNS: Sequence[str] = (
     "prompt_id",
     "stage",
     "annotator",
+    "system_id",
     "run_timestamp",
     "response_path",
     "tool_trace_path",
@@ -51,6 +52,7 @@ ANNOTATION_COLUMNS: Sequence[str] = (
     "citation_validity",
     "fallback_robustness",
     "asks_questions",
+    "evidence_integrity",
     # Meta capability metrics (scaled)
     "rag_fidelity_score",
     "citation_relevance_score",
@@ -300,6 +302,7 @@ def execute_prompt(
         {
             "prompt_id": prompt_id,
             "stage": stage_letter,
+            "system_id": metadata.get("system_id", metadata.get("system", "mentor_manual")),
             "run_timestamp": meta_payload["run_timestamp"],
             "response_path": str(response_path),
             "tool_trace_path": str(tool_path),

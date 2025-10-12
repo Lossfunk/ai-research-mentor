@@ -1,13 +1,13 @@
 """Automated analysis and reporting for batch evaluation results."""
 
 import json
-import statistics
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from collections import defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import numpy as np
+
+from .config_loader import load_metrics_config, metrics_config_digest
 
 
 class BatchAnalyzer:
@@ -17,6 +17,29 @@ class BatchAnalyzer:
         self.results_dir = Path(results_dir)
         self.annotation_files = list(self.results_dir.glob("**/annotation_placeholders.csv"))
         self.summary_files = list(self.results_dir.glob("**/*_summary.json"))
+        self.metrics_config = load_metrics_config()
+        self.metrics_digest = metrics_config_digest()
+        absolute = self.metrics_config.get("absolute_metrics", {}) or {}
+        self.scaled_metrics: List[str] = list(absolute.get("scaled", []) or [])
+        self.binary_metrics: List[str] = list(absolute.get("binary", []) or [])
+        self.metric_weights: Dict[str, float] = {
+            str(metric): float(weight)
+            for metric, weight in (self.metrics_config.get("weights", {}) or {}).items()
+        }
+        iaa_candidates = [
+            self.results_dir.parent / "inter_annotator_agreement",
+            self.results_dir.parent.parent / "inter_annotator_agreement"
+            if len(self.results_dir.parents) >= 2
+            else None,
+            Path("evaluation/results/inter_annotator_agreement"),
+        ]
+        iaa_files: List[Path] = []
+        for candidate in iaa_candidates:
+            if candidate and candidate.exists():
+                iaa_files = list(candidate.glob("**/*.json"))
+                if iaa_files:
+                    break
+        self.iaa_files = iaa_files
     
     def load_all_annotations(self) -> Dict[str, pd.DataFrame]:
         """Load all annotation CSVs into DataFrames keyed by system."""
@@ -39,93 +62,84 @@ class BatchAnalyzer:
                 try:
                     df = pd.read_csv(csv_file)
                     if not df.empty and 'prompt_id' in df.columns:
-                        annotations[system] = df
+                        system_label = system
+                        if "system_id" in df.columns:
+                            non_null_ids = df["system_id"].dropna()
+                            if not non_null_ids.empty:
+                                system_label = str(non_null_ids.iloc[0])
+                        annotations[system_label] = df
                 except Exception as e:
                     print(f"Failed to load {csv_file}: {e}")
         
         return annotations
     
-    def compute_system_metrics(self, annotations: Dict[str, pd.DataFrame]) -> Dict[str, Dict]:
-        """Compute aggregated metrics for each system."""
-        system_metrics = {}
-        
-        # Core metrics to analyze
-        core_metrics = [
-            "research_quality_score",
-            "actionability_score", 
-            "persona_fit_score",
-            "evidence_quality_score",
-            "question_asking_score"
-        ]
-        
-        binary_metrics = [
-            "citation_validity",
-            "tool_routing",
-            "stage_appropriateness", 
-            "constraint_handling"
-        ]
-        
+    def compute_system_metrics(self, annotations: Dict[str, pd.DataFrame]) -> Dict[str, Dict[str, Any]]:
+        """Compute aggregated metrics for each system using config-driven definitions."""
+
+        system_metrics: Dict[str, Dict[str, Any]] = {}
+        numeric_columns = set(self.scaled_metrics + self.binary_metrics)
+
         for system, df in annotations.items():
             if df.empty:
                 continue
-            
-            metrics = {
-                "prompt_count": len(df),
-                "success_rate": 1.0,  # All annotated = successful generation
+
+            coerced: Dict[str, pd.Series] = {}
+            for column in numeric_columns:
+                if column in df.columns:
+                    coerced[column] = pd.to_numeric(df[column], errors="coerce")
+
+            metrics: Dict[str, Any] = {
+                "prompt_count": int(len(df)),
                 "core_scores": {},
-                "binary_success": {}
+                "binary_success": {},
             }
-            
-            # Core metric statistics
-            for metric in core_metrics:
-                if metric in df.columns:
-                    scores = df[metric].dropna()
-                    if not scores.empty:
-                        metrics["core_scores"][metric] = {
-                            "mean": float(scores.mean()),
-                            "median": float(scores.median()),
-                            "std": float(scores.std()),
-                            "min": float(scores.min()),
-                            "max": float(scores.max()),
-                            "count": int(scores.count())
-                        }
-            
-            # Binary metric success rates  
-            for metric in binary_metrics:
-                if metric in df.columns:
-                    values = df[metric].dropna()
-                    if not values.empty:
-                        success_rate = (values == 1.0).mean()
-                        metrics["binary_success"][metric] = {
-                            "success_rate": float(success_rate),
-                            "count": int(values.count())
-                        }
-            
-            # Compute overall score (weighted average)
-            overall_scores = []
-            metric_weights = {
-                "research_quality_score": 1.2,
-                "actionability_score": 1.0,
-                "persona_fit_score": 1.0, 
-                "evidence_quality_score": 0.8,
-                "question_asking_score": 0.8
-            }
-            
-            total_weight = 0
-            weighted_sum = 0
-            for metric, weight in metric_weights.items():
-                if metric in metrics["core_scores"]:
-                    weighted_sum += metrics["core_scores"][metric]["mean"] * weight
-                    total_weight += weight
-            
+
+            for metric in self.scaled_metrics:
+                series = coerced.get(metric)
+                if series is None:
+                    continue
+                values = series.dropna()
+                if values.empty:
+                    continue
+                metrics["core_scores"][metric] = {
+                    "mean": float(values.mean()),
+                    "median": float(values.median()),
+                    "std": float(values.std()),
+                    "min": float(values.min()),
+                    "max": float(values.max()),
+                    "count": int(values.count()),
+                }
+
+            for metric in self.binary_metrics:
+                series = coerced.get(metric)
+                if series is None:
+                    continue
+                values = series.dropna()
+                if values.empty:
+                    continue
+                success_rate = float((values >= 0.999).mean())
+                metrics["binary_success"][metric] = {
+                    "success_rate": success_rate,
+                    "count": int(values.count()),
+                }
+
+            weighted_sum = 0.0
+            total_weight = 0.0
+            for metric, weight in self.metric_weights.items():
+                core_entry = metrics["core_scores"].get(metric)
+                if not core_entry:
+                    continue
+                weighted_sum += core_entry["mean"] * weight
+                total_weight += weight
+
             if total_weight > 0:
                 metrics["overall_score"] = {
                     "weighted_mean": weighted_sum / total_weight,
-                    "total_weight": float(total_weight)
+                    "total_weight": float(total_weight),
                 }
-            
+
             system_metrics[system] = metrics
-        
+
         return system_metrics
     
     def generate_comparison_report(self, system_metrics: Dict[str, Dict]) -> Dict:
@@ -136,8 +150,9 @@ class BatchAnalyzer:
         comparison = {
             "systems": list(system_metrics.keys()),
             "metric_rankings": {},
-            " statistical_tests": {},
-            "winner_analysis": {}
+            "statistical_tests": {},
+            "winner_analysis": {},
+            "metrics_config_digest": self.metrics_digest,
         }
         
         # Rank systems by each metric
@@ -173,48 +188,55 @@ class BatchAnalyzer:
     
     def generate_failure_analysis(self, annotations: Dict[str, pd.DataFrame]) -> Dict:
         """Analyze common failure modes across systems."""
-        failure_data = {
+        failure_data: Dict[str, Any] = {
             "by_stage": defaultdict(list),
-            "by_persona": defaultdict(list),
             "low_scores": defaultdict(lambda: defaultdict(list)),
-            "binary_failures": defaultdict(lambda: defaultdict(list))
+            "binary_failures": defaultdict(lambda: defaultdict(list)),
         }
-        
+
         for system, df in annotations.items():
             if df.empty:
                 continue
-            
+
             for _, row in df.iterrows():
-                prompt_id = row.get('prompt_id', '')
-                stage = prompt_id.split('_')[1] if '_' in prompt_id else 'unknown'
-                
-                # Filter prompts with metadata if available
-                metadata = {}
-                if hasattr(df, '_metadata_cache'):
-                    metadata = df._metadata_cache.get(prompt_id, {})
-                
-                # Track by stage
-                failure_data["by_stage"][stage].append((system, row))
-                
-                # Track by persona if metadata available
-                persona = metadata.get('persona', 'unknown')
-                failure_data["by_persona"][persona].append((system, row))
-        
-        # Analyze low-scoring prompts
-        core_metrics = ["research_quality_score", "actionability_score", "persona_fit_score"]
-        
-        for system, df in annotations.items():
-            for metric in core_metrics:
-                if metric in df.columns:
-                    low_score_threshold = 0.8  # Below 80% of max score
-                    low_score_mask = (df[metric] < low_score_threshold) & df[metric].notna()
-                    low_scoring = df[low_score_mask]
-                    
-                    if not low_scoring.empty:
-                        for _, row in low_scoring.iterrows():
-                            failure_data["low_scores"][metric][system].append(row)
-        
-        return {k: dict(v) for k, v in failure_data.items()}  # Convert defaultdict to dict
+                stage = str(row.get("stage") or "UNKNOWN").upper()
+                failure_data["by_stage"][stage].append(
+                    {
+                        "system": system,
+                        "prompt_id": row.get("prompt_id"),
+                    }
+                )
+
+            for metric in self.scaled_metrics:
+                if metric not in df.columns:
+                    continue
+                series = pd.to_numeric(df[metric], errors="coerce")
+                low_threshold = 0.8  # configurable threshold for scaled metrics
+                mask = (series < low_threshold) & series.notna()
+                if mask.any():
+                    subset = df.loc[mask, ["prompt_id", metric]]
+                    failure_data["low_scores"][metric][system].extend(subset.to_dict("records"))
+
+            for metric in self.binary_metrics:
+                if metric not in df.columns:
+                    continue
+                series = pd.to_numeric(df[metric], errors="coerce")
+                mask = (series < 0.5) & series.notna()
+                if mask.any():
+                    subset = df.loc[mask, ["prompt_id", metric]]
+                    failure_data["binary_failures"][metric][system].extend(subset.to_dict("records"))
+
+        return {
+            "by_stage": {k: list(v) for k, v in failure_data["by_stage"].items()},
+            "low_scores": {
+                metric: {sys: records for sys, records in systems.items()}
+                for metric, systems in failure_data["low_scores"].items()
+            },
+            "binary_failures": {
+                metric: {sys: records for sys, records in systems.items()}
+                for metric, systems in failure_data["binary_failures"].items()
+            },
+        }
     
     def create_detailed_report(self) -> Dict:
         """Generate comprehensive analysis report."""
@@ -228,13 +250,27 @@ class BatchAnalyzer:
                 "analysis_date": pd.Timestamp.now().isoformat(),
                 "systems_analyzed": list(annotations.keys()),
                 "total_annotations": sum(len(df) for df in annotations.values()),
-                "core_metrics_count": len(system_metrics.get(list(system_metrics.keys())[0], {}).get("core_scores", {}))
+                "core_metrics_count": len(next(iter(system_metrics.values()), {}).get("core_scores", {})),
+                "metrics_version": self.metrics_config.get("version"),
+                "metrics_config_digest": self.metrics_digest,
             },
             "system_metrics": system_metrics,
             "comparison": comparison,
             "failure_analysis": failures,
             "recommendations": self._generate_recommendations(system_metrics, failures)
         }
+
+        human_calibration: List[Dict[str, Any]] = []
+        for path in self.iaa_files:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["_source_path"] = str(path)
+                human_calibration.append(payload)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Failed to load human calibration artifact {path}: {exc}")
+        if human_calibration:
+            report["human_calibration"] = human_calibration
+            report["metadata"]["human_calibration_count"] = len(human_calibration)
         
         return report
     
