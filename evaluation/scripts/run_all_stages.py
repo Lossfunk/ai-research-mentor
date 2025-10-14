@@ -25,7 +25,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--stage",
         action="append",
         dest="stages",
-        choices=["stage_a", "stage_b", "stage_c", "A", "B", "C"],
+        choices=["stage_a", "stage_b", "stage_c", "stage_d", "stage_e", "stage_f", "A", "B", "C", "D", "E", "F"],
         help="Restrict execution to selected stage(s); repeatable",
     )
     return parser.parse_args(argv)
@@ -33,7 +33,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    selected = args.stages or ["stage_a", "stage_b", "stage_c"]
+    selected = args.stages or ["stage_a", "stage_b", "stage_c", "stage_d", "stage_e", "stage_f"]
 
     summaries = []
     for stage in selected:

@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import os
 import itertools
 import json
 import random
@@ -29,6 +30,12 @@ from .judge_utils import build_judge_clients
 from .run_judge_scores import run_judges
 from .run_manual_stage import ensure_stage_directories, normalize_stage
 from .single_turn_orchestrator import SingleTurnOrchestrator
+
+try:
+    # Attachments API (optional; runner works without attachments)
+    from academic_research_mentor.attachments import attach_pdfs as _attach_pdfs
+except Exception:  # pragma: no cover - optional import
+    _attach_pdfs = None  # type: ignore
 
 
 PAIRWISE_PROMPT_PATH = Path("evaluation/judges/pairwise_judge_prompt.md")
@@ -408,11 +415,39 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         action="append",
         help="Optional judge spec for pairwise preference scoring (repeatable)",
     )
+    parser.add_argument(
+        "--attach-pdf",
+        dest="attach_pdfs",
+        action="append",
+        help="Attach one or more PDF files to ground answers (repeatable)",
+    )
+    parser.add_argument(
+        "--attachments-dir",
+        help="Directory containing PDFs to attach (all *.pdf files will be loaded)",
+    )
     args = parser.parse_args(argv)
     
     # Setup directories
     stage_letter, stage_folder = normalize_stage(args.stage)
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
+
+    # Load attachments, if provided
+    try:
+        pdfs: List[str] = []
+        if getattr(args, "attach_pdfs", None):
+            pdfs.extend([str(Path(p)) for p in args.attach_pdfs if p])
+        if getattr(args, "attachments_dir", None):
+            base = Path(args.attachments_dir)
+            if base.exists() and base.is_dir():
+                for p in base.glob("*.pdf"):
+                    pdfs.append(str(p))
+        if pdfs and _attach_pdfs is not None:
+            print_info(f"Attaching PDFs ({len(pdfs)}): first={os.path.basename(pdfs[0])}")
+            _attach_pdfs(pdfs)
+        elif pdfs and _attach_pdfs is None:
+            print_error("Attachments support not available; skipping PDF attach")
+    except Exception as exc:  # noqa: BLE001
+        print_error(f"Failed to attach PDFs: {exc}")
     
     # Load test data
     prompts = load_test_data(Path(args.input))

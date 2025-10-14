@@ -17,6 +17,13 @@ from academic_research_mentor.runtime import build_agent
 from academic_research_mentor.core.transparency import get_transparency_store, ToolRun, ToolEvent
 from academic_research_mentor.rich_formatter import print_info, print_error
 
+# Optional attachments API for grounding runs
+try:  # pragma: no cover - optional
+    from academic_research_mentor.attachments import attach_pdfs as _attach_pdfs, get_summary as _att_summary
+except Exception:  # pragma: no cover
+    _attach_pdfs = None  # type: ignore
+    _att_summary = None  # type: ignore
+
 
 RUNTIME_PRELUDE = (
     "Use the selected core prompt variant only; never combine prompts. "
@@ -97,6 +104,12 @@ def normalize_stage(stage: str) -> Tuple[str, str]:
         return "B", "stage_b"
     if value in {"c", "stage_c"}:
         return "C", "stage_c"
+    if value in {"d", "stage_d"}:
+        return "D", "stage_d"
+    if value in {"e", "stage_e"}:
+        return "E", "stage_e"
+    if value in {"f", "stage_f"}:
+        return "F", "stage_f"
     raise StageRunError(f"Unknown stage: {stage}")
 
 
@@ -326,9 +339,32 @@ def run_stage(
     stage: str,
     prompt_ids: Optional[Sequence[str]] = None,
     force: bool = False,
+    *,
+    attach_pdfs: Optional[Sequence[str]] = None,
+    attachments_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     stage_letter, stage_folder = normalize_stage(stage)
     records = load_prompt_records(stage_letter, prompt_ids)
+    # Load attachments before building the agent so tools can reflect presence
+    try:
+        pdfs: List[str] = []
+        if attachments_dir:
+            base = Path(attachments_dir)
+            if base.exists() and base.is_dir():
+                pdfs.extend([str(p) for p in base.glob("*.pdf")])
+        if attach_pdfs:
+            pdfs.extend([str(Path(p)) for p in attach_pdfs if p])
+        if pdfs and _attach_pdfs is not None:
+            _attach_pdfs(pdfs)
+            if _att_summary is not None:
+                summ = _att_summary()
+                print_info(
+                    f"Attachments: files={summ.get('files')}, pages={summ.get('pages')}, chunks={summ.get('chunks')}"
+                )
+        elif pdfs and _attach_pdfs is None:
+            print_error("Attachments support not available; skipping PDF attach")
+    except Exception as exc:  # noqa: BLE001
+        print_error(f"Failed to attach PDFs: {exc}")
     agent, loaded_variant = prepare_agent()
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
 
@@ -360,13 +396,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--stage", required=True, help="Stage identifier (A, B, C or stage_a, stage_b, stage_c)")
     parser.add_argument("--prompt-id", action="append", dest="prompt_ids", help="Run only specified prompt_id (can repeat)")
     parser.add_argument("--force", action="store_true", help="Overwrite existing artifacts for prompts")
+    parser.add_argument("--attach-pdf", dest="attach_pdfs", action="append", help="Attach one or more PDFs (repeatable)")
+    parser.add_argument("--attachments-dir", help="Directory containing PDFs to attach (all *.pdf loaded)")
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         args = parse_args(argv)
-        summary = run_stage(args.stage, prompt_ids=args.prompt_ids, force=args.force)
+        summary = run_stage(
+            args.stage,
+            prompt_ids=args.prompt_ids,
+            force=args.force,
+            attach_pdfs=getattr(args, "attach_pdfs", None),
+            attachments_dir=getattr(args, "attachments_dir", None),
+        )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     except StageRunError as exc:
