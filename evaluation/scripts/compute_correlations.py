@@ -5,9 +5,9 @@ Compute Spearman and Pearson correlations between two evaluation CSVs.
 
 Usage:
   uv run python -m evaluation.scripts.compute_correlations \
-    --csv-a evaluation/results/analysis_reports/stage_a/pilot_check_v2/annotation_placeholders.csv \
-    --csv-b evaluation/results/analysis_reports/stage_a/pilot_check_v2_absolute_openrouter_anthropic_claude-sonnet-4.5/annotation_placeholders.csv \
-    --out-dir evaluation/results/analysis_reports/stage_a/pilot_check_v2
+    --csv-a evals-for-papers/results/analysis_reports/stage_a/pilot_check_v2/annotation_placeholders.csv \
+    --csv-b evals-for-papers/results/analysis_reports/stage_a/pilot_check_v2_absolute_openrouter_anthropic_claude-sonnet-4.5/annotation_placeholders.csv \
+    --out-dir evals-for-papers/results/analysis_reports/stage_a/pilot_check_v2
 
 Outputs:
   - correlations_gpt5_vs_claude.json

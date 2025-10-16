@@ -209,9 +209,10 @@ def serialize_tool_run(run: ToolRun) -> Dict[str, Any]:
 
 
 def ensure_stage_directories(stage_folder: str) -> Tuple[Path, Path, Path]:
-    raw_dir = Path("evaluation/results/raw_logs") / stage_folder
-    analysis_dir = Path("evaluation/results/analysis_reports") / stage_folder
-    iaa_dir = Path("evaluation/results/inter_annotator_agreement") / stage_folder
+    base = Path("evals-for-papers/results")
+    raw_dir = base / "raw_logs" / stage_folder
+    analysis_dir = base / "analysis_reports" / stage_folder
+    iaa_dir = base / "inter_annotator_agreement" / stage_folder
     raw_dir.mkdir(parents=True, exist_ok=True)
     analysis_dir.mkdir(parents=True, exist_ok=True)
     iaa_dir.mkdir(parents=True, exist_ok=True)
@@ -259,6 +260,7 @@ def execute_prompt(
     prompt_text = str(prompt_record.get("prompt"))
     expected_checks = list(prompt_record.get("expected_checks") or [])
     metadata = dict(prompt_record.get("metadata") or {})
+    system_id = metadata.get("system_id") or metadata.get("system") or "mentor_manual"
 
     response_path = raw_dir / f"{prompt_id}.txt"
     tool_path = raw_dir / f"{prompt_id}_tools.json"
@@ -302,6 +304,8 @@ def execute_prompt(
         "prompt": prompt_text,
         "expected_checks": expected_checks,
         "metadata": metadata,
+        "system_id": system_id,
+        "system_alias": metadata.get("system_alias"),
         "run_timestamp": datetime.utcnow().isoformat() + "Z",
         "elapsed_seconds": elapsed,
         "response_path": str(response_path),
@@ -315,7 +319,7 @@ def execute_prompt(
         {
             "prompt_id": prompt_id,
             "stage": stage_letter,
-            "system_id": metadata.get("system_id", metadata.get("system", "mentor_manual")),
+            "system_id": system_id,
             "run_timestamp": meta_payload["run_timestamp"],
             "response_path": str(response_path),
             "tool_trace_path": str(tool_path),

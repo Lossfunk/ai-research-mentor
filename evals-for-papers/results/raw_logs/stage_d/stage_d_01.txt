@@ -1,0 +1,160 @@
+Based on the paper snippets I've retrieved, let me provide you with comprehensive guidance on reproducing the LLM-as-a-Judge pipeline. While the PDF appears to have some encoding issues, I can see the key methodological structure from Figure 2 and the overview [file:5].
+
+## **Intuition**
+
+The paper's methodology follows a classic supervised learning pattern: develop a taxonomy on one dataset through iterative human annotation, then validate it using LLM-as-a-Judge on held-out data. The critical insight is that **data leakage occurs when examples used to refine your taxonomy categories later appear in your evaluation set**, which would artificially inflate agreement metrics and make your taxonomy appear more generalizable than it actually is.
+
+## **Why this is principled**
+
+This two-phase approach (development → validation) mirrors standard ML practice where you never tune hyperparameters on your test set. The inter-annotator agreement study (Cohen's kappa) provides a reliability ceiling—your LLM judge can't be considered valid if it doesn't approach human-level consistency. The iterative refinement with agreement thresholds ensures the taxonomy is actually learnable rather than idiosyncratic.
+
+---
+
+## **Key Components from Section 3.4**
+
+Based on the methodology workflow visible in the paper [file:5], here are the essential components:
+
+### **1. Two-Phase Data Split (Critical for Avoiding Leakage)**
+
+**Development Phase:**
+- Collect MAS traces from multiple frameworks (the paper studied ChatDev, AutoGen, MetaGPT, etc.)
+- **Reserve a development set** for taxonomy creation
+- Have human annotators identify failure modes iteratively
+- Refine taxonomy categories until inter-annotator agreement reaches acceptable threshold (the paper achieved Cohen's kappa in the 0.71-0.82 range based on the figure) [file:5]
+
+**Validation Phase:**
+- Use a **completely separate held-out set** of traces
+- Apply the finalized taxonomy (no further modifications allowed)
+- Compare LLM judge annotations against human annotations on this fresh data
+
+**Critical pitfall:** Never let traces from your development set appear in validation. Even seeing similar failure patterns can leak information about edge cases you refined categories to handle.
+
+### **2. Iterative Taxonomy Development**
+
+From the workflow diagram [file:5]:
+- Start with initial failure identification on development traces
+- Multiple annotators label independently
+- Calculate inter-annotator agreement (Cohen's kappa)
+- When disagreements occur, discuss and refine category definitions
+- Re-annotate with updated taxonomy
+- Repeat until agreement stabilizes (typically κ > 0.70 for substantial agreement)
+
+**Pitfall:** Don't stop refinement too early. Low agreement means your categories are ambiguous, which will doom the LLM judge later.
+
+### **3. LLM Judge Prompt Design**
+
+While I don't see the exact prompt template in the retrieved snippets, based on standard practice and the paper's structure, you'll need:
+
+- **Clear category definitions** with examples from your development set
+- **Decision criteria** for each failure mode
+- **Chain-of-thought prompting** to get reasoning before classification
+- **Structured output format** (e.g., JSON with failure category + confidence)
+
+**Pitfall:** Including too many examples in the prompt can cause the LLM to overfit to those specific patterns. Use diverse examples from development set only.
+
+### **4. Validation Metrics**
+
+The paper reports [file:5]:
+- Inter-annotator agreement (human-human baseline)
+- LLM annotator agreement with human gold labels
+- Likely also confusion matrices to see which categories the LLM struggles with
+
+---
+
+## **Three Concrete Experiments to Validate Your Reproduction**
+
+### **Experiment 1: Data Leakage Sensitivity Test**
+
+**Objective:** Quantify how much data leakage inflates your LLM judge performance. **Hypothesis:** Using development-set examples in the LLM prompt will artificially boost agreement by 10-20% compared to using only category definitions.
+
+**Setup:** Create three LLM judge variants: (A) Prompt with only category definitions, (B) Prompt with 2-3 examples per category from development set, (C) Prompt with examples from validation set (intentional leakage). Run all three on your held-out validation set (50-100 traces minimum).
+
+**Metrics:** Cohen's kappa between LLM and human annotations for each variant. Also track per-category F1 scores to see which failure modes are most affected.
+
+**Expected outcome:** Variant A should match the paper's reported agreement (±0.05). Variant B should be 5-10% higher. Variant C should be 15-25% higher, demonstrating clear leakage. If A and C are similar, your categories may be too coarse.
+
+**Interpretation:** If variant A performs poorly (<0.60 kappa), your taxonomy needs refinement or your LLM judge prompt needs better category descriptions. The gap between B and C tells you how much example selection matters.
+
+### **Experiment 2: Taxonomy Stability Across Frameworks**
+
+**Objective:** Test whether your taxonomy generalizes to new multi-agent frameworks not seen during development. **Hypothesis:** Agreement should drop by <15% on a new framework if the taxonomy captures fundamental failure modes rather than framework-specific quirks.
+
+**Setup:** If you developed your taxonomy on Framework X, collect 30-50 traces from Framework Y (different architecture—e.g., if you used hierarchical agents, try flat collaboration). Have humans annotate using your finalized taxonomy. Run your LLM judge on the same traces.
+
+**Metrics:** Cohen's kappa on new framework vs. original validation set. Also compute category distribution shift (KL divergence between failure mode frequencies).
+
+**Expected outcome:** Kappa should remain >0.65 if taxonomy is robust. Large distribution shifts (KL > 1.0) suggest framework-specific failure modes that need new categories.
+
+**Follow-up:** For any categories with F1 < 0.50 on the new framework, conduct error analysis—are definitions too framework-specific, or does the new framework have genuinely novel failure modes?
+
+### **Experiment 3: Ablation of Iterative Refinement**
+
+**Objective:** Validate that the iterative refinement process actually improves taxonomy quality. **Hypothesis:** The first-pass taxonomy (before refinement) will have ≥20% lower inter-annotator agreement than the final version.
+
+**Setup:** Use your development set. Have annotators label traces with your initial taxonomy (version 1, before any refinement). Calculate agreement. Then apply your final refined taxonomy (version N) to the same traces and recalculate.
+
+**Metrics:** Cohen's kappa for v1 vs. vN. Also track: (1) number of "Other/Unclear" labels (should decrease), (2) number of multi-label assignments if allowed (should decrease as categories become more distinct), (3) annotation time per trace (should decrease with clearer definitions).
+
+**Expected outcome:** Kappa should improve from ~0.50-0.60 (v1) to >0.70 (vN). If improvement is <0.10, your refinement process may not be addressing the right ambiguities—check which specific category pairs cause confusion.
+
+**Interpretation:** This experiment justifies the cost of iterative refinement. If v1 already achieves high agreement, you might have over-refined and risk overfitting to your development set.
+
+---
+
+## **Practical Implementation Checklist**
+
+Before running experiments:
+
+1. **Data partitioning:**
+   - [ ] Split traces 60/40 or 70/30 (development/validation)
+   - [ ] Ensure stratification if certain failure modes are rare
+   - [ ] Document the split with fixed random seed
+
+2. **Development phase:**
+   - [ ] Minimum 2-3 independent annotators
+   - [ ] Annotation guidelines document (update with each refinement iteration)
+   - [ ] Track all taxonomy versions with timestamps
+   - [ ] Stop refinement when κ plateaus for 2+ iterations
+
+3. **LLM judge setup:**
+   - [ ] Fix model version (e.g., GPT-4-0613, not rolling "gpt-4")
+   - [ ] Set temperature=0 for reproducibility
+   - [ ] Log all prompts and responses
+   - [ ] Include category definitions in system message, not examples from validation set
+
+4. **Validation:**
+   - [ ] Human annotators should not have seen validation traces before
+   - [ ] Run LLM judge with exact same prompt used in development
+   - [ ] Compute agreement metrics with confidence intervals (bootstrap with 1000 samples)
+
+---
+
+## **Critical Questions for Your Setup**
+
+1. **How many frameworks are you evaluating?** If just one, you risk developing a framework-specific taxonomy. The paper studied multiple frameworks to ensure generalizability.
+
+2. **What's your minimum trace count per failure category?** You need at least 10-15 examples of each failure mode in your validation set for reliable agreement metrics.
+
+3. **Are you allowing multi-label annotations?** The paper's taxonomy appears hierarchical (Pre-Execution, Execution, Post-Execution stages with subcategories) [file:5]. Clarify whether a trace can exhibit multiple failure modes.
+
+4. **How are you handling "no failure" cases?** Make sure your validation set includes successful traces to avoid selection bias.
+
+---
+
+## **Literature Anchors**
+
+For methodological grounding on LLM-as-a-Judge validation:
+
+1. **Zheng et al. (2023)** - "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena" - Establishes best practices for validating LLM judges against human preferences: https://arxiv.org/abs/2306.05685
+
+2. **Artstein & Poesio (2008)** - "Inter-Coder Agreement for Computational Linguistics" - Comprehensive guide on agreement metrics and when to use Cohen's kappa vs. alternatives: https://www.mitpressjournals.org/doi/abs/10.1162/coli.07-034-R2
+
+---
+
+## **Next Actions (1-3 days)**
+
+1. **Implement data split:** Partition your traces and freeze the validation set. Document the split criteria.
+2. **Draft annotation guidelines:** Write clear definitions for each failure category with 2-3 examples (from development set only).
+3. **Pilot annotation:** Have 2 annotators label 20 development traces independently, calculate initial kappa to establish baseline.
+
+Would you like me to help you design the specific prompt template for your LLM judge, or do you need guidance on calculating Cohen's kappa with confidence intervals?

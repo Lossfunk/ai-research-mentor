@@ -1,0 +1,89 @@
+Before diving into novelty and experiments, I need to understand your specific angle:
+
+## Strategic Questions
+
+1. **What compression mechanism are you proposing?** The literature is saturated with pruning [P1], quantization [P7], and knowledge distillation [P2][P8]. Are you combining these differently, introducing a new compression primitive, or focusing on LLM-specific properties (e.g., attention sparsity, emergent modularity)?
+
+2. **What's your success criterion?** Is it better compression ratios at fixed quality, faster inference, training-time compression, or something else? The field has moved beyond "can we compress" to "what tradeoffs unlock new deployment scenarios."
+
+3. **What resources do you have?** Compressing modern LLMs (7B+ parameters) requires substantial compute for baseline reproduction. Do you have access to pre-trained models, GPUs, and evaluation benchmarks, or are you working with smaller models first?
+
+---
+
+## Novelty Assessment
+
+**Intuition**: LLM compression is a crowded field, so novelty hinges on either (a) a fundamentally new mechanism, (b) exploiting LLM-specific structure that CNNs/older DNNs lack, or (c) solving a deployment bottleneck that existing methods miss (e.g., dynamic compression, user-specific adaptation).
+
+**Why this is principled**: Hamming emphasizes working on important problems where you can make a unique contribution [G15]. The literature shows combined approaches (pruning + quantization + distillation) are well-explored [P1][P3], so incremental combinations won't stand out. Strong research taste involves identifying gaps where existing methods fail [G13][G17].
+
+### Current Landscape
+- **Established techniques**: Pruning, quantization (including QKD [P7]), and knowledge distillation are mature [P1][P3]. Libraries like KD-Lib [P3] make these accessible.
+- **Potential gaps**:
+  - **Dynamic/adaptive compression**: Most methods are static; can you compress based on input complexity or user context?
+  - **Mechanistic compression**: Exploiting interpretable circuits or modules in LLMs (e.g., compressing redundant attention heads while preserving critical ones).
+  - **Task-specific compression**: Compressing for specific downstream tasks rather than general capability preservation.
+  - **Training-free methods**: Data-free quantization exists [P4], but LLM-scale training-free compression is less explored.
+
+---
+
+## Three Concrete Experiments
+
+### Experiment 1: Baseline Compression Ratio vs. Quality Tradeoff
+**Objective & Hypothesis**: Establish whether your method achieves better Pareto frontiers than existing techniques. Hypothesis: Your approach will achieve ≥10% better compression at iso-quality or ≥5% better quality at iso-compression compared to standard pruning+quantization.
+
+**Setup & Resources**: Use a publicly available LLM (e.g., GPT-2, LLaMA-7B if you have compute). Apply your compression method and compare against baselines: (1) magnitude pruning at 25%, 50%, 75% sparsity, (2) 8-bit and 4-bit quantization, (3) combined pruning+quantization [P1]. Evaluate on standard benchmarks (MMLU, HellaSwag, or perplexity on WikiText-103).
+
+**Evaluation Metrics**: Plot compression ratio (original size / compressed size) vs. task accuracy or perplexity. Measure inference latency on CPU and GPU. Track memory footprint during inference.
+
+**Expected Results & Interpretation**: If your method dominates the Pareto frontier, you have evidence of practical value. If it's comparable, the novelty must come from other dimensions (speed, ease of use, theoretical insight). If it underperforms, identify which component fails—compression aggressiveness, quality preservation, or both.
+
+**Follow-ups**: Vary model sizes (125M to 7B parameters) to test scaling behavior. Try different domains (code, math, general text) to assess robustness.
+
+---
+
+### Experiment 2: Ablation of Compression Components
+**Objective & Hypothesis**: Identify which part of your method drives performance. Hypothesis: One component (e.g., attention-head pruning, layer-wise quantization) contributes ≥50% of the quality gain, while others are marginal.
+
+**Setup & Resources**: Decompose your method into independent components. For example, if you combine structured pruning + mixed-precision quantization + distillation, test each in isolation and pairwise combinations. Use a fixed model (e.g., GPT-2-medium) and a single benchmark (e.g., perplexity on validation set) to reduce variance.
+
+**Evaluation Metrics**: Measure perplexity or accuracy for each ablation. Calculate the marginal contribution of each component (performance with component X minus performance without X). Rank components by impact.
+
+**Expected Results & Interpretation**: If one component dominates, your story becomes "X is the key innovation; Y and Z provide incremental gains." If all components contribute equally, you have a systems contribution but weaker scientific insight. If removing a component *improves* performance, you've found a bug or harmful interaction.
+
+**Follow-ups**: Test whether component importance changes with compression ratio (e.g., does distillation matter more at 10× compression than 2×?). Check if findings generalize across model families (GPT vs. LLaMA architectures).
+
+---
+
+### Experiment 3: Failure Mode Analysis—Where Does Compression Break?
+**Objective & Hypothesis**: Identify tasks or input types where compression degrades quality disproportionately. Hypothesis: Compression will harm rare/long-tail capabilities (e.g., multi-hop reasoning, low-resource languages) more than common tasks (e.g., next-word prediction on frequent tokens).
+
+**Setup & Resources**: Compress a model to a fixed ratio (e.g., 4×). Evaluate on a diverse task suite: (1) perplexity on common vs. rare tokens (split WikiText by token frequency), (2) accuracy on easy vs. hard examples (split MMLU by question difficulty), (3) performance on high-resource (English) vs. low-resource (e.g., Swahili) languages if multilingual. Compare compressed vs. original model.
+
+**Evaluation Metrics**: Compute performance degradation (original accuracy - compressed accuracy) separately for each task slice. Identify slices where degradation exceeds 2× the average. Visualize with a heatmap or bar chart.
+
+**Expected Results & Interpretation**: If degradation is uniform, your method preserves general capability. If specific slices suffer, you've identified a principled limitation (e.g., "our method trades off rare-token modeling for compression"). This informs future work (e.g., importance-weighted compression) and honest positioning in a paper.
+
+**Follow-ups**: Investigate *why* certain slices fail—are they handled by specific layers/heads that your method over-compresses? Can you add a small "rescue" module to recover critical capabilities?
+
+---
+
+## Next Actions (1-3 days)
+
+1. **Clarify your angle**: Write a 2-sentence hypothesis answering "What makes my compression approach different?" and "Why would it work better than existing methods?"
+2. **Reproduce a baseline**: Pick one paper [P1] or [P7] and reproduce their key result on a small model (GPT-2-small). This calibrates your pipeline and reveals hidden implementation details.
+3. **Draft an experiment card**: For Experiment 1, specify the exact model, datasets, baselines, and success threshold before running anything [G12].
+
+---
+
+## Citations
+
+- [P1] PQK: Model Compression via Pruning, Quantization, and Knowledge Distillation — http://arxiv.org/abs/2106.14681v1
+- [P2] Parallel Blockwise Knowledge Distillation for Deep Neural Network Compression — http://arxiv.org/abs/2012.03096v1
+- [P3] KD-Lib: A PyTorch library for Knowledge Distillation, Pruning and Quantization — http://arxiv.org/abs/2011.14691v1
+- [P4] Data-Free Network Quantization With Adversarial Knowledge Distillation — http://arxiv.org/abs/2005.04136v1
+- [P7] QKD: Quantization-aware Knowledge Distillation — http://arxiv.org/abs/1911.12491v1
+- [P8] Knowledge Distillation Beyond Model Compression — http://arxiv.org/abs/2007.01922v1
+- [G12] Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G13] Research Taste — https://home.ie.cuhk.edu.hk/~dmchiu/research_taste.pdf
+- [G15] You and Your Research (Hamming) — https://gwern.net/doc/science/1986-hamming
+- [G17] Research Taste (Colah) — https://colah.github.io/notes/taste/

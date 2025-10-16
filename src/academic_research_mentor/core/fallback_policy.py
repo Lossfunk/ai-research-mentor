@@ -145,7 +145,10 @@ class FallbackPolicy:
     def get_tool_health_summary(self) -> Dict[str, Any]:
         """Return summary of tool health for monitoring."""
         return {
-            "tool_states": dict(self._tool_states),
+            "tool_states": {
+                name: state.value if isinstance(state, ToolState) else state
+                for name, state in self._tool_states.items()
+            },
             "failure_counts": dict(self._failure_counts),
             "backoff_counts": dict(self._backoff_counts),
             "circuit_breakers_open": [

@@ -1,0 +1,88 @@
+Before I develop a detailed research plan, I need to understand your context better to tailor this appropriately:
+
+## Quick Context Questions
+
+1. **Resources & Time**: What compute resources do you have access to (GPU type/hours)? How many hours per week can you dedicate to this?
+
+2. **Background & Goal**: Are you working on a course project, thesis, or paper submission? What's your target timeline and venue (if any)?
+
+3. **Sea Ice Focus**: What specific sea ice problem interests you most—forecasting extent/concentration, understanding dynamics, downscaling climate models, or something else?
+
+4. **Collaboration**: Are you working solo, with an advisor, or as part of a team? Do you have access to domain experts in climate/oceanography?
+
+5. **Current Bottleneck**: What's blocking you right now—finding a tractable problem, accessing data, understanding GNN architectures, or something else?
+
+---
+
+While you gather those details, here's a **Phase 0 starter plan** (≤14 days) to build momentum:
+
+## **Intuition**
+Sea ice is naturally graph-structured: ice floes interact with neighbors through mechanical stress, heat transfer, and ocean currents. GNNs can capture these local interactions more naturally than CNNs or fully-connected models, potentially revealing spatial dependencies that grid-based methods miss [P4].
+
+## **Why this is principled**
+Good research starts with tractable, falsifiable questions that can show signal quickly [G7][G13]. For GNNs on sea ice, you need to establish whether graph structure actually helps before investing in complex models. The soil carbon GNN work [P4] demonstrates this pattern: start with a clear baseline comparison to validate the graph inductive bias.
+
+---
+
+## Phase 0: Foundation (Days 1-14)
+
+**Deliverables to gate advancement:**
+1. **Prediction log** with ≥14 entries tracking your hypotheses about when/why GNNs should outperform baselines
+2. **One reproduced baseline** from sea ice literature (within ≤10% relative error) OR a simple GNN trained on public sea ice data with documented performance
+
+### Week 1: Data & Baselines
+- **Identify datasets**: NSIDC sea ice concentration (daily, 25km grid), ERA5 climate reanalysis, or IceNet benchmark data
+- **Reproduce a simple baseline**: Train a persistence model or simple CNN on 7-day sea ice concentration forecasting
+- **Graph construction hypothesis**: Document 2-3 ways to convert gridded sea ice data to graphs (k-NN spatial, Delaunay triangulation, physics-based connectivity)
+
+### Week 2: Minimal GNN Test
+- **Build simplest GNN**: Implement a 2-layer GCN or GraphSAGE on one graph construction method
+- **Ablation**: Compare GNN vs. MLP with same parameters on the same task
+- **Document failure modes**: Where does the GNN struggle? When does graph structure not help?
+
+---
+
+## Three Concrete Experiments (Post-Phase 0)
+
+### **Experiment 1: Graph Structure Ablation for Sea Ice Forecasting**
+**Objective**: Test whether spatial graph connectivity improves 7-day sea ice concentration forecasting over grid-based methods. **Hypothesis**: GNNs with physics-informed edges (connecting regions with similar ice thickness/drift patterns) will outperform k-NN spatial graphs by 5-10% RMSE because they capture dynamical relationships. **Setup**: Use NSIDC sea ice concentration (2010-2020 train, 2021-2022 test). Construct three graphs: (1) 4-neighbor grid, (2) k=8 spatial k-NN, (3) physics-informed using ice drift velocity similarity. Train identical 3-layer GCN architectures. **Metrics**: RMSE, MAE, and ice edge location error (km). **Expected outcome**: Physics-informed graphs should excel during rapid ice retreat/advance periods; k-NN may perform better in stable conditions. **Follow-up**: If physics edges win, test whether learned edge weights (attention mechanisms) can discover these patterns automatically.
+
+### **Experiment 2: Temporal Dynamics with Spatiotemporal GNNs**
+**Objective**: Evaluate whether coupling GNN spatial aggregation with temporal models (GRU/LSTM) captures sea ice evolution better than CNN-LSTM baselines. **Hypothesis**: Spatiotemporal GNNs will reduce forecast error by 15-20% for lead times >3 days because they model both local interactions and temporal memory. **Setup**: Implement GConvGRU or STGCN on the same NSIDC data. Compare against CNN-LSTM and ConvLSTM baselines with matched parameter counts. Use 14-day input windows to predict 1, 3, 7, and 14 days ahead. **Metrics**: Skill score vs. persistence, RMSE by lead time, and computational cost (FLOPs, wall-clock time). **Expected outcome**: GNN advantage should grow with lead time; if not, temporal dependencies may dominate spatial structure. **Interpretation**: Plot attention weights or edge importance to see if the model learns oceanographic features (currents, coastlines).
+
+### **Experiment 3: Multi-Scale Graph Hierarchies for Regional Downscaling**
+**Objective**: Test whether hierarchical GNNs can downscale coarse climate model output (100km) to fine-resolution sea ice maps (25km) better than interpolation or super-resolution CNNs. **Hypothesis**: Multi-scale graph pooling will preserve ice edge sharpness and local variability better than bilinear upsampling because it can route information through coastlines and bathymetry. **Setup**: Use CMIP6 model output as coarse input, NSIDC as ground truth. Build a 3-level graph hierarchy (100km → 50km → 25km nodes) with DiffPool or TopK pooling. Compare against bicubic interpolation, SRCNN, and U-Net baselines. **Metrics**: SSIM, edge detection F1-score, and physical consistency (ice concentration ∈ [0,1], mass conservation). **Expected outcome**: Hierarchical GNN should outperform on edge metrics; if U-Net wins overall, spatial inductive bias may not justify added complexity. **Follow-up**: Incorporate bathymetry or land mask as auxiliary node features to test domain knowledge integration.
+
+---
+
+## Problem Selection Rubric (0-3 scale)
+
+Before proceeding, score your chosen direction:
+1. **Importance**: Does solving this change sea ice forecasting or climate modeling? (0-3)
+2. **Tractability**: Can you get signal in 3 weeks with your resources? (0-3)
+3. **Surprise**: Would results challenge assumptions (e.g., "GNNs don't help for gridded data")? (0-3)
+4. **Generality**: Does it apply beyond one dataset or region? (0-3)
+5. **Mechanistic payoff**: Can you explain *why* GNNs help or fail? (0-3)
+
+**Proceed only if total ≥10/15.** If lower, narrow scope or pick a different angle.
+
+---
+
+## Next Actions (Days 1-3)
+1. **Answer the context questions above** so I can refine this plan
+2. **Download NSIDC sea ice concentration data** (start with Arctic, 2020-2023)
+3. **Set up a prediction log** (spreadsheet or markdown file) and make your first 3 entries about when you expect GNNs to outperform CNNs
+
+Once you complete Phase 0 and share results, I'll unlock a full multi-phase roadmap with venue-specific guidance and advanced experiments.
+
+---
+
+## Citations
+
+**Papers:**
+- [P1] Multi-decadal Sea Level Prediction using Neural Networks and Spectral Clustering on Climate Model Large Ensembles and Satellite Altimeter Data — http://arxiv.org/abs/2310.04540v1
+- [P4] Soil Organic Carbon Estimation from Climate-related Features with Graph Neural Network — http://arxiv.org/abs/2311.15979v1
+
+**Guidelines:**
+- [G7] Opinionated Guide Ml Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G13] How Not To Choose A Research Project — https://www.lesswrong.com/posts/kDsywodAKgQAAAxE8/how-not-to-choose-a-research-project

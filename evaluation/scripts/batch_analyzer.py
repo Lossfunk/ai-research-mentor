@@ -31,7 +31,7 @@ class BatchAnalyzer:
             self.results_dir.parent.parent / "inter_annotator_agreement"
             if len(self.results_dir.parents) >= 2
             else None,
-            Path("evaluation/results/inter_annotator_agreement"),
+            Path("evals-for-papers/results/inter_annotator_agreement"),
         ]
         iaa_files: List[Path] = []
         for candidate in iaa_candidates:

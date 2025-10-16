@@ -1,0 +1,121 @@
+Based on the PeerRead paper, I can now provide targeted guidance on ablations and error analyses for the acceptance classification task. The paper uses hand-engineered features from both papers and reviews [PeerRead.pdf:11], and the task involves predicting acceptance based on review aspects [PeerRead.pdf:6,7].
+
+---
+
+## **Intuition**
+
+Reviewers will want to understand *which* features actually drive acceptance prediction and *why* the model works. Hand-engineered features are particularly suspect because they can encode spurious correlations (e.g., paper length correlating with acceptance simply because longer papers come from well-resourced labs) rather than causal factors. The goal of ablations is to isolate signal from noise and demonstrate that your model learns meaningful patterns rather than dataset artifacts.
+
+## **Why this is principled**
+
+Strong empirical papers in NLP require ablation studies that decompose contributions and error analyses that reveal failure modes [PeerRead.pdf:13]. For acceptance prediction specifically, reviewers will be skeptical of features that might encode venue-specific quirks rather than generalizable quality signals. Systematic ablations and error analysis establish whether your features capture genuine peer review dynamics or simply overfit to superficial patterns in the training data.
+
+---
+
+## **Critical Ablations Reviewers Will Expect**
+
+### **1. Feature Group Ablations (Isolate Contribution by Source)**
+
+**Objective & Hypothesis**: Determine whether paper-derived features, review-derived features, or their interaction drives prediction accuracy. Hypothesis: Review content features will dominate because they directly encode reviewer judgments, while paper features may add marginal signal about presentation quality.
+
+**Setup & Key Steps**: Train separate models using (a) only paper features (structure, references, readability from Table 6 [PeerRead.pdf:11]), (b) only review features (sentiment, aspect scores), and (c) the full feature set. Use identical model architecture (logistic regression or neural network) and cross-validation splits for fair comparison. Track accuracy on ACL 2017 and ICLR 2017 test sets separately [PeerRead.pdf:6].
+
+**Evaluation Metrics & Success Criteria**: Report test accuracy and RMSE for each configuration. Success means review-only features achieve ≥85% of full-model performance, confirming reviews are the primary signal. If paper-only features exceed 60% accuracy, investigate which paper properties (length, citation count, etc.) correlate with acceptance.
+
+**Interpretation**: If review features alone nearly match full performance, paper features add little value—consider dropping them for simplicity. If paper features contribute ≥5% accuracy gain, perform finer-grained ablations (next experiment) to identify which paper properties matter. A large gap between venues (ACL vs. ICLR) suggests venue-specific feature importance.
+
+**Follow-ups**: If paper features help, ablate individual paper feature categories (structural vs. linguistic vs. citation-based). If review features dominate, skip to Experiment 2 to understand *which* review aspects matter most.
+
+---
+
+### **2. Individual Feature Importance via Leave-One-Out Ablation**
+
+**Objective & Hypothesis**: Identify the top 3-5 most predictive features within the hand-engineered set. Hypothesis: Features encoding reviewer sentiment (e.g., polarity scores, LIWC affect categories) and explicit recommendation scores will be most predictive, while structural features (e.g., number of sections, reference count) will be weak.
+
+**Setup & Key Steps**: For each feature in Table 6 [PeerRead.pdf:11], train a model with that feature removed and measure the drop in test accuracy. Rank features by performance degradation. Focus on features extracted from `paper.pdf` (e.g., `num_ref_mentions`, `avg_length_ref_mention`) and `review.pdf` (sentiment, readability). Use 5-fold cross-validation to ensure stability.
+
+**Evaluation Metrics & Success Criteria**: Report Δaccuracy (full model − ablated model) for each feature. Features causing ≥2% accuracy drop are "critical." Expect ≤10 critical features out of the full set. Visualize with a bar chart showing top 10 features by importance.
+
+**Interpretation**: If sentiment/polarity features dominate, the model may be learning reviewer tone rather than substantive quality signals—this is a potential weakness to discuss. If structural features (e.g., reference count, section length) rank high, investigate whether they correlate with acceptance due to confounds (e.g., well-funded labs write longer papers *and* get accepted more often). If no single feature causes >3% drop, the model relies on distributed representations—consider switching to learned embeddings.
+
+**Follow-ups**: For top-ranked features, perform stratified analysis (Experiment 4) to check if importance varies by venue or acceptance outcome. For weak features, consider pruning to reduce overfitting.
+
+---
+
+### **3. Baseline Comparison: Learned vs. Hand-Engineered Features**
+
+**Objective & Hypothesis**: Compare hand-engineered features against a simple learned baseline (e.g., bag-of-words or pretrained embeddings). Hypothesis: Hand-engineered features will outperform bag-of-words but underperform contextualized embeddings (e.g., SciBERT), revealing room for improvement.
+
+**Setup & Key Steps**: Train three models: (a) hand-engineered features only (current approach), (b) TF-IDF unigrams/bigrams from paper + review text, and (c) averaged SciBERT embeddings of paper abstract + review text. Use logistic regression for (a) and (b); add a shallow MLP for (c). Evaluate on the same ACL/ICLR test splits [PeerRead.pdf:6,7].
+
+**Evaluation Metrics & Success Criteria**: Report test accuracy, precision, recall, and F1 for accept/reject classes. If hand-engineered features outperform TF-IDF by ≥5%, they capture useful domain knowledge. If SciBERT exceeds hand-engineered features by ≥3%, the features miss important semantic content.
+
+**Interpretation**: If hand-engineered features lag behind learned representations, reviewers will question their necessity—argue for interpretability or computational efficiency as justification. If hand-engineered features win, emphasize which feature categories (e.g., citation patterns, readability) are hard for embeddings to capture. A tie suggests combining both approaches (hybrid model).
+
+**Follow-ups**: If learned features dominate, try a hybrid model (hand-engineered + embeddings) to see if they provide complementary signal. If hand-engineered features win, perform error analysis (Experiment 4) to understand where learned features fail.
+
+---
+
+## **Error Analyses Reviewers Will Expect**
+
+### **4. Stratified Error Analysis by Venue and Decision Boundary**
+
+**Objective & Hypothesis**: Identify systematic failure modes by analyzing errors across venues (ACL vs. ICLR) and decision types (false accepts vs. false rejects). Hypothesis: The model will struggle more with borderline cases (reviews with mixed sentiment) and exhibit venue-specific biases (e.g., ICLR may weight novelty more heavily).
+
+**Setup & Key Steps**: Partition test errors into four categories: (1) false accepts in ACL, (2) false rejects in ACL, (3) false accepts in ICLR, (4) false rejects in ICLR. For each category, compute the distribution of predicted probabilities (confidence scores) and compare feature values (e.g., average review sentiment, paper length) between errors and correct predictions. Manually inspect 10-20 examples per category.
+
+**Evaluation Metrics & Success Criteria**: Report error rates and average confidence scores for each category. High-confidence errors (predicted probability >0.8) indicate systematic feature misalignment. Compare feature distributions using t-tests or KS tests to identify statistically significant differences (p < 0.05).
+
+**Interpretation**: If false accepts cluster at high confidence, the model may overweight positive sentiment while missing substantive flaws—check if reviews mention "interesting but flawed" patterns. If false rejects are low-confidence, the model correctly identifies uncertainty; if high-confidence, investigate whether certain paper types (e.g., theory-heavy, few experiments) are systematically penalized. Venue differences suggest the need for venue-specific models or features.
+
+**Follow-ups**: For high-confidence errors, perform qualitative analysis (Experiment 5). For venue-specific patterns, train separate models per venue and compare feature importance. If borderline cases dominate errors, consider ordinal regression or confidence calibration.
+
+---
+
+### **5. Qualitative Analysis of High-Confidence Errors**
+
+**Objective & Hypothesis**: Manually inspect papers and reviews where the model confidently mispredicts (probability >0.8) to uncover feature blind spots. Hypothesis: Errors will reveal cases where surface features (sentiment, length) contradict deeper quality signals (novelty, rigor) that hand-engineered features miss.
+
+**Setup & Key Steps**: Select 20 high-confidence false accepts and 20 high-confidence false rejects. For each, read the paper abstract, review text, and ground-truth decision. Annotate patterns: Does the review express concerns the model ignores? Does the paper have unusual structure (e.g., position paper, survey)? Do reviews disagree strongly (high variance in aspect scores)? Categorize errors into themes (e.g., "sarcasm in reviews," "novelty vs. execution trade-off").
+
+**Evaluation Metrics & Success Criteria**: Identify ≥3 recurring error themes, each covering ≥20% of inspected errors. For each theme, propose a feature or modeling fix (e.g., add review variance features, detect sarcasm, encode paper type).
+
+**Interpretation**: If errors cluster around sarcastic or hedged language ("interesting idea, but..."), sentiment features fail to capture nuance—consider aspect-based sentiment or fine-tuning on peer review text. If errors involve papers with novel ideas but weak execution, the model may underweight novelty scores relative to technical soundness. If review disagreement is common, add variance/entropy features across aspect scores.
+
+**Follow-ups**: Implement proposed fixes (e.g., add review variance, train sarcasm detector) and re-evaluate on the error set. If themes are venue-specific, revisit Experiment 4 to quantify venue effects. If no clear themes emerge, the model may be near its ceiling with current features—consider richer representations (Experiment 3).
+
+---
+
+### **6. Cross-Venue Generalization Test**
+
+**Objective & Hypothesis**: Evaluate whether features generalize across venues by training on one venue and testing on another. Hypothesis: Performance will degrade significantly (≥10% accuracy drop) due to venue-specific review cultures and acceptance criteria, revealing that hand-engineered features encode venue quirks.
+
+**Setup & Key Steps**: Train two models: (a) ACL-only training → ICLR test, (b) ICLR-only training → ACL test. Compare against within-venue baselines (ACL→ACL, ICLR→ICLR). Use the same feature set and model architecture. Analyze which features have the largest weight differences between venues.
+
+**Evaluation Metrics & Success Criteria**: Report cross-venue test accuracy and compare to within-venue accuracy. A drop ≤5% suggests good generalization; ≥10% indicates venue overfitting. Inspect feature weights: if citation-related features dominate in one venue but not the other, they may encode field-specific norms (e.g., CS vs. NLP citation practices).
+
+**Interpretation**: Large performance drops indicate the model learns venue-specific artifacts rather than universal quality signals—this limits real-world applicability. If certain features (e.g., readability, sentiment) transfer well while others (e.g., reference count) don't, prioritize transferable features for a generalizable model. If both directions fail similarly, the venues may have fundamentally different review criteria.
+
+**Follow-ups**: If generalization is poor, train a domain-adaptive model (e.g., add venue as a feature, use multi-task learning). If specific features fail to transfer, perform per-venue feature selection. If generalization is strong, emphasize this as evidence of learning genuine quality signals.
+
+---
+
+## **Additional Considerations**
+
+**Confound Analysis**: Check whether features correlate with acceptance due to confounds rather than causation. For example, if "number of references" predicts acceptance, is it because thorough literature reviews improve quality, or because well-resourced authors write longer papers *and* have better experimental setups? Stratify by paper length or author institution prestige (if available) to partial out confounds.
+
+**Temporal Validation**: If the dataset spans multiple years, test whether models trained on earlier years generalize to later years. Acceptance criteria and review norms evolve, so temporal degradation would indicate the model learns era-specific patterns.
+
+**Review Variance Features**: Add features capturing disagreement among reviewers (e.g., standard deviation of aspect scores, entropy of recommendations). High variance often signals borderline papers, which are hardest to predict and most interesting for error analysis.
+
+---
+
+## **Summary of Priorities**
+
+1. **Start with Experiment 1** (feature group ablation) to establish whether paper or review features drive performance.
+2. **Follow with Experiment 2** (individual feature importance) to identify which specific features matter.
+3. **Run Experiment 4** (stratified error analysis) to understand failure modes and guide deeper investigation.
+4. **Conduct Experiment 5** (qualitative analysis) on high-confidence errors to uncover feature blind spots.
+5. **If resources allow**, run Experiments 3 and 6 to benchmark against learned features and test cross-venue generalization.
+
+Reviewers will expect at least Experiments 1, 2, and 4. Experiments 5 and 6 strengthen the paper by demonstrating thoroughness and addressing generalization concerns. Prioritize ablations that isolate the contribution of hand-engineered features, since that's the core methodological choice under scrutiny.

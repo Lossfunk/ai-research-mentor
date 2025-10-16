@@ -318,7 +318,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--annotator", required=True, help="Name recorded in annotation CSV")
     parser.add_argument(
         "--label",
-        help="Optional label for organizing outputs under evaluation/results/analysis_reports/<stage>/<label>",
+        help="Optional label for organizing outputs under evals-for-papers/results/analysis_reports/<stage>/<label>",
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing annotator rows")
     parser.add_argument("--system", dest="system_filter", help="Optional system identifier to filter meta files")

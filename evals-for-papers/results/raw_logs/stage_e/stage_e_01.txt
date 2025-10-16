@@ -1,0 +1,139 @@
+## Anticipated Reviewer Concerns & Mitigations
+
+**Intuition**: The PeerRead "probably-rejected" label is a weak proxy—papers on arXiv may never have been submitted, withdrawn for reasons unrelated to quality, or accepted elsewhere. Reviewers will question whether your model learns genuine quality signals versus confounding artifacts like submission timing, author behavior, or topic trends.
+
+**Why this is principled**: The original PeerRead paper [P1] acknowledges this labeling heuristic but doesn't deeply validate it. Strong empirical work requires transparent discussion of label noise, validation against ground truth where possible, and ablations that isolate the signal you claim to measure.
+
+---
+
+### **Top 5 Reviewer Concerns**
+
+**1. Label Validity: "Probably-rejected" ≠ Actually Rejected**
+- **Concern**: Papers on arXiv but not in conference proceedings may be (a) never submitted, (b) withdrawn, (c) accepted elsewhere, or (d) work-in-progress. This introduces massive label noise.
+- **Evidence they'll cite**: The PeerRead paper [P1] itself notes this is a heuristic assumption without ground-truth validation.
+
+**2. Selection Bias**
+- **Concern**: Authors who post to arXiv differ systematically from those who don't. Your "rejected" class may conflate quality with author behavior (e.g., junior researchers posting early drafts).
+- **Statistical issue**: Confounding between quality and propensity to share preprints.
+
+**3. Temporal Confounding**
+- **Concern**: Papers posted to arXiv in year X but appearing in proceedings in year X+1 would be mislabeled as rejected if you only check same-year proceedings.
+- **Data leakage risk**: Acceptance decisions take 3–12 months; timing artifacts may dominate your signal.
+
+**4. Venue Heterogeneity**
+- **Concern**: A paper "rejected" from NeurIPS might be excellent for a domain workshop. Your binary label collapses a multi-dimensional quality/fit space.
+- **Generalization**: Models trained on this data may not transfer to actual editorial decisions.
+
+**5. Lack of Counterfactual Ground Truth**
+- **Concern**: You can't verify labels without access to actual submission/decision records. All validation is indirect.
+
+---
+
+### **Concrete Mitigations for Discussion Section**
+
+#### **Mitigation 1: Quantify Label Noise via Manual Audit**
+**Objective & Hypothesis**: Estimate false-positive and false-negative rates in "probably-rejected" labels by manually tracing a random sample of 100–200 arXiv papers to their actual publication outcomes (Google Scholar, DBLP, author CVs). Hypothesis: ≥20% of "rejected" papers were actually accepted elsewhere or never submitted.
+
+**Setup**: Stratify sample by year and arXiv category. For each paper, search for published versions in proceedings, journals, or workshops within 24 months of arXiv posting. Record: (1) found in venue, (2) not found (true negative?), (3) ambiguous (e.g., major revision with new title).
+
+**Metrics**: Precision (% of "rejected" labels that are true rejections), recall estimate via reverse search of accepted papers, and Cohen's kappa if two annotators independently audit a subset.
+
+**Expected Outcome**: If precision < 0.8, acknowledge in discussion that ~20–40% label noise exists and discuss how this affects model interpretation (e.g., models may learn "not-yet-published" rather than "low-quality").
+
+**Follow-up**: Report model performance stratified by label confidence (e.g., papers with no Google Scholar citations vs. those with 5+ citations but still "rejected").
+
+---
+
+#### **Mitigation 2: Temporal Validation with Lag Analysis**
+**Objective & Hypothesis**: Test whether "rejected" labels are confounded by submission-to-acceptance lag. Hypothesis: papers posted to arXiv in Q4 of year X are more likely to be mislabeled as rejected if they appear in Q1 proceedings of year X+1.
+
+**Setup**: For each arXiv paper, compute the time delta between arXiv posting and the conference proceedings publication date (if found). Plot the distribution of deltas for "accepted" papers. Identify papers labeled "rejected" that fall within the 90th percentile of typical acceptance lags.
+
+**Metrics**: % of "rejected" papers within plausible submission windows, correlation between posting month and label, and model performance when excluding papers posted <6 months before proceedings deadlines.
+
+**Expected Outcome**: If >15% of "rejected" papers are within typical lag windows, add a discussion paragraph noting temporal confounding and recommend future work use a 12–18 month lookback window.
+
+**Follow-up**: Re-train model excluding ambiguous temporal cases and report performance delta to bound the impact of this artifact.
+
+---
+
+#### **Mitigation 3: Cross-Venue Acceptance as Positive Control**
+**Objective & Hypothesis**: Validate that "accepted" labels are robust by checking whether papers accepted at venue A but posted to arXiv are correctly labeled. Hypothesis: ≥95% of papers in conference proceedings should be labeled "accepted" if the heuristic is sound.
+
+**Setup**: Sample 200 papers from NeurIPS/ICLR/ACL proceedings that also appear on arXiv. Verify they are labeled "accepted" in your dataset. Compute false-negative rate (proceedings papers mislabeled as rejected due to title/author mismatches).
+
+**Metrics**: False-negative rate, precision of the matching heuristic (arXiv ID to proceedings), and error analysis of mismatches (e.g., title changes, author reordering).
+
+**Expected Outcome**: If false-negative rate > 5%, discuss matching errors and their impact on class balance. If rate is low, use this as evidence that the "accepted" class is reliable, strengthening claims about model validity.
+
+**Follow-up**: Provide a supplementary table of matching statistics (% exact title match, % fuzzy match, % manual verification needed).
+
+---
+
+### **Discussion Section Template**
+
+```markdown
+**Limitations of "Probably-Rejected" Labels**
+
+We acknowledge that our "probably-rejected" labels are a noisy proxy for true rejection. 
+Papers on arXiv may never have been submitted, withdrawn for non-quality reasons, or 
+accepted at venues outside our search scope. To quantify this noise, we manually audited 
+[N=150] randomly sampled "rejected" papers and found that [X%] were later published in 
+peer-reviewed venues, [Y%] remain unpublished after 24 months, and [Z%] were ambiguous. 
+This suggests a label precision of approximately [0.X], consistent with weak supervision 
+settings in prior work [cite semi-supervised learning papers].
+
+**Temporal Confounding**: We observed that [X%] of "rejected" papers were posted within 
+6 months of conference deadlines, raising the possibility of mislabeling due to 
+submission-to-acceptance lag. To mitigate this, we [excluded/flagged] papers in this 
+window and found model performance [changed/remained stable] by [X%], suggesting 
+[temporal artifacts contribute modestly/do not dominate our signal].
+
+**Generalization**: Our labels reflect a binary "in-proceedings vs. not" heuristic, 
+which conflates rejection with non-submission and ignores acceptance at alternative 
+venues. Models trained on this data should be interpreted as predicting "likelihood of 
+appearing in major conference proceedings" rather than absolute quality. Future work 
+should incorporate multi-venue outcomes and author intent signals.
+
+**Validation**: As a positive control, we verified that [95%+] of papers in conference 
+proceedings were correctly labeled "accepted," indicating our matching heuristic is 
+reliable for the positive class. The asymmetry in label quality (high precision for 
+"accepted," moderate precision for "rejected") suggests our models may be conservative, 
+underestimating rejection likelihood.
+```
+
+---
+
+### **Proactive Additions to Strengthen Your Position**
+
+1. **Report performance on a "high-confidence" subset**: Filter to papers with clear outcomes (e.g., >2 years post-arXiv, cited >5 times if accepted, 0 citations if rejected). Show model performance improves, demonstrating label noise is the bottleneck.
+
+2. **Compare to human judgments**: Have 2–3 researchers independently rate a sample of "rejected" papers on a 1–5 quality scale. Compute correlation between model predictions and human ratings to show your model captures a meaningful quality signal despite label noise.
+
+3. **Ablation on label sources**: If you have access to OpenReview data or other venues with public reviews, train a model on those (cleaner labels) and test on PeerRead to quantify transfer performance. This bounds the impact of label noise.
+
+---
+
+### **Strategic Questions for You**
+
+1. **Do you have access to OpenReview or other venues with ground-truth accept/reject decisions?** If yes, you can use those as a validation set to directly measure how well PeerRead labels correlate with true decisions.
+
+2. **What is your model's intended use case?** If it's to help authors pre-screen submissions, moderate label noise is acceptable. If it's to study peer review mechanisms, you need much tighter validation.
+
+3. **Can you share your current results on the "rejected" class?** If your model already shows low precision/recall on this class, that's evidence the labels are noisy—turn this into a feature by discussing it transparently.
+
+---
+
+### **Next Actions (1–3 days)**
+
+1. **Manual audit** (4 hours): Sample 100 "rejected" papers, trace them via Google Scholar/DBLP, and compute label precision. Document findings in a supplementary table.
+
+2. **Temporal analysis** (2 hours): Plot the distribution of arXiv-to-proceedings time deltas for "accepted" papers. Flag "rejected" papers within the 90th percentile window and report % affected.
+
+3. **Draft discussion paragraph** (1 hour): Use the template above, filling in your audit results. Emphasize transparency and position label noise as a known limitation you've quantified rather than ignored.
+
+---
+
+## Citations
+
+- [P1] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — http://arxiv.org/abs/1804.09635v1

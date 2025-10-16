@@ -6,8 +6,8 @@ tables_pilot_check_v2.json produced by generate_results_tables.py.
 
 Usage:
   python -m evaluation.scripts.render_publication_assets \
-    --input evaluation/results/analysis_reports/stage_a/pilot_check_v2_derived/tables_pilot_check_v2.json \
-    --out-dir evaluation/results/analysis_reports/stage_a/pilot_check_v2_derived
+    --input evals-for-papers/results/analysis_reports/stage_a/pilot_check_v2_derived/tables_pilot_check_v2.json \
+    --out-dir evals-for-papers/results/analysis_reports/stage_a/pilot_check_v2_derived
 
 Outputs:
   <out-dir>/tables/T{1,2,3,4}_*.csv

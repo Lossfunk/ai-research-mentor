@@ -427,7 +427,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
     
-    # Setup directories
+    # Setup directories (under evals-for-papers/results)
     stage_letter, stage_folder = normalize_stage(args.stage)
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
 

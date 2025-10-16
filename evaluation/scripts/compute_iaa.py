@@ -5,9 +5,9 @@ Compute simple inter-annotator agreement (Cohen's kappa) for evaluation CSVs.
 
 Usage:
   uv run python -m evaluation.scripts.compute_iaa \
-      --csv-a evaluation/results/analysis_reports/stage_a/annotation_placeholders.csv \
-      --csv-b evaluation/results/analysis_reports/stage_a/claude4_vs_gemini25/annotation_placeholders.csv \
-      --out evaluation/results/inter_annotator_agreement/stage_a/kappa.json
+      --csv-a evals-for-papers/results/analysis_reports/stage_a/annotation_placeholders.csv \
+      --csv-b evals-for-papers/results/analysis_reports/stage_a/claude4_vs_gemini25/annotation_placeholders.csv \
+      --out evals-for-papers/results/inter_annotator_agreement/stage_a/kappa.json
 
 Notes:
   - Expects rows keyed by prompt_id; computes pairwise kappa per shared metric column.

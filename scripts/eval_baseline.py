@@ -16,8 +16,8 @@ Usage examples:
   uv run python scripts/eval_baseline.py --stage A --skip-judges --force
 
 Outputs:
-  - evaluation/results/raw_logs/<stage>/*.txt, *_tools.json
-  - evaluation/results/analysis_reports/<stage>/*_meta.json, annotation CSVs
+  - evals-for-papers/results/raw_logs/<stage>/*.txt, *_tools.json
+  - evals-for-papers/results/analysis_reports/<stage>/*_meta.json, annotation CSVs
   - docs/tech-report/artifacts/<label>/latest.json (combined summary)
 """
 
