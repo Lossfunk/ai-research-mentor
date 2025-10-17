@@ -41,6 +41,22 @@ except Exception:  # pragma: no cover - optional import
 PAIRWISE_PROMPT_PATH = Path("evaluation/judges/pairwise_judge_prompt.md")
 
 
+BASELINE_SYSTEM_ALIASES: Dict[str, str] = {
+    "baseline_claude": "openrouter:anthropic/claude-sonnet-4.5",
+    "baseline_claude_sonnet_4_5": "openrouter:anthropic/claude-sonnet-4.5",
+    "claude_sonnet_4_5_baseline": "openrouter:anthropic/claude-sonnet-4.5",
+    "baseline_gpt": "openrouter:openai/gpt-5",
+    "baseline_gpt_5": "openrouter:openai/gpt-5",
+    "gpt_5_baseline": "openrouter:openai/gpt-5",
+}
+
+
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_test_data(data_path: Path) -> List[Dict]:
     """Load single-turn test prompts from JSONL file."""
     if not data_path.exists():
@@ -410,6 +426,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--max-output-tokens", type=int, help="Maximum tokens per response")
     parser.add_argument("--seed", type=int, help="Random seed for deterministic runs")
     parser.add_argument(
+        "--baseline-mode",
+        action="store_true",
+        help="Enable baseline mode (web_search + attachments only, guidelines disabled)",
+    )
+    parser.add_argument(
+        "--tool-whitelist",
+        help="Comma-separated list of tools to enable for all systems in this run",
+    )
+    parser.add_argument(
+        "--skip-judge",
+        action="store_true",
+        help="Skip judge scoring after response generation",
+    )
+    parser.add_argument(
         "--pairwise-judge",
         dest="pairwise_judges",
         action="append",
@@ -427,6 +457,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
     
+    systems: List[str] = []
+    for system in args.systems:
+        mapped = BASELINE_SYSTEM_ALIASES.get(system, system)
+        if mapped != system:
+            print_info(f"Resolved system alias '{system}' -> '{mapped}'")
+        systems.append(mapped)
+
     # Setup directories (under evals-for-papers/results)
     stage_letter, stage_folder = normalize_stage(args.stage)
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
@@ -451,18 +488,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     
     # Load test data
     prompts = load_test_data(Path(args.input))
-    print_info(f"Loaded {len(prompts)} test prompts from {args.input}")
+    filtered_prompts = [
+        record
+        for record in prompts
+        if str((record.get("metadata") or {}).get("stage", "")).upper() == stage_letter
+    ]
+    if not filtered_prompts:
+        print_error(
+            f"No prompts matched stage {stage_letter} in {args.input}; "
+            "ensure the dataset contains metadata.stage entries"
+        )
+        return 1
+
+    prompts = filtered_prompts
+    print_info(f"Loaded {len(prompts)} test prompts from {args.input} (stage {stage_letter})")
     
-    system_results: Dict[str, List[str]] = {system: [] for system in args.systems}
+    system_results: Dict[str, List[str]] = {system: [] for system in systems}
     orchestrator: Optional[SingleTurnOrchestrator] = None
+
+    baseline_active = args.baseline_mode or _is_truthy(os.environ.get("ARM_BASELINE_MODE"))
+    if baseline_active:
+        print_info("Baseline mode: using minimal prompt + limited tool set")
 
     # Phase 1: Generate system responses (unless skipped)
     if not args.skip_generation:
+        tool_whitelist: Optional[List[str]] = None
+        if args.tool_whitelist:
+            tool_whitelist = [item.strip() for item in args.tool_whitelist.split(",") if item.strip()]
+
         orchestrator = SingleTurnOrchestrator(
-            systems_to_test=args.systems,
+            systems_to_test=systems,
             temperature=args.temperature,
             max_output_tokens=args.max_output_tokens,
             seed=args.seed,
+            baseline_mode=baseline_active,
+            tool_whitelist=tool_whitelist,
         )
         system_results = run_system_responses(
             prompts,
@@ -476,6 +536,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print_info("Skipping response generation (--skip-generation)")
     
     # Phase 2: Run judge scoring
+    if args.skip_judge:
+        print_info("Skipping judge scoring (--skip-judge)")
+        return 0
+
     print_info(f"Running judge scoring with model: {args.judge}")
     
     # Find all meta files for the stage (including from multiple systems)
@@ -491,7 +555,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     (analysis_dir / args.output_label).mkdir(parents=True, exist_ok=True)
 
     # Score each system separately
-    for system in args.systems:
+    for system in systems:
         system_safe = system.replace("/", "_")
         print_info(f"Scoring {system}...")
 
@@ -515,7 +579,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         meta_index = load_meta_index(analysis_dir)
         run_pairwise_comparisons(
             meta_index,
-            systems=args.systems,
+            systems=systems,
             judge_specs=args.pairwise_judges,
             analysis_dir=analysis_dir,
             output_label=args.output_label,

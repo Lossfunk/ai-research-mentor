@@ -1,0 +1,76 @@
+Great—here’s a simple, evidence-based way to start AI research from zero, plus concrete experiments you can run now.
+
+A. Pick a subarea and a 6–8 week scope
+- Common entry points: computer vision (image classification), NLP (text classification), optimization (training dynamics), or RL (toy control).
+- Choose one familiar dataset (e.g., CIFAR-10 for vision, SST-2 or AG News for NLP) and one baseline model (e.g., ResNet-18, DistilBERT) so you can iterate fast. Residual networks are a solid, well-documented baseline [He et al., 2016](https://arxiv.org/abs/1512.03385).
+
+B. Build just-enough fundamentals while implementing
+- Core theory: work through 2–3 chapters of Goodfellow, Bengio, Courville’s Deep Learning (free online), focusing on optimization and CNNs/sequence models as needed [Goodfellow et al., 2016](https://www.deeplearningbook.org).
+- Practical stack: Python + PyTorch. Use the official PyTorch tutorials for dataloaders, training loops, and checkpoints (https://pytorch.org/tutorials/).
+- Short courses by topic (pick one): CS231n for vision (http://cs231n.stanford.edu/), CS224n for NLP (http://web.stanford.edu/class/cs224n/).
+
+C. A minimal research workflow you can follow
+1) Reproduce a baseline exactly (fixed seeds, same preprocessing).  
+2) Verify you can beat/meet the published number within error bars.  
+3) Identify one controllable factor (optimizer, augmentation, regularization, schedule).  
+4) Run a small, statistically sound ablation (≥3 seeds, report mean±std).  
+5) Document everything (config, seeds, code, data hashes).  
+6) Write a 2–4 page report with a clear claim, method, results, limitations.
+
+D. Three concrete, falsifiable starter experiments
+1) Optimizer decoupling (vision)
+- Hypothesis: AdamW yields better test accuracy than Adam at matched learning-rate schedules by decoupling weight decay [Loshchilov & Hutter, 2019](https://arxiv.org/abs/1711.05101).
+- Setup: CIFAR-10; ResNet-18; same LR schedule, batch size, weight decay value; compare Adam vs AdamW across 5 seeds.
+- Metric: Final test accuracy; training loss stability (variance).
+- Falsification: If Adam matches or exceeds AdamW within 0.2% across seeds, the hypothesis is not supported.
+
+2) Data augmentation as regularization (vision)
+- Hypothesis: Mixup improves generalization more than label smoothing at the same effective regularization strength on CIFAR-100 [Zhang et al., 2018](https://arxiv.org/abs/1710.09412); [Müller et al., 2019](https://arxiv.org/abs/1906.02629).
+- Setup: CIFAR-100; ResNet-18; three conditions: baseline, label smoothing (ε=0.1), mixup (α=0.2); identical training otherwise; 5 seeds.
+- Metric: Test accuracy and calibration (ECE).
+- Falsification: If label smoothing yields equal or better accuracy and calibration than mixup across seeds, the hypothesis fails.
+
+3) Warmup length for Transformers (NLP)
+- Hypothesis: Moderate LR warmup (e.g., 2–4% of total steps) improves convergence and final validation accuracy over no warmup on a small Transformer text classifier [Vaswani et al., 2017](https://arxiv.org/abs/1706.03762).
+- Setup: DistilBERT or a 6-layer Transformer encoder fine-tuned on SST-2; compare warmup={0, 2%, 6%} of steps; cosine decay; 5 seeds.
+- Metric: Dev accuracy; training stability (nan/inf checks).
+- Falsification: If no warmup equals or outperforms warmup across seeds, the hypothesis fails.
+
+Optional fourth experiment (if you prefer language modeling)
+4) Small-scale scaling law sanity check
+- Hypothesis: Validation loss decreases roughly as a power law with parameter count for small Transformers trained on a fixed dataset size, before overfitting dominates [Kaplan et al., 2020](https://arxiv.org/abs/2001.08361).
+- Setup: Train 3–4 Transformer LMs (e.g., 2M, 8M, 32M, 64M params) on WikiText-2 with identical tokens seen; plot loss vs parameters.
+- Metric: Fit of power-law on log–log plot; R².
+- Falsification: If loss does not systematically decrease with size or power-law fit is poor, hypothesis fails.
+
+E. What to read next (one to two anchors per area)
+- General/intro: Deep Learning (Goodfellow, Bengio, Courville) — foundational coverage of optimization, CNNs, and regularization [Goodfellow et al., 2016](https://www.deeplearningbook.org).
+- Vision baseline: Deep Residual Learning for Image Recognition — standard baseline to reproduce and extend [He et al., 2016](https://arxiv.org/abs/1512.03385).
+- Transformers/NLP: Attention Is All You Need — the core architecture that underlies modern NLP [Vaswani et al., 2017](https://arxiv.org/abs/1706.03762).
+- Useful knobs to study: AdamW [Loshchilov & Hutter, 2019](https://arxiv.org/abs/1711.05101), mixup [Zhang et al., 2018](https://arxiv.org/abs/1710.09412), label smoothing [Müller et al., 2019](https://arxiv.org/abs/1906.02629).
+
+F. Concrete next steps for the next 2–3 weeks
+- Week 1: Set up environment; complete PyTorch Classification tutorial; implement a clean training loop with YAML configs and reproducible seeds; train ResNet-18 on CIFAR-10 to a reasonable baseline.
+- Week 2: Run Experiment 1 (Adam vs AdamW) with 5 seeds; log to a tracker (Weights & Biases or TensorBoard); produce tables/plots.
+- Week 3: Write a short report with claim, method, results, and limitations; refactor code; run Experiment 2 or 3. Share results for feedback.
+
+G. Final check
+- Keep experiments small, controlled, and fully reproducible.  
+- Report mean±std across seeds and show code/configs.  
+- Negative results are valuable—state them clearly.
+
+Quick question to tailor this: which subarea (vision, NLP, optimization, RL) interests you most, and what compute do you have (CPU-only, single GPU like T4/3060, or more)?
+
+Note: I could not access a formal “mentorship guidelines” tool here, so I relied on well-cited textbooks and papers below.
+
+Sources
+- Goodfellow, Bengio, Courville (2016). Deep Learning — https://www.deeplearningbook.org
+- He et al. (2016). Deep Residual Learning for Image Recognition — https://arxiv.org/abs/1512.03385
+- Vaswani et al. (2017). Attention Is All You Need — https://arxiv.org/abs/1706.03762
+- Loshchilov & Hutter (2019). Decoupled Weight Decay Regularization (AdamW) — https://arxiv.org/abs/1711.05101
+- Zhang et al. (2018). mixup: Beyond Empirical Risk Minimization — https://arxiv.org/abs/1710.09412
+- Müller et al. (2019). When Does Label Smoothing Help? — https://arxiv.org/abs/1906.02629
+- Kaplan et al. (2020). Scaling Laws for Neural Language Models — https://arxiv.org/abs/2001.08361
+- PyTorch Tutorials — https://pytorch.org/tutorials/
+- CS231n — http://cs231n.stanford.edu/
+- CS224n — http://web.stanford.edu/class/cs224n/

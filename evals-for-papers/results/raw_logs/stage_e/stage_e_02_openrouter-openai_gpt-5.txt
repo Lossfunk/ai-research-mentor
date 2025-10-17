@@ -1,0 +1,84 @@
+Framing the limitations
+
+- Ceiling from subjectivity and label noise
+  - Aspect scores (e.g., clarity, originality, soundness) are subjective, reviewer-dependent, and often ordinal/coarse, which lowers the achievable ceiling for automatic prediction. PeerRead reports only modest predictive performance on aspect score prediction, consistent with noisy and subjective targets [1]. Subsequent work improves results using multi-task or semi-supervised methods, but gains tend to be incremental rather than transformative, reinforcing the ceiling effect [2][3].
+- Sparse supervision and class imbalance
+  - Many papers have incomplete aspect coverage and skewed score distributions, which hampers learning and calibration. This also complicates evaluation because minor absolute gains may be statistically fragile.
+- Feature–label mismatch
+  - If models use only the paper text, they may lack the reviewer context that shapes aspect scores; when models use review text, they risk learning reviewer stylistic preferences rather than underlying paper quality signals [1].
+- Temporal and domain shift
+  - Topic mix, writing conventions, and venue standards change over time and across subfields, limiting cross-year/venue generalization and yielding modest out-of-domain gains [1][2].
+- Evaluation sensitivity
+  - Using accuracy on discretized bins can obscure ordinal structure; modest gains may reflect both hard targets and suboptimal metrics. Rank correlation and calibration often provide a clearer picture but can still reveal small improvements [1][2].
+
+Contingency plan for future work
+
+A) Strengthen the target and measurement
+
+- Reliability audit and ceiling estimate
+  - Re-annotate a held-out subset with multiple expert raters to estimate inter-rater reliability and a human–human upper bound (e.g., ICC/Spearman). Use this as a ceiling for model performance and to weight aspects by reliability in training and reporting [1].
+- Label hygiene and protocol
+  - Standardize to earliest-available texts (e.g., first arXiv version or submission draft) and stratify by venue/year to reduce temporal leakage and confounding [1].
+- Metric upgrades
+  - Report ordinal-aware metrics (Spearman, Kendall, QWK) and calibration (ECE), plus CIs via bootstrap, to distinguish real gains from noise [1][2].
+
+B) Modeling directions that directly target known failure modes
+
+- Multi-task, ordinal, and reviewer-normalized models
+  - Share representations across aspects with explicit ordinal losses and per-reviewer or per-venue bias terms; prior work suggests multi-task setups can yield consistent, if modest, benefits [2].
+- Section- and evidence-aware architectures
+  - Use section tags and evidence extraction (e.g., highlight method/results clarity spans) to align inputs with each aspect, rather than uniform document encodings.
+- Semi-/weak supervision
+  - Leverage large unlabeled scientific corpora with domain-adaptive pretraining and self-training; fine-tune with small labeled sets per aspect. Semi-supervised approaches have shown additional gains for peer-review scores [3].
+- Robustness and generalization
+  - Train with temporal domain adaptation (train on t, validate on t+1), plus regularizers or adversarial objectives to reduce overfitting to year/venue idiosyncrasies.
+
+C) Risk-reducing pivots if gains remain modest
+
+- Reframe objectives
+  - Prefer ranking or calibration (e.g., “is this paper in the top third for clarity within its subfield/year?”) over exact score prediction; or predict coarse bins with uncertainty estimates and abstention.
+- Assistive, not predictive, tooling
+  - Use models to surface evidence (e.g., unclear definitions, missing ablations) and generate aspect-specific checklists for reviewers, rather than claiming accurate score prediction.
+- Task decomposition
+  - Predict measurable precursors (e.g., presence of error analyses, reproducibility artifacts) that correlate with certain aspects, and evaluate their incremental utility for reviewers.
+
+Concrete, falsifiable experiments
+
+1) Human ceiling and calibration study
+- Setup: Sample 300 papers/reviews; collect 3–5 independent aspect ratings per item using an expert protocol. Compute inter-rater reliability (ICC/Spearman) and calibration curves.
+- Falsifiable outcomes:
+  - If model–gold correlations approach or exceed human–human correlations, investigate leakage; otherwise, treat the human–human correlation as the ceiling and report model performance as a fraction of this ceiling. Use reliability-weighted loss if agreement differs by aspect [1].
+
+2) Multi-task ordinal vs. single-task baselines
+- Setup: Compare single-task regression/classification per aspect to a shared-encoder multi-task ordinal model with reviewer/venue bias terms.
+- Falsifiable outcomes:
+  - Multi-task ordinal achieves higher Spearman/QWK on ≥3 aspects with non-overlapping 95% CIs across three random seeds; if not, document that shared representations do not transfer and revert to per-aspect models [2].
+
+3) Evidence- and section-aware modeling
+- Setup: Train a section-tagged transformer that attends to aspect-relevant sections (e.g., Introduction for originality, Methods/Results for soundness, Writing-quality cues for clarity). Add a rationale extraction head; require attention overlap with extracted spans.
+- Falsifiable outcomes:
+  - The evidence-aware model improves Spearman by ≥0.03 on clarity/soundness and produces rationales with human overlap ≥0.3 IoU; if gains/rationales fail, prioritize alternative supervision (weak labels for aspect cues).
+
+4) Semi-supervised fine-tuning with unlabeled scientific text
+- Setup: Domain-adaptive pretraining on arXiv in-domain data, followed by self-training or consistency regularization using unlabeled papers; evaluate on held-out years.
+- Falsifiable outcomes:
+  - Semi-supervised training improves mean Spearman by ≥0.02 vs. supervised-only with matched compute; if not, cap semi-supervised investments and pivot to data quality improvements [3].
+
+5) Temporal and cross-venue robustness
+- Setup: Train on year t and test on t+1 and on a different venue/subfield; include group DRO or adversarial domain losses.
+- Falsifiable outcomes:
+  - Domain-robust models reduce temporal/generalization performance gaps by ≥30% relative to ERM; if not, report instability and constrain claims to in-domain settings [1][2].
+
+6) Metric sensitivity analysis
+- Setup: Evaluate the same models under accuracy, Spearman, QWK, and calibration (ECE) with bootstrap CIs.
+- Falsifiable outcomes:
+  - If apparent gains vanish under ordinal/calibration metrics, adjust the primary metric to reflect aspect structure and update conclusions accordingly.
+
+What to say in the paper
+
+- We observed modest gains on aspect score prediction, which we attribute to subjective, noisy, and ordinal targets with limited inter-rater reliability, domain shifts, and feature–label mismatches [1]. We therefore focus on ordinal- and calibration-aware evaluation and report human–human ceilings to contextualize model performance. We explore multi-task, semi-supervised, and evidence-aware models that have yielded incremental improvements in related work, but we also provide contingency paths—ranking/calibration objectives and assistive evidence retrieval—should absolute score prediction remain unstable [2][3].
+
+Sources
+[1] Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[2] Kumar et al., 2020. Multi-task Peer-Review Score Prediction — https://aclanthology.org/2020.sdp-1.14.pdf
+[3] Yuan et al., 2022. Exploiting Labeled and Unlabeled Data via Transformer Fine-tuning for Peer-Review Score Prediction — https://aclanthology.org/2022.findings-emnlp.164.pdf

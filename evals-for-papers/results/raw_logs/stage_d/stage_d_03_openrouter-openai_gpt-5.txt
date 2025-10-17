@@ -1,0 +1,31 @@
+Below is a compact, evidence-based plan to add an “Efficiency Issues” category to the MST taxonomy, define its sub-types, and validate that it is statistically distinct from the existing three categories (Specification, Inter-Agent Misalignment, Verification), while preserving the paper’s LLM-as-a-Judge methodology and non-leakage practices.
+
+Scope and positioning
+- Rationale: The MST paper deliberately excluded non-correctness metrics (e.g., cost/latency) to focus on correctness-oriented failure taxonomy; we extend the taxonomy with an orthogonal “Efficiency Issues” category evaluated via logs and cost/latency/turns, without redefining correctness outcomes [1].
+- Orthogonality: Treat Efficiency Issues as a distinct category that can co-occur with success or failure; in reporting, provide both the primary correctness category and a binary flag or secondary label for Efficiency. This preserves interpretability while enabling discriminant validity tests against the three correctness-oriented categories [1].
+
+Operational definition of “Efficiency Issues”
+- A run has an Efficiency Issue if it meets or fails the task objective but exhibits resource overuse relative to pre-registered task budgets or development-set baselines (tokens, turns, tool calls, wall-clock time), independent of correctness. Thresholds are frozen from the development split (e.g., 90th percentile of successful baseline runs per task family) to avoid evaluation-set leakage [1].
+- Signals are computed from execution traces: total tokens, messages, tool calls, unique tools used, retries, wall-clock time, and redundant similarity between consecutive messages. Prior literature motivates communication- and tool-use efficiency as meaningful axes in multi-agent systems [2][3][4].
+
+Proposed sub-types under “Efficiency Issues”
+- Communication redundancy: Excessive back-and-forth, ping–pong loops, or semantically repetitive messages (high inter-message similarity) without new information [2][4].
+- Tool-use thrashing: Unnecessary or repeated tool calls (retrieval, web, code) with near-identical inputs; failure to cache or reuse results [2][4].
+- Over-decomposition/over-staffing: Creating too many subtasks/roles or unnecessary agents relative to task complexity; low work-per-message ratio [3][4].
+- Context bloat: Injecting large, irrelevant context (retrieval bloat or copying logs) that inflates tokens with minimal contribution to progress [2][4].
+- Budget/latency violations: Exceeding pre-specified token/cost or deadline constraints despite reaching similar quality; report as efficiency-specific noncompliance [3][4].
+- Late termination/dithering: Continuing deliberation after the solution is already produced (post-solution chatter) [2].
+- Rework due to poor shared state: Recomputing steps because shared memory/plan hashes are not used, inflating tokens/latency [3][4].
+
+Annotation and judge rubric
+- Inputs to the judge: Agent dialogue, tool traces, plus a small, fixed metadata block with quantitative metrics (tokens, turns, tool calls, latency, budget/deadline, and whether exceeded). The LLM-as-a-Judge rubric adds a branching section that checks Efficiency criteria after assigning the primary correctness category, mirroring MST’s methodology [1]. Calibrate the judge on a held-out validation split with human labels specific to Efficiency [5].
+- Freezing: Freeze the Efficiency thresholds, rubric, and exemplars using only the development split. Evaluation examples must not appear in judge prompts to prevent leakage [1][5].
+
+Experimental design to introduce and validate the new category
+- Data splits: Maintain MST-style disjoint splits—development (for threshold setting and rubric drafting), validation (for human–judge calibration), and held-out evaluation (for final reporting) [1].
+- Systems and tasks: Use the original MST task suite and baseline system, plus at least one communication-optimization system (e.g., economical communication pipeline) to test sensitivity of the new category to known efficiency-focused changes [2][3].
+- Metrics: Report per-run primary category (Specification/Misalignment/Verification), Efficiency flag/sub-type(s), and raw efficiency metrics (tokens, turns, tool calls, latency).
+
+Statistical validation that “Efficiency Issues” is distinct
+- Discriminant validity
+  -

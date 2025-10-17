@@ -1,0 +1,387 @@
+Based on the MST paper's framework and the characteristics of existing multi-agent systems, I'll design a comprehensive ablation study for verifier agents. Let me provide you with a detailed experimental design.
+
+## Ablation Study Design for Verifier Agent Impact
+
+### 1. **Understanding Task Verification (FC3) Failure Category**
+
+Based on the MST taxonomy structure, Task Verification failures occur when:
+- The system fails to properly validate outputs against requirements
+- Quality assurance mechanisms are absent or ineffective
+- Errors propagate without detection
+
+**Expected Sub-Failure Modes** (based on typical taxonomy structure):
+- **FM-3.1**: Missing verification step (no validation performed)
+- **FM-3.2**: Inadequate verification criteria (verification exists but is superficial)
+- **FM-3.3**: Verification-execution misalignment (verifier checks wrong aspects)
+- **FM-3.4**: False positive verification (incorrect outputs pass verification)
+
+### 2. **Recommended System: ChatDev**
+
+**Why ChatDev is optimal for this ablation study:**
+
+1. **Explicit verifier roles**: ChatDev includes dedicated "Reviewer" and "Tester" agents in its software development pipeline
+2. **Well-documented architecture**: Clear separation between production agents (Designer, Programmer) and verification agents (Reviewer, Tester)
+3. **Structured workflow**: Uses a "ChatChain" mechanism with defined phases where verification occurs
+4. **Reproducible**: Open-source with standardized benchmarks
+5. **Verification-heavy domain**: Software development naturally requires code review and testing
+
+**ChatDev Architecture Overview:**
+```
+Phases: Designing → Coding → Reviewing → Testing → Documentation
+Agents: CEO, CTO, Programmer, Reviewer, Tester, Designer
+
+Verification agents:
+- Reviewer: Performs code review after Coding phase
+- Tester: Validates functionality after Review phase
+```
+
+**Alternative (if you prefer a different domain)**: MetaGPT also has verification agents but is more complex; ChatDev provides cleaner ablation opportunities.
+
+### 3. **Benchmark Selection**
+
+**Primary Recommendation: HumanEval-based Software Tasks**
+
+Use the **SWE-bench Lite** or **HumanEval** subset with ChatDev:
+- **Size**: 50-100 programming tasks
+- **Complexity**: Mix of easy (function implementation), medium (class design), hard (multi-file projects)
+- **Domains**: Data structures, algorithms, API integration, file I/O
+
+**Why this benchmark:**
+- Well-established ground truth (test cases)
+- Verification is critical (code correctness)
+- Allows measurement of both functional correctness and code quality
+- ChatDev was designed for this domain
+
+**Supplementary Benchmark**: MBPP (Mostly Basic Programming Problems) for additional validation
+
+### 4. **Ablation Conditions**
+
+Design a **3-condition within-subjects experiment**:
+
+#### **Condition 1: Full System (Baseline)**
+```
+Configuration: Standard ChatDev with all agents
+Agents active: CEO, CTO, Designer, Programmer, Reviewer, Tester
+Verification: Both code review (Reviewer) and testing (Tester) active
+```
+
+#### **Condition 2: No Explicit Verifier (Primary Ablation)**
+```
+Configuration: Remove Reviewer and Tester agents
+Agents active: CEO, CTO, Designer, Programmer
+Modification: 
+  - Skip "Reviewing" and "Testing" phases in ChatChain
+  - Programmer output goes directly to final delivery
+  - No intermediate validation steps
+```
+
+#### **Condition 3: Implicit Verification (Control)**
+```
+Configuration: Remove dedicated verifier agents but add verification to Programmer
+Agents active: CEO, CTO, Designer, Programmer
+Modification:
+  - Remove Reviewer and Tester agents
+  - Add to Programmer prompt: "After writing code, review it for errors and test it"
+  - Single-agent self-verification instead of multi-agent verification
+```
+
+**Rationale for 3 conditions:**
+- Condition 1 vs 2: Isolates impact of explicit verification agents
+- Condition 2 vs 3: Distinguishes between verification function vs. agent separation
+- Condition 1 vs 3: Tests architectural choice (dedicated agent vs. integrated function)
+
+### 5. **Implementation: Minimal Modifications**
+
+**For ChatDev (Python-based):**
+
+```python
+# File: chatdev/chat_chain.py
+
+# CONDITION 1: Baseline (no changes)
+# Use default ChatDev configuration
+
+# CONDITION 2: No Explicit Verifier
+class ChatChainNoVerifier(ChatChain):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Remove verification phases
+        self.phases = [p for p in self.phases 
+                      if p.phase_name not in ['CodeReview', 'Test']]
+        # Remove verifier agents
+        self.agents = {k: v for k, v in self.agents.items() 
+                      if k not in ['Reviewer', 'Tester']}
+
+# CONDITION 3: Implicit Verification
+class ChatChainImplicitVerifier(ChatChain):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Remove verification phases
+        self.phases = [p for p in self.phases 
+                      if p.phase_name not in ['CodeReview', 'Test']]
+        # Remove verifier agents
+        self.agents = {k: v for k, v in self.agents.items() 
+                      if k not in ['Reviewer', 'Tester']}
+        # Augment Programmer prompt
+        self.agents['Programmer'].system_prompt += """
+        
+After writing code, you must:
+1. Review your code for logical errors, edge cases, and bugs
+2. Mentally test the code with sample inputs
+3. Revise if you find any issues
+"""
+```
+
+**Configuration file approach** (cleaner):
+```yaml
+# config_baseline.yaml
+phases:
+  - Designing
+  - Coding
+  - CodeReview  # Present
+  - Test        # Present
+  - Documentation
+
+# config_no_verifier.yaml
+phases:
+  - Designing
+  - Coding
+  # CodeReview removed
+  # Test removed
+  - Documentation
+
+# config_implicit_verifier.yaml
+phases:
+  - Designing
+  - Coding
+  - Documentation
+programmer_prompt_suffix: |
+  After writing code, review and test it yourself before submission.
+```
+
+### 6. **Failure Modes to Track**
+
+Based on the MST taxonomy structure, track these **Task Verification failure modes**:
+
+#### **FM-3.1: Missing Verification**
+- **Definition**: No validation step occurs before output delivery
+- **Detection**: 
+  - Check execution logs for presence of review/test phases
+  - Binary: 1 if no verification step, 0 otherwise
+- **Expected**: High in Condition 2, low in Conditions 1 & 3
+
+#### **FM-3.2: Inadequate Verification Criteria**
+- **Definition**: Verification exists but uses superficial or incomplete criteria
+- **Detection**:
+  - Analyze verifier agent messages for depth (e.g., number of checks mentioned)
+  - Code: Verifier mentions <3 specific issues or uses generic feedback
+  - Manual annotation: Does verification check functional correctness, edge cases, code quality?
+- **Expected**: Low in Condition 1, high in Condition 3 (self-verification may be shallow)
+
+#### **FM-3.3: Verification-Execution Misalignment**
+- **Definition**: Verifier checks aspects unrelated to task requirements
+- **Detection**:
+  - Compare verification focus vs. task specification
+  - Example: Task requires algorithm correctness, but verifier only checks code style
+  - Manual annotation with rubric
+- **Expected**: Moderate across all conditions, potentially higher in Condition 3
+
+#### **FM-3.4: False Positive Verification**
+- **Definition**: Incorrect outputs pass verification
+- **Detection**:
+  - Ground truth: Code fails test cases
+  - System behavior: Verifier approves code
+  - Calculate: (Incorrect outputs marked as correct) / (Total incorrect outputs)
+- **Expected**: Low in Condition 1, high in Conditions 2 & 3
+
+#### **FM-3.5: Verification Overhead Without Benefit** (Efficiency-related)
+- **Definition**: Verification consumes resources but doesn't improve output quality
+- **Detection**:
+  - Cases where verification occurs but doesn't change the output
+  - Measure: Verification cost (tokens/time) vs. error detection rate
+- **Expected**: Rare in Condition 1 if verifier is effective
+
+### 7. **Performance Metrics**
+
+#### **Primary Metrics (Correctness)**
+
+1. **Functional Correctness Rate**
+   - **Definition**: Percentage of tasks where code passes all test cases
+   - **Measurement**: Run ground-truth test suite on generated code
+   - **Formula**: (Passed tasks) / (Total tasks)
+   - **Expected**: Highest in Condition 1, lowest in Condition 2
+
+2. **Pass@k**
+   - **Definition**: Probability that at least one of k generated solutions is correct
+   - **Measurement**: Generate k=3 solutions per task, check if any pass
+   - **Formula**: (Tasks with ≥1 correct solution) / (Total tasks)
+   - **Expected**: Verifier should improve consistency, reducing variance
+
+3. **Error Detection Rate**
+   - **Definition**: Proportion of actual errors caught by verification
+   - **Measurement**: 
+     - Inject known bugs into Programmer output
+     - Measure: (Bugs caught by verifier) / (Total bugs)
+   - **Formula**: True Positive Rate of verification
+   - **Expected**: High in Condition 1, zero in Condition 2, moderate in Condition 3
+
+#### **Secondary Metrics (Quality)**
+
+4. **Code Quality Score**
+   - **Measurement**: Use static analysis tools (pylint, flake8, radon)
+   - **Dimensions**:
+     - Maintainability Index (0-100)
+     - Cyclomatic Complexity
+     - Code style violations
+   - **Expected**: Higher in Condition 1 (reviewer enforces quality)
+
+5. **Revision Rate**
+   - **Definition**: Percentage of tasks where code is revised after verification
+   - **Measurement**: Compare Programmer output vs. final output
+   - **Formula**: (Tasks with post-review changes) / (Total tasks)
+   - **Expected**: High in Condition 1, zero in Condition 2, low in Condition 3
+
+6. **Error Propagation Distance**
+   - **Definition**: How far errors travel before detection
+   - **Measurement**: Number of phases between error introduction and detection
+   - **Formula**: Average phases from error origin to detection
+   - **Expected**: Shortest in Condition 1 (early detection)
+
+#### **Tertiary Metrics (Efficiency)**
+
+7. **Token Consumption**
+   - **Measurement**: Total tokens used per task
+   - **Breakdown**: Programmer tokens, Reviewer tokens, Tester tokens
+   - **Expected**: Highest in Condition 1 (additional agents), but may be offset by fewer retries
+
+8. **Execution Time**
+   - **Measurement**: Wall-clock time from task start to completion
+   - **Expected**: Longest in Condition 1 (more phases), but check if verification prevents costly downstream failures
+
+9. **Iteration Count**
+   - **Definition**: Number of revision cycles needed to reach acceptable output
+   - **Measurement**: Count of Programmer re-invocations
+   - **Expected**: Lower in Condition 1 if verifier catches errors early
+
+#### **Failure Mode Metrics**
+
+10. **Failure Mode Distribution**
+    - **Measurement**: Proportion of each FM-3.x failure type per condition
+    - **Method**: Manual annotation by 2 independent raters (Cohen's κ ≥ 0.6)
+    - **Visualization**: Stacked bar chart showing FM distribution per condition
+
+11. **Verification Precision & Recall**
+    - **Precision**: (True errors flagged) / (Total issues flagged)
+    - **Recall**: (True errors flagged) / (Total true errors)
+    - **F1 Score**: Harmonic mean of precision and recall
+    - **Expected**: Highest in Condition 1
+
+### 8. **Experimental Protocol**
+
+```
+Sample size: n = 75 tasks (25 easy, 25 medium, 25 hard)
+Design: Within-subjects (each task run in all 3 conditions)
+Randomization: Counterbalance condition order to control for learning effects
+
+For each task:
+  For each condition (randomized order):
+    1. Initialize ChatDev with condition-specific configuration
+    2. Execute task with fixed random seed
+    3. Log all agent interactions
+    4. Collect generated code
+    5. Run ground-truth test suite
+    6. Compute static analysis metrics
+    7. Record tokens, time, iterations
+    
+  Post-execution:
+    8. Manually annotate for failure modes (2 raters)
+    9. Inject 5 known bugs, re-run to measure error detection
+    
+Aggregation:
+  10. Compute metrics per condition
+  11. Statistical tests (see below)
+  12. Qualitative analysis of failure cases
+```
+
+### 9. **Statistical Analysis Plan**
+
+#### **Test 1: Functional Correctness (Primary Outcome)**
+
+```
+Hypothesis: H1: Condition 1 (Full) > Condition 2 (No Verifier)
+            H2: Condition 1 (Full) > Condition 3 (Implicit)
+            H3: Condition 3 (Implicit) > Condition 2 (No Verifier)
+
+Test: Cochran's Q test (3 related samples, binary outcome)
+      If significant, post-hoc McNemar tests with Bonferroni correction
+
+Effect size: Cohen's g for paired proportions
+Alpha: 0.05 (Bonferroni-corrected to 0.0167 for 3 pairwise comparisons)
+```
+
+#### **Test 2: Failure Mode Distribution**
+
+```
+Hypothesis: FM-3.1 and FM-3.4 more prevalent in Condition 2
+            FM-3.2 more prevalent in Condition 3
+
+Test: Chi-square test of independence (Condition × Failure Mode)
+      Post-hoc: Standardized residuals to identify which cells drive significance
+
+Effect size: Cramér's V
+Alpha: 0.05
+```
+
+#### **Test 3: Continuous Metrics (Quality, Efficiency)**
+
+```
+Metrics: Code quality score, token consumption, execution time
+
+Test: Friedman test (non-parametric repeated measures ANOVA)
+      If significant, post-hoc Wilcoxon signed-rank tests with Bonferroni correction
+
+Effect size: Kendall's W (concordance)
+Alpha: 0.05 (Bonferroni-corrected to 0.0167 for pairwise tests)
+```
+
+#### **Test 4: Error Detection Rate**
+
+```
+Hypothesis: Condition 1 detects more injected bugs than Conditions 2 & 3
+
+Test: Repeated measures ANOVA (if normally distributed) or Friedman test
+      Dependent variable: Proportion of bugs detected per task
+
+Effect size: Partial eta-squared (η²p) or Kendall's W
+Alpha: 0.05
+```
+
+#### **Test 5: Interaction Effects**
+
+```
+Question: Does verifier impact vary by task complexity?
+
+Test: Two-way repeated measures ANOVA
+      Factors: Condition (3 levels) × Complexity (3 levels: easy, medium, hard)
+      Dependent variable: Functional correctness
+
+Look for: Condition × Complexity interaction
+Interpretation: If significant, verifier may be more critical for complex tasks
+```
+
+### 10. **Qualitative Analysis**
+
+**Case Study Selection** (n=15 tasks, 5 per complexity level):
+
+1. **Success cases**: Where Condition 1 succeeds but Condition 2 fails
+   - Analyze: What errors did the verifier catch?
+   - Categorize: Bug types (logic, syntax, edge case, etc.)
+
+2. **Failure cases**: Where all conditions fail
+   - Analyze: Why didn't the verifier help?
+   - Identify: Limitations of verification approach
+
+3. **Surprising cases**: Where Condition 2 or 3 outperforms Condition 1
+   - Analyze: Did verification introduce errors or delays?
+   - Check for: FM-3.5 (verification overhead without benefit)
+
+**

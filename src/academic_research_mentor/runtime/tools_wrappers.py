@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from ..rich_formatter import print_agent_reasoning
@@ -13,6 +14,12 @@ from .tool_impls import (
     unified_research_tool_fn,
 )
 from ..attachments import has_attachments, search as attachments_search
+
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_langchain_tools() -> list[Any]:
@@ -154,4 +161,18 @@ def get_langchain_tools() -> list[Any]:
             ),
         ),
     )
+
+    whitelist_raw = os.environ.get("ARM_TOOL_WHITELIST")
+    whitelist = {item.strip() for item in whitelist_raw.split(",") if item.strip()} if whitelist_raw else None
+
+    baseline_mode = _is_truthy(os.environ.get("ARM_BASELINE_MODE"))
+    if baseline_mode and not whitelist:
+        whitelist = {"attachments_search", "web_search"}
+
+    if whitelist is not None:
+        filtered = [tool for tool in tools if tool.name in whitelist]
+        if not filtered:
+            filtered = [tool for tool in tools if tool.name == "attachments_search"]
+        tools = filtered
+
     return tools

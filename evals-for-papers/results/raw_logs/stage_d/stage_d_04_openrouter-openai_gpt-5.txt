@@ -1,0 +1,31 @@
+Below is a compact ablation plan focused on FC3 “Task Verification” and its sub-modes, with a concrete benchmark/system choice, minimal verifier ablations, what to measure, and how to analyze it.
+
+What FC3 includes (for grounding)
+- FC3 Task Verification includes at least three sub-modes: FM‑3.1 Premature Termination, FM‑3.2 No or Incomplete Verification, and FM‑3.3 Incorrect Verification [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5]. These are the failure types your ablation should most directly affect.
+
+Recommended benchmark and system
+- System: ChatDev (software engineering workflow) or MetaGPT. Both have modular roles where a reviewer/tester/verifier can be isolated or disabled with minimal changes.
+- Benchmark: Software tasks with ground-truth tests so the verifier’s value is measurable.
+  - SWE-bench Lite (or another repo-level test-based suite) for multi-file coding tasks with unit tests.
+  - For lighter runs, HumanEval+ or MBPP (with unit tests) adapted to project-style prompts so multi-agent roles engage.
+Rationale: Verification is observable via test execution and review steps; failures like “no verification” (FM‑3.2) and “incorrect verification” (FM‑3.3) map cleanly to whether tests/reviews were attempted and whether they accepted/flagged errors [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5]. As a literature anchor, explicit verification/re-checking has been shown to change LLM error profiles in single/multi-step settings, making it a plausible ablation target [Let’s Verify Step by Step (Wang et al., 2023)][3]; but self-verification also has known limits [On the Self-Verification Limitations of LLMs (Wang et al., 2024)][4].
+
+Minimal ablations of the verifier’s function
+Implement as toggles to avoid changing non-verifier parts:
+- Full Verifier (control): Verifier agent reviews outputs and can block finalization.
+- Bypass Verifier: Remove the verifier from the routing; planner/executor output goes directly to finalization (one-line route change).
+- Silent Verifier: Verifier runs but its messages are hidden from the rest of the system and cannot gate finalization (tests ability to catch issues without influence).
+- Toolless Verifier: Verifier prompt unchanged, but access to test/execution tools is revoked; it can only “read” artifacts (isolates the value of executable evidence).
+Optional stress controls (placebo):
+- Always-Approve Verifier: Verifier exists but is forced to return “approve” (tests whether mere presence/extra tokens—not function—drive changes).
+- Blindfolded Verifier: Verifier cannot see the full artifact or prior discussion (tests reliance on global context).
+
+What to track (failure modes and metrics)
+Track per-run labels with the MST LLM-as-a-Judge pipeline; keep taxonomy, prompts, and judge frozen per the paper’s methodology to avoid leakage [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+- FC3 sub-modes (primary):
+  - FM‑3.1 Premature Termination rate
+  - FM‑3.2 No or Incomplete Verification rate
+  - FM‑3.3 Incorrect Verification rate
+  These directly quantify whether removing or weakening the verifier increases verification-related failures [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+- Overall correctness outcomes:
+  - Task success rate (pass/fail against unit tests or reference

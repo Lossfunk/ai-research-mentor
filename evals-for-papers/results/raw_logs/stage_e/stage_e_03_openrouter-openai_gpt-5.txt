@@ -1,0 +1,62 @@
+Most critical threats to validity in PeerRead’s data collection
+
+- Heuristic “probably-rejected” labels on arXiv
+  - The arXiv “probably-rejected” subset is derived via venue-matching and timing heuristics rather than ground-truth decisions; papers that were never submitted, desk-rejected, or later accepted elsewhere can be mislabeled, introducing instance-dependent label noise [1][2]. 
+- Heterogeneous sources and collection modes
+  - Reviews and metadata are drawn from different venues and pipelines (e.g., OpenReview for ICLR vs. other sources for *ACL/CoNLL), with differing policies, rubrics, and availability, which can induce domain and rubric shift that confounds pooled analyses [1][3].
+- Leakage from arXiv metadata and versioning
+  - arXiv fields (comments, journal-ref) and later versions can reveal acceptance outcomes or post-decision edits, inflating predictive performance if not time-frozen and filtered [1][2].
+- Incomplete and non-uniform aspect scores
+  - Not all venues or years provide the same aspect score definitions/scales; mapping across venues and missingness can distort supervision and evaluation and reduce comparability [1].
+- Ambiguity in arXiv–venue linkage and deduplication
+  - Matching preprints to submissions (title variants, author name disambiguation) and handling multiple arXiv versions/derivatives are error-prone and can cause cross-split leakage or mislabeled examples [1][3].
+- Selection bias in arXiv and volunteered/public reviews
+  - arXiv posters and publicly available/volunteered review subsets are not random samples of all submissions; topic mix, seniority, and geography may differ from the target population, threatening external validity [1][2][3].
+
+Additional analyses to preempt reviewer critiques
+
+- Audit and bound arXiv label noise
+  - Randomly sample N “probably-rejected” arXiv papers; verify outcomes over a 12–24 month horizon via DBLP/venue proceedings. Report the false-negative (actually-accepted) rate with Wilson 95% CIs and stratify by subfield/year. Commit to treating arXiv negatives as unlabeled (PU setting) if the upper CI exceeds a pre-registered threshold (e.g., 15–20%) [1][2]. 
+- Time-freeze and leakage ablation
+  - Reconstruct examples using only arXiv v1 text and exclude comments/journal-ref; re-run key models. If removing these fields drops AUC/ρ by >5 points, standardize on leakage-free features and make the leakage-free numbers primary [1][2].
+- Cross-source robustness
+  - Train on one collection mode (e.g., ICLR/OpenReview) and test on another (*ACL/CoNLL subset) and vice versa; report performance gaps and a pooled vs. stratified analysis. Significant drops indicate domain shift; in that case, report per-venue results and include domain-adaptation baselines [1][3].
+- Aspect rubric harmonization check
+  - For aspects that nominally align across venues (e.g., clarity, originality), test whether venue-specific calibrations or ordinal thresholds are necessary by fitting per-venue bias terms. If calibration terms are large/significant, report venue-normalized scores and avoid pooled claims for that aspect [1].
+- Deduplication and split hygiene
+  - Implement title+early-text+author-set dedup, grouping all versions/derivatives into a single split. Quantify duplicates removed and re-run a leakage-sensitive probe (e.g., year/venue prediction from features) to confirm reductions [1][3].
+- Selection-bias sensitivity
+  - Compare topic, length, author region, and citation distributions across arXiv vs. in-venue subsets; use propensity-score reweighting to align distributions and re-evaluate key results. If conclusions flip after reweighting, flag external-validity limits and present reweighted results as primary [1][2].
+- Negative controls and confound probes
+  - Show that simple confounds (e.g., paper length, number of references, year) do not explain results by (i) training models on confounds only and (ii) adding confounds to full models and testing for attenuation. Large drops imply residual confounding; adjust analyses accordingly.
+- Missingness analysis for aspect scores
+  - Model missingness (MCAR/MAR/MNAR) and report performance on complete-case vs. imputed sets. If imputations materially change conclusions, prioritize complete-case or multiple-imputation estimates with sensitivity bands [1].
+
+Three concrete, falsifiable analyses to include in the paper
+
+1) ArXiv label audit with pre-registered decision rule
+- Method: Manually verify outcomes for a stratified sample (by year/subfield) of N=300 “probably-rejected” arXiv papers over 24 months post v1. 
+- Outcome criterion: If the 95% CI upper bound of the false-negative rate > 20%, we treat these as unlabeled and switch to PU-learning baselines for acceptance tasks; otherwise, we report noise-aware metrics alongside PN baselines [1][2].
+
+2) Leakage-free vs. full-metadata ablation
+- Method: Train acceptance and aspect models with and without arXiv comments/journal-ref and with v1-only text.
+- Outcome criterion: If leakage-free performance drops by ≥5 points (AUC or Spearman), we standardize on leakage-free results and explicitly label full-metadata numbers as optimistic; otherwise, we retain full features with a documented time-freeze [1][2].
+
+3) Cross-source generalization test
+- Method: Train on ICLR/OpenReview subset, test on *ACL/CoNLL; then invert. Include domain-adaptation baselines.
+- Outcome criterion: If cross-source performance is ≥80% of in-source performance, we claim moderate generalizability; if <80%, we restrict claims to within-source settings and report per-venue calibration/bias terms [1][3].
+
+Optional but useful analyses
+
+- Venue-normalized aspect modeling: add reviewer/venue random effects and report whether normalization narrows gaps across sources [1].
+- Propensity-weighted re-evaluation: reweight arXiv to match in-venue covariates; report whether conclusions are stable [2].
+- Split hygiene report: publish deduplication statistics and a leakage probe (e.g., train to predict split ID; near-chance indicates good hygiene) [3].
+
+Key takeaways to signal in the paper
+
+- We recognize heuristic arXiv labels, heterogeneous collection modes, and potential leakage as principal threats; we quantify noise, enforce time-freezing, and provide cross-source robustness checks. We present stratified and venue-normalized results where rubrics differ, and we bound how these factors may affect conclusions.
+
+Sources
+[1] Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[2] PeerRead Dataset Card (Hugging Face) — https://huggingface.co/datasets/allenai/peer_read
+[3] PeerRead GitHub Repository — https://github.com/allenai/PeerRead

@@ -6,10 +6,13 @@ import contextlib
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from academic_research_mentor.core.transparency import get_transparency_store
 from academic_research_mentor.runtime.context import prepare_agent
+
+from .stage_directives import apply_stage_directives
 
 
 def _json_safe(value: Any) -> Any:
@@ -61,6 +64,12 @@ def _override_env(env_overrides: Dict[str, Optional[str]]):
                 os.environ[key] = value
 
 
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class SingleTurnOrchestrator:
     """Manages single-turn evaluation across multiple LLM systems."""
 
@@ -71,11 +80,16 @@ class SingleTurnOrchestrator:
         temperature: float = 0.0,
         max_output_tokens: Optional[int] = None,
         seed: Optional[int] = None,
+        baseline_mode: bool = False,
+        tool_whitelist: Optional[Sequence[str]] = None,
     ) -> None:
         self.systems_to_test = list(systems_to_test)
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
         self.seed = seed
+        env_baseline = _is_truthy(os.environ.get("ARM_BASELINE_MODE"))
+        self.baseline_mode = baseline_mode or env_baseline
+        self.tool_whitelist = list(tool_whitelist) if tool_whitelist else None
         self.agents: Dict[str, _AgentEntry] = {}
         self._initialize_agents()
 
@@ -102,6 +116,34 @@ class SingleTurnOrchestrator:
             else:
                 print(f"Provider '{system_spec}' unsupported for automatic orchestrator runs")
                 continue
+
+            baseline_prompt_path = Path("baseline_prompt.md")
+            if baseline_prompt_path.exists():
+                env_overrides["ARM_PROMPT_FILE"] = str(baseline_prompt_path.resolve())
+                env_overrides["ARM_PROMPT"] = "baseline"
+            else:
+                print(
+                    "Warning: baseline_prompt.md not found; falling back to default prompt"
+                )
+
+            if self.baseline_mode:
+                env_overrides["ARM_BASELINE_MODE"] = "1"
+                env_overrides["ARM_GUIDELINES_MODE"] = "off"
+                if self.tool_whitelist:
+                    env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self.tool_whitelist)
+                else:
+                    env_overrides["ARM_TOOL_WHITELIST"] = "attachments_search,web_search"
+
+                baseline_prompt_path = Path("baseline_prompt.md")
+                if baseline_prompt_path.exists():
+                    env_overrides["ARM_PROMPT_FILE"] = str(baseline_prompt_path.resolve())
+                    env_overrides["ARM_PROMPT"] = "baseline"
+                else:
+                    print(
+                        "Baseline mode warning: baseline_prompt.md not found; falling back to default prompt"
+                    )
+            elif self.tool_whitelist:
+                env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self.tool_whitelist)
 
             with _override_env(env_overrides):
                 prep = prepare_agent()
@@ -138,10 +180,13 @@ class SingleTurnOrchestrator:
         except Exception:
             pass
         if self.max_output_tokens is not None:
-            for attr in ("max_output_tokens", "max_tokens"):
+            applied = False
+            for attr in ("max_tokens", "max_output_tokens"):
                 try:
                     if hasattr(llm, attr):
                         setattr(llm, attr, self.max_output_tokens)
+                        applied = True
+                        break
                 except Exception:
                     continue
         if self.seed is not None and hasattr(llm, "seed"):
@@ -155,7 +200,8 @@ class SingleTurnOrchestrator:
         if isinstance(kwargs, dict):
             kwargs["temperature"] = self.temperature
             if self.max_output_tokens is not None:
-                kwargs["max_output_tokens"] = self.max_output_tokens
+                kwargs.pop("max_output_tokens", None)
+                kwargs["max_tokens"] = self.max_output_tokens
             if self.seed is not None:
                 kwargs["seed"] = self.seed
 
@@ -198,6 +244,7 @@ class SingleTurnOrchestrator:
                         "system_id": system_spec,
                         "system_alias": alias,
                         "expected_tools": list(expected_tools),
+                        "baseline_mode": self.baseline_mode,
                     },
                 }
                 continue
@@ -211,10 +258,12 @@ class SingleTurnOrchestrator:
             response_text = ""
             error_payload: Optional[str] = None
             try:
-                reply = entry.agent.run(prompt_text)
+                augmented_prompt, directive_id = apply_stage_directives(stage, prompt_text)
+                reply = entry.agent.run(augmented_prompt)
                 response_text = getattr(reply, "content", "") or getattr(reply, "text", "") or ""
             except Exception as exc:  # noqa: BLE001
                 error_payload = str(exc)
+                directive_id = None
 
             elapsed = time.time() - start
 
@@ -262,12 +311,15 @@ class SingleTurnOrchestrator:
                     "model_params": entry.model_params,
                     "prompt_variant": entry.prompt_variant,
                     "expected_tools": list(expected_tools),
+                    "baseline_mode": self.baseline_mode,
                     "generated_at": timestamp,
                     "timeout_seconds": timeout,
                     "elapsed_seconds": elapsed,
                     "tool_runs_count": len(tool_trace),
                 },
             }
+            if directive_id:
+                results[system_spec]["meta"]["stage_directive"] = directive_id
 
             if elapsed > timeout:
                 results[system_spec]["meta"]["timeout_exceeded"] = True

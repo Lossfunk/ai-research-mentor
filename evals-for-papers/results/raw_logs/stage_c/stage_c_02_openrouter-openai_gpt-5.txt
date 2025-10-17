@@ -1,0 +1,114 @@
+Below is a 6‑month, experiment‑driven plan to develop and evaluate compressible LLMs. It targets strong accuracy/latency/memory trade‑offs across post‑training quantization (PTQ), activation‑aware quantization, pruning, KV‑cache compression, and lightweight distillation. Claims are supported with literature anchors where relevant.
+
+Goals and scope
+- Primary goals
+  - Achieve 4–8× memory reduction and 1.5–3× latency speedup at batch sizes 1–32 while retaining ≥95–98% baseline task accuracy on standard evals (MMLU, GSM8K, HumanEval, MT‑Bench) and ≤5% perplexity degradation on held‑out corpora. Grounded in PTQ/activation‑aware quantization and pruning literature [1][2][3][4].
+  - Enable long‑context inference with compressed KV caches (2–4 bit) with ≤1–2% accuracy loss vs. FP16 caches for context lengths 8k–32k [8][9].
+  - Provide a reproducible recipe across two open models (e.g., Llama‑2/3‑style 7B/13B, Mistral‑7B).
+- Models and datasets
+  - Models: Llama‑2‑7B/13B and Mistral‑7B (open weights).
+  - Calibration data (PTQ): 512–2,048 short sequences from C4/Wikipedia. Fine‑tuning data: curated instruction mix (Alpaca/ShareGPT‑like), plus small domain sets.
+  - Evaluation: Perplexity on C4; MMLU, GSM8K, HumanEval, MT‑Bench; long‑context synthetic retrieval and Needle‑in‑a‑Haystack for KV tests.
+
+Core experiments (falsifiable) and ablations
+E1. Weight‑only PTQ baselines and ablations (weeks 3–6)
+- Method: Compare GPTQ vs AWQ vs SqueezeLLM on weight‑only quantization (W3/W4) [1][2][3].
+- Ablations:
+  - Bit‑width: W3 vs W4 vs W5.
+  - Group size: 32 vs 64 vs 128 channels.
+  - Per‑channel vs per‑tensor; symmetric vs asymmetric scales.
+  - Calibration set size: 128 vs 512 vs 2,048 sequences; domain‑matched vs generic.
+- Hypotheses and acceptance criteria:
+  - H1: AWQ W4 with group size 64 outperforms GPTQ W4 on reasoning tasks by ≥0.5–1.0 points while matching perplexity within 3% [2]. Falsify if gap <0.5 or perplexity degradation >3%.
+  - H2: SqueezeLLM W3 recovers ≥90–93% task accuracy with ≤8% perplexity increase by dense‑and‑sparse calibration [3]. Falsify if below 90% or PPL loss >8%.
+- Metrics: PPL delta (C4), MMLU/GSM8K/MT‑Bench deltas, latency/throughput on A100/4090, peak memory.
+
+E2. Activation quantization and low‑rank recovery (weeks 5–10)
+- Method: Extend to W4A8 and W4A4. Use activation‑aware calibration (AWQ) and light post‑PTQ recovery with LoRA/QLoRA (1–2 epochs, 1–3e‑4 LR, 4‑bit base) [2][6].
+- Ablations:
+  - Activation precision: A8 vs A6 vs A4.
+  - Recovery: none vs LoRA (rank 8/16/32) vs full‑parameter QAT (small LR).
+  - Layerwise mixed precision (attn/MLP/embeddings).
+- Hypotheses:
+  - H3: W4A8 with LoRA rank 16 restores ≥95–98% of task accuracy vs FP16 while keeping <5% PPL degradation and ≥2× speedup at batch 8 [2][6]. Falsify if any criterion fails.
+  - H4: Mixed precision (W4A8 in attention, W3A8 in MLP) improves MMLU ≥0.5 vs uniform W4A8 at same latency. Falsify if improvement <0.5.
+- Metrics: As above + activation out‑of‑range rate and numerical stability (NaNs).
+
+E3. Structured and unstructured pruning with sparse kernels (weeks 9–14)
+- Method: One‑shot SparseGPT pruning at 30–70% sparsity; evaluate 2:4 and unstructured sparsity; test sparse matmul backends [4].
+- Ablations:
+  - Sparsity: 30/40/50/60/70%.
+  - Pattern: 2:4 vs unstructured.
+  - Prune‑then‑quantize vs quantize‑then‑prune pipelines.
+- Hypotheses:
+  - H5: 50% unstructured pruning with small LoRA recovery regains ≥95% task accuracy with ≥1.3× latency speedup using sparse kernels [4]. Falsify if accuracy <95% or speedup <1.3×.
+  - H6: 2:4 structured pruning at 50% achieves smaller accuracy drop than unstructured at same kernel support on commodity GPUs. Falsify if unstructured outperforms.
+
+E4. KV‑cache quantization for long context (weeks 12–18)
+- Method: Apply KIVI (2‑bit asymmetric) and KVQuant schemes to KV caches; test 8k–32k contexts [8][9].
+- Ablations:
+  - Bits: KV2 vs KV3 vs KV4.
+  - Asymmetric vs symmetric, per‑head vs per‑tensor.
+  - Mixed precision: Keys 4‑bit, Values 2‑bit (per findings that values are more sensitive) [9].
+- Hypotheses:
+  - H7: KV2 (asymmetric) yields ≤1–2% accuracy loss on long‑context QA vs FP16 with ≥2–4× memory reduction and ≥1.2–1.5× speedup from reduced bandwidth [8][9]. Falsify otherwise.
+
+E5. Lightweight distillation to small students (weeks 14–20)
+- Method: Distill a 7B teacher (compressed) to a 1–3B student with mixed‑precision inference; consider TinyLlama‑style setups; use task‑balanced KD and reasoning‑augmented traces [7].
+- Ablations:
+  - Teacher precision (FP16 vs W4A8).
+  - Student size (1.1B vs 3B).
+  - KD objective: hard labels vs soft logits vs step‑by‑step traces.
+- Hypothesis:
+  - H8: A 3B student distilled from a W4A8 teacher reaches ≥85–90% of teacher performance on MMLU/GSM8K at ≤30% of latency. Falsify if accuracy <85% or latency >35%.
+
+E6. Embedding/FFN factorization (weeks 16–22)
+- Method: Tensorize embeddings/FFN with Tensor‑Train or low‑rank factorization; combine with W4 PTQ [10].
+- Ablations: TT ranks; where to factorize (input/output embeddings vs FFN).
+- Hypothesis:
+  - H9: TT‑compressed embeddings at 4–8× compression add ≤1–2% accuracy loss when combined with W4 weights, with negligible latency overhead [10]. Falsify otherwise.
+
+Integrated recipe and scaling study (weeks 20–24)
+- Compose best settings: W4A8 + sparse 30–50% + KV2–4 + small LoRA recovery + TT embeddings; test on two model families.
+- Report Pareto curves (accuracy vs latency vs memory) and sensitivity analyses.
+
+Timeline (6 months, biweekly sprints)
+- Month 1
+  - Infra/baselines: set up eval harness (PPL, MMLU, GSM8K, HumanEval, MT‑Bench), latency/memory profilers; reproduce FP16 baselines.
+  - Start E1 PTQ grid (W3/4/5; group sizes; calibration sizes). Milestone: W4 PTQ within 3–5% PPL, ≤2‑point task drop [1][2][3].
+- Month 2
+  - Finish E1; run E2 activation quant + LoRA recovery; deliver mixed‑precision policy recommender. Milestone: W4A8 within ≤5% PPL and ≥95–98% task retention with ≥1.8–2.2× speedup [2][6].
+- Month 3
+  - E3 pruning grid; integrate sparse kernels; compare prune‑then‑quantize vs quantize‑then‑prune. Milestone: ≥1.3× speedup with ≤5% task drop at 40–50% sparsity [4].
+- Month 4
+  - E4 KV cache quantization at 8k–32k; long‑context regression suite. Milestone: KV2–4 achieves ≥2× KV memory reduction with ≤2% accuracy loss [8][9].
+- Month 5
+  - E5 distillation to 1–3B; E6 TT embeddings; choose winners; start integrated recipe on two model families. Milestone: 3B student ≥85–90% teacher at ≤30% latency [7][10].
+- Month 6
+  - Integrated recipe hardening, cross‑hardware profiling (A100, 4090, A10, CPU), final Pareto and ablations report; release scripts and checkpoints.
+
+Measurement and reporting
+- Metrics: PPL; task scores; latency p50/p95; tokens/s; peak/resident memory; energy/use GPU power; numerical stability (NaN/Inf).
+- Hardware: profile on at least two GPUs (datacenter + consumer); optional CPU runs for small students.
+- Repro: fixed seeds, evaluation caching, and per‑experiment sweep sheets.
+
+Key ablations to prioritize
+- Bit‑width and group size sensitivity (3/4/5‑bit; 32/64/128).
+- Calibration set composition and size on OOD robustness.
+- Layerwise mixed precision (make attention higher precision than MLP).
+- Pruning order and recovery vs sparse kernel availability.
+- KV cache asymmetry (keys vs values) and per‑head scaling.
+- Interaction effects: W4 + 50% sparsity vs W4 only; W4A8 + KV2 vs W4A8 only.
+
+Risks and mitigations
+- Sparse kernels underperform on target hardware: prioritize 2:4 structured sparsity where supported; fall back to pure quantization [4].
+- Accuracy regression on reasoning tasks under W3: choose W4A8 + LoRA recovery per AWQ/QLoRA results [2][6].
+- Long‑context regressions: use mixed‑precision KV (Keys 4‑bit, Values 2‑bit) and per‑head asymmetric scales [9].
+
+Deliverables
+- Month 2: Quantization report + scripts (GPTQ/AWQ/SqueezeLLM).
+- Month 3: Pruning report + sparse kernels integration.
+- Month 4: KV cache compression toolkit + long‑context evals.
+- Month 6: Integrated recipe, Pareto curves, checkpoints for two model families, and a brief paper‑style write‑up.
+
+Anchors

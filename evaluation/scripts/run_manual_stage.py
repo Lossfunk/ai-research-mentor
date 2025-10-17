@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
 import os
@@ -16,6 +17,8 @@ from academic_research_mentor.prompts_loader import load_instructions_from_promp
 from academic_research_mentor.runtime import build_agent
 from academic_research_mentor.core.transparency import get_transparency_store, ToolRun, ToolEvent
 from academic_research_mentor.rich_formatter import print_info, print_error
+
+from .stage_directives import apply_stage_directives
 
 # Optional attachments API for grounding runs
 try:  # pragma: no cover - optional
@@ -36,6 +39,41 @@ RUNTIME_PRELUDE = (
     "IMPORTANT: Your advice must avoid hyperbole, and claims must be substantiated by evidence presented. "
     "Science is evidence-based; never present unsubstantiated claims. If a claim is speculative, pose it as conjecture, not a conclusion."
 )
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if hasattr(value, "name") and isinstance(getattr(value, "name"), str):
+        return value.name
+    if hasattr(value, "value") and isinstance(getattr(value, "value"), str):
+        return value.value
+    return str(value)
+
+
+@contextlib.contextmanager
+def _temporary_env(overrides: Dict[str, Optional[str]]):
+    previous: Dict[str, Optional[str]] = {}
+    try:
+        for key, value in overrides.items():
+            previous[key] = os.environ.get(key)
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(value)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 RUNTIME_CITATION_DIRECTIVE = (
     " Always include citations to sources when giving research advice. "
@@ -187,7 +225,7 @@ def serialize_tool_event(evt: ToolEvent) -> Dict[str, Any]:
     return {
         "timestamp_ms": evt.timestamp_ms,
         "event_type": evt.event_type,
-        "payload": evt.payload,
+        "payload": _json_safe(evt.payload),
     }
 
 
@@ -203,7 +241,7 @@ def serialize_tool_run(run: ToolRun) -> Dict[str, Any]:
         "started_ms": run.started_ms,
         "ended_ms": run.ended_ms,
         "duration_ms": duration,
-        "metadata": dict(run.metadata or {}),
+        "metadata": _json_safe(run.metadata or {}) or {},
         "events": events,
     }
 
@@ -287,8 +325,9 @@ def execute_prompt(
 
     store = get_transparency_store()
     before_ids = {run.run_id for run in store.list_runs()}
+    augmented_prompt, directive_id = apply_stage_directives(stage_letter, prompt_text)
     started = time.time()
-    reply = agent.run(prompt_text)
+    reply = agent.run(augmented_prompt)
     elapsed = time.time() - started
     content = getattr(reply, "content", "") or getattr(reply, "text", "") or ""
 
@@ -312,6 +351,8 @@ def execute_prompt(
         "tool_trace_path": str(tool_path),
         "tool_runs_count": len(new_runs),
     }
+    if directive_id:
+        meta_payload["stage_directive"] = directive_id
     meta_path.write_text(json.dumps(meta_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     annotation_row = {col: "" for col in ANNOTATION_COLUMNS}
@@ -369,7 +410,18 @@ def run_stage(
             print_error("Attachments support not available; skipping PDF attach")
     except Exception as exc:  # noqa: BLE001
         print_error(f"Failed to attach PDFs: {exc}")
-    agent, loaded_variant = prepare_agent()
+    prompt_overrides: Dict[str, Optional[str]] = {}
+    baseline_prompt_path = Path("baseline_prompt.md")
+    if baseline_prompt_path.exists():
+        prompt_overrides = {
+            "ARM_PROMPT_FILE": str(baseline_prompt_path.resolve()),
+            "ARM_PROMPT": "baseline",
+        }
+    else:
+        print_error("Warning: baseline_prompt.md not found; using default prompt variant")
+
+    with _temporary_env(prompt_overrides):
+        agent, loaded_variant = prepare_agent()
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
 
     run_started = datetime.utcnow().isoformat() + "Z"

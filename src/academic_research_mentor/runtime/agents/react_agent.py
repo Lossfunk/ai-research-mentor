@@ -32,6 +32,10 @@ class LangChainReActAgentWrapper:
         # Delimiters for hiding internal/tool reasoning from the response display
         self._internal_begin = "<<<AGENT_INTERNAL_BEGIN>>>"
         self._internal_end = "<<<AGENT_INTERNAL_END>>>"
+        try:
+            self._recursion_limit = int(os.environ.get("ARM_GRAPH_RECURSION_LIMIT", "40"))
+        except Exception:
+            self._recursion_limit = 40
         # Lightweight bounded conversation memory (Human/AI pairs only; System provided per turn)
         self._history: list[Any] = []
         self._history_enabled: bool = os.environ.get("ARM_HISTORY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
@@ -39,6 +43,12 @@ class LangChainReActAgentWrapper:
             self._max_history_messages: int = int(os.environ.get("ARM_MAX_HISTORY_MESSAGES", "12"))
         except Exception:
             self._max_history_messages = 12
+
+    def _invoke_with_recursion_limit(self, payload: Dict[str, Any]) -> Any:
+        try:
+            return self._agent_executor.invoke(payload, config={"recursion_limit": self._recursion_limit})
+        except TypeError:
+            return self._agent_executor.invoke(payload)
 
     def set_chat_logger(self, chat_logger: Any) -> None:
         """Set the chat logger for recording conversations."""
@@ -65,7 +75,7 @@ class LangChainReActAgentWrapper:
             if self._session_logger:
                 self._session_logger.log_event("agent_invoked", {"history_len": len(self._history), "input_preview": user_text[:200]})
             # Invoke once synchronously so tools can print their reasoning panels first
-            result = self._agent_executor.invoke({"messages": self._build_messages(user_text)})
+            result = self._invoke_with_recursion_limit({"messages": self._build_messages(user_text)})
             messages = result.get("messages", []) if isinstance(result, dict) else []
             if messages:
                 last_msg = messages[-1]
@@ -137,7 +147,7 @@ class LangChainReActAgentWrapper:
                 self.content = text
                 self.text = text
 
-        result = self._agent_executor.invoke({"messages": self._build_messages(user_text)})
+        result = self._invoke_with_recursion_limit({"messages": self._build_messages(user_text)})
         messages = result.get("messages", []) if isinstance(result, dict) else []
         content = ""
         if messages:

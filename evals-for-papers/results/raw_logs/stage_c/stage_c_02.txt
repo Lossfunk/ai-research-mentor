@@ -1,131 +1,179 @@
-Before I develop a detailed 6-month plan, I need to understand your specific context to tailor the roadmap effectively:
+# Compressible LLMs Research Execution Plan
 
-## Essential Context Questions
+## 1. Problem Framing and Goals
 
-1. **Resources & Time**: What GPU access do you have (local GPUs, cloud credits, cluster allocation)? How many hours per week can you dedicate to this project?
+**Primary Goal**: Develop and evaluate novel compression techniques for large language models that maintain performance while achieving significant size reduction for deployment on resource-constrained devices.
 
-2. **Current Position**: Are you a PhD student, master's student, or independent researcher? Do you have advisor support or are you working solo?
+**Research Questions**:
+- How can we achieve extreme compression ratios (>10x) while preserving language understanding capabilities?
+- What is the optimal combination of pruning, quantization, and knowledge distillation for different model architectures?
+- How do different compression techniques affect various downstream tasks differently?
 
-3. **Specific Focus**: "Compressible LLMs" is broad—are you most interested in:
-   - Quantization methods (binary/ternary weights, low-bit precision)?
-   - Structural compression (pruning, modularization, knowledge distillation)?
-   - Novel compression paradigms (wavelet transforms, learned projections)?
-   - Deployment-focused (edge devices, latency constraints)?
+**Success Metrics**: 
+- Compression ratio (target: 10-50x size reduction)
+- Performance retention (target: <5% degradation on key benchmarks)
+- Inference speedup and memory reduction
+- Energy efficiency improvements
 
-4. **Target Venue & Timeline**: Are you aiming for a specific conference (NeurIPS, ICML, ICLR, ACL) or workshop? What's your submission deadline?
+## 2. Experiments
 
-5. **Current Bottleneck**: What's blocking you right now—choosing a specific angle, setting up baselines, or something else?
+### Experiment 1: Additive Quantization for Extreme Compression
+**Hypothesis**: Additive quantization methods [P3] can achieve better compression-performance tradeoffs than traditional scalar quantization for LLMs.
 
----
+**Setup**: 
+- Models: GPT-2 (117M, 345M), LLaMA-7B
+- Compare additive quantization vs. scalar quantization (4-bit, 8-bit)
+- Implement residual vector quantization for attention weights
 
-## Provisional Phase 0 (Weeks 1-2): Calibration & Reproduction
+**Baselines**: 
+- Uncompressed models
+- Standard 8-bit and 4-bit quantization
+- GPTQ and AWQ quantization methods
 
-While you provide those details, here's a **gated starter plan** [G7][G12] that will build essential skills regardless of your specific direction:
+**Evaluation Metrics**:
+- Perplexity on WikiText-2, Penn Treebank
+- GLUE benchmark scores
+- Model size and inference latency
+- Memory consumption during inference
 
-### **Intuition**
-Compression research requires deep familiarity with the performance-efficiency tradeoff landscape. Starting with reproduction ensures you understand what "good" compression looks like and builds intuition for where current methods fail—this grounds later novelty in empirical reality rather than speculation.
+**Expected Outcomes**: 15-30x compression with <3% performance degradation on language modeling tasks.
 
-### **Why this is principled**
-Effective research begins with crisp problem framing and early feedback loops [G7][G12]. Reproduction establishes baseline competence, reveals hidden implementation details that papers omit, and generates prediction logs that calibrate your intuition about what interventions might work [G19].
+### Experiment 2: Joint Pruning-Quantization Optimization
+**Hypothesis**: Simultaneous optimization of pruning and quantization [P8] yields better results than sequential application of these techniques.
 
-### Deliverables (Must complete before advancing):
+**Setup**:
+- Implement joint optimization framework combining structured pruning with quantization
+- Test on transformer blocks with different sparsity patterns
+- Compare one-shot vs. gradual compression approaches [P5]
 
-**Deliverable 1: Reproduction Artifact**
-- Pick ONE baseline from recent work: either extreme quantization [P1], modular transformers [P3], or projected compression [P5]
-- Reproduce at least one key result (e.g., perplexity on WikiText-2 or accuracy on GLUE task) within ≤10% relative error across ≥3 random seeds
-- Document all deviations from the paper in a 1-page "reproduction log"
+**Baselines**:
+- Sequential pruning then quantization
+- Quantization then pruning
+- Magnitude-based pruning alone
 
-**Deliverable 2: Prediction Log + Experiment Card**
-- Maintain a daily prediction log with ≥14 entries over 2 weeks (predict: "Will this hyperparameter change improve perplexity by >5%?" Record outcome and Brier score)
-- Draft one experiment card using this template:
-  - **Hypothesis**: [specific, directional claim]
-  - **Falsifier**: [what result would disprove it]
-  - **Minimal Test**: [smallest experiment to run]
-  - **Variables**: [independent/dependent/controls]
-  - **Expected Patterns**: [confirmatory vs. disconfirmatory results]
-  - **Analysis Plan**: [metrics, tests, visualizations]
-  - **Stop Rule**: [when to halt or pivot]
+**Evaluation Metrics**:
+- Compression ratio vs. accuracy curves
+- Training stability and convergence speed
+- Downstream task performance (summarization, QA, classification)
 
----
+**Expected Outcomes**: 20-40x compression with improved performance retention compared to sequential methods.
 
-## Three Concrete Experiments (Expanded)
+### Experiment 3: KV Cache Compression for Inference Efficiency
+**Hypothesis**: Residual vector quantization of KV caches [P7] can significantly reduce memory requirements during autoregressive generation without quality loss.
 
-Here are three falsifiable experiments grounded in the recent literature [P1][P3][P5], each scoped for different resource levels:
+**Setup**:
+- Implement RVQ for key-value cache compression
+- Test on various sequence lengths (512, 2048, 4096 tokens)
+- Compare with cache eviction strategies
 
-### **Experiment 1: Compression-Aware Fine-Tuning vs. Post-Training Compression**
+**Baselines**:
+- Full precision KV cache
+- Scalar quantized KV cache
+- Cache eviction methods (FIFO, attention-based)
 
-**Objective & Hypothesis**: Test whether training a model with compression-aware objectives (e.g., quantization-aware training) from scratch outperforms compressing a pre-trained model post-hoc. Hypothesis: Compression-aware training will yield ≥15% better perplexity at the same compression ratio because it allows the model to adapt its representations during learning [P1].
+**Evaluation Metrics**:
+- Generation quality (BLEU, ROUGE scores)
+- Memory usage during generation
+- Generation speed and throughput
+- Long-context understanding tasks
 
-**Setup & Resources**: Use a small transformer (e.g., GPT-2 small, 117M parameters) on WikiText-103. Train two variants: (1) standard pre-training followed by 4-bit quantization, and (2) quantization-aware training from initialization. Requires 1-2 GPUs (A100 or V100) for ~3-5 days. Use existing QAT libraries (e.g., PyTorch's quantization toolkit).
+**Expected Outcomes**: 4-8x memory reduction with minimal impact on generation quality.
 
-**Evaluation Metrics**: Measure validation perplexity, compression ratio (original size / compressed size), and inference latency on CPU. Track training curves to identify when compression-aware models diverge from standard training. Success criterion: ≥15% perplexity improvement at 4-bit precision.
+## 3. Timeline for Next 6 Months
 
-**Expected Results & Interpretation**: If QAT wins, it suggests compression should be integrated early in the training pipeline—explore whether this holds for larger models or different compression ratios (2-bit, 8-bit). If post-training compression is competitive, investigate whether the gap closes with better calibration data or more sophisticated quantization schemes (e.g., mixed-precision).
+**Month 1**: Infrastructure and Baseline Implementation
+- Set up training/evaluation pipelines
+- Implement baseline compression methods
+- Establish evaluation protocols and metrics
 
-**Follow-up Variations**: Test on different model sizes (350M, 1.3B parameters), vary compression ratios (2-bit, 3-bit, 8-bit), and explore task-specific fine-tuning (GLUE benchmarks) to see if the advantage persists beyond language modeling.
+**Month 2**: Experiment 1 - Additive Quantization
+- Implement additive quantization framework
+- Run initial experiments on GPT-2 models
+- Analyze results and optimize hyperparameters
 
----
+**Month 3**: Experiment 2 - Joint Optimization
+- Develop joint pruning-quantization framework
+- Conduct ablation studies on optimization strategies
+- Scale to larger models (LLaMA-7B)
 
-### **Experiment 2: Modular Layer Pruning with Adaptive Depth**
+**Month 4**: Experiment 3 - KV Cache Compression
+- Implement RVQ for KV cache compression
+- Evaluate on long-context generation tasks
+- Optimize for different hardware configurations
 
-**Objective & Hypothesis**: Investigate whether dynamically selecting which transformer layers to execute per input (adaptive depth) can maintain accuracy while reducing compute. Hypothesis: A learned router that skips 30-50% of layers will preserve ≥95% of original accuracy on diverse inputs because many examples don't require full model depth [P3].
+**Month 5**: Integration and Comprehensive Evaluation
+- Combine best techniques from all experiments
+- Conduct extensive evaluation on diverse benchmarks
+- Performance analysis and optimization
 
-**Setup & Resources**: Start with a pre-trained BERT-base or GPT-2 medium model. Implement a lightweight router (small MLP) that predicts per-layer importance scores for each input. Train the router on a held-out calibration set (10K examples from your target dataset) using a combined loss: task accuracy + efficiency penalty (number of layers executed). Requires 1 GPU for ~2-3 days.
+**Month 6**: Analysis, Documentation, and Dissemination
+- Statistical analysis and significance testing
+- Write technical report and prepare publications
+- Open-source implementation and documentation
 
-**Evaluation Metrics**: Measure task accuracy (F1 on SQuAD or accuracy on MNLI), average number of layers executed per input, and wall-clock inference time. Plot accuracy vs. compute tradeoff curves. Success criterion: ≥95% accuracy retention with ≤60% average layer execution.
+## 4. Resources
 
-**Expected Results & Interpretation**: If the router successfully identifies "easy" vs. "hard" examples, you'll see a bimodal distribution of layer usage. Analyze which input characteristics correlate with shallow vs. deep execution (e.g., sentence length, syntactic complexity). If accuracy drops sharply, investigate whether certain layer types (early vs. late, attention vs. FFN) are more critical.
+**People**:
+- 1 PhD student/postdoc (full-time, compression algorithms)
+- 1 Research engineer (0.5 FTE, infrastructure and optimization)
+- 1 Faculty advisor (0.1 FTE, guidance and review)
 
-**Follow-up Variations**: Extend to token-level adaptive computation (skip layers for some tokens but not others), test on out-of-distribution data to assess router robustness, and compare learned routers vs. heuristic rules (e.g., skip layers for short inputs).
+**Compute**:
+- 4-8 A100 GPUs for training and evaluation
+- CPU clusters for large-scale evaluation
+- Storage: 10TB for datasets and model checkpoints
 
----
+**Tools**:
+- PyTorch/Transformers library
+- Quantization frameworks (GPTQ, AWQ)
+- Evaluation suites (GLUE, SuperGLUE, HELM)
+- Profiling tools (NVIDIA Nsight, PyTorch Profiler)
 
-### **Experiment 3: Compression Lottery Ticket Hypothesis**
+**Datasets**:
+- Training: WikiText-103, OpenWebText
+- Evaluation: GLUE, SuperGLUE, HellaSwag, MMLU
+- Long-context: LongBench, RULER
 
-**Objective & Hypothesis**: Test whether compressed subnetworks found early in training (lottery tickets) can match the performance of fully-trained compressed models. Hypothesis: A subnetwork identified at 10-20% of training will achieve ≥90% of the final compressed model's performance when trained in isolation, suggesting compression can be front-loaded [P1][P4].
+## 5. Risks and Mitigations
 
-**Setup & Resources**: Train a small transformer (GPT-2 small or distilBERT) on a language modeling or classification task. At checkpoints (10%, 20%, 50% of training), apply magnitude-based pruning to identify sparse subnetworks (50-70% sparsity). Rewind these subnetworks to their initialization and train to convergence. Requires 2-3 GPUs for ~1 week (parallel training of multiple subnetworks).
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|---------|------------|
+| Compression techniques fail to scale to larger models | Medium | High | Start with smaller models, develop scalable algorithms, have fallback approaches |
+| Performance degradation exceeds acceptable thresholds | Medium | High | Implement progressive compression, extensive ablation studies, multiple evaluation metrics |
+| Hardware constraints limit experimentation | Low | Medium | Collaborate with cloud providers, optimize for available hardware, use model parallelism |
+| Baseline implementations are suboptimal | Medium | Medium | Validate against published results, use established codebases, peer review |
+| Evaluation metrics don't capture real-world performance | Medium | Medium | Use diverse benchmarks, include human evaluation, test on downstream applications |
+| Reproducibility issues with complex optimization | Medium | Medium | Extensive logging, version control, detailed documentation, multiple random seeds |
 
-**Evaluation Metrics**: Compare final perplexity/accuracy of lottery ticket subnetworks vs. the full model compressed post-training. Measure training efficiency (FLOPs to convergence) and final model size. Success criterion: Early lottery tickets (≤20% training) achieve ≥90% of post-training compression performance.
+## 6. Stretch Ideas and Follow-up Directions
 
-**Expected Results & Interpretation**: If early tickets succeed, it implies compression decisions can be made before expensive full training—explore whether this generalizes to larger models or different compression methods (quantization, distillation). If tickets fail, investigate whether the pruning criterion (magnitude) is suboptimal or whether transformers lack the lottery ticket property observed in CNNs.
+**Advanced Compression Techniques**:
+- Explore neural architecture search for compression-friendly designs
+- Investigate lottery ticket hypothesis for LLMs
+- Develop hardware-aware compression optimization
 
-**Follow-up Variations**: Test different pruning criteria (gradient-based, activation-based), vary sparsity levels (30%, 50%, 80%), and explore iterative magnitude pruning (IMP) to refine ticket quality. Extend to structured pruning (entire attention heads or FFN dimensions).
+**Dynamic Compression**:
+- Adaptive compression based on input complexity
+- Runtime compression adjustment for different tasks
+- Progressive compression during fine-tuning
 
----
+**Cross-Modal Extensions**:
+- Apply techniques to vision-language models
+- Multimodal compression strategies
+- Domain-specific compression optimization
 
-## Problem Selection Rubric (Score before proceeding)
-
-Evaluate your chosen compression angle using this 0-3 rubric (0 = poor, 3 = excellent):
-
-1. **Importance**: If solved, how much does it matter for deployment or understanding? (0-3)
-2. **Tractability**: Can you get signal within ~3 weeks given your resources? (0-3)
-3. **Surprise**: Does it challenge a common belief or reveal something unexpected? (0-3)
-4. **Generality**: Does it apply across models, datasets, or tasks? (0-3)
-5. **Mechanistic Payoff**: Is there a clear "why" hypothesis to test? (0-3)
-
-**Proceed only if your total score is ≥10/15.** If below, iterate on scope or pivot to a higher-scoring angle.
-
----
-
-## Next Actions (1-3 days)
-
-1. **Answer the context questions above** so I can tailor the full 6-month timeline to your situation.
-2. **Pick one reproduction target** from [P1], [P3], or [P5] and locate the official code repository.
-3. **Start your prediction log** today—make one prediction about your reproduction attempt (e.g., "I predict the baseline will achieve X perplexity within Y hours of training").
-
-Once you provide your context, I'll expand this into a full 6-month roadmap with monthly milestones, ablation studies, venue-specific positioning, and risk mitigation strategies [G8][G13].
-
----
+**Theoretical Analysis**:
+- Information-theoretic bounds on compression
+- Generalization theory for compressed models
+- Compression-performance trade-off analysis
 
 ## Citations
 
-- [G7] Opinionated Guide Ml Research — http://joschu.net/blog/opinionated-guide-ml-research.html
-- [G8] 1986 Hamming — https://gwern.net/doc/science/1986-hamming
-- [G12] How I Think About My Research Process Explore Understand — https://www.alignmentforum.org/posts/hjMy4ZxS5ogA9cTYK/how-i-think-about-my-research-process-explore-understand
-- [G13] How Not To Choose A Research Project — https://www.lesswrong.com/posts/kDsywodAKgQAAAxE8/how-not-to-choose-a-research-project
-- [G19] Taste — https://colah.github.io/notes/taste/
-- [P1] Extreme Compression for Pre-trained Transformers Made Simple and Efficient — http://arxiv.org/abs/2206.01859v1
-- [P3] Modular Transformers: Compressing Transformers into Modularized Layers for Flexible Efficient Inference — http://arxiv.org/abs/2306.02379v1
-- [P4] A Survey on Transformer Compression — http://arxiv.org/abs/2402.05964v2
-- [P5] Projected Compression: Trainable Projection for Efficient Transformer Compression — http://arxiv.org/abs/2506.22255v1
+- [P1] Convolutional neural network compression for natural language processing — http://arxiv.org/abs/1805.10796v1
+- [P2] On the Compression of Natural Language Models — http://arxiv.org/abs/2112.11480v1
+- [P3] Extreme Compression of Large Language Models via Additive Quantization — http://arxiv.org/abs/2401.06118v4
+- [P5] OPQ: Compressing Deep Neural Networks with One-shot Pruning-Quantization — http://arxiv.org/abs/2205.11141v1
+- [P7] Residual vector quantization for KV cache compression in large language model — http://arxiv.org/abs/2410.15704v1
+- [P8] Towards Optimal Compression: Joint Pruning and Quantization — http://arxiv.org/abs/2302.07612v2
+
+**Optional next step**: Conduct a preliminary feasibility study by implementing basic quantization on a small model (GPT-2 117M) to validate the experimental pipeline and establish baseline performance metrics before scaling to larger experiments.

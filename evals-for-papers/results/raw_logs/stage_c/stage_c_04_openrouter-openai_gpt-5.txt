@@ -1,0 +1,64 @@
+You can do meaningful, publishable work without owning GPUs by focusing on (a) data-centric and evaluation-centric questions, (b) CPU-feasible methods and pre-trained models, and (c) using free/hosted compute where available. Below is a lean plan with concrete experiments, ablations, and a 6–8 week timeline.
+
+What to work on with near-zero compute
+- Use pre-trained models via free/hosted resources
+  - Free notebooks: Kaggle provides hosted CPUs/GPUs with persistent storage; good for modest training and extensive evaluation [Kaggle Docs]. Google Colab free tier is suitable for quick prototypes (sessions may be time-limited) [Colab].
+  - Inference-first research: evaluate zero-shot/few-shot capabilities of CLIP and sentence-transformers on new tasks entirely on CPU; many models run in seconds per batch on a laptop [CLIP; SBERT].
+  - Small/distilled models: focus on DistilBERT/Tiny models for NLP and classical ML (scikit-learn). These run comfortably on CPU and enable careful ablation studies [DistilBERT].
+- Do data-centric research
+  - Label-error detection, deduplication, and curation (e.g., with cleanlab) can yield outsized gains without heavy training; publishable as dataset/benchmark notes [Cleanlab].
+  - Subset selection and augmentation studies (what data is most valuable?) using lightweight models.
+- Evaluation, alignment, and RAG
+  - Retrieval-augmented generation with CPU embeddings (all-MiniLM-L6-v2) and small vector DBs; study retrieval policies, prompt templates, and evaluation rigor without training models [SBERT].
+- Reproducibility and benchmarking
+  - Reproduce papers on reduced settings; publish negative results, error analyses, and fairer evaluation protocols. Curate leaderboards/datasets and open-source eval harnesses (often more impactful than another model).
+- Collaboration and credits
+  - Apply for free compute via competitions (Kaggle), academic credits, or community grants; but plan so your core results are CPU-feasible in case grants don’t land.
+
+Three concrete, falsifiable experiments (CPU/inference-friendly)
+1) Data cleaning improves accuracy with zero model changes
+- Task: Text sentiment (IMDB) or topic classification (AG News).
+- Baseline: Logistic regression or linear SVM (scikit-learn) trained on raw data.
+- Intervention: Run cleanlab to flag likely label issues; manually review top 200 flags; retrain baseline on corrected data.
+- Hypothesis: Test accuracy improves by at least 1.5–3.0 points without changing the model; calibration (ECE) improves by ≥20%. Falsify if accuracy gain <1.0 point or ECE unchanged. Measure training time and report it remains within CPU-only constraints (e.g., <30 minutes). [Cleanlab]
+
+2) Zero-shot CLIP with prompt ensembling
+- Task: Few-class image classification on a curated subset (e.g., 10–20 classes from CIFAR-100 or a small domain dataset you assemble).
+- Baseline: CLIP zero-shot with default class names (ViT-B/32) on CPU inference.
+- Ablations: Prompt templates (5–10 prompts), ensembling strategies (mean vs weighted), class name variants.
+- Hypothesis: Prompt ensembling improves top-1 accuracy by ≥2–4 points over default prompt; confidence calibration (expected calibration error) also improves. Falsify if improvement <1.5 points. Report total CPU latency per 1k images and memory footprint. [CLIP]
+
+3) Retrieval-augmented QA with CPU embeddings
+- Task: Build a 200–500 document corpus in a domain (e.g., public policy, clinical guidelines); create 100 QA pairs with answerable spans.
+- Baseline: BM25 retrieval + lightweight answer extraction (string match or heuristic).
+- Intervention: Use all-MiniLM-L6-v2 embeddings for dense retrieval (FAISS or sklearn NearestNeighbors) and simple prompt templates to a hosted LLM API for answer synthesis; compare against BM25-only synthesis.
+- Hypothesis: Dense retrieval + synthesis increases exact match/F1 by ≥5–10 points over BM25-only; gains persist when adding 25% distractor docs. Falsify if gains <3 points. Report latency per query and CPU usage. [SBERT]
+
+Optional experiment 4) Subset selection beats random under fixed labeling budget
+- Task: IMDB/AG News classification with a budget of N labeled examples.
+- Compare: Random selection vs k-center greedy or embedding-diversity selection.
+- Hypothesis: With N=1k, diversity-based selection achieves ≥1–2 points higher accuracy than random; gap narrows as N→10k. Falsify if gap <0.5 points consistently.
+
+Ablations to include (compute-light)
+- Data: Amount of cleaned data vs gains; noise type (label flips vs near-duplicates).
+- Prompts: Number and style of prompts; class name synonyms.
+- Retrieval: k (top-k), cosine vs dot-product, BM25 vs dense vs hybrid.
+- Models: DistilBERT vs logistic regression for text; CLIP ViT-B/32 vs RN50 for images.
+- Robustness: Performance under domain shift or synthetic noise.
+
+Lean 6–8 week timeline
+- Week 1: Pick domain and tasks; assemble small, rights-clear datasets; set up CPU-only baselines; configure Kaggle/Colab accounts for occasional hosted runs.
+- Weeks 2–3: Run Experiment 1 (cleaning) end-to-end; write up methods and error analysis; open-source scripts.
+- Weeks 3–4: Run Experiment 2 (CLIP prompts); perform ablations; release a minimal evaluation harness and dataset splits.
+- Weeks 4–6: Run Experiment 3 (RAG CPU embeddings); measure EM/F1, latency, and robustness to distractors; ablate retrieval parameters.
+- Weeks 6–8: Consolidate into a short paper/report; include reproducibility checklists, data cards, and an easy-to-run CPU notebook. If time permits, add Experiment 4.
+
+Practical tips
+- Keep everything CPU-first: scikit-learn, sentence-transformers MiniLM, CLIP ViT-B/32 inference. Batch inputs to keep memory low.
+- Measure what matters: accuracy, calibration, latency, and compute budget (CPU time, RAM). Make compute part of the contribution.
+- Package your work so others can reproduce in a single Kaggle/Colab notebook with pinned versions.
+
+Sources
+- Kaggle Notebooks Documentation — https://www.kaggle.com/docs/notebooks
+- Google Colab (free tier) — https://colab.research.google.com/
+- Radford et al., 2021. Learning Transferable Visual

@@ -1,0 +1,62 @@
+Short answer: Partially novel. There is substantial work on compressing LLMs (pruning, quantization, low-rank, modular decomposition) and on architectures that facilitate compression post hoc [2][3][5]. A clearer novelty angle is “compressible by design”: make compressibility a first-class training objective and show compressor-agnostic gains that generalize across multiple compression methods and downstream fine-tuning, which current papers only touch indirectly [1][2][3][4][5].
+
+What could be novel (and tractable)
+- Compression-aware pretraining/fine-tuning: optimize a rate–distortion-style objective L = L_task + β·C(θ), where C is an estimated code length under a realistic compressor (e.g., learned bit-allocation for quantization + structured sparsity penalties). Conjecture.
+- Compressor-agnostic compressibility: demonstrate that one training recipe yields systematically better performance across several dissimilar compressors (PTQ, QAT, n:m pruning, low-rank factorization), not just the one it was tuned for. Conjecture.
+- Layer- and token-adaptive bit allocation: learn per-layer/per-block bit-widths or ranks that remain near-optimal after task fine-tuning. Conjecture.
+- Shared-weights/delta factorization at scale: parameterize the model as shared blocks plus low-rank deltas so the base is highly reusable and only small deltas change per task; related ideas exist but broad compressor-agnostic evaluation is missing [1]. 
+
+Concrete, falsifiable experiments
+- E1. Multi-compressor generalization benchmark
+  - Setup: Train two models with identical data/compute: (A) standard baseline; (B) compression-aware variant (e.g., quantization-aware regularizer + group-sparsity). Post-train apply four compressors: 8/4-bit PTQ, 4-bit QAT, 2:4 structured pruning, low-rank factorization.
+  - Metrics: Perplexity (C4/Pile val), MMLU, HellaSwag, GSM8K; latency and peak memory on A100 and CPU.
+  - Falsifiable criterion: Model B retains ≥95% of uncompressed accuracy under 4-bit PTQ on MMLU while Model A ≤90% (average over seeds), and B outperforms A for at least 3 of 4 compressors. If not, no compressor-agnostic gain.
+
+- E2. Rate–distortion curve improvement
+  - Setup: For both A and B above, sweep compression strength to produce performance vs model size curves for each compressor.
+  - Metric: Area under the RD curve (AURD) over a target accuracy band; slope at high-compression regime.
+  - Falsifiable criterion: B’s AURD is ≥10% higher than A’s for at least two distinct compressors; else no RD improvement.
+
+- E3. Post-compression fine-tuning stability
+  - Setup: Compress both A and B to the same budget (e.g., 4-bit + 50% structured sparsity). Fine-tune on instruction data and domain-specific corpus (e.g., code or biomed).
+  - Metrics: Retained accuracy vs uncompressed after FT, calibration (ECE), and catastrophic forgetting on a held-out general benchmark.
+  - Falsifiable criterion: B loses ≤3% absolute accuracy after FT while A loses ≥6% on average; else stability claim not supported.
+
+- E4. Cross-task transfer with shared base + deltas
+  - Setup: Train a shared base; learn small low-rank “deltas” per task (LoRA-style or layer-wise deltas). Compare your compression-aware training vs a naïve approach on the size–performance trade-off across N tasks.
+  - Metrics: Total bytes to support all tasks at target accuracy; average delta size; interference between tasks.
+  - Falsifiable criterion: Your method reduces total storage by ≥30% at equal accuracy vs baseline delta methods; if not, no advantage. Related conceptually to low-rank deltas between shared weights [1].
+
+- E5. Layerwise bit/rank allocation optimality check
+  - Setup: Learn per-layer bit-widths/ranks during training. Afterward, re-allocate bits by a greedy/performance-sensitivity heuristic at fixed budget.
+  - Metric: Accuracy at fixed model size; correlation between learned and sensitivity-derived allocations.
+  - Falsifiable criterion: Learned allocation matches or beats heuristic by ≥1% absolute accuracy and shows ≥0.6 Spearman correlation; else learned allocation not justified.
+
+- E6. Robustness and safety under compression
+  - Setup: Evaluate truthfulness/toxicity/robustness (TruthfulQA, RealToxicityPrompts; adversarial prompts) pre-/post-compression for A vs B.
+  - Falsifiable criterion: B’s calibration and safety metrics degrade less than A’s at the same compression ratio; otherwise, no robustness benefit. Compression can alter downstream behavior and performance profiles [4][5].
+
+Baselines and evaluation notes
+- Use recent, strong compression baselines: structured pruning with task-aware prompting [2], modular decomposition [3], low-rank delta parameterization [1], and a broad empirical evaluation framing [4][5]. Compare at equal training compute and equal compressed-size budgets to avoid confounds [4][5].
+- Report: size on disk (bytes), peak activation/weight memory, throughput tokens/s, and accuracy; present full Pareto frontiers. Prior work emphasizes that conclusions depend on careful, apples-to-apples comparisons [4][5].
+- Datasets/benchmarks: C4/Pile perplexity; MMLU, HellaSwag, ARC, GSM8K; plus an instruction-following set for fine-tuning stability.
+
+How to frame the contribution
+- Define “compressibility” operationally: the best achievable performance at a given code-length budget under a set of standardized compressors; show consistent gains across compressors and after task adaptation. Conjecture.
+- Provide ablations isolating each mechanism (quantization-aware loss, sparsity penalty, shared/delta structure).
+- Release a standardized “LLM Compressibility Suite” with scripts to reproduce multi-compressor RD curves, which current papers do not consolidate in one place [4][5].
+
+Literature anchors (for positioning)
+- Compressing LLMs: The Truth is Rarely Pure and Never Simple — survey of methods and evaluation pitfalls [5].
+- Compresso: Structured Pruning with Collaborative Prompting Learns Compact LLMs — strong structured-pruning baseline [2].
+- Optional: DeltaLLM (low-rank deltas) [1] and MoDeGPT (modular decomposition) [3] for the shared/delta angle.
+
+Sources
+[1] DeltaLLM: Compress LLMs with Low-Rank Deltas between Shared Weights — https://arxiv.org/html/2501.18596v1
+[2] Compresso: Structured Pruning with Collaborative Prompting Learns Compact Large Language Models — https://arxiv.org/abs/2310.05015
+[3] MoDeGPT: Modular Decomposition for Large Language Model Compression — https://arxiv.org/abs/2408.09632
+[4] Evaluating the Impact of Compression Techniques on Task-Specific Performance of Large Language Models — https://arxiv.org/html/2409.11233
+[5] Compressing LLMs: The Truth is Rarely Pure and Never Simple — https://arxiv.org/abs/2310.01382
+
+Takeaway
+- “Compressible LLMs” is promising if you make compressibility part of the objective and prove compressor-agnostic benefits on standardized RD curves, stability after fine-tuning

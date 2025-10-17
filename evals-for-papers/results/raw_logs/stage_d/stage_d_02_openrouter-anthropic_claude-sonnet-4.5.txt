@@ -1,0 +1,140 @@
+Based on the MST (Multi-Agent System failure Taxonomy) paper's methodology, I can provide guidance on designing your standardized communication protocol intervention experiment. Let me outline the key components:
+
+## Experimental Design for Communication Protocol Intervention
+
+### 1. **Baseline Selection from the Paper**
+
+You should use these baselines for comparison:
+
+- **No intervention baseline**: The original multi-agent system configuration that exhibits Inter-Agent Misalignment failures
+- **Prompt-based intervention baseline**: From Appendix F, this likely includes interventions like clarifying agent roles, adding explicit coordination instructions, or improving task descriptions
+- **Topological intervention baseline**: Structural changes such as adding mediator agents, changing communication patterns, or modifying agent hierarchies
+
+### 2. **Designing the Communication Protocol Intervention**
+
+For a standardized communication protocol to address Inter-Agent Misalignment, consider:
+
+**Protocol Components:**
+- **Message format standardization**: Define structured message templates (e.g., JSON schemas with fields for: sender_id, recipient_id, message_type, content, context, priority)
+- **Handshaking mechanisms**: Require acknowledgment/confirmation messages to verify understanding
+- **Semantic alignment checks**: Include metadata about intent, expected response type, and success criteria
+- **Turn-taking rules**: Explicit protocols for when agents should speak, listen, or wait
+- **Conflict resolution procedures**: Predefined steps when agents disagree or provide contradictory information
+
+**Implementation Considerations:**
+- The protocol should be enforced at the framework level, not just suggested in prompts
+- Include logging/tracing to verify protocol compliance
+- Consider both synchronous and asynchronous communication patterns
+
+### 3. **Experimental Setup**
+
+**Test Suite:**
+- Use the same benchmark tasks from the MST paper that exhibited Inter-Agent Misalignment
+- Ensure task diversity across domains (the paper likely uses multiple domains)
+- Maintain consistent LLM backbone, temperature, and other hyperparameters
+
+**Metrics to Collect:**
+- **Primary**: Failure mode distribution (proportion of each failure type)
+- **Secondary**: Task success rate, number of communication rounds, token usage, latency
+- **Protocol-specific**: Message format compliance rate, acknowledgment success rate, conflict instances
+
+### 4. **Statistical Testing Approach**
+
+Given you're comparing failure mode distributions (categorical data), use:
+
+**For Pairwise Comparisons:**
+- **Chi-square test of independence** or **Fisher's exact test** (if cell counts < 5) to compare failure mode distributions between intervention types
+- **McNemar's test** if you're using paired samples (same tasks across conditions)
+
+**For Multiple Comparisons:**
+- **Bonferroni correction** or **Holm-Bonferroni** to control family-wise error rate when comparing your protocol intervention against multiple baselines
+- Set α = 0.05 initially, then adjust (e.g., α/3 = 0.0167 for three pairwise comparisons)
+
+**For Effect Size:**
+- **Cramér's V** to quantify the strength of association between intervention type and failure mode
+- **Cohen's h** for comparing proportions of specific failure types
+
+**For Success Rate Comparisons:**
+- **Proportion z-test** or **binomial test** for comparing task success rates
+- **Wilcoxon signed-rank test** if using paired samples with non-normal distributions
+
+### 5. **Avoiding Data Leakage and Ensuring Validity**
+
+**Critical Safeguards:**
+
+1. **Separate development and evaluation sets**: 
+   - Develop your protocol using one set of tasks
+   - Evaluate on a held-out test set that wasn't used during protocol design
+   
+2. **Blind evaluation**:
+   - Have the LLM-as-a-Judge evaluate outputs without knowing which intervention was applied
+   - Randomize the order of outputs presented to the judge
+
+3. **Protocol generalization**:
+   - Test on task types not seen during protocol development
+   - Verify the protocol doesn't overfit to specific failure patterns in your development set
+
+4. **Consistent failure taxonomy**:
+   - Use the exact same taxonomy and annotation guidelines from the MST paper
+   - Don't modify failure categories based on your intervention results
+
+5. **Multiple runs**:
+   - Run each condition multiple times (minimum 3-5 runs) with different random seeds
+   - Report mean and confidence intervals
+
+### 6. **Concrete Experimental Protocol**
+
+```
+For each intervention type (none, prompt, topological, protocol):
+  For each task in test set:
+    For each run (n=5):
+      1. Execute multi-agent system
+      2. Collect outputs and interaction logs
+      3. Apply LLM-as-a-Judge to classify failures
+      4. Record success/failure and failure mode
+      
+Aggregate results:
+  - Compute failure mode distribution per intervention
+  - Calculate success rates with 95% CI
+  - Perform chi-square tests between distributions
+  - Calculate Cramér's V for effect sizes
+  - Apply Bonferroni correction for multiple comparisons
+```
+
+### 7. **Expected Outcomes and Interpretation**
+
+**Hypotheses to test:**
+- H1: Communication protocol reduces Inter-Agent Misalignment more than prompt-based interventions
+- H2: Communication protocol is comparable to or better than topological interventions for Inter-Agent Misalignment
+- H3: Communication protocol may increase other failure types (e.g., overhead-related failures)
+
+**Potential Pitfalls:**
+- **Protocol overhead**: May increase latency or token usage, potentially introducing new failure modes
+- **Compliance issues**: Agents may fail to follow the protocol despite instructions
+- **Task dependency**: Protocol effectiveness may vary significantly by task type
+- **Interaction effects**: Protocol may work differently when combined with certain topologies
+
+### 8. **Reporting Standards**
+
+Include in your results:
+- Contingency tables showing failure mode counts per intervention
+- Chi-square statistics with p-values and effect sizes
+- Success rate comparisons with confidence intervals
+- Qualitative analysis of failure cases where protocol helped/hurt
+- Protocol compliance metrics
+
+## Key Takeaways
+
+1. **Use all three baselines** (no intervention, prompt-based, topological) from Appendix F for comprehensive comparison
+2. **Apply chi-square tests with Bonferroni correction** for comparing categorical failure distributions
+3. **Strictly separate** protocol development data from evaluation data to avoid leakage
+4. **Monitor for new failure modes** your protocol might introduce (e.g., protocol violation failures)
+5. **Report effect sizes** (Cramér's V) alongside p-values for practical significance
+
+## Sources
+
+1. [Why Do Multi-Agent LLM Systems Fail?](https://arxiv.org/abs/2503.13657) - arXiv
+2. [Why Do Multi-Agent LLM Systems Fail?](https://openreview.net/pdf?id=wM521FqPvI) - OpenReview
+3. [Multi-Agent System Failure Taxonomy (MAST)](https://github.com/multi-agent-systems-failure-taxonomy/MAST) - GitHub
+
+**Note**: I don't have direct access to Appendix F of the paper, so some specific details about their exact intervention implementations may require you to verify against the full paper. The statistical approaches recommended here are standard for comparing categorical distributions in experimental settings.

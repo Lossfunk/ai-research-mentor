@@ -1,0 +1,67 @@
+Given a 1‑month deadline, pick a tightly scoped, defensible thesis you can finish: replicate a known baseline, add 1–2 controlled interventions, and report clear results with uncertainty. Here’s a ready-to-run option plus two backups.
+
+Recommended topic: Calibrating image classifiers under distribution shift
+Goal
+- Measure how simple training tweaks affect both accuracy and probability calibration in clean and corrupted settings. This is small, publishable, and doable on a single GPU or Colab.
+
+Setup
+- Dataset: CIFAR-10 (clean) + CIFAR-10-C (common corruptions) for out-of-distribution test.
+- Models: ResNet-18 or small ViT as secondary check.
+- Metrics: Accuracy; Expected Calibration Error (ECE); reliability diagrams; negative log-likelihood (NLL).
+- Baselines: Cross-entropy training + post-hoc temperature scaling.
+
+Three concrete, falsifiable experiments
+1) Label smoothing vs. baseline
+- Hypothesis: Label smoothing (ε=0.1) reduces ECE on clean CIFAR-10 without degrading accuracy; effect under corruptions is uncertain.
+- Protocol: Train ResNet-18 with/without label smoothing; 5 seeds; identical schedules.
+- Evaluate: Accuracy, ECE, NLL on clean and CIFAR-10-C (severity 1–5).
+- Falsification: If mean ECE does not decrease on clean or increases on most corruptions at matched accuracy (95% CI overlap), hypothesis fails.
+- Rationale: Modern nets are often miscalibrated; post-hoc temperature scaling is a strong baseline to compare against [Guo et al., 2017](https://arxiv.org/abs/1706.04599).
+
+2) Mixup and combination strategies
+- Hypothesis: Mixup (α=0.2) improves calibration on corruptions more than label smoothing; combining mixup+label smoothing offers no further benefit.
+- Protocol: Train three conditions: baseline, label smoothing, mixup; optional fourth: mixup+label smoothing; 5 seeds.
+- Evaluate: Accuracy/ECE on clean and CIFAR-10-C; reliability diagrams.
+- Falsification: If mixup does not reduce ECE on corruptions relative to baseline or is matched by label smoothing within CI, hypothesis fails.
+
+3) Post-hoc calibration under shift
+- Hypothesis: Temperature scaling fitted on clean validation improves clean-set calibration but can overfit and underperform on corruptions; training-time regularizers may transfer better.
+- Protocol: Fit temperature on clean val; evaluate on clean test and CIFAR-10-C; compare to models trained with label smoothing or mixup (no post-hoc).
+- Evaluate: ECE and NLL deltas; accuracy unchanged by design for temperature scaling.
+- Falsification: If temperature scaling improves (or matches) ECE on corruptions across severities just as well as training-time methods, hypothesis fails.
+- Dataset note: CIFAR-10-C provides standardized corruption/severity to test OOD robustness and calibration transfer [Hendrycks & Dietterich, 2019](https://arxiv.org/abs/1903.12261).
+
+Deliverables (what to hand in)
+- 6–8 page report: motivation, dataset and splits, methods, metrics, results with mean±std over 5 seeds, reliability diagrams, limitations.
+- Reproducibility: code with fixed seeds/configs; CSVs of per-run metrics; figure scripts.
+- One-sentence claim you can defend (e.g., “On CIFAR-10, mixup improves calibration under common corruptions more than label smoothing at matched accuracy.”)
+
+4-week execution plan (assuming ~5–8 total hours)
+- Week 1: Environment, dataloaders, baseline ResNet-18; reproduce reasonable accuracy; implement ECE and reliability diagrams.
+- Week 2: Run Experiment 1 (± label smoothing) over 5 seeds; add temperature scaling; generate plots.
+- Week 3: Run Experiment 2 (mixup and combo) over 5 seeds; evaluate on CIFAR-10-C; compute CIs.
+- Week 4: Run Experiment 3 (post-hoc transfer under shift); finalize figures; write up and polish.
+
+Two backup topics of similar scope
+A) RAG hallucination vs. citation requirement (lightweight, API-friendly)
+- Question: Does requiring sentence-level citations reduce hallucinations without hurting QA accuracy?
+- Data: A small open QA set that supports attribution (e.g., small Wikipedia subset you build).
+- Conditions: vanilla RAG vs. “must justify with citations” prompt vs. retrieval-augmented self-check.
+- Metrics: Attributable answer rate, exact match/F1 on answerable questions, judge-LLM or rules for hallucination. Finishable in 1 month with careful scoping.
+
+B) Jailbreak defense evaluation with “answer-then-check”
+- Question: Does a two-step self-redaction template reduce attack success on a fixed set of jailbreak prompts at minimal utility loss?
+- Data: A 100–200 prompt slice from an open jailbreak set; add 50 benign controls.
+- Conditions: baseline vs. answer-then-check.
+- Metrics: Attack success rate (rule-based + spot human review), utility on benign controls. Keep templates fixed and release them.
+
+Practical tips
+- Keep everything small and controlled; 5 seeds per condition; report mean±std and 95% CIs.
+- Pre-register hypotheses in your README; negative results are acceptable if clearly reported.
+- Avoid leakage: separate train/val/test; don’t tune on CIFAR-10-C test corruptions.
+
+Quick check to tailor: Do you have one GPU/Colab, and does your advisor prefer vision experiments (easier to fully reproduce) or LLM/RAG evaluations (faster to iterate but may need API budget)?
+
+Sources
+- Guo et al. (2017). On Calibration of Modern Neural Networks — https://arxiv.org/abs/1706.04599
+- Hendrycks & Dietterich (2019). Benchmarking Neural Network Robustness to Common Corruptions and Perturbations — https://arxiv.org/abs/1903.12261

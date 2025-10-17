@@ -103,12 +103,24 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
         }
     
     # Get fallback policy for health status
-    from .fallback_policy import get_fallback_policy
+    from .fallback_policy import get_fallback_policy, ToolState
     fallback_policy = get_fallback_policy()
     health_summary = fallback_policy.get_tool_health_summary()
     
     # Check if tool is in backoff or degraded mode
-    tool_state = health_summary["tool_states"].get(tool_name, "healthy")
+    tool_state_raw = health_summary["tool_states"].get(tool_name)
+    if isinstance(tool_state_raw, ToolState):
+        tool_state_label = tool_state_raw.value
+        tool_state_meta = tool_state_raw
+    elif isinstance(tool_state_raw, str) and tool_state_raw:
+        tool_state_label = tool_state_raw.lower()
+        try:
+            tool_state_meta = ToolState(tool_state_label)
+        except ValueError:
+            tool_state_meta = tool_state_label
+    else:
+        tool_state_label = "healthy"
+        tool_state_meta = ToolState.HEALTHY
     backoff_count = health_summary["backoff_counts"].get(tool_name, 0)
     
     # Transparency: start run
@@ -117,7 +129,8 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
     metadata = {
         "score": score, 
         "inputs_keys": sorted(list(inputs.keys())),
-        "tool_state": tool_state,
+        "tool_state": tool_state_meta,
+        "tool_state_label": tool_state_label,
         "backoff_count": backoff_count
     }
     store.start_run(tool_name, run_id, metadata=metadata)
@@ -127,11 +140,11 @@ def try_tool_with_retries(tools: Dict[str, Any], tool_name: str, score: float,
     
     # Print status information if tool is degraded or in backoff
     status_note = ""
-    if tool_state == "degraded":
+    if tool_state_label == "degraded":
         status_note = " [DEGRADED]"
         if backoff_count > 0:
             status_note += f" (backoff #{backoff_count})"
-    elif tool_state == "circuit_open":
+    elif tool_state_label == "circuit_open":
         status_note = " [CIRCUIT OPEN - testing]"
     
     print_info(f"Using tool: {tool_name} (score={score:.2f}){status_note}")

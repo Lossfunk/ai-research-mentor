@@ -1,0 +1,61 @@
+Two hours per week is enough to contribute if you focus on small, cumulative evaluations and replications. Here’s a lean plan with concrete, falsifiable experiments you can run on free/cheap compute and publish as micro-results.
+
+Pick one micro-lane (choose now)
+- Safety evaluations and red-teaming: run small, careful evals on public benchmarks and defenses; contribute PRs/issue triage to open repos. Fastest path to impact. [RealToxicityPrompts, OWASP LLM Top 10, Llama Guard, HarmBench] [2][5][3][4]
+- Lightweight interpretability replication: reproduce one small result (e.g., sparse autoencoders on tiny models) and test a safety-relevant intervention. Slower, but builds depth. [7]
+
+A minimal 6-week cadence (2 h/week)
+- Week 1: Set up one evaluation harness (Hugging Face pipelines + your chosen model; CSV logging). Decide lane and benchmark.
+- Week 2: Reproduce a baseline on a tiny subset (100–200 prompts) with clean metrics and a README.
+- Weeks 3–5: Run 1–2 of the small experiments below (≥3 seeds or 3 independent runs), write 1–2 page notes with plots and confidence intervals.
+- Week 6: Open-source it: a short blog/colab + PR to a relevant repo (e.g., add a results file, an eval script, or a doc fix). If useful, share to a community forum.
+
+Three concrete, falsifiable starter experiments
+1) Toxicity filtering: keyword baseline vs Llama Guard on RealToxicityPrompts
+- Hypothesis: Llama Guard (or Llama Guard 2) reduces harmful outputs more reliably than a keyword-based toxicity filter at matched utility. [3][2]
+- Data/task: RealToxicityPrompts (sample 200 prompts across toxicity percentiles). Generate model completions; run two filtering strategies: (a) simple keyword/regex + perspective-like toxicity score threshold, (b) Llama Guard safety classifier gate. [2][3]
+- Protocol: Same base model and decoding for both; 3 runs with different seeds.
+- Metrics: Harm rate (fraction flagged toxic by a scorer), false negatives (human or scorer-identified toxic not blocked), and utility proxy (average length/sentiment or success on benign prompts). Report mean±95% CI.
+- Falsification: If Llama Guard’s false negative rate is not lower than the keyword baseline within CI at equal or better utility, the hypothesis fails.
+- Why this matters: Many systems still rely on simple filters; showing where modern classifiers outperform clarifies trade-offs. [3][2]
+
+2) Jailbreak defense: “Answer-then-check” vs standard refusals on HarmBench/JailbreakBench
+- Hypothesis: A two-step “answer-then-check” defense lowers jailbreak attack success rates (ASR) relative to a one-shot refusal policy when applied to a fixed subset of jailbreak prompts. [4]
+- Data/task: Select 100–200 jailbreak prompts from HarmBench or JailbreakBench. [4]
+- Conditions: (a) Baseline: model with standard refusal instruction; (b) Defense: model answers briefly then runs a self-check prompt to redact harmful content before output.
+- Metrics: ASR (fraction of prompts eliciting policy-violating content) via rule-based criteria + spot human review; utility on benign controls.
+- Falsification: If ASR is not reduced (or utility drops sharply) under the defense across runs, hypothesis fails.
+- Notes: Keep the defense template fixed and publish it; small, transparent procedures are easiest to reuse. [4]
+
+3) Prompt injection robustness: naive vs. sanitized inputs following OWASP LLM Top 10
+- Hypothesis: Simple input sanitization and system prompt hardening reduce prompt-injection success on a small RAG-style QA demo. [5]
+- Setup: Tiny RAG demo over a short doc (e.g., a project README). Craft 20–50 injections mapped to OWASP categories (LLM01 Prompt Injection, LLM06 Sensitive info disclosure). [5]
+- Conditions: (a) Naive RAG; (b) With mitigations: system prompt with explicit refusal rules, instruction isolation (no tool-calls on injected text), and an allowlist for tool queries.
+- Metrics: Injection success rate (model follows attacker instruction/reads out “secrets” you plant), benign QA accuracy.
+- Falsification: If mitigations do not reduce success rate meaningfully at similar QA accuracy, hypothesis fails.
+- Why this matters: Many apps still fall to basic injections; documenting simple, reproducible mitigations helps practitioners. [5]
+
+If you prefer interpretability
+4) Mini replication: sparse autoencoders (SAEs) on a tiny LM layer for safety-relevant features
+- Hypothesis: Steering a few high-activation SAE features associated with slurs or unsafe instructions reduces toxic completions with minimal perplexity increase on benign text. [7]
+- Data: Collect a small corpus (e.g., 50k tokens with/without unsafe n-grams).
+- Protocol: Train a tiny SAE on one layer’s activations of a small LM; identify top features correlated with unsafe tokens; apply feature ablation/steering during generation; 3 runs.
+- Metrics: Toxicity rate (same scorer as Exp 1), perplexity delta on benign text.
+- Falsification: If steering doesn’t reduce toxicity or harms perplexity >5%, hypothesis fails.
+- Caveat: More setup than eval experiments; do this only if interpretability is your focus. [7]
+
+How to publish small contributions
+- Make it trivially reusable: one script, a pinned environment, a 1–2 page methods/results note, and a CSV with per-prompt outcomes.
+- Open a PR or issue:
+  - Add your eval script/results to a repo (e.g., Llama Guard examples or a benchmark harness). [3][4]
+  - File a doc/metrics clarifying issue (e.g., how you defined ASR, scorer thresholds).
+- Share to a forum post or gist; invite replication. If AISI-like metrics apply to your setup, mention compatibility. [6]
+
+Two anchor readings to orient your work
+- RealToxicityPrompts: Evaluating Neural Toxic Degeneration in Language Models (Gehman et al., 2020) — defines a widely used toxicity benchmark and measurement setup. [2]
+- Llama Guard: LLM-based Input-Output Safeguard (Meta AI, 2023/2024) — describes a practical, open safety classifier you can test and extend. [3]
+
+Quick check to tailor further: Do you want to prioritize (a) evaluations/red-teaming or (b) interpretability? And what model access do you have (OpenAI/Anthropic APIs, or local small models)?
+
+Citations
+[1] AGI Safety Fundamentals curriculum — https://www.alignmentforum.org/posts/Zmwkz2BMvuFFR8bi3/agi-safety-fundamentals-curriculum-and-application

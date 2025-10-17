@@ -1,0 +1,75 @@
+Below is a practical, evidence‑based plan to design, pilot, and evaluate federated learning (FL) in low‑resource countries, where bandwidth is scarce, client devices are heterogeneous, and connectivity is intermittent. It includes a 6‑month timeline, concrete experiments with falsifiable criteria, and literature anchors.
+
+Objectives and constraints
+- Primary objective: Train a useful global model without moving raw data across borders, robust to non‑IID data, poor connectivity, and limited hardware. Use privacy safeguards appropriate for sensitive domains (e.g., health).
+- Key constraints to bake in:
+  - Intermittent/slow uplinks: prioritize sparse/quantized updates, partial participation, and asynchronous rounds [1][4][5][6][9].
+  - Non‑IID data and client drift: add proximal or control‑variates corrections (e.g., FedProx/SCAFFOLD) [3].
+  - Privacy: secure aggregation + calibrated differential privacy (DP) where feasible [2][7][8].
+  - Governance: in‑country aggregation to respect data sovereignty; auditability and opt‑out paths.
+
+System architecture (minimal, robust)
+- Clients: low‑end PCs or Android devices running a lightweight client; training with small batches and few local epochs (e.g., 1–5) to limit compute and drift [1].
+- Transport: gRPC/MQTT with resumable uploads; schedule upload windows during off‑peak hours; store‑and‑forward when offline.
+- Aggregation:
+  - Primary: centralized in‑country server running FedAvg with partial participation (e.g., sample 5–20% of clients per round) [1].
+  - Optional: hierarchical FL if regions have local hubs (district hospitals → national aggregator) to cut long‑haul traffic.
+- Communication‑efficiency: top‑k sparsification and/or vector quantization (e.g., QSGD) for uplinks; error‑feedback to preserve convergence [5][6].
+- Robustness to heterogeneity: SCAFFOLD or proximal regularization to counter client drift [3].
+- Privacy: secure aggregation so the server only sees the sum of updates; DP noise and clipping to provide formal privacy guarantees when required [2][7][8].
+- Framework: Flower or OpenFL on server; TensorFlow Federated or PyTorch clients. These support partial participation and custom compressors.
+
+Six‑month rollout plan (milestones)
+- Month 1: Design and simulation
+  - Select a concrete task (e.g., chest X‑ray triage, malaria smear classification, or tabular risk scoring) and define metrics (AUC/F1, calibration, bytes/round).
+  - Simulate FL on a central dataset with non‑IID shards; sweep local epochs, batch sizes, participation rate; prototype compression (top‑k, 8‑bit QSGD) and SCAFFOLD vs FedAvg [1][3][5][6].
+  - Milestone: Choose a default recipe (e.g., FedAvg + SCAFFOLD, 10% participation, 2 local epochs, 8‑bit quantized updates).
+- Month 2: Minimal viable pilot (3–5 sites)
+  - Deploy in‑country aggregator; enable secure aggregation; schedule nightly upload windows; collect telemetry on bytes, round time, failures [2][9].
+  - Milestone: Stable training across 100–200 rounds with <5% site dropout per round and bounded bandwidth (e.g., <10 MB/client/day).
+- Months 3–4: Scale and personalize (10–20 sites)
+  - Add personalization (e.g., freeze backbone; train small local head) and/or fine‑tune last layers locally after global convergence.
+  - Introduce DP (per‑example clipping + Gaussian noise) if required by policy; calibrate epsilon to meet utility targets [7][8].
+  - Milestone: Global model reaches ≥95% of centralized baseline AUC while cutting uplink bytes ≥10× vs uncompressed [5][6].
+- Months 5–6: Hardening and evaluation
+  - Run formal evaluations: fairness across sites, calibration, robustness to outages; finalize cost/benefit and governance report.
+  - Milestone: Decision to productionize with SOPs for monitoring, incident response, and model updates.
+
+Core experiments and ablations (falsifiable)
+E1. Communication compression under low bandwidth
+- Compare: FedAvg (full‑precision) vs top‑k sparsification (1%, 5%) vs 8‑bit QSGD, all with error‑feedback [5][6].
+- Hypothesis: ≥10× reduction in uplink bytes with ≤1–2 AUC points loss vs. full‑precision at the same rounds. Falsify if loss >2 points or reduction <5×.
+- Measurements: bytes/client/round, wall‑clock time to target AUC, convergence stability.
+
+E2. Mitigating non‑IID client drift
+- Compare: FedAvg vs FedAvg+prox (μ ∈ {0.001, 0.01}) vs SCAFFOLD (control variates) [3].
+- Hypothesis: SCAFFOLD or prox reduces variance in round‑to‑round metrics and improves final AUC by ≥1–3 points on skewed partitions. Falsify if improvement <1 point.
+- Measurements: AUC/F1, gradient norm drift, participation variance.
+
+E3. Partial participation and async tolerance
+- Compare: synchronous FedAvg with 10%, 20%, 40% participation vs asynchronous aggregation with bounded staleness (τ ∈ {2, 5}) [1][4].
+- Hypothesis: At 10–20% participation and intermittent clients, asynchronous aggregation reaches target AUC ≥30% faster in wall‑clock time. Falsify if speedup <10% or AUC degrades by >2 points.
+- Measurements: time‑to‑X AUC, staleness distribution, straggler impact.
+
+E4. Privacy–utility trade‑off with DP and secure aggregation
+- Setup: Per‑example clipping (C ∈ {0.5, 1.0, 2.0}) + Gaussian noise (σ yielding ε ∈ {3, 5, 8} over 100–300 rounds) with moments accountant; secure aggregation on [2][7][8].
+- Hypothesis: With secure aggregation, DP at ε≈5, δ=1e‑5 yields ≤2 AUC‑point loss vs no‑DP. Falsify if loss >2 points or training destabilizes.
+- Measurements: AUC/F1, calibration, computed ε, bytes overhead from secure aggregation.
+
+E5. Personalization to reduce site disparities
+- Compare: pure global model vs local‑head personalization or last‑layer tuning after global training.
+- Hypothesis: Worst‑site AUC improves by ≥2–4 points without harming average AUC. Falsify if worst‑site gain <1 point or average drops >1 point.
+- Measurements: per‑site AUC, between‑site disparity (e.g., std. dev.), inference latency overhead.
+
+Operational checklist (low‑resource ready)
+- Connectivity: resumable uploads, exponential backoff, and local caching of updates; nightly windows for communication.
+- Fault tolerance: tolerate 50–80% of clients being offline in a round; sample new cohorts each round [1].
+- Security/governance: mTLS, key rotation, secure aggregation; in‑country aggregation to satisfy data‑locality requirements [2][9].
+- Monitoring: per‑round metrics (utility, bytes, failures), fairness dashboards (site‑level performance), privacy accounting (if DP on).
+
+Risks and mitigations
+- Sparse/quantized updates hinder convergence: add error‑feedback and modest local epochs; fall back to 8‑bit if 4‑bit fails [5][6].
+- Severe non‑IID prevents learning: strengthen proximal term or use SCAFFOLD; increase participation rate temporarily [3].
+- Intermittent connectivity stalls rounds: allow asynchronous aggregation with staleness bounds and aggressive partial participation [4].
+- Privacy budget too costly: consider secure aggregation without DP first; if DP required, tune clipping and noise via small pilots to hit ε targets with acceptable utility [2][7][8].
+

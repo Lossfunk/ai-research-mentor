@@ -1,0 +1,61 @@
+Below is a compact checklist based on the paper’s LLM-as-a-Judge methodology and the public MAST materials, plus concrete tests to validate your replication and guard against leakage.
+
+Key components to reproduce
+- Clear data splits and freezing: Separate the data used to develop the failure taxonomy and judge rubric from the final evaluation set; freeze taxonomy and prompts before touching the held-out evaluation set [1][2]. Version and hash your taxonomy, prompts, and judge configs to prevent silent drift [3].
+- LLM-as-a-Judge rubric and prompts: Use a structured rubric that maps observed behaviors to taxonomy categories; specify rating scales, tie-breaking, and confidence outputs; keep prompts stable (few-shot exemplars, instructions, temperature, and decoding parameters) [1][3]. Calibrate the judge against human labels on a separate validation set (not the evaluation set) [1][5].
+- Human ground truth and reliability: Obtain human annotations for a subset to benchmark the judge; report inter-annotator agreement and how disagreements are adjudicated [1][2]. Use these only for judge validation/tuning—not for taxonomy development or final evaluation.
+- Agent evaluation protocol: Run multi-agent systems across a fixed set of tasks/environments with multiple seeds; log all intermediate agent messages and decisions to support post-hoc classification of failures and reproducibility [1][3]. Randomize example order and blind system identities when possible.
+- Aggregation and statistics: Aggregate judge outputs into taxonomy-level rates (with bootstrap CIs), report judge-human agreement (e.g., Cohen’s κ) on held-out validation, and quantify run-to-run variance for stochastic agents [1][5].
+
+Common pitfalls and how to avoid them
+- Leakage between taxonomy development and evaluation:
+  - Reusing the same cases to define taxonomy labels or few-shot judge exemplars and then to evaluate systems inflates apparent performance; keep disjoint sets and freeze the rubric before evaluation [1][2].
+  - Letting insights, rationales, or example snippets from the evaluation set creep into the judge prompt or taxonomy documentation contaminates the evaluation; use only development-set or synthetic exemplars in the prompt [1][3].
+- Judge bias and instability:
+  - Using a judge from the same family as the evaluated agents can induce self-preference bias; consider cross-family judges or ensemble judges and blind model identities [5].
+  - Failing to calibrate the judge against humans on held-out data can yield misleading conclusions; validate and report agreement before applying at scale [5][6].
+- Procedural drift:
+  - Changing prompts, decoding parameters, or few-shot exemplars mid-study without versioning makes results irreproducible; pin all configs and log hashes [3].
+  - Not running multiple seeds for stochastic agent workflows underestimates variance and overstates differences [1].
+- Overfitting the judge:
+  - Iteratively editing the judge rubric using feedback from the evaluation set amounts to implicit tuning; if iteration is needed, use a development/validation split and keep the evaluation set untouched [2][6].
+
+Concrete, falsifiable experiments to validate your setup
+1) Judge–human agreement on a held-out validation set
+- Design: Sample N tasks disjoint from taxonomy development and final evaluation; collect human labels for failure categories; run your judge and compute agreement (Cohen’s κ or Gwet’s AC1) and accuracy against the adjudicated human label.
+- Falsifiable outcome: If κ < 0.4 (or pre-registered threshold), the judge is deemed unreliable and cannot be used for final evaluation; you must revise on a separate train/dev split and re-test [5][6].
+
+2) Few-shot contamination stress test
+- Design: Compare your judge using (a) the intended few-shot exemplars versus (b) exemplars synthesized from an unrelated domain (or held-out development data). Keep everything else the same.
+- Falsifiable outcome: If failure-category frequencies or judge–human agreement change by more than a pre-registered margin (e.g., ±5–10%), your judge is sensitive to prompt exemplars; treat results as unstable and revise the rubric and/or exemplars [5].
+
+3) Cross-family bias check
+- Design: Evaluate identical outputs from two agent systems where only the underlying base model family differs; judge identities are blinded in the prompt. Repeat with at least two different judge models (ideally from different families).
+- Falsifiable outcome: If one family is favored by >X% across pairwise comparisons without quality differences (verified by humans on a subset), conclude the judge shows family bias; switch to a different judge or ensemble and re-validate [5].
+
+4) Run-to-run variance quantification
+- Design: For each task, run agents with k seeds (e.g., k=5–10), judge each run, and compute confidence intervals for each failure category rate.
+- Falsifiable outcome: If CIs for category rates across systems overlap substantially or variance is large relative to effects, your study is underpowered; increase sample size or seeds before drawing conclusions [1].
+
+Minimal replication checklist
+- Disjoint splits: taxonomy development set, judge validation set, final evaluation set [1][2].
+- Pre-registration or freezing: taxonomy labels, judge rubric, prompts, decoding params [2][3].
+- Judge validation: report agreement on held-out; no tuning on the final evaluation set [5][6].
+- Blinding: system identities and example order randomized; no evaluation examples in the prompt [1][5].
+- Reproducibility: versioned code, prompt hashes, seeds, logs of agent traces and judge outputs [3].
+- Statistics: multiple seeds, bootstrap CIs, transparent reporting of N and uncertainty [1][5].
+
+Notes on gaps
+- Exact scales, prompt templates, and category definitions should follow the paper’s Section 3.4 and the MAST repo; if those differ from your current setup, align to their released configs before running your evaluation [1][3]. If specific prompts are not public, document your closest reproduction and justify deviations.
+
+Literature anchors
+- Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena (guidance on judge reliability, bias, and calibration): https://arxiv.org/abs/2306.05685 [5]
+- LLM AS JUDGE WON’T BEAT TWICE THE DATA (cautions on replacing human evaluation and on methodological rigor): https://openreview.net/pdf?id=NO6Tv6QcDs [6]
+
+Citations
+[1] Why Do Multi-Agent LLM Systems Fail? — https://arxiv.org/abs/2503.13657
+[2] Why Do Multi-Agent LLM Systems Fail? (OpenReview) — https://openreview.net/forum?id=MqBzKkb8eK
+[3] MAST GitHub Repository — https://github.com/multi-agent-systems-failure-taxonomy/MAST
+[4] MAST Project Page (UC Berkeley) — https://sky.cs.berkeley.edu/project/mast/
+[5] Zheng et al., Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://arxiv.org/abs/2306.05685
+[6] LLM AS JUDGE WON’T BEAT TWICE THE DATA (OpenReview) — https://openreview.net/pdf?id=NO6Tv6QcDs

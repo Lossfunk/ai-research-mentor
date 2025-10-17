@@ -1,0 +1,51 @@
+You can do solid, publishable AI research without heavy math by focusing on careful experiments, evaluation, and data-centric work. Here’s a short path plus three “math‑light” but rigorous experiments you can run with basic Python and open models.
+
+Pick a math‑light lane
+- Prompting and evaluation for LLMs: Study how prompts/guards change accuracy, hallucination, and safety. Strong payoff with minimal theory [5].  
+- Retrieval‑augmented generation (RAG): Test whether adding citations or retrieval reduces hallucinations on small QA tasks [1].  
+- Data quality/label noise: Show how simple cleaning improves model reliability on small image or text datasets [4].
+
+Minimal 4–6 week plan (3–5 hours/week)
+- Week 1: Pick one lane. Set up a tiny, reproducible harness (fixed seeds, CSV logging, config files). Decide metrics beforehand.  
+- Week 2: Reproduce a baseline on a 100–500 example slice; write a 1‑page prereg with your hypotheses and analysis plan.  
+- Weeks 3–4: Run the experiment over 3 independent runs; compute mean, std, and 95% CIs; make simple plots.  
+- Weeks 5–6: Add one ablation (e.g., temperature, top‑p, retrieval size), write a 3–4 page note with limitations, and share code.
+
+Three concrete, falsifiable experiments
+1) RAG with required citations vs. no retrieval on open‑domain QA
+- Hypothesis: RAG with sentence‑level citations reduces hallucinations while maintaining answer accuracy compared to no‑retrieval generation [1].  
+- Data/task: Build a tiny Wikipedia subset (100–300 Q/A pairs) from a few pages; answers must be directly supported by the source.  
+- Conditions: (a) No‑RAG; (b) RAG with top‑k=5; (c) RAG + “must cite span” prompt.  
+- Metrics: Exact match/F1; attributable answer rate = fraction of answers with a correct supporting citation; hallucination rate = unsupported assertions. Use a rubric and spot human checks.  
+- Falsification: If attributable rate does not increase or hallucination rate does not drop under RAG+citation (within 95% CI), the hypothesis fails.
+
+2) Prompting strategies: direct answer vs. chain‑of‑thought (CoT) vs. self‑consistency on reasoning QA
+- Hypothesis: Few‑shot CoT improves accuracy over direct answers on commonsense/strategy questions; self‑consistency (vote over diverse CoT samples) improves further at modest cost [2].  
+- Data/task: StrategyQA or a 200‑item slice of CommonsenseQA.  
+- Conditions: (a) Direct answering; (b) Few‑shot CoT; (c) CoT + self‑consistency (e.g., sample 5 rationales, majority vote).  
+- Metrics: Accuracy; response length; latency/cost.  
+- Falsification: If CoT or self‑consistency do not outperform direct answering within CIs, the hypothesis fails.
+
+3) Data‑centric boost: simple label‑error cleaning on a noisy classifier
+- Hypothesis: Removing or down‑weighting likely label errors improves test accuracy and calibration vs. training on noisy data, at fixed model/compute [4].  
+- Data/task: CIFAR‑10 (or a 10‑class text dataset). Inject 20% symmetric label noise into train only; keep a clean test set.  
+- Conditions: (a) Train baseline; (b) Remove top 10% likely label errors via small‑loss pruning or a library like cleanlab; (c) Reweight suspected noisy points instead of removing.  
+- Metrics: Test accuracy; negative log‑likelihood; Expected Calibration Error (ECE).  
+- Falsification: If cleaning/reweighting does not improve accuracy or NLL/ECE relative to baseline (within CIs), the hypothesis fails.
+
+What to deliver
+- Reproducible repo: one script, pinned environment, config files, per‑example outputs, and a short README.  
+- 3–4 page report: problem, hypotheses, methods, results (mean±std, 95% CIs), ablation, failure analysis, and limitations.  
+- Keep it honest: predefine metrics/splits; avoid tuning on test; report negative results clearly.
+
+Why this works without heavy math
+- These projects rely on software craftsmanship, careful measurement, and clear writing. The core ideas are supported by prior work on retrieval for knowledge‑intensive tasks [1], prompting strategies for reasoning [2], and the outsized impact of data quality on model performance [4], and are framed within modern evaluation practice [5].
+
+Quick tailoring question: Which lane sounds most interesting (prompting/evals, RAG with citations, or data quality), and do you have access to a small GPU or just CPU/API?
+
+Citations
+[1] Lewis et al., Retrieval‑Augmented Generation for Knowledge‑Intensive NLP — https://arxiv.org/abs/2005.11401  
+[2] Wei et al., Chain‑of‑Thought Prompting Elicits Reasoning in Large Language Models — https://arxiv.org/abs/2201.11903  
+[3] Gehman et al., RealToxicityPrompts: Evaluating Neural Toxic Degeneration in Language Models — https://arxiv.org/abs/2009.11462  
+[4] Northcutt et al., Confident Learning: Estimating Uncertainty in Dataset Labels — https://arxiv.org/abs/1911.00068  
+[5] Liang et al., Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110

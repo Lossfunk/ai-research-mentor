@@ -42,6 +42,12 @@ def _compose_runtime_prelude() -> str:
     return prelude
 
 
+def _is_truthy(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def prepare_agent(prompt_arg: Optional[str] = None, ascii_override: Optional[bool] = None) -> AgentPreparationResult:
     prompt_variant = (
         prompt_arg
@@ -68,24 +74,28 @@ def prepare_agent(prompt_arg: Optional[str] = None, ascii_override: Optional[boo
         loaded_variant = "fallback"
 
     effective_instructions = f"{_compose_runtime_prelude()}\n\n{instructions}"
+    baseline_mode = _is_truthy(os.environ.get("ARM_BASELINE_MODE"))
 
-    try:
-        injector = create_guidelines_injector()
-        stats = injector.get_stats()
-        cfg = stats.get("config", {}) if isinstance(stats, dict) else {}
-        gs = stats.get("guidelines_stats", {}) if isinstance(stats, dict) else {}
-        enabled = bool(cfg.get("is_enabled"))
-        if enabled:
-            total = gs.get("total_guidelines")
-            token_estimate = stats.get("token_estimate", 0)
-            print_info(
-                f"Guidelines: enabled (mode={cfg.get('mode')}, total={total}, tokens≈{token_estimate})"
-            )
-            effective_instructions = injector.inject_guidelines(effective_instructions)  # type: ignore[attr-defined]
-        else:
-            print_info("Guidelines: disabled")
-    except Exception as exc:  # pragma: no cover - best effort diagnostics
-        print_error(f"Guidelines injector error: {exc}")
+    if not baseline_mode:
+        try:
+            injector = create_guidelines_injector()
+            stats = injector.get_stats()
+            cfg = stats.get("config", {}) if isinstance(stats, dict) else {}
+            gs = stats.get("guidelines_stats", {}) if isinstance(stats, dict) else {}
+            enabled = bool(cfg.get("is_enabled"))
+            if enabled:
+                total = gs.get("total_guidelines")
+                token_estimate = stats.get("token_estimate", 0)
+                print_info(
+                    f"Guidelines: enabled (mode={cfg.get('mode')}, total={total}, tokens≈{token_estimate})"
+                )
+                effective_instructions = injector.inject_guidelines(effective_instructions)  # type: ignore[attr-defined]
+            else:
+                print_info("Guidelines: disabled")
+        except Exception as exc:  # pragma: no cover - best effort diagnostics
+            print_error(f"Guidelines injector error: {exc}")
+    else:
+        print_info("Baseline mode active: skipping guidelines injection")
 
     agent, offline_reason = build_agent(effective_instructions)
     return AgentPreparationResult(agent, offline_reason, loaded_variant, effective_instructions)

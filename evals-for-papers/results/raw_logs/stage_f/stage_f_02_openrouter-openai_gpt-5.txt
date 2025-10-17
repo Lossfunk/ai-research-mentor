@@ -1,0 +1,88 @@
+I don’t see a PDF of your paper among the attachments. If you can upload the manuscript (or paste your Data/Methods/Ethics/Appendix sections), I’ll do a line-by-line compliance pass. In the meantime, here’s a venue-agnostic ethics/compliance audit focused on dataset licenses, human data, and compute disclosures, with concrete fixes you can apply today.
+
+Quick compliance audit and fixes
+
+A. Dataset licensing and provenance
+Risks to check
+- Unclear or incompatible licenses: Any dataset with NC/SA/ND clauses (e.g., CC BY-NC, CC BY-SA, CC BY-ND) used for commercializable research or redistributed weights. This is common for instruction-tuning sets aggregated from the web.
+- Terms-of-service violations: Data scraped from platforms that prohibit redistribution or derivative use without attribution/ShareAlike (e.g., Stack Exchange CC BY-SA requires attribution + ShareAlike).
+- Mixed-license training corpora: Blending permissive (CC BY, CC0, Apache-2.0, MIT) with restrictive (NC/ND/SA or proprietary) without separation or attribution.
+- Model license conflicts: Derivatives of models under restrictive licenses (e.g., certain Llama versions) released under incompatible terms.
+- Missing attribution: CC BY or CC BY-SA datasets require attribution; absence is a compliance risk.
+
+Fixes
+- Create a Data License Table (appendix): For every dataset, list name, source URL, license, allowed uses (commercial?, derivatives?, redistribution?), required attribution text/link, modifications made, and whether redistribution occurs.
+- Remove/replace restrictive sources: Replace NC/ND data or isolate into an ablation that does not affect main claims and is not redistributed. Document rationale.
+- Add attribution and data-use statements: Include proper CC BY and CC BY-SA attribution lines and explain ShareAlike implications if any.
+- Clarify model licensing: If you fine-tune Llama or similar, state the exact model license and whether your release (weights/checkpoints) complies. If release is not permitted, provide instructions-to-reproduce instead of weights.
+- Document filtering: Note any license filtering, deduplication, PII removal, and profanity/banned-content filters, with summary counts.
+
+B. Human data, privacy, and consent
+Risks to check
+- Human-subjects data collection (e.g., RLHF/preference labeling, new annotation): Missing IRB/ethics review or exemption statement; lack of informed consent description; unclear compensation/fairness.
+- PII exposure: Training or evaluation data includes personal data (emails, phone numbers, health, or quasi-identifiers) without de-identification or legal basis.
+- Sensitive content and harm: Toxicity/hate/abuse datasets without risk/mitigation discussion; potential for amplifying bias through compression.
+- Children/minors: Presence of data reasonably likely to include minors without safeguards.
+
+Fixes
+- Add a Human Subjects/Ethics subsection: State whether new human data were collected; if yes, describe IRB approval/exemption, consent process, compensation, demographics (if collected), and data minimization. If no human research was conducted, state that all human-labeled data were obtained from publicly available datasets under listed licenses and no identifiable information was processed.
+- PII policy: Describe PII screening/removal (regex + modern PII detectors), manual spot checks, and retention policy. State that no attempts were made to re-identify individuals.
+- Sensitive content safeguards: Explain why such data are used, potential harms, and mitigations (content filters, refusal policies, release restrictions).
+- Right to opt-out: If feasible, provide an email/contact and process to remove specific data upon request (document constraints).
+
+C. Compute, reproducibility, and environmental impact
+Risks to check
+- Missing hardware/compute details: No clear reporting of GPU model(s), count, training hours, precision, memory, batch size, context length, and seeds.
+- No carbon/energy accounting: Absent or vague energy/CO2 reporting for substantial experiments.
+- Non-reproducible claims: Omitted hyperparameters, ablation justifications, seed variance, or code/data availability status.
+
+Fixes
+- Add a Reproducibility/Compute Disclosure section covering:
+  - Training/fine-tuning: model sizes, parameters updated (full vs. LoRA), optimizer, LR schedule, epochs/steps, tokens, batch size/accumulation, precision, hardware details (GPU model, count, interconnect), wall-clock hours, peak VRAM, software versions, exact seeds.
+  - Inference/system: hardware (A100/4090/CPU), batch size, context length, tokenizer, kv-cache settings, throughput/latency measurement protocol.
+  - Energy/CO2: kWh and CO2e estimates (e.g., via CodeCarbon) with region grid factors and uncertainty.
+  - Data and code availability: what will be released (code, configs, training scripts, checkpoints) and when; if not releasing weights, provide recipes to reproduce.
+- Include a checklist aligned with major venues (ethics + reproducibility) and ensure every item is addressed before submission [1][4].
+
+D. Safety, bias, and downstream risk (especially for LLM compression)
+Risks to check
+- Safety/bias drift due to compression: Toxicity, stereotyping, or refusal behavior changes pre/post compression not measured.
+- Overclaiming: Efficiency gains without acknowledging trade-offs, limitations, or contexts where method fails.
+
+Fixes
+- Add pre/post compression safety evaluations: RealToxicityPrompts toxicity rate, bias probes (e.g., CrowS-Pairs or BBQ), calibration (ECE), and refusal behavior; report deltas and mitigations.
+- Explicit limitations: Note domains not evaluated, languages, and potential failure modes; provide guidance on appropriate use.
+
+Boilerplate you can drop into your paper (adapt and keep concise)
+
+- Ethics statement (overview)
+  - Data provenance and licensing: “All datasets used are listed in Appendix X with licenses, allowed uses, and attribution. We exclude sources with non-commercial/NoDerivatives restrictions from main training. We include ShareAlike attributions where applicable.”
+  - Human subjects: “We did not collect new human-subjects data. All human-labeled datasets are public and de-identified. No PII is knowingly included. Therefore, IRB approval was not required; we provide an exemption rationale.”
+  - Safety and harms: “We evaluate toxicity, bias, and refusal behavior before and after compression and discuss mitigations for observed shifts.”
+  - Compute and environment: “We report hardware, runtime, energy, and CO2e following conference checklists; we release code/configs to facilitate replication.”
+
+- Data license table (appendix)
+  - Columns: Dataset, URL, License, Commercial use allowed (Y/N), Derivatives allowed (Y/N), Redistribution allowed (Y/N), Attribution required (Y/N + text), Modifications (Y/N + description).
+
+- Compute disclosure (appendix)
+  - Training: GPU type×count, hours, precision; tokens, batch; optimizer; LR schedule; seeds; SW versions.
+  - Inference: hardware, batch size, context length, kv-cache; throughput/latency protocol.
+  - Energy/CO2: method, assumptions, uncertainty.
+
+What I need from you to finalize the review
+- Your manuscript PDF or the specific sections: datasets/provenance, human subjects/ethics, methods/compute, and any release plan.
+- A raw list of datasets with URLs and known licenses.
+- Whether you collected any new human annotations or preference data; if yes, a brief description of recruitment, consent, and compensation.
+- The exact hardware used and wall-clock times for each major experiment.
+
+Why this aligns with venue expectations
+- NeurIPS and similar venues require an ethics-aware discussion when risks are present and strongly encourage detailed reproducibility and compute reporting. Addressing provenance, consent, and environmental impact directly in the paper and appendix aligns with Ethics Guidelines and the NeurIPS paper checklist expectations [1][4][5].
+
+Sources
+[1] Ethics Guidelines - NeurIPS — https://neurips.cc/public/EthicsGuidelines
+[2] Provisional Draft of the NeurIPS Code of Ethics — https://openreview.net/pdf?id=zVoy8kAFKPr
+[3] Formatting Instructions For NeurIPS 2025 — https://arxiv.org/html/2506.15953v1
+[4] NeurIPS Paper Checklist Guidelines — https://neurips.cc/Conferences/2021/PaperInformation/PaperChecklist
+[5] NeurIPS Ethics Guidelines for Reviewers (2023) — https://neurips.cc/Conferences/2023/EthicsGuidelinesForReviewers
+
+If you share your draft, I’ll annotate it with specific risk flags, missing statements, and exact sentences/tables to insert.

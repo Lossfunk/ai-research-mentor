@@ -1,0 +1,85 @@
+Great background for AI—your physics training gives you an edge in modeling, experimentation, and uncertainty. Here’s a compact, evidence-based onramp tailored to a physics PhD.
+
+Step 0: Pick a lane that matches your strengths
+- Scientific ML for dynamical systems and PDEs: surrogate modeling, physics-informed ML, differentiable simulators.
+- Probabilistic modeling and simulation-based inference (SBI): infer parameters of simulators when likelihoods are intractable.
+- General ML foundations: optimization, deep learning, and reproducible experimental practice.
+
+A focused 6–8 week plan
+Weeks 1–2: Tooling and a baseline
+- Stack: Python + PyTorch (or JAX if you prefer functional style), NumPy, Matplotlib; version control, conda/uv, and a clear experiment config system.
+- Reproduce a minimal baseline on a small, physics-relevant task (e.g., a 1D PDE or a simple oscillator). Fix random seeds; log metrics and configs.
+
+Weeks 3–5: One controlled research-style experiment
+- Choose one core idea (physics-informed loss, symplectic dynamics, or SBI).
+- Run a clean ablation with ≥3 seeds; report mean±std; keep train/val/test split honest.
+
+Weeks 6–8: Rigor and reporting
+- Stress test generalization (out-of-distribution initial conditions/forcing).
+- Add uncertainty quantification (calibration, coverage).
+- Write a 3–4 page report with hypothesis, method, results, limitations, and full reproducibility details.
+
+Three concrete, falsifiable starter experiments
+1) Physics-informed vs purely data-driven on a 1D PDE
+- Hypothesis: A PINN with a PDE residual term achieves lower L2 solution error than an equally sized data-only network when data are noisy or sparse.
+- Task: 1D heat or Burgers’ equation on [0,1]×[0,T]; generate synthetic solutions via a stable finite-difference solver; add Gaussian noise to observations; hold out unseen initial conditions for test.
+- Models:
+  - Data-only: MLP or small 1D U-Net trained to fit observed u(x,t).
+  - PINN: same network + PDE residual in the loss; automatic differentiation for u_t and u_xx.
+- Protocol: Vary number of observation points (e.g., 32, 128) and noise σ (e.g., 0, 0.05). 5 seeds per setting.
+- Metrics: Test L2 error over the space-time grid; boundary-condition violation rate; wall-clock. Report mean±std.
+- Falsification: If the data-only model matches or beats PINN in L2 error across seeds at σ≥0.05 and 32 points, the hypothesis fails.
+- Anchor: Raissi et al., Physics-Informed Neural Networks (PINNs) — shows how to incorporate PDE residuals in the loss.
+
+2) Conserving dynamics: Hamiltonian NN vs standard MLP on a pendulum
+- Hypothesis: A Hamiltonian Neural Network (HNN) exhibits significantly lower energy drift and better long-horizon state prediction than a standard MLP learned on short rollouts.
+- Task: Damped and undamped pendulum; train on short trajectories; test on long-horizon rollouts with new initial conditions.
+- Models:
+  - Baseline: MLP fθ(x) predicting next state or derivatives.
+  - HNN: learns scalar Hθ(q,p); time derivatives via Hamilton’s equations.
+- Protocol: Train with identical data budgets; evaluate 1000-step rollouts; 5 seeds.
+- Metrics: Energy drift (mean absolute change per step), RMSE of state over horizon; stability (NaNs).
+- Falsification: If MLP’s median energy drift ≤ HNN’s across seeds, hypothesis fails.
+- Anchor: Greydanus et al., Hamiltonian Neural Networks — inductive bias for conservative systems.
+
+3) Simulation-based inference for a noisy oscillator
+- Hypothesis: Neural posterior estimation (SNPE) attains better calibrated posteriors (nominal 95% intervals contain true parameters ≈95% of the time) than ABC with the same simulator budget when the likelihood is intractable but simulations are cheap.
+- Task: Damped harmonic oscillator with unknown (ω, ζ); simulator generates noisy time series given parameters; define summary statistics (spectral peak, decay, autocorr).
+- Methods:
+  - ABC with distance on summaries.
+  - SNPE (density estimator for p(θ|x); use sbi or equivalent).
+- Protocol: Fix a simulator budget (e.g., 50k sims). Evaluate coverage on a grid of ground-truth parameters; 3 independent runs.
+- Metrics: Empirical coverage of 50/90/95% credible regions; posterior RMSE of MAP; simulation efficiency (coverage vs sims).
+- Falsification: If ABC’s coverage is equal or better than SNPE at matched budget across runs, the hypothesis fails.
+- Anchor: Cranmer et al., Simulation-Based Inference (likelihood-free inference with neural density estimators).
+
+Optional fourth experiment (if you prefer imaging/vision)
+4) Equivariance pays: E(n)-equivariant vs non-equivariant GNN on small molecular properties (QM9 subset)
+- Hypothesis: An E(n)-equivariant GNN attains lower MAE than a non-equivariant MPNN at equal parameter count.
+- Metrics: MAE on U0 or dipole; falsification if non-equivariant matches performance across seeds.
+
+What to study (just enough, in parallel with coding)
+- Optimization and deep learning basics: SGD/AdamW, regularization, overfitting, validation. Reproduce a simple image classifier to solidify tooling.
+- Scientific ML themes to prioritize:
+  - Inductive biases: physics-informed losses, symmetries (Hamiltonian, equivariance).
+  - Uncertainty and evaluation: calibration, coverage, OOD tests.
+  - Reproducibility: seeds, config management, clear data splits.
+
+Practical tips from scientific computing to ML
+- Start with small, controlled problems where you can generate ground truth with a known solver; you’ll know when the ML model is wrong.
+- Always include a simple baseline (finite-difference solver, least-squares fit, or ABC) to check that the learned model adds value.
+- Use multiple seeds and report mean±std; plot learning curves and residuals; keep units and scales consistent.
+- Stress test on out-of-distribution initial conditions/forcing; physics models often fail gracefully—document when and why.
+
+Two anchor readings to ground your path
+- Raissi, M., Perdikaris, P., Karniadakis, G. Physics-Informed Neural Networks: A deep learning framework for solving forward and inverse problems involving nonlinear PDEs. https://arxiv.org/abs/1711.10561
+- Cranmer, K., Brehmer, J., Louppe, G. The Frontier of Simulation-Based Inference. https://arxiv.org/abs/1911.01429
+
+If you share your preferred subdomain (fluids, plasma, HEP, astro, materials) and your compute (CPU-only vs single GPU), I can tailor datasets, code templates, and training budgets for one of the experiments above.
+
+Sources
+- Raissi, Perdikaris, Karniadakis (2019). Physics-Informed Neural Networks — https://arxiv.org/abs/1711.10561
+- Greydanus et al. (2019). Hamiltonian Neural Networks — https://arxiv.org/abs/1906.01563
+- Cranmer, Brehmer, Louppe (2020). The Frontier of Simulation-Based Inference — https://arxiv.org/abs/1911.01429
+- Satorras, Hoogeboom, Welling (2021). E(n) Equivariant Graph Neural Networks — https://arxiv.org/abs/2102.09844
+- PyTorch Tutorials — https://pytorch.org/tutorials/

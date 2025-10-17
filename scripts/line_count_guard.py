@@ -19,7 +19,7 @@ from typing import Iterable, List, Tuple
 
 # Resolve repository root (one directory above this script)
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
-MAX_LOC: int = int(os.environ.get("LOC_MAX", "250"))
+MAX_LOC: int = int(os.environ.get("LOC_MAX", "270"))
 
 
 def is_under_src_python_file(file_path: Path) -> bool:

@@ -1,0 +1,92 @@
+Below is a practical, venue-agnostic submission package for “Do Multiple Instance Learning Models Transfer?” It includes a final timeline, a structured checklist that aligns with major conference expectations (NeurIPS/ICML/ICLR), key risks with mitigations, missing items to complete, and concrete experiments to de‑risk claims. Where relevant, I cite authoritative checklists and policies you can mirror in your paper and repo.
+
+Final timeline (target: 6–8 weeks to submission)
+- Week 0: Freeze scope. Finalize datasets, transfer settings (zero-shot, linear probe, finetune), baselines, and metrics.
+- Week 1–2: Complete core experiments + ablations with 3 random seeds; log all compute, seeds, configs; establish data licenses table.
+- Week 3: Transfer studies on at least two source→target pairs; run calibration, fairness/safety, and robustness under shift; begin figures/tables.
+- Week 4: Write Methods/Experiments; add Reproducibility and Compute/CO2 sections; internal checklist pass aligned to NeurIPS/ICML/ICLR [1][2][3].
+- Week 5: Add appendices (dataset licenses, hyperparams, seeds, model cards); code cleanup; artifact pack (scripts/configs).
+- Week 6: Dry-run submission (PDF + anonymized supplemental + repo) and external friendly review; fix compliance gaps; finalize.
+- Buffer (Week 7–8 if available): Extra transfer pair, sensitivity analyses, and polish.
+
+Submission checklist (what to include)
+1) Problem framing and claims
+- Precisely define MIL setup (bag/instance, label granularity), transfer settings (zero-shot, frozen encoder + linear probe, full/partial finetuning), and hypotheses. State what “transfer” means operationally (e.g., AUC improvement on target with ≤X labeled target bags).
+
+2) Datasets and licenses
+- For each dataset: name, URL, license, allowed uses (commercial/derivatives/redistribution), required attribution text/link, modifications, and whether redistributed. Put the full table in the appendix; cite or link in main text. Align with NeurIPS/ICML reproducibility checklists [1][2].
+- Document bag construction and instance preprocessing; ensure no leakage between source and target splits.
+
+3) Baselines and models
+- Include strong MIL baselines: Attention-MIL (Ilse et al., 2018) [8], plus at least one modern alternative (e.g., transformer MIL or CLAM/DSMIL if in pathology); include simple pooling (mean/max) and a fully supervised upper bound where feasible. Cite baselines and justify hyperparameter search space.
+
+4) Experimental protocol
+- Report seeds (≥3), data splits, early-stopping criteria, hyperparameter ranges, and selection rules. Provide identical search budgets across methods. Use the Pineau Reproducibility Checklist as a template for completeness [2].
+
+5) Metrics and statistical reporting
+- Primary: AUC/ROC, PR-AUC; also calibration (ECE), confidence intervals or paired bootstraps; report both aggregate and per-domain/shift results. Tie claims to statistical significance.
+
+6) Transfer and robustness evaluations
+- Zero-shot transfer and finetuning; label-efficiency curves (few-shot target labels); domain/shift robustness; bag-size sensitivity. Include failure analyses.
+
+7) Ethics, compliance, and safety
+- Human data: IRB/exemption or a clear statement that all data are public/de-identified; PII screening policy; consent/compensation if any new annotations.
+- Dataset licenses and attributions in appendix; model license and release terms; any restrictions or opt-out process summarized in Ethics section. Align with conference ethics guidance [1][3].
+
+8) Compute, environment, and artifacts
+- Training/inference hardware (GPU model, count), wall-clock hours, precision, memory, batch, context/patch sizes, software versions, seeds; report energy/CO2 estimates (e.g., via CodeCarbon) and methodology [2][7].
+- Artifact readiness: runnable scripts, fixed seeds/configs, environment files, hashes, and exact data preprocessing recipes. Indicate what will be released upon acceptance.
+
+9) Writing and formatting
+- Use current venue template and strict page limits; ensure checklists/ethics statements are present (NeurIPS/ICML/ICLR) [1][2][3]. Prepare anonymized supplement with extended tables and license details.
+
+Key risks and mitigations
+- License incompatibilities or missing attribution: Risk of desk rejection or post-publication issues. Mitigation: License table + explicit attribution; remove/replace restrictive sources or isolate to ablations; confirm model release terms [1][2].
+- Data leakage across domains: Overestimated transfer. Mitigation: Disjoint sources by entity/time/site; document bag construction; add leakage tests.
+- Hyperparameter/search bias: Unfair comparisons. Mitigation: Equalize search budgets and selection criteria across models; report ranges and best configs per seed [2].
+- Underpowered or non-general claims: Only one domain pair. Mitigation: Add at least two distinct source→target pairs with different shift types (e.g., imaging site shift and task shift); include bag-size sensitivity.
+- Missing compute/CO2 and seeds: Reproducibility concerns. Mitigation: Compute/CO2 log section; CodeCarbon logs; release configs and fixed seeds [2][7].
+- Safety/bias drift: Compression not central here, but MIL pipelines can amplify site/label imbalance. Mitigation: Report subgroup performance (e.g., site/scanner), calibration under shift, and discuss harms/limitations; align with ethics policies [1][3].
+
+Missing items to complete before submission
+- Dataset license and attribution table (appendix) + model/dataset release policy.
+- Full search spaces, seeds, and selection rules; CSV/JSON of results with CIs.
+- Energy/CO2 estimates and methodology reference; brief environment impact statement [2][7].
+- Clear definitions of transfer settings and shifts; label-efficiency protocol.
+- Artifact package: scripts, configs, environment file, and data preprocessing steps; anonymized link.
+- Ethics statement: data provenance, human subjects/PII, risks/mitigations, and limitations [1][3].
+
+Concrete, falsifiable experiments to de-risk claims
+- Cross-domain transfer vs. from-scratch
+  - Hypothesis: Pretraining a MIL encoder on source S improves target T AUC over training from scratch with equal target labels.
+  - Protocol: Train on S, finetune on T with k ∈ {0, 8, 32, 128} labeled bags; compare to scratch and to linear-probe on frozen encoder; 3 seeds; stratified splits.
+  - Success: Statistically significant AUC gains at k ≤ 32 with overlapping compute budgets.
+
+- Zero-shot MIL generalization
+  - Hypothesis: Zero-shot transfer (no target labels) exceeds random and simple pooling baselines on T.
+  - Protocol: Train on S, evaluate on T with no finetuning; compare to mean/max pooling and attention-MIL trained only on S [8]; report AUC, ECE, and per-subgroup AUC.
+  - Success: Zero-shot AUC > pooling baselines and ECE not worse by >Δ.
+
+- Bag-size and instance-shift robustness
+  - Hypothesis: Transfer robustness degrades predictably with bag-size change and instance distribution shift; proposed regularizer/augmentation stabilizes performance.
+  - Protocol: Systematically vary bag sizes between train/test; apply domain shifts (e.g., color jitter for histopathology or channel noise for audio); measure AUC/ECE deltas with/without regularizer.
+  - Success: Reduced worst-case AUC drop and improved calibration under shift.
+
+- Calibration under domain shift
+  - Hypothesis: Transferred MIL models are miscalibrated on T; temperature scaling trained on a small validation split fixes calibration without hurting AUC.
+  - Protocol: Evaluate ECE/Brier pre/post temperature scaling on T; report CIs.
+  - Success: ECE decreases significantly; AUC change ≤ 0.5%.
+
+Literature anchors to cite in Related Work and baselines
+- Ilse et al., Attention-based Deep Multiple Instance Learning (ICML 2018). Standard attention MIL baseline and a strong starting point for transfer studies [8].
+- Campanella et al., Clinical-grade computational pathology using weakly supervised deep learning on whole slide images (Nat Med 2019). Demonstrates large-scale MIL in real-world WSI; useful for framing domain shifts in pathology [9].
+
+Sources
+[1] NeurIPS Paper Checklist Guidelines — https://neurips.cc/public/guides/PaperChecklist
+[2] Machine Learning Reproducibility Checklist (Pineau) — https://www.cs.mcgill.ca/~jpineau/ReproducibilityChecklist.pdf
+[3] ICLR Code of Ethics — https://iclr.cc/public/CodeOfEthics
+[7] CodeCarbon Methodology — https://mlco2.github.io/codecarbon/methodology.html
+[8] Ilse et al., Attention-based Deep Multiple Instance Learning — https://proceedings.mlr.press/v80/ilse18a.html
+[9] Campanella et al., Clinical-grade computational pathology using weakly supervised deep learning on whole slide images — https://www.nature.com/articles/s41591-019-0508-1
+
+If you share your current draft (PDF) and a list of datasets/models, I can turn the “missing items” into a redline checklist in your manuscript and produce a 1-page anonymized artifact-readiness sheet.

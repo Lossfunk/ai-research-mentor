@@ -176,14 +176,22 @@ def run_judges(
             continue
 
         response_path = Path(meta.get("response_path", ""))
-        tool_path = Path(meta.get("tool_trace_path", ""))
+        tool_trace_raw = meta.get("tool_trace_path")
+        tool_path: Optional[Path]
+        if isinstance(tool_trace_raw, str) and tool_trace_raw:
+            tool_path = Path(tool_trace_raw)
+        else:
+            tool_path = None
         if not response_path.exists():
             print_error(f"Missing response file for {prompt_id}: {response_path}")
             continue
 
         full_response_text = response_path.read_text(encoding="utf-8")
         response_text = truncate_text(full_response_text)
-        tool_runs = load_tool_runs(tool_path)
+        if tool_path is not None and tool_path.exists():
+            tool_runs = load_tool_runs(tool_path)
+        else:
+            tool_runs = []
         tool_runs_str = truncate_text(json.dumps(tool_runs, ensure_ascii=False, indent=2))
 
         expected_checks = list(meta.get("expected_checks") or [])

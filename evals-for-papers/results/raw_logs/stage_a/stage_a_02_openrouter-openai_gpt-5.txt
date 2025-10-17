@@ -1,0 +1,72 @@
+Great choice—climate is a domain where even small, careful projects are useful. Here’s a beginner-friendly path that gets you hands-on quickly, with concrete experiments you can run on a single GPU or Colab.
+
+Pick a starting lane (choose one)
+- Weather forecasting with reanalysis data: Start on WeatherBench/WeatherBench 2, which provide ready-to-use inputs/targets and standard metrics for global forecasts [2][3]. ERA5 is the common data source and has clear docs and a free download API [4].
+- Climate model emulation/projection: ClimateBench provides small, curated variables and targets for learning responses to forcing scenarios—lighter compute than full weather forecasting [5].
+- Earth observation for climate impacts: Flood mapping (Sen1Floods11) is a compact, well-curated SAR dataset—great for segmentation or change detection baselines [6].
+
+Minimal setup (one week)
+- Environment: Python + PyTorch; get a training loop working with dataloaders, logging, and seed control.
+- Data: Start with a benchmark to avoid data wrangling.
+  - Weather: WeatherBench (preprocessed ERA5) [2] or WeatherBench 2 [3].
+  - Impacts: Sen1Floods11 (Sentinel-1 SAR chips, labels included) [6].
+- Baselines: Always include persistence/climatology for forecasting; thresholding for flood maps. These give a sanity check that your ML model is actually useful [2][6].
+
+Three concrete, falsifiable starter experiments
+1) Short-range global forecast sanity check (WeatherBench)
+- Hypothesis: A small U-Net trained on 6-hour lead time can beat persistence on 500 hPa geopotential RMSE on WeatherBench at 5.625° resolution [2].
+- Data/task: WeatherBench inputs from ERA5; predict Z500 at +6 h; train/val/test split by time [2][4].
+- Protocol: Baselines = persistence, climatology; Model = small U-Net; Optimizer = AdamW; 3–5 seeds.
+- Metrics: RMSE, ACC (anomaly correlation coefficient) vs baselines; report mean±std across seeds [2].
+- Falsification: If persistence RMSE ≤ model RMSE (within 95% CI) across seeds, the hypothesis fails.
+
+2) Data-efficient climate emulation (ClimateBench)
+- Hypothesis: Multi-target models that jointly predict surface temperature, precipitation, and TOA radiation changes under forcing scenarios reduce error versus single-target training at matched parameter count [5].
+- Data/task: ClimateBench v1.0; inputs = forcing and baseline fields; targets = future anomalies; prescribed train/val/test splits [5].
+- Protocol: Compare single-head vs multi-head CNN/MLP with shared trunk; 5 seeds; early stopping on val RMSE.
+- Metrics: RMSE per variable, spatial skill; compare against published baselines where available [5].
+- Falsification: If multi-target training does not reduce average RMSE versus single-target across seeds, the hypothesis fails.
+
+3) Flood segmentation with SAR (Sen1Floods11)
+- Hypothesis: A lightweight U-Net with speckle-aware augmentation outperforms Otsu thresholding and plain U-Net on IoU for temporary water class [6].
+- Data/task: Sen1Floods11 chips (Sentinel-1 VV/VH) with flood labels; train on provided splits [6].
+- Protocol: Three conditions: (a) Otsu thresholding baseline, (b) U-Net, (c) U-Net + augmentations (random rotations, speckle noise simulation). 5 seeds per ML condition.
+- Metrics: IoU, precision/recall; robustness across geographic regions.
+- Falsification: If augmented U-Net does not improve IoU over plain U-Net by ≥2 points across seeds, the hypothesis fails.
+
+A focused 6–8 week plan
+- Weeks 1–2
+  - Choose lane and dataset (WeatherBench or Sen1Floods11).
+  - Implement a reproducible training pipeline (configs, seeds, deterministic dataloading).
+  - Reproduce a baseline number (e.g., persistence/climatology for WeatherBench; published simple baselines for Sen1Floods11) [2][6].
+- Weeks 3–5
+  - Run Experiment 1 (or 3) across 3–5 seeds; log results; add confidence intervals.
+  - Ablate one knob: input history length (weather), loss weighting across variables (ClimateBench), or augmentation strength (floods).
+- Weeks 6–8
+  - Tighten evaluation: proper time-based splits (no leakage), lat-weighted metrics for global fields, robust calibration metrics if doing classification [2][3].
+  - Write a 3–4 page report: problem, baselines, methods, results, limitations, reproducibility notes. Release code+configs.
+
+Practical tips specific to climate ML
+- Train/val/test by time and by region where relevant to avoid spatial/temporal leakage [2][6].
+- Always include physical baselines (persistence, climatology) in forecasting; they are surprisingly strong at short lead times [2].
+- Consider latitude weighting for global fields to avoid over-emphasizing high latitudes in RMSE [2][3].
+- Start coarse (5.625° or 2.8125° grids) to keep training fast; scale up later [2][3].
+- Use ERA5 or ERA5-Land for consistent, well-documented inputs; the Copernicus API allows scripted downloads and subsetting [4].
+- Keep results modest and well-qualified; state uncertainty and limitations explicitly.
+
+Two anchor readings to ground your roadmap
+- Tackling Climate Change with Machine Learning (survey of problem areas and opportunities) [1].
+- WeatherBench: A Benchmark Dataset for Data-Driven Weather Forecasting (defines tasks, metrics, and baselines) [2].
+
+If you share your compute (e.g., CPU-only vs. one T4/3060) and which lane appeals most (forecasting, emulation, or impacts like floods/deforestation), I can tailor the dataset choice, model size, and exact training budgets.
+
+Citations
+[1] Rolnick et al., Tackling Climate Change with Machine Learning — https://arxiv.org/abs/1906.05433
+[2] Rasp et al., WeatherBench: A Benchmark Data Set for Data-Driven Weather Forecasting — https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020MS002203
+[3] Lam et al., WeatherBench 2: A Benchmark for the Next Generation of Data-Driven Global Weather Models — https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2023MS004019
+[4] ECMWF/Copernicus, ERA5 Data Documentation and Access — https://confluence.ecmwf.int/x/wv2NB
+[5] ClimateBench v1.0: A Benchmark for Data-Driven Climate Projections — https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2021MS002954
+[6] Bonafilia et al., Sen1Floods11: A Georeferenced Dataset to Train and Test Deep Learning Flood Algorithms for Sentinel-1 — https://conferences.computer.org/cvpr/pdfs/CVPRW2020-74JlDpFasGAnEjOWzC9jGN/936000a835/936000a835.pdf
+
+Notes
+- These sources are starting points; they’re not exhaustive. If you pick a lane, I can add 1–2 more targeted papers and a minimal code template.

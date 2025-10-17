@@ -1,0 +1,60 @@
+Below are targeted ablations and error analyses that reviewers will reasonably expect for the acceptance classification task, with an emphasis on hand-engineered features. These aim to isolate what the model is really using, rule out leakage and confounds, and quantify generalization. Where relevant, I reference the PeerRead paper/dataset card to ground risks around heterogeneous sources, arXiv metadata, and venue/year shifts [1][2][3].
+
+Targeted ablations focused on hand-engineered features
+- Leave-one-group-out (LOGO) feature ablations
+  - Remove each feature group in turn and report the drop in AUC/F1: length/structure (tokens, sections, figures/tables), citation-related (ref count, in-text citation density), readability/style (readability indices, POS ratios), lexical n-grams, section-level statistics, and any arXiv metadata-derived fields (comments, journal-ref) [2]. A large drop from removing shallow proxies (e.g., length/citations) signals confounding; a large drop from removing arXiv comments/journal-ref signals leakage [2].
+- Cumulative ablation curves
+  - Start from a strong text-only baseline (e.g., abstract or full text) and add feature groups one by one; then reverse (start with hand-crafted features and add text). Report marginal gains each step. This distinguishes “essential” vs. “nice-to-have” features and shows diminishing returns.
+- Time-freeze and metadata sanitization
+  - Re-run models using only arXiv v1 text and with comments/journal-ref removed to ensure no post-decision leakage [2]. If performance materially drops, make the sanitized setting primary.
+- Section-specific ablations
+  - Train/evaluate with title-only, abstract-only, intro-only, body-only, references-excluded variants. If references/acknowledgments disproportionately drive accuracy, that’s a red flag for spurious cues (e.g., citation count, venue mentions).
+- Confound-only and confound-controlled models
+  - Train simple models on confounds only (year, venue, length, citation count) to bound how much performance they explain; then include these as covariates and test whether text/semantic features still add significant lift. This addresses known heterogeneity across venues/years and arXiv vs. in-venue sources [1][2].
+- Cross-source/cross-year feature transfer
+  - Fit coefficients on one venue/year (e.g., ICLR/OpenReview) and test on another (ACL/EMNLP). If hand-engineered feature weights don’t transfer, report venue-normalized results and limit pooled claims [1][3].
+- Deduplication/split hygiene stress test
+  - Verify that removing near-duplicates (title+early-text+authors) does not change feature importances qualitatively; this guards against leakage through multiple arXiv versions/derivatives [1][3].
+
+Error analyses reviewers expect
+- Global and local feature attributions
+  - Report permutation importance and SHAP for hand-crafted features; show partial dependence while controlling for length/year to detect spurious correlations.
+- Subgroup performance and fairness slices
+  - Error rates by subfield (arXiv category), length quartile, citation-density quartile, and year/venue. Large disparities suggest reliance on shallow proxies rather than content [1][2].
+- Counterfactual edits
+  - Counterfactually reduce length (truncate to a fixed token budget), strip the references section, or mask in-text citations/numbers. Meaningful shifts in predictions indicate dependence on these cues rather than substantive content.
+- Calibration and abstention
+  - Reliability plots/Brier scores; analyze high-confidence false positives/negatives to see which feature profiles are overconfidently misclassified (e.g., “long, many-citations but rejected”).
+- Negative controls
+  - Sanity-check with shuffled text or random features of matched marginal distributions; performance should drop to chance. Also test a “comments-only” and “journal-ref-only” model to quantify leakage potential from arXiv metadata [2].
+
+Concrete, falsifiable experiments to include
+1) LOGO and cumulative ablation with pre-registered thresholds
+- Setup: Train a consistent classifier and report AUC/F1 deltas for removing each feature group; also report stepwise gains when adding groups atop text-only and vice versa.
+- Falsifiable outcome: If removing readability/length/citation groups changes AUC by <1 point while removing text changes by >5 points, we conclude hand-engineered features have limited independent value; otherwise, we document which groups provide robust, transferable gains across venues/years [1][2].
+
+2) Metadata leakage check under time-freezing
+- Setup: Train four variants on arXiv subset—(a) full features, (b) minus comments/journal-ref, (c) v1-only text, (d) v1-only and minus comments/journal-ref.
+- Falsifiable outcome: If (a) outperforms (d) by >5 AUC points, we flag leakage risk and adopt the sanitized (d) setting as primary; if not, we retain broader features but keep the leakage-free numbers as the headline [2].
+
+3) Confound-only vs. confound-controlled models
+- Setup: Train a logistic regression on year+venue+length+citation density; compare to the full model and to a model that includes these confounds as fixed effects. Evaluate in-domain and cross-venue/year.
+- Falsifiable outcome: If confound-only achieves ≥80% of full-model AUC in-domain and collapses out-of-domain, we attribute much of the apparent performance to confounds and shift emphasis to domain-robust features; if not, we claim added value from semantic features with controls in place [1][2][3].
+
+4) Cross-source feature transferability
+- Setup: Fit feature weights on ICLR/OpenReview, test on ACL/EMNLP; repeat inverted. Measure drops per feature group.
+- Falsifiable outcome: If hand-engineered groups suffer ≥20% relative AUC drop across sources while text features are stable, we report limited transferability of shallow proxies and recommend venue-normalized models; if stable, we argue for their general utility [1][3].
+
+5) Counterfactual masking and truncation
+- Setup: Re-evaluate with (i) references removed, (ii) all numerals and citation markers masked, (iii) fixed-length truncation (e.g., 1,000 tokens).
+- Falsifiable outcome: If masking numerals/citations or removing references reduces AUC by >3 points, we document sensitivity to citation/length proxies and include mitigation (e.g., regularization, section weighting); if not, we downplay that risk.
+
+Reporting practices to preempt critiques
+- Make the leakage-free, time-frozen setting primary; present full-feature results as supplementary with caveats [2].
+- Provide per-venue/year and cross-source performance alongside pooled numbers; include venue-normalized calibration if rubrics differ [1][3].
+- Release feature templates, ablation scripts, and per-example error analyses to support replication and independent audits.
+
+Sources
+[1] Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[2] PeerRead Dataset Card (Hugging Face) — https://huggingface.co/datasets/allenai/peer_read
+[3] PeerRead GitHub Repository — https://github.com/allenai/PeerRead
