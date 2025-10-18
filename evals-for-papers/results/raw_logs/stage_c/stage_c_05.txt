@@ -1,109 +1,445 @@
-Based on the research literature, I'll design a comprehensive AI research plan that leverages your strengths without requiring Python programming.
+# Turnkey AI Research Execution Plan: Unified Neural Network Compression
 
 ## 1. Problem Framing and Goals
 
-**Research Focus**: Evaluating AI-assisted qualitative research methods and developing frameworks for human-AI collaboration in data analysis.
+### Research Focus
+**Unified Neural Network Compression Framework**: Developing an integrated approach that combines pruning, quantization, and knowledge distillation for efficient deployment on edge devices [P1][P5]. This addresses the critical gap in systematic evaluation of compression technique interactions [G8][G14].
 
-**Primary Goals**:
-- Compare the effectiveness of AI tools versus human analysis in qualitative research [P2][P3]
-- Develop and validate prompt design frameworks for AI-assisted qualitative analysis [P1]
-- Create guidelines for integrating AI into traditional qualitative research workflows [P8]
+### Specific Measurable Objectives
+1. **Compression Efficiency**: Achieve ≥8× model size reduction while maintaining ≥95% of original accuracy on ImageNet classification
+2. **Inference Speed**: Demonstrate ≥4× inference speedup on ARM-based edge devices (Raspberry Pi 4, NVIDIA Jetson Nano)
+3. **Energy Efficiency**: Reduce energy consumption by ≥60% compared to uncompressed models during inference
+4. **Generalization**: Validate approach across ≥3 different architectures (ResNet, MobileNet, EfficientNet) and ≥2 domains (vision, NLP)
+5. **Memory Footprint**: Achieve ≤50MB model size for deployment on devices with 1GB RAM constraint
 
-**Research Questions**:
-1. How do AI-generated insights compare to human expert analysis in terms of accuracy and depth?
-2. What prompt design strategies optimize AI performance in qualitative data analysis?
-3. How can researchers maintain methodological rigor when incorporating AI tools?
+### Success Criteria [G5][G23]
+- **Primary**: All 5 numerical targets met simultaneously on at least 2/3 tested architectures
+- **Secondary**: Outperform existing state-of-the-art compression methods by ≥10% on efficiency-accuracy Pareto frontier
+- **Reproducibility**: All results reproducible within ±2% variance across 3 independent runs
 
-## 2. Experiments
+## 2. Experiments (7 Core Experiments with Ablations)
 
-**Experiment 1: Comparative Analysis Study**
-- **Hypothesis**: AI tools can achieve comparable thematic analysis quality to human experts when using structured prompts [P1][P2]
-- **Setup**: Recruit 20 human experts and compare their analysis of interview transcripts with ChatGPT/Claude outputs using standardized prompts
-- **Baselines**: Traditional manual coding by experienced qualitative researchers
-- **Evaluation Metrics**: Inter-rater reliability, theme identification accuracy, analysis depth scores, time efficiency
-- **Expected Outcomes**: AI achieves 70-80% agreement with human experts while reducing analysis time by 60%
+### Experiment 1: Baseline Compression Techniques Comparison
+**Hypothesis H1**: Individual compression techniques (pruning, quantization, knowledge distillation) achieve different efficiency-accuracy trade-offs. Falsify if variance in accuracy retention across techniques <5% at 4× compression.
 
-**Experiment 2: Prompt Framework Development**
-- **Hypothesis**: Structured prompt frameworks significantly improve AI qualitative analysis performance [P1]
-- **Setup**: Test 5 different prompt design approaches across 3 AI models using the same dataset
-- **Baselines**: Generic prompts without structured frameworks
-- **Evaluation Metrics**: Coding consistency, theme coherence, methodological alignment with qualitative standards
-- **Expected Outcomes**: Framework-guided prompts show 40% improvement in analysis quality metrics
+**Setup**:
+- Models: ResNet-50, MobileNetV2, EfficientNet-B0
+- Dataset: ImageNet (1.2M training, 50K validation)
+- Baseline: Uncompressed models with standard training
+- Framework: PyTorch 2.1.0, KD-Lib library [P7]
 
-**Experiment 3: Workflow Integration Study**
-- **Hypothesis**: Hybrid human-AI workflows maintain research quality while improving efficiency [P8]
-- **Setup**: Design 3 different integration approaches (AI-first, human-first, collaborative) and test with research teams
-- **Baselines**: Traditional fully-manual qualitative research processes
-- **Evaluation Metrics**: Research quality scores, time-to-completion, researcher satisfaction, methodological rigor maintenance
-- **Expected Outcomes**: Collaborative approach achieves best balance of quality and efficiency
+**Ablations**:
+1. **Pruning variants**: Magnitude-based, gradient-based, lottery ticket hypothesis
+2. **Quantization levels**: INT8, INT4, mixed-precision (FP16/INT8)
+3. **Knowledge distillation temperatures**: τ = [1, 3, 5, 10, 20]
+4. **Compression ratios**: [2×, 4×, 8×, 16×]
+5. **Training schedules**: Standard, cosine annealing, warm restarts
 
-## 3. Timeline for Next 6 Months
+**Metrics**: Top-1/Top-5 accuracy, model size (MB), FLOPs, inference time (ms), energy consumption (mJ)
 
-**Month 1**: Literature review completion, IRB approval, participant recruitment
-**Month 2**: Experiment 1 data collection, initial prompt framework development
-**Month 3**: Experiment 1 analysis, Experiment 2 implementation and data collection
-**Month 4**: Experiment 2 analysis, Experiment 3 design and pilot testing
-**Month 5**: Experiment 3 full implementation, cross-experiment analysis
-**Month 6**: Results synthesis, paper drafting, conference submission preparation
+**Expected Outcomes**: Pruning: 85-90% accuracy at 4× compression; Quantization: 90-95% accuracy at 4× compression; KD: 88-93% accuracy at 4× compression
+
+### Experiment 2: Sequential vs. Joint Compression Optimization
+**Hypothesis H2**: Joint optimization of pruning, quantization, and knowledge distillation outperforms sequential application by ≥5% accuracy at equivalent compression ratios. Falsify if improvement <3%.
+
+**Setup**:
+- Base architecture: ResNet-50 on CIFAR-100
+- Sequential: Prune → Quantize → Distill
+- Joint: Simultaneous optimization with multi-objective loss
+- Training: 200 epochs, SGD optimizer, lr=0.1 with cosine decay
+
+**Ablations**:
+1. **Optimization order**: 6 permutations of sequential application
+2. **Loss weighting**: α_prune ∈ [0.1, 0.3, 0.5], α_quant ∈ [0.1, 0.3, 0.5], α_distill ∈ [0.1, 0.3, 0.5]
+3. **Gradient scaling**: Uniform vs. adaptive scaling based on loss magnitude
+4. **Compression scheduling**: Linear, exponential, step-wise compression increase
+5. **Teacher model variants**: Same architecture vs. larger teacher (ResNet-101)
+
+**Expected Outcomes**: Joint optimization: 78-82% accuracy; Best sequential: 73-77% accuracy at 8× compression
+
+### Experiment 3: Early Pruning with Self-Distillation (EPSD) Extension
+**Hypothesis H3**: Extending EPSD [P5] with adaptive pruning schedules improves efficiency by ≥15% over fixed schedules. Falsify if improvement <10%.
+
+**Setup**:
+- Implementation: Extend EPSD framework with dynamic pruning rate adjustment
+- Models: ResNet-18/34/50 on ImageNet
+- Pruning schedule: Adaptive based on validation loss plateau detection
+- Self-distillation: Student learns from its own earlier checkpoints
+
+**Ablations**:
+1. **Plateau detection sensitivity**: Patience ∈ [3, 5, 10, 15] epochs
+2. **Pruning rate adaptation**: Linear, exponential, sigmoid adjustment curves
+3. **Self-distillation intervals**: Every [5, 10, 20, 50] epochs
+4. **Temperature scheduling**: Fixed vs. adaptive temperature based on training progress
+5. **Checkpoint selection**: Best validation vs. moving average vs. ensemble of checkpoints
+
+**Expected Outcomes**: Adaptive EPSD: 92-95% accuracy retention; Fixed EPSD: 87-90% accuracy retention at 6× compression
+
+### Experiment 4: Data-Free Quantization with Adversarial Knowledge Distillation
+**Hypothesis H4**: Data-free quantization [P6] maintains ≥90% accuracy when combined with adversarial knowledge distillation. Falsify if accuracy <85%.
+
+**Setup**:
+- Scenario: No access to original training data
+- Generator: Adversarial network to synthesize training samples
+- Quantization: INT8 with batch normalization folding
+- Distillation: Teacher-student framework with adversarial loss
+
+**Ablations**:
+1. **Generator architectures**: DCGAN, StyleGAN2, Diffusion models
+2. **Adversarial loss weights**: λ_adv ∈ [0.01, 0.1, 1.0, 10.0]
+3. **Synthetic data diversity**: Batch size ∈ [32, 64, 128], generation steps ∈ [1K, 5K, 10K]
+4. **Quantization schemes**: Symmetric vs. asymmetric, per-channel vs. per-tensor
+5. **Distillation objectives**: MSE, KL-divergence, attention transfer, feature matching
+
+**Expected Outcomes**: Data-free approach: 85-90% accuracy; Data-available baseline: 92-95% accuracy
+
+### Experiment 5: Multi-Domain Compression Generalization
+**Hypothesis H5**: Unified compression framework generalizes across vision and NLP domains with <10% performance degradation. Falsify if degradation >15%.
+
+**Setup**:
+- Vision: CIFAR-10/100, ImageNet, COCO detection
+- NLP: GLUE benchmark, SQuAD, WMT translation
+- Models: Vision (ResNet, EfficientNet), NLP (BERT, DistilBERT, T5-small)
+- Unified framework: Domain-agnostic compression pipeline
+
+**Ablations**:
+1. **Domain-specific adaptations**: Layer-wise compression rates, attention-aware pruning for transformers
+2. **Transfer learning**: Pre-trained compression policies across domains
+3. **Multi-task learning**: Joint training on vision+NLP tasks
+4. **Architecture-specific optimizations**: CNN vs. Transformer compression strategies
+5. **Evaluation protocols**: Domain-specific metrics vs. unified efficiency measures
+
+**Expected Outcomes**: Vision: 90-95% accuracy retention; NLP: 85-92% F1/BLEU retention at 6× compression
+
+### Experiment 6: Hardware-Aware Compression Optimization
+**Hypothesis H6**: Hardware-aware compression achieves ≥2× additional speedup over hardware-agnostic methods on target edge devices. Falsify if speedup <1.5×.
+
+**Setup**:
+- Target devices: Raspberry Pi 4, NVIDIA Jetson Nano, Google Coral TPU
+- Profiling: Device-specific latency, memory, and energy characteristics
+- Optimization: Hardware-aware pruning patterns and quantization schemes
+- Deployment: TensorRT, TensorFlow Lite, ONNX Runtime
+
+**Ablations**:
+1. **Device-specific optimizations**: ARM NEON, CUDA cores, TPU matrix units
+2. **Memory hierarchy awareness**: L1/L2 cache optimization, DRAM access patterns
+3. **Parallelization strategies**: Thread count optimization, batch size tuning
+4. **Precision formats**: FP16, INT8, INT4, binary weights
+5. **Operator fusion**: Conv-BN-ReLU fusion, attention block optimization
+
+**Expected Outcomes**: Hardware-aware: 15-25ms inference; Hardware-agnostic: 30-45ms inference on Jetson Nano
+
+### Experiment 7: Integrated Scaling Study and Pareto Analysis
+**Hypothesis H7**: Optimal compression configuration varies predictably with model size and target efficiency constraints. Falsify if no clear scaling trends emerge across 3 model sizes.
+
+**Setup**:
+- Model scales: Small (1-10M params), Medium (10-50M params), Large (50-200M params)
+- Efficiency constraints: Mobile (≤50MB, ≤100ms), Edge (≤20MB, ≤50ms), IoT (≤5MB, ≤20ms)
+- Systematic sweep: Grid search over compression hyperparameters
+- Pareto frontier analysis: Multi-objective optimization (accuracy, size, speed, energy)
+
+**Ablations**:
+1. **Scaling laws**: Parameter count vs. optimal compression ratio relationships
+2. **Constraint prioritization**: Accuracy-first vs. efficiency-first optimization
+3. **Architecture families**: CNN, Transformer, Hybrid architectures
+4. **Training data scales**: 1K, 10K, 100K, 1M samples
+5. **Deployment scenarios**: Real-time inference, batch processing, streaming
+
+**Expected Outcomes**: Clear scaling relationships with R² ≥ 0.8 for size-compression correlations
+
+## 3. Timeline (6 Months - Bi-weekly Sprints)
+
+### Weeks 1-2: Infrastructure and Baseline Setup
+**Deliverables**:
+- Complete development environment setup (PyTorch, CUDA, profiling tools)
+- Implement baseline training pipelines for all target architectures
+- Establish evaluation protocols and metrics collection framework
+- Complete Experiment 1 baseline runs
+
+**Milestones**: 
+- All baseline models trained and validated (accuracy within 1% of published results)
+- Automated evaluation pipeline functional
+- Initial compression technique implementations verified
+
+### Weeks 3-4: Individual Compression Techniques
+**Deliverables**:
+- Complete Experiment 1 with all ablations
+- Implement and validate pruning, quantization, and knowledge distillation modules
+- Generate comprehensive baseline comparison results
+
+**Milestones**:
+- Statistical significance testing completed (p < 0.05 for all comparisons)
+- Performance profiles documented for each technique
+- Reproducibility verified across 3 independent runs
+
+### Weeks 5-6: Sequential vs. Joint Optimization
+**Deliverables**:
+- Complete Experiment 2 implementation and execution
+- Develop joint optimization framework with multi-objective loss
+- Analyze optimization dynamics and convergence properties
+
+**Milestones**:
+- Joint optimization framework validated
+- Performance improvements quantified and statistically significant
+- Optimization stability analysis completed
+
+### Weeks 7-8: EPSD Extension and Adaptive Methods
+**Deliverables**:
+- Complete Experiment 3 with adaptive pruning schedules
+- Implement plateau detection and dynamic adjustment mechanisms
+- Validate self-distillation improvements
+
+**Milestones**:
+- Adaptive algorithms outperform fixed schedules by target margin
+- Convergence analysis shows stable training dynamics
+- Ablation studies identify key adaptive components
+
+### Weeks 9-10: Data-Free Quantization
+**Deliverables**:
+- Complete Experiment 4 with adversarial knowledge distillation
+- Implement and validate synthetic data generation pipeline
+- Analyze data-free vs. data-available performance gaps
+
+**Milestones**:
+- Data-free approach meets minimum accuracy threshold
+- Synthetic data quality metrics established
+- Adversarial training stability verified
+
+### Weeks 11-12: Multi-Domain Generalization
+**Deliverables**:
+- Complete Experiment 5 across vision and NLP domains
+- Validate unified compression framework generalization
+- Analyze domain-specific adaptation requirements
+
+**Milestones**:
+- Cross-domain performance meets generalization targets
+- Domain-specific optimizations identified and validated
+- Transfer learning effectiveness quantified
+
+### Weeks 13-14: Hardware-Aware Optimization
+**Deliverables**:
+- Complete Experiment 6 with device-specific optimizations
+- Deploy and profile models on target edge devices
+- Validate hardware-aware speedup claims
+
+**Milestones**:
+- Device deployment successful on all target platforms
+- Hardware-aware optimizations show significant speedup
+- Energy consumption measurements completed
+
+### Weeks 15-16: Scaling Study and Integration
+**Deliverables**:
+- Complete Experiment 7 with comprehensive scaling analysis
+- Generate Pareto frontier analysis across all experiments
+- Integrate findings into unified framework
+
+**Milestones**:
+- Scaling relationships identified and validated
+- Pareto analysis reveals optimal operating points
+- Unified framework demonstrates superior performance
+
+### Weeks 17-18: Analysis and Documentation
+**Deliverables**:
+- Complete statistical analysis and significance testing
+- Generate comprehensive experimental report
+- Prepare publication-ready manuscript and code release
+
+**Milestones**:
+- All experimental hypotheses evaluated with clear outcomes
+- Statistical rigor verified (power analysis, effect sizes)
+- Reproducibility package prepared
+
+### Weeks 19-20: Validation and Refinement
+**Deliverables**:
+- Independent validation of key results
+- Address any reproducibility issues
+- Finalize documentation and code release
+
+**Milestones**:
+- Independent validation confirms main findings
+- Code release meets publication standards
+- Documentation enables reproduction by external researchers
+
+### Weeks 21-24: Publication and Dissemination
+**Deliverables**:
+- Submit manuscript to top-tier venue (ICML, NeurIPS, ICLR)
+- Present findings at relevant workshops/conferences
+- Release open-source implementation
+
+**Milestones**:
+- Manuscript submitted and under review
+- Community engagement through workshops/talks
+- Open-source adoption metrics tracked
 
 ## 4. Resources
 
-**People**:
-- Principal investigator (you) - research design, analysis, writing
-- 2-3 qualitative research experts as consultants/validators
-- 20 expert coders for comparative studies
-- 1 research assistant for data management and coordination
+### Compute Requirements
+**GPU Resources**:
+- Primary: 4× NVIDIA A100 (40GB) for large-scale experiments = 2,880 GPU-hours
+- Secondary: 8× NVIDIA V100 (32GB) for parallel ablations = 1,920 GPU-hours
+- Edge testing: 2× NVIDIA Jetson AGX Xavier, 4× Raspberry Pi 4B
+- Total estimated cost: $15,000-20,000 in cloud compute credits
 
-**Compute**: 
-- API access to GPT-4, Claude, and other LLMs (~$500/month)
-- Standard laptop/desktop for analysis and writing
-- Cloud storage for data management
+**Storage and Memory**:
+- High-speed SSD: 2TB for datasets and checkpoints
+- Network storage: 10TB for experimental artifacts and logs
+- RAM: 256GB minimum for large model training
 
-**Tools**:
-- Qualitative analysis software (NVivo, Atlas.ti, or free alternatives like RQDA)
-- Survey platforms for data collection
-- Statistical software for quantitative analysis (R with GUI, SPSS, or Excel)
+### Datasets and Versions
+**Vision Datasets**:
+- ImageNet ILSVRC 2012 (150GB): Training/validation splits as per official protocol
+- CIFAR-10/100: Standard splits, data augmentation following best practices
+- COCO 2017: Detection/segmentation tasks, official train/val splits
 
-**Datasets**:
-- Interview transcripts from existing studies (with permission)
-- Focus group discussions
-- Open-source qualitative datasets for validation
+**NLP Datasets**:
+- GLUE benchmark: All 9 tasks with official train/dev/test splits
+- SQuAD 2.0: Reading comprehension with unanswerable questions
+- WMT 2014 EN-DE: Machine translation, 4.5M sentence pairs
+
+### Software and Libraries
+**Core Framework**:
+- Python 3.9.0
+- PyTorch 2.1.0 with CUDA 11.8
+- Transformers 4.21.0 (HuggingFace)
+- KD-Lib 0.0.1 for knowledge distillation [P7]
+
+**Compression Libraries**:
+- Neural Network Intelligence (NNI) 2.8 for AutoML
+- TensorRT 8.5.1 for deployment optimization
+- ONNX 1.12.0 for cross-platform compatibility
+- Brevitas 0.8.0 for quantization-aware training
+
+**Profiling and Analysis**:
+- NVIDIA Nsight Systems 2022.4 for GPU profiling
+- Intel VTune 2022.3 for CPU analysis
+- Weights & Biases 0.13.0 for experiment tracking
+- MLflow 2.0.1 for model versioning
+
+**Development Tools**:
+- Git LFS for large file versioning
+- Docker 20.10.0 for reproducible environments
+- Jupyter Lab 3.4.0 for interactive analysis
+- pytest 7.1.0 for automated testing
+
+### Python Learning Resources (Non-Python Background)
+**Immediate Prerequisites** (Weeks 1-2):
+- Python Crash Course (Eric Matthes) - Chapters 1-11
+- Automate the Boring Stuff with Python - Chapters 1-6
+- Official Python Tutorial (python.org/tutorial)
+
+**ML/PyTorch Specific** (Weeks 3-4):
+- PyTorch tutorials (pytorch.org/tutorials) - Beginner track
+- Deep Learning with PyTorch (Stevens et al.) - Chapters 1-8
+- Hands-On Machine Learning (Géron) - Chapters 10-15
+
+**Research-Specific Skills** (Ongoing):
+- Papers with Code tutorials for implementation patterns
+- Weights & Biases documentation for experiment tracking
+- Git/GitHub workflow for research collaboration
 
 ## 5. Risks and Mitigations
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| IRB approval delays | Medium | High | Submit early, prepare alternative datasets |
-| Expert recruitment challenges | High | Medium | Leverage professional networks, offer compensation |
-| AI model access limitations | Low | High | Secure multiple API accounts, budget for costs |
-| Data quality issues | Medium | Medium | Implement validation protocols, pilot test |
-| Methodological criticism | Medium | High | Engage qualitative research community early |
-| Limited generalizability | High | Medium | Test across multiple domains and contexts |
+| Risk | Probability | Impact | Mitigation Strategy |
+|------|-------------|--------|-------------------|
+| **Compute resource shortage** | Medium (40%) | High | Pre-allocate cloud credits, establish backup compute partnerships, implement efficient experiment scheduling |
+| **Reproducibility failures** | Medium (35%) | High | Implement comprehensive logging, version control all dependencies, use containerized environments, maintain detailed experimental protocols |
+| **Baseline implementation bugs** | High (60%) | Medium | Extensive unit testing, cross-validation with published results, peer code review, gradual complexity increase |
+| **Hardware deployment issues** | Medium (45%) | Medium | Early device procurement, parallel development tracks, fallback to simulation environments |
+| **Statistical significance challenges** | Low (25%) | High | Power analysis during planning, multiple random seeds, appropriate statistical tests, effect size reporting |
+| **Dataset access/licensing** | Low (20%) | Medium | Verify licensing early, establish data use agreements, prepare alternative datasets |
+| **Python learning curve** | High (70%) | Medium | Structured learning plan, pair programming with experienced developers, focus on research-specific patterns |
+| **Experimental scope creep** | Medium (50%) | Medium | Strict hypothesis-driven approach, regular milestone reviews, predefined stopping criteria |
+| **Publication timeline pressure** | Medium (40%) | Medium | Buffer time in schedule, parallel writing during experiments, early venue selection |
+| **Framework integration complexity** | Medium (45%) | Medium | Modular design, extensive documentation, incremental integration testing |
 
-## 6. Stretch Ideas and Follow-up Directions
+## 6. Integrated Recipe and Scaling Study
 
-**Immediate Extensions**:
-- Cross-cultural validation of AI analysis frameworks
-- Domain-specific prompt optimization (healthcare, education, social sciences)
-- Real-time AI assistance tools for qualitative researchers
+### Unified Compression Framework Architecture
+The research culminates in a **Hierarchical Adaptive Compression Engine (HACE)** that integrates findings from all experiments [G8][G19]:
 
-**Long-term Directions**:
-- AI-assisted mixed-methods research integration
-- Ethical frameworks for AI in sensitive qualitative research
-- Training programs for researchers adopting AI tools [P4]
-- Development of specialized AI models for qualitative analysis
+**Stage 1: Architecture Analysis**
+- Automated profiling of model architecture and computational graph
+- Hardware-aware bottleneck identification
+- Compression potential estimation using scaling laws from Experiment 7
 
-**Potential Collaborations**:
-- Partner with qualitative research software companies
-- Engage with professional associations (International Association of Qualitative Inquiry)
-- Collaborate with AI ethics researchers
+**Stage 2: Multi-Objective Optimization**
+- Joint optimization of pruning, quantization, and knowledge distillation
+- Pareto frontier exploration with user-defined constraints
+- Adaptive scheduling based on training dynamics (Experiment 3 insights)
+
+**Stage 3: Domain-Specific Adaptation**
+- Automatic detection of model domain (vision, NLP, multimodal)
+- Application of domain-specific compression strategies
+- Transfer learning from pre-trained compression policies
+
+**Stage 4: Hardware Deployment**
+- Target device profiling and optimization
+- Automatic operator fusion and memory layout optimization
+- Runtime performance validation and adjustment
+
+### Pareto Analysis Framework
+**Multi-Dimensional Optimization**:
+- **Accuracy Axis**: Top-1 accuracy, F1 score, BLEU score (domain-dependent)
+- **Efficiency Axis**: Model size (MB), inference time (ms), energy consumption (mJ)
+- **Constraint Satisfaction**: Memory limits, real-time requirements, power budgets
+
+**Scaling Relationships** (Expected from Experiment 7):
+- **Model Size vs. Compression Ratio**: Power law relationship with exponent -0.7 to -0.9
+- **Accuracy Retention vs. Compression Ratio**: Exponential decay with domain-specific coefficients
+- **Hardware Speedup vs. Compression Type**: Linear relationship for quantization, logarithmic for pruning
+
+**Sensitivity Analysis**:
+- **Hyperparameter Robustness**: ±10% variation in key parameters should yield <5% performance change
+- **Data Scale Sensitivity**: Performance degradation <15% when training data reduced by 50%
+- **Architecture Generalization**: Framework performance within 20% across different architecture families
+
+### Integration Recipe
+1. **Input**: Model architecture, target constraints, available data
+2. **Profiling**: Automated analysis of computational bottlenecks and compression potential
+3. **Strategy Selection**: Multi-objective optimization to identify optimal compression combination
+4. **Execution**: Adaptive training with joint optimization and dynamic scheduling
+5. **Validation**: Hardware deployment and performance verification
+6. **Iteration**: Feedback-driven refinement based on deployment metrics
+
+This unified approach addresses the critical research gap in systematic compression technique integration [P1][P5] while providing practical deployment solutions for edge computing scenarios [G1][G8].
+
+## Expected Contributions and Impact
+
+**Methodological Contributions**:
+- First comprehensive evaluation of joint compression optimization across multiple domains
+- Novel adaptive scheduling algorithms for dynamic compression during training
+- Hardware-aware compression framework with demonstrated edge device deployment
+
+**Empirical Contributions**:
+- Scaling laws for compression effectiveness across model sizes and architectures
+- Comprehensive Pareto analysis of efficiency-accuracy trade-offs
+- Cross-domain generalization analysis for compression techniques
+
+**Practical Impact**:
+- Open-source framework enabling efficient model deployment on resource-constrained devices
+- Reproducible experimental protocols for compression research
+- Industry-relevant benchmarks for edge AI deployment
+
+This research plan follows established best practices for impactful AI research [G1][G5] while maintaining rigorous experimental standards [G23][G25] and ensuring reproducibility [G11][G22].
 
 ## Citations
 
-- [P1] Harnessing the power of AI in qualitative research — https://www.sciencedirect.com/science/article/pii/S2949882125000283
-- [P2] Comparing the Efficacy and Efficiency of Human and Generative AI — https://pmc.ncbi.nlm.nih.gov/articles/11329846/
-- [P3] Human Analysis vs. Artificial Intelligence: Analyzing of Qualitative ... — https://journals.sagepub.com/doi/10.1177/10497323251359445
-- [P4] The state of AI in qualitative research in 2025 — https://lumivero.com/resources/blog/state-of-ai-in-qualitative-research/
-- [P8] Integrating AI into Qualitative Analysis — https://academyhealth.org/blog/2025-03/integrating-ai-qualitative-analysis
+**Papers:**
+- [P1] PQK: Model Compression via Pruning, Quantization, and Knowledge Distillation — http://arxiv.org/abs/2106.14681v1
+- [P2] Parallel Blockwise Knowledge Distillation for Deep Neural Network Compression — http://arxiv.org/abs/2012.03096v1
+- [P3] Few Sample Knowledge Distillation for Efficient Network Compression — http://arxiv.org/abs/1812.01839v3
+- [P4] Knowledge Distillation: Enhancing Neural Network Compression with Integrated Gradients — http://arxiv.org/abs/2503.13008v1
+- [P5] EPSD: Early Pruning with Self-Distillation for Efficient Model Compression — http://arxiv.org/abs/2402.00084v1
+- [P6] Data-Free Network Quantization With Adversarial Knowledge Distillation — http://arxiv.org/abs/2005.04136v1
+- [P7] KD-Lib: A PyTorch library for Knowledge Distillation, Pruning and Quantization — http://arxiv.org/abs/2011.14691v1
 
-**Optional next step**: Consider reaching out to qualitative research communities on platforms like ResearchGate or academic Twitter to validate your research questions and potentially find collaborators who can complement your theoretical expertise with technical implementation skills.
+**Guidelines:**
+- [G1] How To Impactful AI Research — https://gigazine.net/gsc_news/en/20240926-how-to-impactful-ai-research/
+- [G5] Manifesto For Doing Good Science — https://letters.lossfunk.com/p/manifesto-for-doing-good-science
+- [G8] Opinionated Guide ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G11] arXiv 2304.05585 — https://arxiv.org/abs/2304.05585
+- [G14] Framing Machine Learning Research — https://trendspider.com/learning-center/framing-machine-learning-research/
+- [G19] Taste — https://colah.github.io/notes/taste/
+- [G22] Scientific Process Complexity — https://www.lifescied.org/doi/10.1187/cbe.20-12-0276
+- [G23] Machine-Assisted Social Psychology Hypothesis Generation — https://gwern.net/doc/ai/nn/transformer/gpt/3/nonfiction/2024-banker.pdf
+- [G25] AGI Organizations Challenge — https://www.lesswrong.com/posts/tD9zEiHfkvakpnNam/a-challenge-for-agi-organizations-and-a-challenge-for-1

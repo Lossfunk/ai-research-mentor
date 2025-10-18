@@ -1,149 +1,324 @@
-# Federated Learning in Low-Resource Countries: Research Execution Plan
+# Federated Learning in Low-Resource Countries: Publication-Grade Research Execution Plan
 
 ## 1. Problem Framing and Goals
 
-**Core Problem**: Traditional federated learning approaches fail in low-resource countries due to severe bandwidth constraints, intermittent connectivity, limited computational resources, and heterogeneous device capabilities [P1][P2]. Current FL systems assume reliable network infrastructure that doesn't exist in many developing regions.
+### Primary Research Question
+How can federated learning systems be optimized for deployment in low-resource countries with limited bandwidth, intermittent connectivity, and heterogeneous device capabilities?
 
-**Primary Goals**:
-- Develop bandwidth-efficient FL algorithms that work with <1 Mbps connections
-- Create robust FL systems that handle frequent disconnections and device heterogeneity
-- Demonstrate practical deployment in real low-resource environments
-- Establish performance benchmarks for resource-constrained FL scenarios
+### Specific Measurable Objectives
+1. **Communication Efficiency**: Achieve ≥85% model accuracy retention with ≤10% of standard FL communication overhead [P1][P3]
+2. **Robustness**: Maintain ≥80% baseline performance under 40-60% client dropout rates typical in low-resource settings [1]
+3. **Energy Efficiency**: Reduce client-side energy consumption by ≥50% compared to standard FedAvg while preserving convergence [P5]
+4. **Heterogeneity Handling**: Achieve convergence within 15% of centralized baseline across devices with 10x computational variance
+5. **Scalability**: Support 1000+ clients with average bandwidth of 256 kbps and 30% intermittent connectivity [1]
 
-**Success Metrics**: 90% reduction in communication overhead compared to standard FL, convergence within 10x longer timeframes than ideal conditions, deployment feasibility in sub-Saharan Africa or rural South Asia.
+### Success Criteria
+- **Primary**: Novel FL algorithm achieving all 5 objectives simultaneously on 3+ real-world datasets
+- **Secondary**: Deployment feasibility study showing <$50/month operational cost per 100 clients
+- **Tertiary**: Open-source framework adoption by ≥2 NGOs or development organizations
 
-## 2. Experiments
+## 2. Experiments (7 Core Experiments with Ablations)
 
 ### Experiment 1: Adaptive Communication Compression
-**Hypothesis**: Gradient compression with adaptive quantization can reduce communication overhead by 95% while maintaining model accuracy within 5% of full-precision FL [P5].
-
-**Setup**: 
-- Implement variable-bit quantization (1-8 bits) based on network conditions
-- Test on CIFAR-10, MNIST, and a custom healthcare dataset
-- Simulate network conditions: 0.1-2 Mbps bandwidth, 20-80% packet loss
-
-**Baselines**: FedAvg, FedProx, standard gradient compression methods
-
-**Evaluation Metrics**: Communication rounds to convergence, total bytes transmitted, final model accuracy, convergence stability
-
-**Expected Outcomes**: 10-20x reduction in communication overhead with <3% accuracy loss
-
-### Experiment 2: Asynchronous Federated Learning with Intermittent Connectivity
-**Hypothesis**: Asynchronous aggregation with staleness-aware weighting can maintain convergence despite 60-80% client unavailability [P1].
+**Hypothesis**: H1: Gradient compression with adaptive quantization achieves ≥90% accuracy retention with ≤5% communication overhead. Falsify if accuracy drops >10% or overhead exceeds 8%.
 
 **Setup**:
-- Implement staleness-weighted aggregation algorithm
-- Simulate realistic disconnection patterns from mobile network data
-- Test with 100-1000 simulated clients, 10-40% participation rates
+- Models: ResNet-18, MobileNetV2, LSTM (sentiment analysis)
+- Datasets: CIFAR-10, FEMNIST, Shakespeare (federated)
+- Baselines: FedAvg, FedProx, LAG, SCAFFOLD
+- Compression methods: Top-k sparsification, quantization, sketching
 
-**Baselines**: Synchronous FedAvg, simple asynchronous averaging, FedBuff
+**Ablations**:
+1. Compression ratios: 1%, 5%, 10%, 20%, 50%
+2. Adaptive vs. fixed quantization levels (4-bit, 8-bit, 16-bit)
+3. Error feedback mechanisms: none, EF-SGD, DIANA
+4. Frequency adaptation: per-round, per-epoch, client-specific
+5. Hybrid compression: gradient + model parameter compression
 
-**Evaluation Metrics**: Convergence time, robustness to client dropouts, model accuracy degradation
+**Metrics**: Accuracy, communication bytes, convergence rounds, compression ratio
+**Expected Outcome**: 3-8x communication reduction with <5% accuracy loss
 
-**Expected Outcomes**: Successful convergence with 70% fewer active clients than synchronous methods
-
-### Experiment 3: Hierarchical Federated Learning for Multi-Tier Infrastructure
-**Hypothesis**: Two-tier FL (edge servers + mobile devices) can reduce long-haul communication by 80% while improving convergence speed [P2].
+### Experiment 2: Intermittent Connectivity Resilience
+**Hypothesis**: H2: Asynchronous FL with staleness-aware aggregation maintains ≥85% synchronous performance under 50% dropout. Falsify if performance drops >20%.
 
 **Setup**:
-- Deploy edge servers in simulated regional hubs
-- Implement local aggregation before global updates
-- Test with realistic network topology models
+- Dropout patterns: Random (30%, 50%, 70%), clustered, time-correlated
+- Staleness bounds: 1, 3, 5, 10 rounds
+- Aggregation: FedAsync, FedBuff, LAG with staleness weighting
 
-**Baselines**: Flat FL architecture, centralized learning, local-only training
+**Ablations**:
+1. Staleness tolerance: 1-10 rounds
+2. Client selection strategies: random, availability-aware, performance-based
+3. Buffer sizes: 5, 10, 20, 50 updates
+4. Timeout policies: fixed (30s, 60s, 120s), adaptive
+5. Recovery mechanisms: checkpoint restoration, partial update integration
 
-**Evaluation Metrics**: End-to-end communication cost, convergence speed, scalability to 10,000+ devices
+**Metrics**: Convergence time, final accuracy, client participation rate, staleness distribution
+**Expected Outcome**: <15% performance degradation under realistic dropout patterns
 
-**Expected Outcomes**: 5x faster convergence with 80% reduction in backbone network usage
+### Experiment 3: Heterogeneous Device Optimization
+**Hypothesis**: H3: Tiered FL with device-specific model sizes achieves ≥95% homogeneous baseline performance. Falsify if gap exceeds 8%.
 
-## 3. Timeline for Next 6 Months
+**Setup**:
+- Device tiers: High (8GB RAM, 4 cores), Medium (4GB, 2 cores), Low (2GB, 1 core)
+- Model variants: Full, 50% width, 25% width, knowledge distillation
+- Datasets: CIFAR-100, TinyImageNet, federated EMNIST
 
-**Month 1**: Infrastructure setup and baseline implementation
-- Set up simulation environment with realistic network models
-- Implement standard FL baselines (FedAvg, FedProx)
-- Establish evaluation frameworks and datasets
+**Ablations**:
+1. Tier ratios: 20:30:50, 10:40:50, 5:25:70 (High:Med:Low)
+2. Model scaling: width, depth, both, pruning-based
+3. Aggregation weights: uniform, performance-based, compute-aware
+4. Knowledge transfer: teacher-student, mutual learning, ensemble
+5. Dynamic tier assignment based on runtime performance
 
-**Month 2**: Experiment 1 execution (Communication compression)
-- Develop adaptive quantization algorithms
-- Run compression experiments across different network conditions
-- Analyze communication-accuracy tradeoffs
+**Metrics**: Per-tier accuracy, aggregation fairness, computational load distribution
+**Expected Outcome**: Balanced performance across heterogeneous devices with 2-4x efficiency gains
 
-**Month 3**: Experiment 2 execution (Asynchronous FL)
-- Implement staleness-aware aggregation
-- Test with various disconnection patterns
-- Evaluate robustness metrics
+### Experiment 4: Bandwidth-Adaptive Algorithms
+**Hypothesis**: H4: Dynamic algorithm switching based on bandwidth achieves ≥90% optimal performance across 64kbps-2Mbps range. Falsify if adaptation overhead >10%.
 
-**Month 4**: Experiment 3 execution (Hierarchical FL)
-- Build two-tier FL system
-- Test scalability and communication efficiency
-- Compare against flat architectures
+**Setup**:
+- Bandwidth simulation: 64kbps, 256kbps, 1Mbps, 2Mbps with 20% variance
+- Algorithm portfolio: FedAvg, FedProx, SCAFFOLD, FedNova
+- Switching criteria: bandwidth, latency, packet loss, client capacity
 
-**Month 5**: Integration and real-world validation
-- Combine best approaches from experiments 1-3
-- Deploy pilot system in partnership with local organizations
-- Collect real-world performance data
+**Ablations**:
+1. Bandwidth thresholds: 128kbps, 512kbps, 1Mbps switching points
+2. Adaptation frequency: per-round, every 5 rounds, every 10 rounds
+3. Hysteresis margins: 10%, 20%, 30% to prevent oscillation
+4. Multi-criteria switching: bandwidth + latency + loss rate
+5. Predictive vs. reactive adaptation strategies
 
-**Month 6**: Analysis and dissemination
-- Complete data analysis and write-up
-- Prepare conference submission
-- Document deployment guidelines for practitioners
+**Metrics**: Algorithm selection accuracy, switching overhead, end-to-end performance
+**Expected Outcome**: 15-25% improvement over fixed algorithms across bandwidth spectrum
+
+### Experiment 5: Energy-Efficient Training
+**Hypothesis**: H5: Computation scheduling with sleep modes reduces energy by ≥60% while maintaining convergence. Falsify if energy reduction <45%.
+
+**Setup**:
+- Energy models: Smartphone (3000mAh), IoT device (1000mAh), tablet (7000mAh)
+- Scheduling: Round-robin, energy-aware, deadline-driven
+- Sleep strategies: Deep sleep, light sleep, computation throttling
+
+**Ablations**:
+1. Training schedules: continuous, burst (1hr/day), intermittent (4hr/day)
+2. CPU frequency scaling: 25%, 50%, 75%, 100% max frequency
+3. Batch size adaptation: 8, 16, 32, 64 samples per update
+4. Local epoch counts: 1, 3, 5, 10 epochs per round
+5. Wake-up triggers: time-based, energy-based, network-based
+
+**Metrics**: Energy consumption (mAh), training time, convergence quality, device temperature
+**Expected Outcome**: 50-70% energy reduction with <10% convergence time increase
+
+### Experiment 6: Real-World Deployment Simulation
+**Hypothesis**: H6: End-to-end system achieves ≥80% lab performance in simulated real-world conditions. Falsify if performance drops >25%.
+
+**Setup**:
+- Network simulation: NS-3 with real ISP traces from Kenya, Bangladesh, Nigeria [1]
+- Device simulation: Android emulator with resource constraints
+- Realistic workloads: Healthcare (X-ray classification), Agriculture (crop disease), Education (language models)
+
+**Ablations**:
+1. Geographic distribution: Urban (60%), suburban (25%), rural (15%)
+2. Time-of-day effects: Peak (6-9pm), off-peak, business hours
+3. Seasonal variations: Dry season, rainy season connectivity patterns
+4. Infrastructure failures: Base station outages, power grid instability
+5. User behavior: Active learning periods, device usage patterns
+
+**Metrics**: End-to-end latency, system availability, user experience scores, cost per client
+**Expected Outcome**: Validation of lab results under realistic deployment conditions
+
+### Experiment 7: Cross-Application Generalization
+**Hypothesis**: H7: Optimized FL framework generalizes across ≥3 application domains with <15% performance variance. Falsify if variance exceeds 20%.
+
+**Setup**:
+- Applications: Healthcare (medical imaging), Agriculture (satellite imagery), Finance (fraud detection), Education (personalized learning)
+- Data characteristics: Image, text, tabular, time-series
+- Model architectures: CNN, RNN, Transformer, MLP
+
+**Ablations**:
+1. Domain adaptation techniques: Fine-tuning, meta-learning, transfer learning
+2. Data preprocessing: Normalization, augmentation, feature selection
+3. Model initialization: Random, pre-trained, domain-specific
+4. Hyperparameter sensitivity: Learning rate, batch size, aggregation frequency
+5. Cross-domain knowledge transfer mechanisms
+
+**Metrics**: Cross-domain accuracy, adaptation time, hyperparameter sensitivity, framework usability
+**Expected Outcome**: Robust performance across diverse applications with minimal tuning
+
+## 3. Timeline (26-Week Execution Plan)
+
+### Phase 1: Foundation (Weeks 1-6)
+**Week 1-2**: Infrastructure Setup
+- Set up distributed computing environment (4x V100 GPUs)
+- Implement baseline FL algorithms (FedAvg, FedProx, SCAFFOLD)
+- Create network simulation framework with bandwidth/latency controls
+- **Deliverable**: Working FL testbed with 3 baseline algorithms
+
+**Week 3-4**: Dataset Preparation and Benchmarking
+- Curate and preprocess federated datasets (CIFAR-10/100, FEMNIST, Shakespeare)
+- Implement realistic data heterogeneity (Dirichlet α=0.1, 0.5, 1.0)
+- Establish baseline performance metrics across all datasets
+- **Deliverable**: Standardized benchmark suite with performance baselines
+
+**Week 5-6**: Communication Infrastructure
+- Implement compression algorithms (Top-k, quantization, sketching)
+- Build bandwidth simulation with real ISP traces
+- Create client dropout and reconnection mechanisms
+- **Deliverable**: Communication framework with realistic network conditions
+
+### Phase 2: Core Experiments (Weeks 7-18)
+**Week 7-8**: Experiment 1 - Communication Compression
+- Implement adaptive compression algorithms
+- Run ablation studies across compression ratios and methods
+- **Milestone**: Achieve 5x communication reduction with <8% accuracy loss
+
+**Week 9-10**: Experiment 2 - Intermittent Connectivity
+- Implement asynchronous aggregation with staleness handling
+- Test under various dropout patterns and recovery mechanisms
+- **Milestone**: Maintain >85% performance under 50% dropout
+
+**Week 11-12**: Experiment 3 - Device Heterogeneity
+- Implement tiered FL with device-specific model variants
+- Test knowledge distillation and dynamic tier assignment
+- **Milestone**: Balance performance across 3 device tiers within 5% variance
+
+**Week 13-14**: Experiment 4 - Bandwidth Adaptation
+- Implement dynamic algorithm switching based on network conditions
+- Test adaptation strategies and switching overhead
+- **Milestone**: 20% improvement over fixed algorithms across bandwidth range
+
+**Week 15-16**: Experiment 5 - Energy Efficiency
+- Implement computation scheduling and sleep mode strategies
+- Measure energy consumption across different device profiles
+- **Milestone**: 60% energy reduction while maintaining convergence
+
+**Week 17-18**: Integration and Optimization
+- Combine successful techniques from Experiments 1-5
+- Optimize hyperparameters and system configurations
+- **Deliverable**: Integrated FL system with all optimizations
+
+### Phase 3: Validation and Real-World Testing (Weeks 19-24)
+**Week 19-20**: Experiment 6 - Real-World Simulation
+- Deploy integrated system in realistic network simulation
+- Test with real ISP traces and device constraints
+- **Milestone**: Validate lab results under realistic conditions
+
+**Week 21-22**: Experiment 7 - Cross-Application Testing
+- Test framework across healthcare, agriculture, and education domains
+- Evaluate generalization and adaptation capabilities
+- **Milestone**: <15% performance variance across application domains
+
+**Week 23-24**: Performance Analysis and Optimization
+- Conduct comprehensive performance analysis
+- Identify bottlenecks and optimization opportunities
+- **Deliverable**: Performance report with optimization recommendations
+
+### Phase 4: Documentation and Dissemination (Weeks 25-26)
+**Week 25**: Paper Writing and Framework Documentation
+- Write research paper with experimental results
+- Create comprehensive framework documentation
+- Prepare open-source release with examples
+
+**Week 26**: Final Validation and Submission
+- Conduct final validation experiments
+- Submit paper to top-tier venue (ICML, NeurIPS, ICLR)
+- **Deliverable**: Complete research paper and open-source framework
 
 ## 4. Resources
 
-**People**:
-- 1 PhD student (full-time, FL algorithms)
-- 1 Research engineer (0.5 FTE, systems implementation)
-- 1 Postdoc (0.3 FTE, evaluation and analysis)
-- Local partners in target deployment regions
+### Computational Requirements
+- **Primary Cluster**: 4x NVIDIA V100 (32GB) or A100 (40GB) GPUs
+- **Simulation Nodes**: 16x CPU cores (Intel Xeon or AMD EPYC) with 128GB RAM
+- **Storage**: 10TB NVMe SSD for datasets and checkpoints
+- **Network**: 10Gbps interconnect for distributed training
+- **Estimated Cost**: $15,000-25,000 for 6-month cloud deployment
 
-**Compute**:
-- GPU cluster for large-scale simulations (8-16 V100s)
-- Edge computing devices for realistic testing (Raspberry Pi, mobile devices)
-- Cloud credits for distributed experiments ($5,000-10,000)
+### Datasets and Versions
+- **CIFAR-10/100**: Standard splits, 50K train/10K test
+- **FEMNIST**: Federated EMNIST, 3,550 clients, 805,263 samples
+- **Shakespeare**: Complete works, character-level prediction, 715 clients
+- **Medical**: ChestX-ray14 (112,120 images), federated split by hospital
+- **Agricultural**: PlantVillage (54,306 images), geographic distribution
+- **Network Traces**: RIPE Atlas measurements from Kenya, Bangladesh, Nigeria [1]
 
-**Tools**:
-- PyTorch/TensorFlow for ML implementation
-- Network simulation tools (ns-3, Mininet)
-- Real mobile network datasets for realistic modeling
+### Software Stack
+- **Framework**: PyTorch 2.1.0, TensorFlow 2.13.0
+- **FL Libraries**: FedML 0.8.4, Flower 1.5.0, PySyft 0.8.0
+- **Simulation**: NS-3 3.37, OMNeT++ 6.0
+- **Compression**: TensorFlow Model Optimization 0.7.3
+- **Monitoring**: Weights & Biases, TensorBoard, Prometheus
+- **Deployment**: Docker 24.0, Kubernetes 1.28
 
-**Datasets**:
-- Standard FL benchmarks (CIFAR-10, MNIST, FEMNIST)
-- Healthcare datasets relevant to low-resource settings
-- Mobile network trace data from developing countries
+### Hardware Specifications
+- **High-tier devices**: 8GB RAM, Snapdragon 888, 5G connectivity
+- **Medium-tier devices**: 4GB RAM, Snapdragon 660, 4G connectivity  
+- **Low-tier devices**: 2GB RAM, Snapdragon 450, 3G connectivity
+- **Network conditions**: 64kbps-2Mbps bandwidth, 100-500ms latency, 1-10% packet loss
 
 ## 5. Risks and Mitigations
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|---------|------------|
-| Simulation doesn't reflect real conditions | Medium | High | Partner with telecom operators for real network data; validate with field deployment |
-| Algorithms don't scale to realistic client numbers | Medium | Medium | Start with smaller scale, use hierarchical approaches, implement efficient aggregation |
-| Local partnerships fail to materialize | High | Medium | Establish multiple partnership tracks, work with NGOs and academic institutions |
-| Regulatory/ethical approval delays | Medium | Medium | Start approval processes early, work with established local research institutions |
-| Hardware constraints more severe than expected | Medium | High | Test on lowest-end devices available, implement multiple algorithm variants |
-| Convergence fails in extreme conditions | Low | High | Implement fallback mechanisms, adaptive algorithm selection |
+| Risk | Probability | Impact | Mitigation Strategy |
+|------|-------------|--------|-------------------|
+| **Convergence failure under extreme constraints** | Medium (40%) | High | Implement adaptive learning rates, gradient clipping, and convergence monitoring with early stopping criteria |
+| **Simulation-reality gap** | High (60%) | Medium | Validate with real device deployments, use measured network traces, collaborate with NGOs for field testing |
+| **Scalability bottlenecks** | Medium (35%) | High | Implement hierarchical aggregation, edge computing integration, and load balancing mechanisms |
+| **Energy model inaccuracy** | Medium (45%) | Medium | Use hardware power meters, validate with real device measurements, implement multiple energy models |
+| **Dataset bias toward developed countries** | High (70%) | Medium | Collect data from target regions, partner with local organizations, use synthetic data augmentation |
+| **Regulatory/privacy constraints** | Low (20%) | High | Implement differential privacy, secure aggregation, obtain ethics approval, follow GDPR guidelines |
+| **Hardware availability** | Medium (30%) | High | Secure backup compute resources, implement cloud bursting, negotiate extended access agreements |
+| **Algorithm patent conflicts** | Low (15%) | Medium | Conduct patent landscape analysis, implement novel variations, consult IP lawyers |
 
-## 6. Stretch Ideas and Follow-up Directions
+## 6. Integrated Recipe and Scaling Study
 
-**Immediate Extensions**:
-- **Cross-silo FL for healthcare**: Partner with rural clinics to develop disease prediction models while preserving patient privacy
-- **Agricultural applications**: Deploy FL for crop yield prediction using farmer smartphone data
-- **Educational technology**: Personalized learning models across schools with limited internet
+### System Integration Architecture
+The final system combines all experimental components into a unified framework:
 
-**Long-term Research Directions**:
-- **Incentive mechanisms**: Design payment/reputation systems for FL participation in resource-constrained settings
-- **Energy-aware FL**: Optimize for battery life on mobile devices in areas with unreliable power
-- **Multi-modal FL**: Handle diverse data types (text, images, sensor data) common in development contexts
-- **Blockchain integration**: Decentralized coordination for FL without reliable central servers
+1. **Adaptive Communication Layer**: Dynamic compression based on bandwidth (Exp 1 + 4)
+2. **Resilient Aggregation Engine**: Asynchronous updates with staleness handling (Exp 2)
+3. **Heterogeneity Manager**: Device-aware model distribution and training (Exp 3)
+4. **Energy Optimizer**: Computation scheduling and sleep management (Exp 5)
+5. **Application Interface**: Domain-agnostic API for easy deployment (Exp 7)
 
-**Policy and Deployment**:
-- Develop regulatory frameworks for cross-border FL in developing regions
-- Create open-source toolkit for NGOs and governments to deploy FL systems
-- Establish benchmarks and standards for resource-constrained FL evaluation
+### Pareto Analysis Framework
+**Multi-objective optimization** across five key dimensions:
+- **Accuracy**: Model performance relative to centralized baseline
+- **Communication**: Total bytes transmitted per training round
+- **Energy**: Client-side energy consumption per update
+- **Latency**: Time to convergence under realistic conditions
+- **Robustness**: Performance degradation under adverse conditions
+
+**Scaling Laws Investigation**:
+- Client count scaling: 10, 100, 1K, 10K clients
+- Data heterogeneity scaling: α = 0.01, 0.1, 1.0, 10.0 (Dirichlet)
+- Network constraint scaling: 64kbps to 10Mbps bandwidth range
+- Device heterogeneity scaling: 1x to 100x computational variance
+
+### Expected Pareto Frontiers
+1. **High-accuracy regime**: 95-98% centralized performance, 2-5x communication overhead
+2. **Balanced regime**: 85-95% performance, 5-20x communication reduction
+3. **Ultra-efficient regime**: 70-85% performance, 50-100x communication reduction
+
+### Sensitivity Analysis
+**Critical hyperparameters** identified through systematic ablation:
+- Compression ratio threshold: 1-10% (primary impact on communication)
+- Staleness tolerance: 1-5 rounds (primary impact on robustness)
+- Local epoch count: 1-10 (primary impact on convergence speed)
+- Energy budget allocation: 10-100% max device capacity
+
+**Robustness validation** across parameter variations of ±50% from optimal settings, ensuring <10% performance degradation for practical deployment scenarios.
+
+This comprehensive plan provides a publication-ready research execution framework with measurable objectives, falsifiable hypotheses, and detailed experimental protocols suitable for deployment in low-resource countries [P1][P3][P4][P5].
 
 ## Citations
 
-- [P1] Reliable Federated Learning for Mobile Networks — https://www.researchgate.net/publication/336316440_Reliable_Federated_Learning_for_Mobile_Networks
-- [P2] Wireless Federated Learning over Resource-Constrained ... — https://arxiv.org/abs/2405.17759
-- [P5] Lightweight Federated Learning Approach for Resource- ... — https://pmc.ncbi.nlm.nih.gov/articles/PMC12473279/
+[P1] Reliable Federated Learning for Mobile Networks | Request PDF — https://www.researchgate.net/publication/336316440_Reliable_Federated_Learning_for_Mobile_Networks
+[P2] Federated Learning: 5 Use Cases & Real Life Examples — https://research.aimultiple.com/federated-learning/
+[P3] [PDF] Bandwidth Allocation for Federated Learning with Wireless ... — https://csalab.site/getsrc/?n=papers/24xqx-tmc.pdf
+[P4] Wireless Federated Learning over Resource-Constrained Networks — https://arxiv.org/abs/2405.17759
+[P5] Lightweight Federated Learning Approach for Resource ... — https://pmc.ncbi.nlm.nih.gov/articles/PMC12473279/
+[P6] [PDF] A Survey on Federated Learning for Resource-Constrained IoT ... — https://shiqiang.wang/papers/AI_IOTJ2021.pdf
+[P7] A Federated Learning-Based Resource Allocation Scheme for ... — https://www.mdpi.com/2079-9292/13/2/390
+[P8] Federated Reinforcement Learning for Wireless Networks — https://ieeexplore.ieee.org/iel8/8782711/10345397/10691666.pdf
 
-**Optional next step**: Conduct a preliminary survey of potential deployment partners (telecom operators, NGOs, government agencies) in target countries to validate problem assumptions and establish collaboration frameworks before beginning technical development.
+[1] Internet penetration by country in Africa 2025 - Statista — https://www.statista.com/statistics/1124283/internet-penetration-in-africa-by-country/
