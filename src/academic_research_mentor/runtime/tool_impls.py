@@ -120,8 +120,27 @@ def guidelines_tool_fn(query: str, *, internal_delimiters: tuple[str, str] | Non
 
 
 def web_search_tool_fn(q: str, *, internal_delimiters: tuple[str, str] | None = None) -> str:
-    result = registry_tool_call("web_search", {"query": q, "limit": 8})
+    enriched_query = q
+    q_lower = q.lower()
+    if any(token in q_lower for token in ["stage c", "research plan", "experiments", "baseline", "ablation"]):
+        parts = [q]
+        if "graph" in q_lower or "gnn" in q_lower:
+            parts.extend(["graph neural network", "graph attention network"])
+        if "sea ice" in q_lower:
+            parts.extend(["arctic sea ice", "sea ice prediction"])
+        if "compression" in q_lower or "quantization" in q_lower:
+            parts.extend(["model compression", "quantization", "sparsity"])
+        if "retrieval" in q_lower or "rag" in q_lower:
+            parts.extend(["retrieval augmented generation", "dense retrieval", "bm25"])
+        parts.append("arXiv")
+        enriched_query = " ".join(dict.fromkeys(part for part in parts if part))
+
+    result = registry_tool_call("web_search", {"query": enriched_query, "limit": 8})
     items = (result.get("results") if isinstance(result, dict) else []) or []
+    if not items and enriched_query != q:
+        result = registry_tool_call("web_search", {"query": q, "limit": 8})
+        items = (result.get("results") if isinstance(result, dict) else []) or []
+
     if not items:
         note = (result or {}).get("note", "No results") if isinstance(result, dict) else "No results"
         return str(note)

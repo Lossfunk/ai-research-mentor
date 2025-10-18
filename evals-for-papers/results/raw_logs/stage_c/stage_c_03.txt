@@ -1,357 +1,247 @@
-# AI-Driven Cancer Drug Discovery: A 6-Month Research Execution Plan
-
-**Reality Check**: "Curing cancer tomorrow" is scientifically impossible. Cancer comprises 200+ distinct diseases requiring decades of research. However, AI can accelerate specific aspects of cancer research. This plan focuses on **AI-enhanced drug discovery for a specific cancer type** with measurable 6-month milestones.
-
-## 1. Problem Framing and Goals
-
-### Primary Objective
-Develop and validate AI models for accelerating small molecule drug discovery targeting **non-small cell lung cancer (NSCLC)** with specific focus on EGFR mutations [P1][P3].
-
-### Specific Measurable Objectives
-- **Drug-Target Interaction Prediction**: Achieve ≥85% AUC on EGFR binding affinity prediction (baseline: 78% from existing methods)
-- **Molecular Generation**: Generate ≥1000 novel EGFR-targeting compounds with ≥70% drug-likeness score (Lipinski's Rule of Five compliance)
-- **Virtual Screening Acceleration**: Reduce screening time by 50-75% compared to traditional docking methods while maintaining ≥90% hit rate preservation
-- **Multi-omics Integration**: Achieve ≥80% accuracy in predicting patient response to EGFR inhibitors using genomic + transcriptomic data [P1]
-
-### Success Criteria
-- **Primary**: At least 3 AI-generated compounds show IC50 < 100nM against EGFR in biochemical assays
-- **Secondary**: Published preprint with reproducible code and datasets
-- **Tertiary**: Validated pipeline ready for pharmaceutical partnership discussions
-
-## 2. Experiments (7 Core Experiments with Ablations)
-
-### Experiment 1: Protein-Ligand Binding Affinity Prediction
-**Hypothesis**: Graph neural networks with 3D structural features achieve ≥85% AUC on EGFR binding prediction. Falsify if AUC < 82%.
-
-**Setup**:
-- **Models**: GraphDTA, DeepDTA, AttentionDTA, custom GNN with 3D coordinates
-- **Dataset**: PDBbind v2023 (19,443 complexes) + ChEMBL EGFR data (8,247 compounds)
-- **Splits**: 80/10/10 temporal split (pre-2020/2020-2021/2022-2023)
-- **Hardware**: 4x A100 GPUs, 128GB RAM
-
-**Ablations**:
-1. **Architecture**: Compare GCN vs GAT vs Transformer-based molecular encoders
-2. **Features**: Molecular descriptors only vs 3D coordinates vs combined
-3. **Data scale**: 1k vs 5k vs full dataset training curves
-4. **Augmentation**: SMILES enumeration vs 3D conformer generation vs none
-5. **Loss functions**: MSE vs ranking loss vs contrastive learning
-
-**Baselines**: RF-Score, AutoDock Vina, existing GraphDTA results
-**Metrics**: Pearson R, Spearman ρ, AUC, RMSE
-**Expected Outcome**: 0.83-0.87 AUC, 0.78-0.82 Pearson R
-
-### Experiment 2: Molecular Generation for EGFR Targeting
-**Hypothesis**: Conditional VAE generates ≥70% drug-like EGFR-targeting molecules. Falsify if <60% drug-likeness or <50% predicted EGFR affinity.
-
-**Setup**:
-- **Models**: Junction Tree VAE, GraphVAE, MoFlow, custom conditional generator
-- **Training Data**: ChEMBL EGFR actives (pIC50 > 6.5, n=3,247) + ZINC drug-like subset (2M compounds)
-- **Conditioning**: EGFR pocket fingerprints, pharmacophore constraints
-- **Generation Target**: 10,000 novel compounds per model
-
-**Ablations**:
-1. **Architecture**: VAE vs GAN vs Flow-based vs Diffusion models
-2. **Conditioning**: Pocket fingerprints vs 3D pharmacophores vs target sequence
-3. **Training regime**: Standard vs adversarial vs reinforcement learning
-4. **Molecular representation**: SMILES vs graphs vs 3D conformers
-5. **Diversity control**: Temperature scaling vs nucleus sampling vs beam search
-
-**Evaluation**:
-- **Drug-likeness**: Lipinski's Rule, QED score, SA score
-- **Novelty**: Tanimoto similarity < 0.4 to training set
-- **Target relevance**: Predicted EGFR binding (from Exp 1 model)
-- **Synthesizability**: SAScore < 3.5, SYBA score
-
-**Expected Outcome**: 65-75% drug-like, 40-60% novel, 30-50% EGFR-relevant
-
-### Experiment 3: Virtual Screening Pipeline Optimization
-**Hypothesis**: AI-guided virtual screening achieves ≥90% hit rate with 50× speedup vs traditional docking. Falsify if hit rate <85% or speedup <20×.
-
-**Setup**:
-- **Screening Library**: ZINC20 (1.4B compounds), ChEMBL (2.1M compounds)
-- **Target**: EGFR kinase domain (PDB: 1M17, 4HJO, 5GTY)
-- **Pipeline**: AI pre-filtering → molecular docking → binding affinity prediction
-- **Validation**: Known EGFR inhibitors (erlotinib, gefitinib, osimertinib analogs)
-
-**Ablations**:
-1. **Pre-filtering**: Random vs pharmacophore vs AI similarity vs combined
-2. **Docking software**: AutoDock Vina vs Glide vs rDock vs LeDock
-3. **Scoring**: Docking score only vs ML rescoring vs consensus
-4. **Filtering thresholds**: Top 0.1% vs 1% vs 5% vs 10%
-5. **Ensemble methods**: Single model vs voting vs stacking
-
-**Metrics**: 
-- **Hit rate**: % of known actives recovered in top-k predictions
-- **Enrichment factor**: (Hits in top-k) / (Random expectation)
-- **Computational time**: CPU-hours per million compounds screened
-- **Early enrichment**: AUC in top 1% of ranked compounds
-
-**Expected Outcome**: 88-93% hit rate, 25-60× speedup, EF1% > 15
-
-### Experiment 4: Multi-omics Patient Response Prediction
-**Hypothesis**: Multi-modal deep learning predicts EGFR inhibitor response with ≥80% AUC. Falsify if AUC < 75%.
-
-**Setup**:
-- **Data**: TCGA-LUAD (n=566), GDSC cell lines (n=1,001), clinical trial data
-- **Modalities**: RNA-seq (20k genes), mutations (VCF), copy number, drug sensitivity
-- **Models**: Multi-modal transformers, cross-attention networks, late fusion
-- **Target**: Response to erlotinib, gefitinib, afatinib (IC50 values)
-
-**Ablations**:
-1. **Fusion strategy**: Early vs intermediate vs late fusion
-2. **Modality importance**: Genomics only vs transcriptomics only vs combined
-3. **Architecture**: CNN vs Transformer vs Graph networks for each modality
-4. **Data preprocessing**: Raw counts vs normalized vs batch-corrected
-5. **Sample size**: 100 vs 300 vs 500 vs full dataset
-
-**Validation**: 
-- **Cross-validation**: 5-fold stratified by cancer subtype
-- **External validation**: Independent clinical cohort (if available)
-- **Interpretability**: SHAP values for top predictive features
-
-**Expected Outcome**: 0.76-0.82 AUC, identification of 50-100 predictive biomarkers
-
-### Experiment 5: Structure-Based Drug Design with AI
-**Hypothesis**: AI-guided structure-based design generates compounds with ≥10× improved binding affinity. Falsify if improvement <5×.
-
-**Setup**:
-- **Target Structure**: EGFR kinase domain with known inhibitor binding modes
-- **Starting Points**: FDA-approved EGFR inhibitors (erlotinib, gefitinib)
-- **AI Methods**: Reinforcement learning, genetic algorithms, gradient-based optimization
-- **Objective**: Minimize predicted binding free energy while maintaining drug-likeness
-
-**Ablations**:
-1. **Optimization method**: RL vs GA vs gradient descent vs Bayesian optimization
-2. **Molecular representation**: SMILES vs 3D coordinates vs pharmacophores
-3. **Scoring function**: Docking score vs ML-predicted affinity vs FEP calculations
-4. **Constraints**: Drug-likeness penalties vs synthetic accessibility vs toxicity
-5. **Starting diversity**: Single scaffold vs multiple scaffolds vs de novo
-
-**Validation**:
-- **Computational**: Molecular dynamics simulations (100ns per compound)
-- **Experimental**: Biochemical binding assays for top 20 compounds
-- **Selectivity**: Cross-reactivity against kinome panel (140 kinases)
-
-**Expected Outcome**: 5-15× binding improvement, 80-90% drug-likeness retention
-
-### Experiment 6: Federated Learning for Multi-institutional Data
-**Hypothesis**: Federated learning maintains ≥95% of centralized model performance while preserving privacy. Falsify if performance drop >8%.
-
-**Setup**:
-- **Participants**: 3-5 simulated institutions with TCGA data splits
-- **Models**: Drug response prediction models from Experiment 4
-- **Privacy**: Differential privacy (ε=1.0), secure aggregation
-- **Communication**: FedAvg, FedProx, personalized federated learning
-
-**Ablations**:
-1. **Aggregation method**: FedAvg vs FedProx vs FedNova vs SCAFFOLD
-2. **Privacy level**: No privacy vs ε=10 vs ε=1 vs ε=0.1
-3. **Data heterogeneity**: IID vs non-IID patient distributions
-4. **Communication frequency**: Every round vs every 5 rounds vs adaptive
-5. **Local training**: 1 epoch vs 5 epochs vs until convergence
-
-**Metrics**: Model accuracy, privacy budget consumption, communication overhead
-**Expected Outcome**: 92-97% performance retention, <2× communication cost
-
-### Experiment 7: AI-Guided Combination Therapy Prediction
-**Hypothesis**: Graph neural networks predict synergistic drug combinations with ≥75% AUC. Falsify if AUC < 70%.
-
-**Setup**:
-- **Data**: DrugComb database (448k combinations), NCI-ALMANAC (5.2M combinations)
-- **Focus**: EGFR inhibitor combinations with chemotherapy/immunotherapy
-- **Models**: Drug-drug interaction networks, multi-task learning, attention mechanisms
-- **Validation**: Known synergistic combinations (erlotinib+bevacizumab, etc.)
-
-**Ablations**:
-1. **Network architecture**: GCN vs GAT vs GraphSAGE for drug representations
-2. **Combination encoding**: Concatenation vs element-wise ops vs cross-attention
-3. **Multi-task learning**: Synergy only vs synergy+toxicity+efficacy
-4. **Data augmentation**: Chemical similarity vs biological pathway overlap
-5. **Imbalanced learning**: Standard loss vs focal loss vs cost-sensitive learning
-
-**Expected Outcome**: 0.72-0.78 AUC, discovery of 10-20 novel promising combinations
-
-## 3. Timeline (26 Weeks = 13 Bi-weekly Sprints)
-
-### Weeks 1-2: Infrastructure & Data Preparation
-**Deliverables**:
-- GPU cluster setup and environment configuration
-- Data collection: PDBbind, ChEMBL, TCGA, DrugComb downloads
-- Preprocessing pipelines for all datasets
-- Baseline model implementations (GraphDTA, AutoDock Vina)
-**Milestone**: All datasets processed and baseline results reproduced
-
-### Weeks 3-4: Experiment 1 - Binding Affinity Prediction
-**Deliverables**:
-- 5 ablation studies completed
-- Model comparison table with statistical significance tests
-- Best model identified and validated on held-out test set
-**Milestone**: Achieve ≥82% AUC or pivot to alternative architectures
-
-### Weeks 5-6: Experiment 2 - Molecular Generation (Phase 1)
-**Deliverables**:
-- 3 generative models trained (VAE, GAN, Flow)
-- Initial compound generation and drug-likeness evaluation
-- Diversity and novelty analysis completed
-**Milestone**: Generate 1000+ compounds with ≥60% drug-likeness
-
-### Weeks 7-8: Experiment 3 - Virtual Screening Pipeline
-**Deliverables**:
-- Complete virtual screening pipeline implemented
-- Benchmark against known EGFR inhibitors
-- Speed and accuracy optimization completed
-**Milestone**: Achieve ≥85% hit rate with ≥20× speedup
-
-### Weeks 9-10: Experiment 2 - Molecular Generation (Phase 2)
-**Deliverables**:
-- Conditional generation with EGFR targeting
-- Advanced ablation studies (diffusion models, RL fine-tuning)
-- Top 100 compounds selected for further evaluation
-**Milestone**: ≥70% drug-likeness and ≥50% predicted EGFR activity
-
-### Weeks 11-12: Experiment 4 - Multi-omics Integration
-**Deliverables**:
-- Multi-modal models trained and validated
-- Feature importance analysis and biomarker identification
-- Cross-validation and external validation results
-**Milestone**: ≥75% AUC in patient response prediction
-
-### Weeks 13-14: Experiment 5 - Structure-Based Design
-**Deliverables**:
-- AI-optimized compound designs completed
-- Molecular dynamics validation for top candidates
-- Synthetic accessibility assessment
-**Milestone**: ≥5× binding affinity improvement demonstrated
-
-### Weeks 15-16: Experiment 6 - Federated Learning
-**Deliverables**:
-- Federated learning framework implemented
-- Privacy-preserving model training completed
-- Performance comparison with centralized approach
-**Milestone**: ≥92% performance retention with privacy guarantees
-
-### Weeks 17-18: Experiment 7 - Combination Therapy
-**Deliverables**:
-- Drug combination prediction models trained
-- Novel combination hypotheses generated
-- Literature validation of predictions
-**Milestone**: ≥70% AUC in combination synergy prediction
-
-### Weeks 19-20: Experimental Validation Preparation
-**Deliverables**:
-- Top 20 compounds selected for biochemical assays
-- Assay protocols finalized with CRO partners
-- Compound synthesis or procurement initiated
-**Milestone**: Experimental validation pipeline established
-
-### Weeks 21-22: Integration & Analysis
-**Deliverables**:
-- All experimental results integrated and analyzed
-- Statistical significance testing across all experiments
-- Failure analysis and lessons learned documentation
-**Milestone**: Comprehensive results analysis completed
-
-### Weeks 23-24: Manuscript Preparation
-**Deliverables**:
-- First draft of research manuscript
-- Supplementary materials and code repositories
-- Reproducibility documentation and tutorials
-**Milestone**: Manuscript ready for internal review
-
-### Weeks 25-26: Validation & Dissemination
-**Deliverables**:
-- Biochemical assay results incorporated
-- Final manuscript and preprint submission
-- Code release and documentation
-- Conference presentation preparation
-**Milestone**: Research published and code publicly available
-
-## 4. Resources
-
-### Computational Requirements
-- **Primary Cluster**: 8x NVIDIA A100 (80GB) GPUs
-- **Secondary**: 16x V100 (32GB) for parallel experiments
-- **CPU**: 128 cores, 1TB RAM for data preprocessing
-- **Storage**: 50TB NVMe SSD for datasets and model checkpoints
-- **Estimated Cost**: $150,000-200,000 for 6 months
-
-### Datasets and Versions
-- **PDBbind v2023**: Protein-ligand binding data (19,443 complexes)
-- **ChEMBL v33**: Bioactivity database (2.1M compounds, 19M activities)
-- **ZINC20**: Chemical space for virtual screening (1.4B compounds)
-- **TCGA-LUAD**: Lung adenocarcinoma multi-omics (566 patients)
-- **GDSC v2**: Cancer cell line drug sensitivity (1,001 cell lines)
-- **DrugComb v2.0**: Drug combination database (448k combinations)
-
-### Software and Libraries
-- **Deep Learning**: PyTorch 2.1, PyTorch Geometric 2.4, DGL 1.1
-- **Cheminformatics**: RDKit 2023.09, OpenEye Toolkits, Schrödinger Suite
-- **Molecular Modeling**: OpenMM 8.0, GROMACS 2023, AutoDock Vina 1.2
-- **Data Science**: pandas 2.1, scikit-learn 1.3, NumPy 1.25
-- **Visualization**: matplotlib 3.7, seaborn 0.12, PyMOL 2.5
-- **Reproducibility**: MLflow 2.7, Weights & Biases, Docker containers
-
-### Personnel Requirements
-- **Principal Investigator**: 1.0 FTE (project oversight, manuscript writing)
-- **Senior ML Engineer**: 1.0 FTE (model development, infrastructure)
-- **Computational Biologist**: 1.0 FTE (data analysis, biological interpretation)
-- **Research Associate**: 0.5 FTE (experimental validation coordination)
-- **Graduate Students**: 2.0 FTE (specific experiment execution)
-
-## 5. Risks and Mitigations
-
-| Risk | Probability | Impact | Mitigation Strategy |
-|------|-------------|--------|-------------------|
-| **Data Quality Issues** | High (70%) | Medium | Implement robust data validation pipelines; use multiple data sources; manual curation of critical subsets |
-| **Model Overfitting** | Medium (50%) | High | Rigorous cross-validation; external test sets; early stopping; regularization techniques |
-| **Computational Resource Shortage** | Medium (40%) | High | Cloud backup resources (AWS/GCP); staged experiment execution; resource monitoring |
-| **Experimental Validation Failures** | High (60%) | Medium | Select diverse compound sets; multiple assay formats; CRO backup options |
-| **Reproducibility Issues** | Medium (45%) | Medium | Version control all code; containerized environments; detailed documentation |
-| **Negative Results** | Medium (35%) | Low | Frame as important negative findings; focus on methodology contributions; pivot strategies |
-| **Timeline Delays** | High (65%) | Medium | 20% buffer time built in; parallel experiment execution; milestone-based pivoting |
-| **Key Personnel Departure** | Low (15%) | High | Cross-training; detailed documentation; backup expertise identification |
-
-## 6. Integrated Recipe and Scaling Study
-
-### Integration Strategy
-The seven experiments form an integrated pipeline:
-
-1. **Foundation** (Exp 1): Binding affinity prediction provides the scoring function for all downstream tasks
-2. **Generation** (Exp 2): Uses Exp 1 models to evaluate generated compounds
-3. **Screening** (Exp 3): Combines Exp 1 and 2 for large-scale virtual screening
-4. **Personalization** (Exp 4): Adds patient-specific factors to compound selection
-5. **Optimization** (Exp 5): Refines promising compounds from Exp 2-3
-6. **Privacy** (Exp 6): Enables multi-institutional deployment of Exp 4
-7. **Combinations** (Exp 7): Extends single-agent predictions to combination therapy
-
-### Pareto Analysis
-**Expected Trade-offs**:
-- **Accuracy vs Speed**: Higher accuracy models (transformers) vs faster inference (linear models)
-- **Novelty vs Drug-likeness**: More novel compounds vs higher probability of success
-- **Privacy vs Performance**: Federated learning vs centralized training
-- **Generalization vs Specialization**: Pan-cancer models vs EGFR-specific models
-
-### Sensitivity Studies
-**Critical Parameters**:
-1. **Training Data Size**: Performance saturation curves for each model type
-2. **Model Complexity**: Parameter count vs generalization performance
-3. **Feature Engineering**: Impact of different molecular representations
-4. **Validation Strategy**: Effect of different train/test splits on conclusions
-
-### Success Metrics Integration
-**Primary Success**: At least 3 AI-generated compounds with IC50 < 100nM against EGFR
-**Secondary Success**: Validated computational pipeline with >80% accuracy across all tasks
-**Tertiary Success**: Published methodology enabling broader cancer research applications
-
-This plan represents a realistic 6-month contribution to AI-driven cancer research, focusing on measurable advances in drug discovery rather than impossible promises of immediate cures [P1][P3][P7].
-
-## Citations
-
-- [P1] Towards AI-Based Precision Oncology: A Machine Learning Framework for Personalized Counterfactual Treatment Suggestions based on Multi-Omics Data — http://arxiv.org/abs/2402.12190v2
-- [P2] Deep Learning in Computational Biology: Advancements, Challenges, and Future Outlook — http://arxiv.org/abs/2310.03086v1
-- [P3] Structure-based drug discovery with deep learning — http://arxiv.org/abs/2212.13295v1
-- [P4] Social and environmental impact of recent developments in machine learning on biology and chemistry research — http://arxiv.org/abs/2210.00356v1
-- [P5] Opportunities in deep learning methods development for computational biology — http://arxiv.org/abs/2406.08686v1
-- [P6] Computational model discovery with reinforcement learning — http://arxiv.org/abs/2001.00008v1
-- [P7] Building Flexible, Scalable, and Machine Learning-ready Multimodal Oncology Datasets — http://arxiv.org/abs/2310.01438v2
-- [P8] Circuit design in biology and machine learning. I. Random networks and dimensional reduction — http://arxiv.org/abs/2408.09604v2
+First, scope and realism: “Cure cancer tomorrow” is not scientifically feasible. A near-term, high-impact AI objective is to improve precision oncology decisions (e.g., identify patients likely to benefit from immunotherapy and infer actionable biomarkers) using routine data such as H&E whole-slide images (WSIs), clinical variables, and available genomics. Below is a turnkey, publication-grade plan to develop and validate such models with rigorous methodology and external validation. Where claims are supported by the literature, I cite sources. For medical-AI reporting and evaluation, I follow established guidelines (TRIPOD-AI, STARD, CONSORT-AI/SPIRIT-AI, CLAIM) [1,2,3,4,5].
+
+1) Problem framing and goals
+
+Goal: Build and externally validate deployable AI models that:
+- Predict microsatellite instability (MSI) from H&E WSIs with AUROC ≥0.90 on external cohorts and calibration ECE ≤0.05; accuracy not worse than −10% relative to internal [10].
+- Predict tumor mutational burden (TMB-hi vs TMB-lo cutoff 10 mut/Mb) from H&E WSIs with AUROC ≥0.75 external and ECE ≤0.07; net benefit improvement ≥0.05 at clinically relevant thresholds [12].
+- Predict PD-1/PD-L1 checkpoint inhibitor benefit (objective response within 6 months and/or PFS/OS improvement) from multimodal inputs (WSI + clinical ± genomics) with time-dependent C-index ≥0.65 and hazard ratio (HR) ≥2.0 between top vs bottom tertiles of predicted benefit on external cohort; net benefit ≥0.05 [14].
+- Ensure robustness: ≤10% performance drop between internal validation and at least one external site; pass decision-curve utility checks; report per-TCGA cancer-type subgroup performance where relevant [1,4].
+- Success criteria: All targets met with pre-registered analysis plan, patient-level splits (no slide leakage), calibration, and transparent reporting per TRIPOD-AI/CLAIM [1,5]. If external performance falls >10% below internal or calibration fails (ECE >0.1), trigger remediation.
+
+2) Experiments (5 total; each with baselines, ablations, thresholds)
+
+Shared setup across experiments
+- Data:
+  - TCGA (COAD/READ for MSI; pan-cancer for TMB; curated ICI-treated subsets when available for outcomes), CPTAC as an external WSI source; dedicated NSCLC PD-L1 dataset for immune context supervision [P2].
+  - For ICI response: public cohorts with response/PFS/OS labels and clinical covariates; if paired WSIs are limited, use multi-institution retrospective cohorts via data use agreements; define go/no-go if access fails by Month 2.
+- Preprocessing:
+  - WSI tiling at 20× (0.5 µm/px), 256–512 px tiles; tissue detection; Macenko/Vahadane stain normalization; tile rejection for artifacts; patch-level features from ImageNet- or self-supervised ViT (DINOv2) encoders; multi-magnification pyramids for MIL [P6,P5].
+  - Optional segmentation prompts for tissue compartments leveraging SAM variants tailored to WSI [P1].
+- Splits:
+  - Patient-level stratified splits; internal 5-fold CV; external validation by site/cohort to assess domain shift [1,4].
+- Metrics:
+  - Classification: AUROC, AUPRC, balanced accuracy, calibration (ECE, Brier), subgroup AUROC.
+  - Survival: Harrell’s C-index, time-dependent AUROC, log-rank p, HR (Cox); decision-curve analysis (net benefit).
+- Reporting: TRIPOD-AI, STARD items for diagnostic tasks; protocol preregistration for outcome models (SPIRIT-AI), with prospective analysis of model performance and calibration [1,2,3,4,5].
+
+Experiment 1: MSI-from-H&E WSI using MIL
+- Hypothesis H1: An attention-based MIL model with multi-magnification features achieves AUROC 0.90±0.03 for MSI vs MSS on TCGA-COAD/READ external test sets; falsify if AUROC <0.87. Expected ECE ≤0.05; falsify if ECE >0.1 [10].
+- Setup:
+  - Models: ABMIL baseline; graph MIL (MS-RGCN) [P5]; hierarchical MIL with 5×/10×/20× features [P6].
+  - Encoder: ViT-B/16 (DINOv2) features; compare to ResNet50 ImageNet features.
+  - Datasets: TCGA-COAD/READ WSI with gold MSI labels; external validation via CPTAC-COAD/READ if available; cross-center TCGA splits [10].
+  - Hyperparameters: batch size 1 slide per step; 8–16 heads; learning rate 1e-4; weight decay 1e-4; early stop on AUROC; 100–150 epochs.
+- Baselines:
+  - Published MSI-from-H&E models (Kather et al., Nat Med 2019) [10].
+  - Weakly supervised MIL segmentation baselines [P6].
+- Ablations (2–4):
+  - A1: Encoder type (ResNet50 vs ViT-B/16).
+  - A2: Magnification levels (single 20× vs multi-scale 5×/10×/20×).
+  - A3: Stain normalization on/off and augmentation strength.
+  - A4: Tissue compartment prompts from SAM variant (on/off) [P1].
+- Evaluation:
+  - Primary AUROC; secondary AUPRC, ECE, subgroup AUROC by tumor location.
+- Expected outcome:
+  - AUROC 0.90–0.93 internal; 0.88–0.91 external; ECE 0.03–0.05; minimal domain degradation ≤0.02 AUROC [10].
+
+Experiment 2: TMB-hi inference from H&E WSI
+- Hypothesis H2: MIL model predicts TMB-hi (≥10 mut/Mb) with AUROC 0.75±0.03 external; falsify if AUROC <0.72. Calibration ECE ≤0.07; falsify if >0.1. Decision-curve net benefit +0.05 at 10–20% threshold [12].
+- Setup:
+  - Models: same MIL backbones as E1; knowledge-aligned MIL incorporating morphological concepts [P8].
+  - Data: TCGA pan-cancer WSI with TMB from MAF; external: CPTAC or other public WSIs with WES; hold-out by cancer type.
+  - Hyperparameters: as E1; class-weighting for imbalance; focal loss sweep.
+- Baselines:
+  - Prior DL TMB-from-WSI study [12].
+  - Clinical-only logistic regression (age, stage).
+- Ablations:
+  - B1: Concept-aligned MIL vs vanilla MIL [P8].
+  - B2: Class threshold (≥10 vs ≥13 mut/Mb).
+  - B3: Feature extractor (ResNet50 vs ViT-B/16).
+  - B4: Stain normalization strategies.
+- Evaluation:
+  - AUROC, AUPRC, ECE, per-cancer-type AUROC; decision curves vs clinical baseline.
+- Expected outcome:
+  - Internal AUROC 0.78–0.82; external 0.73–0.77; ECE 0.05–0.07 [12].
+
+Experiment 3: PD-L1 expression and TIME characterization from H&E
+- Hypothesis H3: WSI-based model predicts PD-L1 positivity (≥50% TPS) with AUROC 0.78±0.04 on NSCLC external dataset; falsify if AUROC <0.74. Additionally, TIME quantification correlates with PD-L1 (Spearman ρ ≥0.35) [P2,14].
+- Setup:
+  - Models: MIL with multi-stain fusion where available (e.g., H&E + PD-L1 if pairs exist), or multi-resolution MIL; optional SAM-based tissue/cell segmentation to enrich features [P1,P3].
+  - Data: NSCLC H&E with paired PD-L1 labels (TPS); use tissue/cell-level annotations where available [P2].
+- Baselines:
+  - Clinical-only baseline (smoking, stage).
+  - Published WSI PD-L1 prediction study [14].
+- Ablations:
+  - C1: With/without multi-stain fusion (if available) [P3].
+  - C2: SAM-based tissue/cell segmentation features vs raw patch features [P1].
+  - C3: Magnification 10× vs 20×.
+- Evaluation:
+  - AUROC/AUPRC; calibration; correlation of TIME proxies with PD-L1.
+- Expected outcome:
+  - AUROC 0.76–0.80 external; ECE ≤0.08; ρ 0.35–0.45 [P2,14].
+
+Experiment 4: Multimodal fusion for immunotherapy benefit prediction (ICI response)
+- Hypothesis H4: Multimodal fusion (WSI + clinical ± genomics such as TMB, MSI) yields time-dependent C-index 0.65±0.03 for PFS and HR ≥2.0 between high vs low predicted benefit on external ICI cohort; falsify if C-index <0.62 or HR <1.6 [14].
+- Setup:
+  - Models: Late fusion (Pathomic-style fusion) and attention-based co-attention fusion; survival heads (DeepSurv/Cox PH).
+  - Inputs: WSI-derived slide-level embeddings from E1–E3, clinical covariates (age, ECOG, stage), optional genomics (TMB, MSI calls).
+  - Data: ICI-treated cohorts with WSIs and outcomes (institutional or consortia). If limited, start with NSCLC and melanoma.
+- Baselines:
+  - Clinical-only Cox model; clinical+TMB; clinical+PD-L1 (IHC) [14].
+- Ablations:
+  - D1: Modality subsets (WSI-only vs WSI+clin vs WSI+clin+gen).
+  - D2: Fusion strategy (late vs co-attention).
+  - D3: Loss (Cox vs rank-based losses).
+  - D4: Calibration with isotonic vs Platt scaling.
+- Evaluation:
+  - C-index, time-dependent AUROC; HR with 95% CI; decision curves and NRI vs clinical+TMB baseline; subgroup analyses by cancer type [1,4].
+- Expected outcome:
+  - C-index 0.64–0.69 external; HR 2.0–2.8; net benefit +0.05–0.10 compared to clinical+TMB [14].
+
+Experiment 5: Robustness and domain shift mitigation
+- Hypothesis H5: Domain generalization (stain augmentation, color jitter, data enrichment) reduces external AUROC drop by ≥50% relative to naive training; falsify if reduction <30% [P4].
+- Setup:
+  - Start from best E1–E3 models; add robust stain transforms, intensity perturbations, and data enrichment per [P4].
+  - Evaluate across institutions (external cohorts by site).
+- Baselines:
+  - Vanilla training without augmentation.
+- Ablations:
+  - E1: Augmentation strength (low/med/high).
+  - E2: Stain normalization method (Macenko vs Vahadane).
+  - E3: Mixup/CutMix at slide-embedding level.
+- Evaluation:
+  - Delta AUROC between internal and external; calibration drift; error analysis by scanner/vendor.
+- Expected outcome:
+  - External AUROC drop reduced from ~0.05–0.07 to ~0.02–0.04; ECE unchanged or improved [P4].
+
+3) Timeline (6 months; biweekly checkpoints)
+
+Month 1
+- M1.1 (Week 2): Data governance approvals; finalize cohorts; preregister analysis protocols (TRIPOD-AI/STARD for diagnostic tasks; SPIRIT-AI for outcome models) [1,3,4].
+- M1.2 (Week 4): Build WSI pipeline (tiling, normalization, QC); reproduce patch feature extraction; deliverable: unit-tested pipeline; success: ≥95% slides pass QC; compute/storage secured.
+
+Month 2
+- M2.1 (Week 6): Implement MIL baselines (ABMIL, graph MIL); run pilot on MSI; deliverable: internal AUROC ≥0.85.
+- M2.2 (Week 8): External MSI test; success: external AUROC ≥0.87 and ECE ≤0.1; Go/No-Go: if underperforms, pivot encoder/aug ablations.
+
+Month 3
+- M3.1 (Week 10): TMB model; internal AUROC ≥0.78; decision curves computed.
+- M3.2 (Week 12): PD-L1 model; external AUROC ≥0.75; deliverable: ablations and error analysis.
+
+Month 4
+- M4.1 (Week 14): Multimodal fusion prototypes; clinical-only and clinical+TMB baselines; deliverable: survival pipelines with C-index calculations and calibration curves [1].
+- M4.2 (Week 16): External ICI evaluation; success: C-index ≥0.62 and HR ≥1.8; Go/No-Go: if unmet, iterate fusion/regularization.
+
+Month 5
+- M5.1 (Week 18): Robustness/shift study; deliver: augmentation sweep; success: ≥30% reduction in external performance drop [P4].
+- M5.2 (Week 20): Model calibration and net benefit analyses; finalize tables per TRIPOD-AI/STARD; draft manuscript figures [1,4].
+
+Month 6
+- M6.1 (Week 22): External validation across sites; finalize subgroup analyses; success: ≤10% performance drop vs internal on at least one external site [1].
+- M6.2 (Week 24): Freeze models; complete documentation (CLAIM checklist), share code/weights where permissible; submit to conference/journal [5]. Decision point: proceed to prospective study planning per CONSORT-AI/SPIRIT-AI if results meet targets [2,3].
+
+4) Resources
+
+Compute
+- Feature extraction from WSIs:
+  - 1,500–3,000 slides; 20×, ~1e5–3e5 tiles/slide; precompute ViT-B/16 features on 8× A100 80GB: ~0.3–0.6 GPU-hr/slide → 450–1,800 GPU-hrs total (parallelizable).
+- MIL training:
+  - Per task (MSI, TMB, PD-L1): 1× A100 40–80GB; 10–20 GPU-hrs per training run; 30–60 runs including ablations → 300–1,200 GPU-hrs.
+- Multimodal survival models:
+  - 1× A100 40GB; 5–10 GPU-hrs/run; ~100–200 GPU-hrs total.
+- Storage: 50–100 TB for WSIs and features; fast SSD/NVMe scratch.
+
+Datasets
+- TCGA-COAD/READ (MSI), TCGA pan-cancer (TMB from MAF files; harmonized clinical).
+- CPTAC WSIs for external validation (site/scanner shift).
+- NSCLC PD-L1 annotated dataset (H&E, PD-L1 IHC) [P2].
+- ICI-treated cohorts with paired WSI + outcomes (institutional or public; document inclusion/exclusion and censoring rules).
+- Splits: patient-level; reserve external cohorts; prevent multiple slides per patient across splits [1,4].
+
+Tooling and libraries
+- PyTorch 2.3+, timm 1.0+, MONAI 1.3+, scikit-learn 1.5+, lifelines 0.27, pycox 0.3.
+- WSI: OpenSlide 3.4.1, cuCIM 24.04, tiatoolbox 1.4.
+- Stain tools: histomicstk or StainTools.
+- Repro: Hydra/Weights & Biases, Docker/Singularity; model cards per CLAIM [5].
+
+5) Risks and mitigations
+
+- Risk: Data leakage (patient-level) inflates results.
+  - Probability: Medium; Impact: High.
+  - Mitigation: Strict patient-level splits; unit tests to detect cross-split MRNs/IDs; audit logs; independent statistician review [1,4,5].
+
+- Risk: External generalization gap >10%.
+  - Probability: Medium; Impact: High.
+  - Mitigation: Robust augmentation and data enrichment [P4]; domain-aware calibration; multi-site validation and error analysis; predefine fail-forward criteria.
+
+- Risk: Limited ICI cohorts with WSIs and outcomes.
+  - Probability: Medium; Impact: Medium.
+  - Mitigation: Early data access agreements; start with cancer types where data exist (NSCLC, melanoma); fall back to surrogate endpoints (PD-L1, TMB) and prospective data collection plan [2,3].
+
+- Risk: Label noise for PD-L1/TMB thresholds.
+  - Probability: Medium; Impact: Medium.
+  - Mitigation: Sensitivity analyses across thresholds; robust losses; report uncertainty and calibration bands.
+
+- Risk: Calibration drift across sites.
+  - Probability: Medium; Impact: Medium.
+  - Mitigation: Site-wise recalibration (isotonic/Platt), report ECE/Brier per site; deploy with periodic calibration monitoring [1,4].
+
+- Risk: Reproducibility gaps and reporting deficiencies.
+  - Probability: Low; Impact: High.
+  - Mitigation: Follow TRIPOD-AI/CLAIM checklists; preregister protocols; release code and model cards [1,5].
+
+- Risk: Overfitting to morphology proxies not causally tied to biology.
+  - Probability: Medium; Impact: Medium.
+  - Mitigation: Concept-aligned MIL and pathologist review [P8]; causal sensitivity analyses; external biological correlates.
+
+6) Integrated recipe and scaling study
+
+- Integrated pipeline:
+  - Train robust MIL encoders (E1–E3) to infer MSI, TMB, PD-L1/TIME phenotypes from H&E. These serve as slide-level embeddings that capture biomarker-relevant morphology.
+  - Fuse these embeddings with clinical/genomic covariates for ICI-benefit modeling (E4). Use decision-curve analysis to quantify clinical utility vs standard-of-care baselines (clinical+TMB/PD-L1) [14,1].
+  - Use robustness study (E5) to select augmentation/normalization that optimize Pareto front of accuracy vs calibration vs generalization (plot AUROC vs ECE vs external drop). Conduct sensitivity analyses over:
+    - Magnification and encoder size (ViT-B vs ViT-L).
+    - Data scale (number of slides/patients) and class balance.
+    - Thresholds (TMB 10 vs 13 mut/Mb; PD-L1 1/50% TPS).
+- Pareto/Scaling:
+  - Fit log-linear scaling laws for performance vs number of slides and vs number of institutions; target marginal gains where external drop ≤0.02 while ECE ≤0.05.
+  - Report per-cancer-type Pareto fronts to inform where deployment is viable first (e.g., MSI-rich subsets in colorectal) [10].
+
+Concrete, falsifiable experiments summary
+- E1: MSI AUROC ≥0.87 external, ECE ≤0.1 (falsify otherwise) [10].
+- E2: TMB AUROC ≥0.72 external, ECE ≤0.1; net benefit +0.05 (falsify otherwise) [12].
+- E3: PD-L1 AUROC ≥0.74 external; ρ ≥0.35 with TIME (falsify otherwise) [P2,14].
+- E4: ICI benefit C-index ≥0.62 and HR ≥1.6 external; net benefit +0.05 (falsify otherwise) [14].
+- E5: External drop reduction ≥30% via robustness methods (falsify otherwise) [P4].
+
+State-of-the-art baselines and anchors
+- MSI from H&E (Kather et al., 2019, Nat Med) [10].
+- TMB from WSIs (recent DL study) [12].
+- PD-L1 from H&E and ICI outcome modeling [14].
+- WSI MIL and segmentation foundations [P5,P6,P1].
+- Multi-stain/fusion for histopathology [P3].
+- Reporting standards for medical AI [1,2,3,4,5].
+
+Key takeaways
+- The plan focuses on deployable, high-utility prediction tasks with strong literature precedent (MSI, TMB, PD-L1, ICI benefit) and rigorous evaluation per medical-AI guidelines.
+- Success hinges on external validation, calibration, and clinical utility demonstrations, not just internal AUROC.
+- If targets are met, proceed to a prospective study under CONSORT-AI/SPIRIT-AI to assess real-world impact [2,3].
+
+Citations
+[P1] WSI-SAM: Multi-resolution Segment Anything Model (SAM) for histopathology whole-slide images — http://arxiv.org/abs/2403.09257v2
+[P2] A tissue and cell-level annotated H&E and PD-L1 histopathology image dataset in non-small cell lung cancer — http://arxiv.org/abs/2507.16855v1
+[P3] UNICORN: A Deep Learning Model for Integrating Multi-Stain Data in Histopathology — http://arxiv.org/abs/2409.17775v1
+[P4] Realistic Data Enrichment for Robust Image Segmentation in Histopathology — http://arxiv.org/abs/2304.09534v2
+[P5] Multi-Scale Relational Graph Convolutional Network for Multiple Instance Learning in Histopathology Images — http://arxiv.org/abs/2212.08781v2
+[P6] Weakly supervised multiple instance learning histopathological tumor segmentation — http://arxiv.org/abs/2004.05024v4
+[P8] Aligning Knowledge Concepts to Whole Slide Images for Precise Histopathology Image Analysis — http://arxiv.org/abs/2411.18101v1
+
+[1] TRIPOD+AI reporting guideline — https://www.equator-network.org/reporting-guidelines/tripod-statement/
+[2] CONSORT-AI extension (trial reporting) — https://www.bmj.com/content/370/bmj.m3164
+[3] SPIRIT-AI extension (trial protocols) — https://www.bmj.com/content/370/bmj.m3210
+[4] STARD 2015 diagnostic accuracy reporting — https://pure-oai.bham.ac.uk/ws/files/27429388/Bossuyt_2015_STARD_update_BMJ.pdf
+[5] CLAIM checklist (AI in medical imaging) — https://www.equator-network.org/reporting-guidelines/checklist-for-artificial-intelligence-in-medical-imaging-claim-a-guide-for-authors-and-reviewers/
+[10] Kather et al., Deep learning can predict microsatellite instability directly from histology in gastrointestinal cancer (Nat Med 2019) — https://pubmed.ncbi.nlm.nih.gov/31160815/
+[12] Deep learning-based approach to reveal tumor mutational burden status from WSIs — https://arxiv.org/pdf/2204.03257
+[14] Computational analysis of WSIs predicts PD-L1 expression and progression-free survival in immunotherapy-treated NSCLC — https://pmc.ncbi.nlm.nih.gov/articles/PMC12056990/

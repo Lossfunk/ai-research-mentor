@@ -1,328 +1,200 @@
-# Turnkey Research Execution Plan: Graph Neural Networks for Sea Ice Analysis
-
-## 1. Problem Framing and Goals
-
-### Primary Objective
-Develop spatially-aware Graph Neural Networks for multi-scale sea ice concentration prediction and change detection, achieving ≥92% accuracy on daily predictions and ≥85% accuracy on 7-day forecasts compared to current operational models.
-
-### Specific Measurable Objectives
-1. **Spatial Prediction Accuracy**: Achieve Mean Absolute Error (MAE) ≤ 8% for sea ice concentration prediction on 25km grid cells
-2. **Temporal Forecasting**: Maintain Root Mean Square Error (RMSE) ≤ 12% for 1-7 day forecasts
-3. **Edge Detection Performance**: Achieve F1-score ≥ 0.88 for sea ice edge detection (15% concentration threshold)
-4. **Computational Efficiency**: Reduce inference time by ≥40% compared to physics-based models while maintaining accuracy
-5. **Uncertainty Quantification**: Provide calibrated uncertainty estimates with reliability diagrams showing ≤10% deviation from perfect calibration
-
-### Success Criteria
-- **Primary**: Outperform ECMWF operational sea ice forecasts by ≥5% RMSE on Arctic Ocean test regions
-- **Secondary**: Demonstrate transferability across Arctic/Antarctic regions with ≤15% performance degradation
-- **Tertiary**: Enable real-time processing of daily satellite imagery within 2-hour operational windows
-
-## 2. Experiments (7 Core Experiments with Ablations)
-
-### Experiment 1: Spatial Graph Construction and Node Representation
-**Hypothesis H1**: Adaptive spatial graph construction using k-nearest neighbors with distance-weighted edges will outperform fixed grid-based approaches by ≥7% RMSE. Falsify if improvement <3% RMSE.
-
-**Detailed Setup**:
-- **Models**: GraphSAGE, GCN, GAT with custom spatial encoders
-- **Datasets**: NSIDC Sea Ice Index v3.0 (1979-2024), MODIS Terra/Aqua daily composites
-- **Grid Resolution**: 25km EASE-Grid 2.0 projection
-- **Input Features**: Sea ice concentration, surface temperature, wind vectors, albedo (4 channels)
-- **Graph Construction**: k=8,16,32 nearest neighbors, distance threshold 100-300km
-
-**Ablation Studies**:
-1. **Graph Topology**: Fixed grid vs. adaptive k-NN vs. Delaunay triangulation vs. distance-threshold graphs
-2. **Node Features**: Raw satellite data vs. engineered features vs. temporal differences vs. multi-scale aggregations
-3. **Edge Weights**: Euclidean distance vs. geodesic distance vs. feature similarity vs. learned weights
-4. **Spatial Encoding**: Absolute coordinates vs. relative positions vs. spherical harmonics vs. learned embeddings
-5. **Temporal Context**: Single timestep vs. 3-day vs. 7-day vs. 14-day sliding windows
-
-**Baselines**: Linear interpolation, Random Forest, CNN-LSTM, standard GCN without spatial encoding
-
-**Evaluation Metrics**: RMSE, MAE, Structural Similarity Index (SSIM), Edge Preservation Index
-**Expected Outcome**: 8-12% RMSE improvement over CNN baselines, with adaptive k-NN (k=16) performing best
-
-### Experiment 2: Multi-Scale Temporal Dynamics Modeling
-**Hypothesis H2**: Hierarchical temporal GNNs with attention mechanisms will capture sea ice dynamics across multiple timescales, achieving ≥10% improvement in 7-day forecasts. Falsify if improvement <5%.
-
-**Detailed Setup**:
-- **Architecture**: Multi-layer temporal GNN with LSTM/GRU cells and temporal attention
-- **Temporal Scales**: Daily, 3-day, weekly, monthly aggregations
-- **Sequence Length**: 14-60 days historical context
-- **Attention Mechanism**: Multi-head temporal attention with 4-8 heads
-
-**Ablation Studies**:
-1. **Temporal Aggregation**: Single-scale vs. multi-scale hierarchical vs. learnable scale selection
-2. **Sequence Length**: 7, 14, 30, 60 days of historical context
-3. **Recurrent Units**: LSTM vs. GRU vs. Transformer blocks vs. simple RNN
-4. **Attention Design**: No attention vs. temporal attention vs. spatial-temporal attention vs. cross-attention
-5. **Loss Functions**: MSE vs. MAE vs. Huber vs. focal loss for imbalanced regions
-
-**Baselines**: ARIMA, Prophet, ConvLSTM, standard LSTM without graph structure
-**Expected Outcome**: 15-20% improvement in multi-day forecasting accuracy
-
-### Experiment 3: Physics-Informed Graph Neural Networks
-**Hypothesis H3**: Incorporating sea ice physics constraints (mass conservation, thermodynamic equations) into GNN loss functions will improve physical consistency by ≥25% while maintaining prediction accuracy within 2% of unconstrained models. Falsify if physics violations increase or accuracy drops >5%.
-
-**Detailed Setup**:
-- **Physics Constraints**: Ice mass conservation, heat balance equations, momentum conservation
-- **Loss Components**: Prediction loss (70%) + physics loss (20%) + boundary condition loss (10%)
-- **Constraint Implementation**: Soft constraints via penalty terms, hard constraints via projection layers
-
-**Ablation Studies**:
-1. **Constraint Strength**: Physics loss weights 0.1, 0.2, 0.5, 1.0 relative to prediction loss
-2. **Physics Components**: Mass conservation only vs. full thermodynamics vs. momentum equations
-3. **Constraint Type**: Soft penalties vs. hard constraints vs. hybrid approaches
-4. **Boundary Conditions**: Open ocean vs. land boundaries vs. ice shelf interactions
-5. **Temporal Consistency**: Instantaneous physics vs. temporal derivative constraints
-
-**Baselines**: Unconstrained GNN, physics-based CICE model, hybrid statistical-physical models
-**Expected Outcome**: 20-30% reduction in physics violations with <3% accuracy trade-off
-
-### Experiment 4: Multi-Modal Sensor Fusion
-**Hypothesis H4**: Fusing passive microwave, optical, and SAR satellite data through graph attention mechanisms will improve accuracy by ≥12% compared to single-sensor approaches. Falsify if improvement <6%.
-
-**Detailed Setup**:
-- **Data Sources**: AMSR2 passive microwave, MODIS optical, Sentinel-1 SAR
-- **Fusion Strategy**: Early fusion (concatenated features) vs. late fusion (ensemble) vs. attention-based fusion
-- **Temporal Alignment**: Daily composites with cloud masking and gap filling
-
-**Ablation Studies**:
-1. **Sensor Combinations**: Single sensors vs. pairwise combinations vs. all three sensors
-2. **Fusion Architecture**: Feature concatenation vs. cross-attention vs. modality-specific encoders
-3. **Missing Data Handling**: Zero imputation vs. learned embeddings vs. attention masking
-4. **Preprocessing**: Raw data vs. normalized vs. standardized vs. domain-specific transformations
-5. **Spatial Registration**: Nearest neighbor vs. bilinear interpolation vs. learned alignment
-
-**Baselines**: Single-sensor GNNs, simple concatenation, weighted averaging
-**Expected Outcome**: 10-15% accuracy improvement with attention-based fusion performing best
-
-### Experiment 5: Uncertainty Quantification and Ensemble Methods
-**Hypothesis H5**: Bayesian GNNs with Monte Carlo dropout will provide well-calibrated uncertainty estimates with Expected Calibration Error (ECE) ≤ 0.05 while maintaining prediction accuracy. Falsify if ECE > 0.10 or accuracy drops >3%.
-
-**Detailed Setup**:
-- **Uncertainty Methods**: Monte Carlo dropout, variational inference, deep ensembles, evidential learning
-- **Ensemble Size**: 5-20 models with different initializations and architectures
-- **Calibration Metrics**: ECE, Maximum Calibration Error (MCE), Brier Score
-
-**Ablation Studies**:
-1. **Uncertainty Method**: MC dropout vs. variational Bayes vs. deep ensembles vs. evidential networks
-2. **Dropout Rates**: 0.1, 0.2, 0.3, 0.5 for MC dropout
-3. **Ensemble Diversity**: Random initialization vs. different architectures vs. different training data
-4. **Calibration Techniques**: Temperature scaling vs. Platt scaling vs. isotonic regression
-5. **Uncertainty Aggregation**: Mean prediction vs. weighted ensemble vs. mixture of experts
-
-**Baselines**: Single deterministic model, simple ensemble averaging, Gaussian process regression
-**Expected Outcome**: ECE ≤ 0.05 with 5-10% improvement in decision-making metrics
-
-### Experiment 6: Transfer Learning and Domain Adaptation
-**Hypothesis H6**: Models pre-trained on Arctic data will transfer to Antarctic regions with ≥80% of original performance after fine-tuning. Falsify if performance <70% of Arctic baseline.
-
-**Detailed Setup**:
-- **Source Domain**: Arctic Ocean (2010-2020)
-- **Target Domains**: Antarctic regions, different time periods (1980s-1990s), different sensors
-- **Transfer Methods**: Fine-tuning, domain adversarial training, meta-learning
-
-**Ablation Studies**:
-1. **Transfer Strategy**: Full fine-tuning vs. frozen encoder vs. gradual unfreezing vs. adapter layers
-2. **Domain Adaptation**: No adaptation vs. adversarial training vs. maximum mean discrepancy vs. CORAL
-3. **Data Requirements**: 10%, 25%, 50%, 100% of target domain data for fine-tuning
-4. **Architecture Components**: Which layers to freeze/adapt in transfer learning
-5. **Temporal Transfer**: Same season vs. different seasons vs. climate regime changes
-
-**Baselines**: Training from scratch on target domain, simple domain shift without adaptation
-**Expected Outcome**: 75-85% performance retention with 25% target domain data
-
-### Experiment 7: Real-Time Operational Deployment
-**Hypothesis H7**: Optimized GNN models will achieve <2-hour end-to-end processing time for daily global sea ice analysis while maintaining ≥90% of full model accuracy. Falsify if processing time >3 hours or accuracy <85%.
-
-**Detailed Setup**:
-- **Optimization Techniques**: Model pruning, quantization, knowledge distillation, efficient graph sampling
-- **Hardware**: NVIDIA A100 GPUs, distributed processing across 2-4 nodes
-- **Pipeline**: Data ingestion → preprocessing → inference → post-processing → visualization
-
-**Ablation Studies**:
-1. **Model Compression**: No compression vs. pruning vs. quantization vs. distillation vs. combined approaches
-2. **Graph Sampling**: Full graph vs. FastGCN vs. GraphSAINT vs. control variate sampling
-3. **Batch Processing**: Single image vs. batch processing vs. streaming processing
-4. **Hardware Configuration**: Single GPU vs. multi-GPU vs. distributed processing
-5. **Precision**: FP32 vs. FP16 vs. mixed precision vs. INT8 quantization
-
-**Baselines**: Full precision model, CPU-only processing, sequential processing
-**Expected Outcome**: 60-80% speedup with <5% accuracy degradation
-
-## 3. Timeline (26 Weeks = 6 Months)
-
-### Weeks 1-2: Infrastructure and Data Preparation
-**Sprint 1 Deliverables**:
-- Set up computing environment (SLURM cluster, Docker containers)
-- Download and preprocess NSIDC, MODIS, AMSR2 datasets (2010-2024)
-- Implement data loaders and basic graph construction utilities
-- **Milestone**: Process 1 month of multi-sensor data successfully
-
-### Weeks 3-4: Baseline Implementation
-**Sprint 2 Deliverables**:
-- Implement CNN-LSTM and standard GCN baselines
-- Establish evaluation pipeline with cross-validation framework
-- Create visualization tools for spatial predictions and temporal series
-- **Milestone**: Achieve baseline RMSE ≤ 15% on validation set
-
-### Weeks 5-6: Experiment 1 - Spatial Graph Construction
-**Sprint 3 Deliverables**:
-- Complete all 5 ablation studies for spatial graph construction
-- Optimize hyperparameters using Optuna with 100+ trials
-- **Milestone**: Achieve ≥5% improvement over CNN baseline
-
-### Weeks 7-8: Experiment 2 - Temporal Dynamics
-**Sprint 4 Deliverables**:
-- Implement hierarchical temporal GNN architectures
-- Complete temporal ablation studies
-- **Milestone**: Demonstrate 7-day forecasting capability with RMSE ≤ 12%
-
-### Weeks 9-10: Experiment 3 - Physics-Informed Constraints
-**Sprint 5 Deliverables**:
-- Implement physics loss functions and constraint mechanisms
-- Validate physics consistency metrics
-- **Milestone**: Reduce physics violations by ≥20% while maintaining accuracy
-
-### Weeks 11-12: Experiment 4 - Multi-Modal Fusion
-**Sprint 6 Deliverables**:
-- Complete sensor fusion experiments
-- Implement attention-based fusion mechanisms
-- **Milestone**: Achieve ≥10% improvement with multi-sensor fusion
-
-### Weeks 13-14: Experiment 5 - Uncertainty Quantification
-**Sprint 7 Deliverables**:
-- Implement Bayesian GNN variants and ensemble methods
-- Calibrate uncertainty estimates using temperature scaling
-- **Milestone**: Achieve ECE ≤ 0.08 with reliable confidence intervals
-
-### Weeks 15-16: Experiment 6 - Transfer Learning
-**Sprint 8 Deliverables**:
-- Complete Arctic-to-Antarctic transfer experiments
-- Implement domain adaptation techniques
-- **Milestone**: Achieve ≥75% performance retention in transfer scenarios
-
-### Weeks 17-18: Experiment 7 - Operational Optimization
-**Sprint 9 Deliverables**:
-- Implement model compression and optimization techniques
-- Benchmark processing times on target hardware
-- **Milestone**: Achieve <2.5-hour processing time with ≥88% accuracy
-
-### Weeks 19-20: Integration and Scaling Study
-**Sprint 10 Deliverables**:
-- Combine best components from all experiments
-- Conduct comprehensive scaling study across data sizes and model complexities
-- **Milestone**: Identify optimal model configuration for operational deployment
-
-### Weeks 21-22: Validation and Robustness Testing
-**Sprint 11 Deliverables**:
-- Extensive validation on held-out test sets (2023-2024)
-- Robustness testing under extreme weather events
-- **Milestone**: Confirm model performance under operational conditions
-
-### Weeks 23-24: Documentation and Reproducibility
-**Sprint 12 Deliverables**:
-- Complete code documentation and reproducibility package
-- Prepare datasets and model checkpoints for release
-- **Milestone**: Independent reproduction of key results by team member
-
-### Weeks 25-26: Paper Writing and Submission
-**Sprint 13 Deliverables**:
-- Complete manuscript draft with all figures and tables
-- Submit to target venue (Nature Climate Change or Journal of Geophysical Research)
-- **Milestone**: Manuscript submitted with complete supplementary materials
-
-## 4. Resources
-
-### Compute Requirements
-- **Primary Hardware**: 4× NVIDIA A100 80GB GPUs for training (estimated 2000 GPU-hours total)
-- **Secondary Hardware**: 2× NVIDIA V100 32GB GPUs for inference and ablation studies
-- **CPU Resources**: 64-core AMD EPYC processors with 512GB RAM per node
-- **Storage**: 50TB high-speed SSD storage for datasets and model checkpoints
-- **Network**: High-bandwidth interconnect for distributed training (InfiniBand preferred)
-
-### Datasets and Versions
-- **NSIDC Sea Ice Index v3.0**: Daily sea ice concentration (1979-2024), 25km resolution
-- **MODIS Terra/Aqua**: Daily surface reflectance and temperature (MOD09GA/MYD09GA, MOD11A1/MYD11A1)
-- **AMSR2 Level 3**: Daily sea ice concentration and brightness temperatures (v8.2)
-- **Sentinel-1 SAR**: Weekly composites for ice type classification (2016-2024)
-- **ERA5 Reanalysis**: Atmospheric forcing data (wind, temperature, pressure) at 0.25° resolution
-- **ECMWF Operational Forecasts**: Baseline comparison data (2020-2024)
-
-### Software and Libraries
-- **Deep Learning**: PyTorch 2.1.0, PyTorch Geometric 2.4.0, DGL 1.1.0
-- **Scientific Computing**: NumPy 1.24.0, SciPy 1.10.0, Pandas 2.0.0
-- **Geospatial**: GDAL 3.6.0, Rasterio 1.3.0, Cartopy 0.21.0, PyProj 3.4.0
-- **Visualization**: Matplotlib 3.6.0, Plotly 5.15.0, Holoviews 1.16.0
-- **Optimization**: Optuna 3.2.0, Ray Tune 2.5.0
-- **Monitoring**: Weights & Biases, TensorBoard, MLflow
-- **Containerization**: Docker 24.0, Singularity 3.8 for HPC environments
-
-### Data Processing Pipeline
-- **Preprocessing**: Custom Python scripts for spatial/temporal alignment and quality control
-- **Graph Construction**: NetworkX 3.1, custom CUDA kernels for large-scale graph operations
-- **Parallel Processing**: Dask 2023.6.0 for distributed data processing
-- **Version Control**: Git LFS for large datasets, DVC for data versioning
-
-## 5. Risks and Mitigations
-
-| Risk | Probability | Impact | Mitigation Strategy |
-|------|-------------|--------|-------------------|
-| **Data Quality Issues** | High (70%) | Medium | Implement robust quality control pipelines; maintain 20% buffer time for data cleaning; establish partnerships with NSIDC for data validation |
-| **Computational Resource Shortage** | Medium (40%) | High | Secure backup compute allocation on commercial cloud (AWS/GCP); implement efficient model compression early; negotiate extended cluster access |
-| **Model Convergence Problems** | Medium (50%) | Medium | Implement multiple optimization strategies (Adam, AdamW, SGD); use learning rate scheduling; maintain ensemble of training approaches |
-| **Transfer Learning Failure** | Medium (30%) | Medium | Develop domain adaptation techniques early; collect additional target domain data; implement gradual domain shift experiments |
-| **Real-time Performance Issues** | High (60%) | High | Begin optimization experiments early (Week 5); implement progressive model compression; establish performance benchmarks throughout development |
-| **Baseline Comparison Difficulties** | Low (20%) | Medium | Implement multiple baseline methods; collaborate with operational centers for benchmark data; use published benchmark datasets |
-| **Reproducibility Challenges** | Medium (40%) | High | Implement comprehensive logging from Day 1; use containerized environments; maintain detailed experimental notebooks; regular code reviews |
-| **Publication Timeline Pressure** | High (80%) | Medium | Begin writing early (Week 15); prepare modular paper sections; identify backup publication venues; maintain rolling manuscript updates |
-
-## 6. Integrated Recipe and Scaling Study
-
-### Component Integration Strategy
-The final operational system will integrate the best-performing components from each experiment:
-
-1. **Spatial Foundation**: Adaptive k-NN graph construction (k=16) with geodesic distance weighting [from Exp 1]
-2. **Temporal Modeling**: Hierarchical temporal attention with 30-day context windows [from Exp 2]  
-3. **Physics Constraints**: Soft mass conservation constraints with 0.2 weight factor [from Exp 3]
-4. **Multi-Modal Input**: Attention-based fusion of AMSR2 + MODIS data [from Exp 4]
-5. **Uncertainty Estimation**: Monte Carlo dropout with 10-model ensemble [from Exp 5]
-6. **Operational Optimization**: Mixed-precision training with 50% model pruning [from Exp 7]
-
-### Scaling Study Design
-**Pareto Analysis Dimensions**:
-- **Model Complexity**: 10K to 10M parameters across GCN, GraphSAGE, GAT architectures
-- **Data Scale**: 1 year to 15 years of training data (2010-2024)
-- **Spatial Resolution**: 25km, 12.5km, 6.25km grid spacing
-- **Temporal Context**: 7, 14, 30, 60-day input sequences
-- **Graph Connectivity**: k=4,8,16,32 nearest neighbors
-
-**Sensitivity Analysis**:
-1. **Performance vs. Complexity**: Identify optimal model size for operational constraints
-2. **Data Efficiency**: Determine minimum training data requirements for target accuracy
-3. **Resolution Trade-offs**: Quantify accuracy gains vs. computational costs at higher resolutions
-4. **Temporal Dependencies**: Establish optimal context window for different prediction horizons
-5. **Graph Sparsity**: Balance connectivity richness with computational efficiency
-
-**Expected Scaling Relationships**:
-- **Model Size**: Performance plateaus around 1M parameters with diminishing returns beyond 5M
-- **Training Data**: 80% of final performance achieved with 5 years of data, 95% with 10 years
-- **Spatial Resolution**: 15% accuracy improvement moving from 25km to 12.5km, 5% from 12.5km to 6.25km
-- **Graph Connectivity**: Optimal performance at k=16 with <2% improvement beyond k=32
-
-### Operational Deployment Recipe
-**Final Model Configuration**:
-- GraphSAGE architecture with 2M parameters
-- 30-day temporal context with hierarchical attention
-- k=16 adaptive spatial graphs with physics constraints
-- AMSR2+MODIS fusion with uncertainty quantification
-- Mixed-precision inference with 40% model compression
-- Target: <90 minutes processing time, ≥92% accuracy, ECE ≤ 0.05
-
-This comprehensive plan provides a publication-grade research execution framework with specific, measurable objectives and detailed experimental protocols. The integration of position-sensing capabilities [P1] and uncertainty quantification methods [P2] from recent GNN literature, combined with domain-specific sea ice modeling requirements, creates a robust foundation for advancing operational sea ice prediction capabilities.
-
-## Citations
-
-- [P1] Position-Sensing Graph Neural Networks: Proactively Learning Nodes Relative Positions — http://arxiv.org/abs/2105.11346v2
-- [P2] Uncertainty Prediction Neural Network (UpNet): Embedding Artificial Neural Network in Bayesian Inversion Framework to Quantify the Uncertainty of Remote Sensing Retrieval — http://arxiv.org/abs/2411.04556v1
-- [P3] Benchmarking Graph Neural Networks on Link Prediction — http://arxiv.org/abs/2102.12557v1
+Below is a turnkey, publication-grade research plan to develop, evaluate, and scale Graph Neural Networks (GNNs) for sea ice modeling. The plan targets pan-Arctic sea ice concentration (SIC) forecasting (nowcasting and lead times up to 90 days), ice drift prediction, and uncertainty quantification. It integrates state-of-the-art baselines, rigorous ablations, and a 6-month execution timeline.
+
+1) Problem framing and goals
+
+Objectives (measurable numerical targets)
+- O1: Pan-Arctic SIC forecasting on EASE-Grid 25 km, daily lead times L ∈ {7, 14, 30, 60, 90} days. Achieve ≥10% relative RMSE reduction and ≥0.05 absolute CRPS improvement vs a strong probabilistic baseline (IceNet or equivalent) for L ∈ {30, 60} on the 2019–2024 test period. Falsify O1 if relative RMSE reduction <5% or CRPS improvement <0.02 at L=30. IceNet represents a widely used probabilistic deep learning baseline for seasonal sea ice forecasting [4].
+- O2: Maritime-relevant skill: at the marginal ice zone (MIZ, 15–80% SIC), achieve ≥15% relative MAE reduction and ≥0.1 Brier Skill Score (BSS) improvement for ice-presence threshold 15% (SIP15) at L=30. Falsify O2 if MAE reduction <7% or BSS <0.05 at L=30.
+- O3: Drift prediction: reduce endpoint error by ≥15% vs OSI-SAF drift baselines and reduce vector RMSE by ≥10% at 48–72 h. Falsify O3 if endpoint error reduction <7% at 48 h.
+- O4: Calibration: achieve mean reliability diagram deviation <0.03 and CRPS ≥0.03 lower than baseline at L=30. Falsify O4 if deviation >0.05 or CRPS gain <0.01.
+- O5: Physical plausibility: ≤3% daily mass-balance violation (ice area budget) and ≤10% of predictions exceeding [0,1] SIC bounds before clipping. Falsify O5 if violations double these thresholds.
+
+Success criteria
+- Primary: Meet O1 and O2 at L=30 on held-out 2019–2024 winters; maintain non-inferior performance at L=7,14; show monotonic skill decay across lead times.
+- Secondary: Meet O3–O5 on the same test windows.
+- Comparative: Match or exceed reported IceGAT performance patterns for SIC skill across scales or regions, where available [P4]. Incorporate GCLSTM-style spatiotemporal graph recurrence as an alternative design [P1].
+
+2) Experiments (5 total; each includes 2–4 ablations)
+
+Experiment 1: Static-grid ST-GNN for pan-Arctic SIC forecasting
+- Hypothesis H1: A static-grid spatiotemporal GNN (Graph LSTM / GCLSTM) trained on OSI-SAF SIC achieves ≥8% RMSE reduction and ≥0.03 CRPS improvement over IceNet at L=30. Falsify if RMSE reduction <5% or CRPS gain <0.02 at L=30. Rationale: graph recurrent architectures have shown effectiveness in sea-ice SIC forecasting (GraphSIFNet with GCLSTM) [P1].
+- Setup:
+  - Data: OSI-SAF SIC CDR OSI-450 v2 (1979–2019) + NRT OSI-430-b (2020–2024) harmonized to EASE-Grid 25 km; train: 1979–2016; val: 2017–2018; test: 2019–2024 (blocked by seasons). Optionally include ancillary predictors (2 m air temperature, winds, SST; ERA5).
+  - Graph: Nodes = grid cells with valid ice mask; edges = 8-nearest neighbors in geodesic space; normalized adjacency; temporal window T=30 days input.
+  - Model: GCLSTM or message-passing recurrent block: 3–4 layers; 64 hidden units/layer; ELU; LayerNorm; residual connections. Output: probabilistic head (mean, variance) for SIC at lead times via seq2seq (teacher forcing).
+  - Training: Pytorch 2.2 + PyG 2.4; AdamW lr=3e-4; batch=16 sequences; 60 epochs; losses = CRPS + BCE for SIP15 + bounded MSE with sigmoid output.
+- Ablations (2–4):
+  1) Message passing depth: 2 vs 4 vs 6 layers.
+  2) Neighborhood size: k ∈ {4, 8, 12}.
+  3) Input window T ∈ {15, 30, 60}.
+  4) Loss composition: CRPS-only vs CRPS+BCE vs CRPS+BCE+area-budget penalty.
+- Baselines:
+  - IceNet (probabilistic deep learning seasonal sea ice model) [4].
+  - ConvLSTM/U-Net+ConvLSTM baseline trained on the same data.
+  - If available, IceGAT reference numbers for context (multi-scale GAT) [P4].
+- Metrics:
+  - Global/MIZ RMSE, MAE; BSS at SIP15; CRPS; reliability curves; skill vs lead-time.
+- Expected outcomes:
+  - RMSE reduction: 8–12% at L=30; CRPS gain: 0.03–0.05; larger gains in MIZ (10–15%).
+
+Experiment 2: Multi-scale Graph Attention (IceGAT-inspired) for SIC
+- Hypothesis H2: A multi-scale graph attention network with coarse-to-fine message passing yields ≥10% RMSE reduction and ≥0.05 BSS improvement in the MIZ vs the best E1 model at L=30. Falsify if RMSE reduction <5% or BSS gain <0.02 at MIZ L=30. Justification: multi-scale graph attention has reported strong performance for SIC prediction (IceGAT) [P4].
+- Setup:
+  - Model: Multi-scale pooling (stride 2 and 4), GATv2 layers at each scale, cross-scale skip connections, 64–96 hidden units, 4 attention heads, dropout 0.1. Same data/splits as E1.
+  - Training: AdamW lr=2e-4, 80 epochs; same losses as E1.
+- Ablations:
+  1) Number of scales: {1, 2, 3}.
+  2) Attention heads: {2, 4, 8}.
+  3) Cross-scale fusion: sum vs concatenation vs learned gating.
+- Baselines:
+  - Best E1 model; IceNet [4]; optional: published IceGAT if code and evaluation splits align [P4].
+- Metrics:
+  - As in E1 with emphasis on MIZ skill and lead-time sensitivity.
+- Expected outcomes:
+  - RMSE reduction 10–14% vs IceNet at MIZ L=30; BSS +0.05 to +0.12; similar or slightly better global CRPS than E1.
+
+Experiment 3: Drift-informed dynamic graphs and coupled SIC–drift prediction
+- Hypothesis H3: Incorporating dynamic edges parameterized by estimated sea-ice drift vectors (from OSI-SAF drift fields) reduces 48–72 h drift endpoint error by ≥15% and improves SIC RMSE by ≥0.02 absolute at L=7–14 vs static graphs. Falsify if endpoint error reduction <7% at 48 h or SIC RMSE gain <0.01 at L=7–14. Rationale: modeling inter-piece interactions and motion is central to sea ice dynamics; GNNs can encode collision/interaction priors [P2].
+- Setup:
+  - Data: OSI-SAF low-resolution drift (e.g., OSI-405) at 48/72 h; collocated with SIC inputs. Graph edges directed along drift vectors with kernel radius r ∈ {25, 50, 75} km; update adjacency per time-step.
+  - Model: Spatiotemporal message passing with edge features (speed, direction); dual-head outputs for SIC and drift (Δx, Δy). Loss = CRPS(SIC) + MSE(drift) + smoothness penalty.
+  - Training: AdamW lr=3e-4, 60 epochs.
+- Ablations:
+  1) Static vs dynamic edges.
+  2) Edge feature sets: {speed only, speed+direction, full met forcing}.
+  3) Coupled vs decoupled heads (multi-task benefits).
+- Baselines:
+  - Optical-flow-based advection of SIC; persistence drift; OSI-SAF drift climatology; best E1 static-graph model.
+- Metrics:
+  - Drift endpoint error (km), vector RMSE (m/s), SIC RMSE/CRPS at L=7–14.
+- Expected outcomes:
+  - Drift endpoint error reduction 15–25% at 48 h; SIC RMSE –0.02 to –0.04 at L=7–14.
+
+Experiment 4: Physics-informed GNN with conservation and equivariance priors
+- Hypothesis H4: Adding physically motivated regularizers (area/mass conservation, boundedness) and equivariant message passing reduces mass-balance violation by ≥40% and improves MIZ MAE by ≥7% vs non-physics GNN at L=30. Falsify if mass-balance reduction <20% or MIZ MAE gain <3%. Motivation: collision/interaction-aware GNNs and equivariant GNNs have shown gains in geophysical/cryospheric contexts [P2], and equivariant graph convolutions improved fidelity in ice-sheet modeling [P5].
+- Setup:
+  - Constraints: area budget penalty between predicted and observed Arctic ice area; boundedness via sigmoid outputs and hinge loss on out-of-bounds.
+  - Equivariance: incorporate SE(2)-equivariant message passing (e.g., E(n) GNN features on latitude-longitude-projected coordinates).
+  - Data/model: extend best of E1/E2; same splits.
+- Ablations:
+  1) No constraints vs constraints-only vs constraints+equivariance.
+  2) Weight of physics loss λ ∈ {0.01, 0.1, 0.5}.
+  3) Coordinate encodings: raw lat/lon vs learnable positional embeddings.
+- Baselines:
+  - Best non-physics model from E1/E2; IceNet [4].
+- Metrics:
+  - Mass-balance violation (% area/day), SIC RMSE/MAE/CRPS, out-of-bounds rate.
+- Expected outcomes:
+  - 40–60% reduction in mass-balance violation; 5–10% MIZ MAE reduction.
+
+Experiment 5: Uncertainty quantification and calibrated probabilistic forecasts
+- Hypothesis H5: Deep ensembles (K=5) yield better calibration and CRPS than MC dropout or single-model variance heads, achieving CRPS ≥0.03 lower and reliability deviation ≤0.03 at L=30 vs IceNet (or best baseline). Falsify if CRPS gain <0.01 or deviation >0.05. IceNet popularized probabilistic scoring for seasonal sea ice [4].
+- Setup:
+  - Methods: compare variance-head (heteroscedastic), MC dropout (p=0.1), deep ensemble (K=5), SWA/SWAG.
+  - Use best model architecture from E2 or E4.
+- Ablations:
+  1) Ensemble size K ∈ {3, 5, 10}.
+  2) Loss: Gaussian CRPS vs energy score (for multivariate SIC at multiple lead times).
+- Baselines:
+  - IceNet-like probabilistic head [4]; single deterministic model with Laplace calibration.
+- Metrics:
+  - CRPS, Brier score (SIP15), PIT histograms, expected calibration error for regression.
+- Expected outcomes:
+  - CRPS gains 0.02–0.05 vs deterministic; calibration errors ≤0.03; improved extreme-event reliability in MIZ.
+
+3) Timeline (6 months; with bi-weekly checkpoints)
+
+Month 1: Data and baseline replication
+- Week 1–2: Ingest OSI-450 v2/OSI-430-b, OSI-SAF drift, ERA5; harmonize to EASE-Grid 25 km; create train/val/test splits; deliverable: reproducible data pipeline with data cards and checksums.
+- Week 3–4: Implement IceNet-like baseline and ConvLSTM; deliverable: baseline metrics at L ∈ {7, 14, 30}. Go/no-go: if baseline pipeline diverges >5% from expected public metrics, fix before proceeding. Success criteria: stable training; baseline RMSE within ±5% of published references [4].
+
+Month 2: E1 static-grid ST-GNN
+- Week 5–6: Implement GCLSTM/message-passing recurrent; run ablations (depth, k, T).
+- Week 7–8: Evaluate vs baselines; deliverable: E1 results table and ablation plots. Go/no-go: must meet ≥5% RMSE reduction at L=30 or revise architecture.
+
+Month 3: E2 multi-scale attention GNN
+- Week 9–10: Implement multi-scale GAT; cross-scale fusion variants.
+- Week 11–12: Full training + ablations; deliverable: E2 paper-ready figures with MIZ skill. Decision: advance if ≥8% RMSE reduction and ≥0.05 BSS gain at MIZ L=30 over E1.
+
+Month 4: E3 drift-informed dynamic graphs
+- Week 13–14: Integrate OSI-SAF drift; dynamic adjacency; coupled loss.
+- Week 15–16: Train and evaluate drift + SIC at L=7–14; deliverable: drift endpoint error curves and SIC deltas. Go/no-go: endpoint error reduction ≥10% at 48 h; else simplify dynamic graph or refine features.
+
+Month 5: E4 physics-informed and E5 uncertainty
+- Week 17–18: Add conservation constraints and equivariance; tune λ.
+- Week 19–20: Run ensembles/MC dropout; calibration analysis. Deliverables: mass-balance metrics; reliability diagrams; CRPS tables. Go/no-go: show ≥30% mass-balance violation reduction and CRPS gain ≥0.02 vs single model.
+
+Month 6: Integration, scaling, and paper
+- Week 21–22: Integrated model selection; Pareto analysis: skill vs compute vs lead time; sensitivity to resolution and context length.
+- Week 23–24: Final test on 2019–2024; produce artifacts: code, model weights, data recipes, and paper draft with reproducibility checklist. Submission-ready figures and tables.
+
+4) Resources
+
+Compute
+- GPUs: 4× A100 40GB (or 8× A6000 48GB equivalent).
+- Storage: ~2–3 TB (CDR + NRT + reanalysis).
+- Estimated GPU hours:
+  - Baselines (ConvLSTM/IceNet-like): ~400–600 GPUh total across ablations.
+  - E1/E2 training + ablations: ~1000–1200 GPUh.
+  - E3 dynamic graphs: ~400–600 GPUh.
+  - E4 physics-informed + E5 ensembles: ~800–1200 GPUh (ensembles dominate).
+- Peak memory: 24–32 GB per worker for multi-scale models and ensembles.
+
+Datasets (versions/splits)
+- SIC: EUMETSAT OSI-SAF OSI-450 v2 (CDR 1979–2019) and OSI-430-b (NRT 2020–2024); regridded to EASE-Grid 25 km; train 1979–2016, val 2017–2018, test 2019–2024 (blocked seasonal sampling).
+- Drift: OSI-SAF low-resolution sea ice drift (e.g., OSI-405) at 48/72 h, 2010–2024.
+- Optional SIT: SMOS or SMOS–CryoSat weekly thickness for auxiliary supervision.
+- Reanalysis: ERA5 (2 m air temperature, u10/v10 winds, MSLP, SST).
+
+Tooling and libraries
+- Python 3.11, PyTorch 2.2, PyTorch Geometric 2.4 (or DGL 1.1), CUDA 12.x, cuDNN 9.
+- Xarray 2023.7, netCDF4 1.6, rasterio 1.3, rioxarray 0.15.
+- Probabilistic scoring: properscoring 0.1, calibration plots: netcal 1.3.
+- Experiment management: Hydra 1.3, Weights & Biases 0.17.
+
+5) Risks and mitigations
+
+- Risk: Baseline mismatch (data processing differences) — Probability: Medium; Impact: High. Mitigation: Release exact preprocessing scripts; reproduce baseline skill within ±5% on a shared split; lock versions and checksums; cross-check against IceNet references [4].
+- Risk: Data gaps and different sensors cause label noise — Probability: Medium; Impact: Medium. Mitigation: Mask uncertain pixels; uncertainty-aware loss (CRPS); train with sensor-era stratification.
+- Risk: Dynamic-graph instability (training divergence) — Probability: Medium; Impact: Medium. Mitigation: Gradient clipping, smaller edge radii, warm-start from static models; curriculum on lead times.
+- Risk: Overfitting to geography/season — Probability: Medium; Impact: Medium. Mitigation: Blocked seasonal splits; spatial cross-validation; regularize with dropout and weight decay.
+- Risk: Physics terms degrade accuracy — Probability: Medium; Impact: Medium. Mitigation: Tune λ via val CRPS; anneal physics losses; adopt equivariant layers with minimal constraint strength [P5].
+- Risk: Ensemble cost too high — Probability: Medium; Impact: Medium. Mitigation: SWA/SWAG approximate ensembles; distillation of ensemble into single student.
+
+6) Integrated recipe and scaling study
+
+Integration logic
+- Start with the strongest static ST-GNN (E1) and replace spatial blocks with multi-scale attention (E2) to improve MIZ skill, supported by multi-scale GAT evidence for sea-ice concentration [P4]. Then incorporate motion via drift-informed dynamic edges (E3) to tighten short lead-time SIC and drift forecasts, consistent with interaction-aware modeling [P2]. Finally, enforce physical plausibility and calibration via constraints/equivariance (E4) and probabilistic ensembles (E5), a natural extension of probabilistic forecasting practices used by IceNet [4] and physics-informed GNNs [P5].
+
+Scaling and sensitivity
+- Sensitivity analyses:
+  - Resolution: 25 km vs 12.5 km; observe skill vs compute cost curves; expectation: MIZ skill improves at higher resolution until message-passing range becomes limiting.
+  - Context length T: 15, 30, 60 days; evaluate diminishing returns on L=30 skill.
+  - Model width/depth and attention heads: Pareto analysis of CRPS vs GPUh.
+  - Physics loss weight λ: map mass-balance violation vs CRPS to identify sweet spot (expect convex trade-off).
+- Pareto front:
+  - Report CRPS (global and MIZ) vs training GPU hours and inference latency (ms/Arctic map). Select 2–3 operating points (real-time, balanced, high-accuracy).
+
+Concrete, falsifiable experiments summary
+- E1: Static ST-GNN (GCLSTM). Accept if RMSE reduction ≥8% and CRPS ≥0.03 vs IceNet at L=30; otherwise falsified [P1], [4].
+- E2: Multi-scale GAT. Accept if MIZ RMSE reduction ≥10% and BSS +≥0.05 vs E1 at L=30; otherwise falsified [P4].
+- E3: Dynamic drift-informed graphs. Accept if 48 h endpoint error reduction ≥15% and SIC RMSE gain ≥0.02 at L=7–14; otherwise falsified [P2].
+- E4: Physics-informed + equivariant. Accept if mass-balance violation ↓ ≥40% and MIZ MAE ↓ ≥7%; otherwise falsified [P5], [P2].
+- E5: UQ and calibration. Accept if CRPS gain ≥0.03 and reliability deviation ≤0.03 vs baseline at L=30; otherwise falsified [4].
+
+Literature anchors
+- IceGAT: A multi-scale GAT achieving strong accuracy for pan-Arctic SIC prediction, motivating E2 [P4].
+- GCLSTM/GraphSIFNet: Spatiotemporal graph recurrence for sea-ice forecasting, motivating E1 [P1].
+- Interaction/physics perspective: GNNs for colliding particles with a sea-ice application motivates E3 and physics priors [P2].
+- Equivariant GNNs in ice modeling: supports E4’s equivariance regularization [P5].
+- IceNet: canonical probabilistic baseline for seasonal sea-ice forecasting [4].
+
+Notes on evidence
+- IceGAT provides the most directly relevant, peer-reviewed GNN result for pan-Arctic SIC [P4]. GraphSIFNet is currently referenced as an SSRN preprint; treat as indicative rather than definitive [P1]. The collision/interaction GNN and equivariant GNN works motivate design choices but address related cryospheric modeling tasks; apply with caution and validate empirically [P2], [P5]. IceNet materials are cited via EarthArXiv and documentation since the Nature Communications link was not retrieved in this search; for publication, replace with the journal DOI once verified [4]. If any references lack open code or standardized splits, prioritize reproducibility by fixing splits and releasing preprocessing.
+
+Citations
+- [P1] Deep Graph Neural Networks for Spatiotemporal Forecasting Of Sub-Seasonal Sea Ice: A Case Study in Hudson Bay — https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5134078
+- [P2] Graph neural network for colliding particles with an application to sea ice modeling — https://sciety-labs.elifesciences.org/articles/by?article_doi=10.21203%2Frs.3.rs-6243496%2Fv1
+- [P4] Arctic Sea Ice Prediction Based on Multi-Scale Graph Modeling With IceGAT — https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2024JD042136
+- [P5] Calibrating calving parameterizations using graph neural network equivariant graph convolution — https://tc.copernicus.org/articles/19/2583/2025/tc-19-2583-2025.pdf
+- [4] Seasonal Arctic sea ice forecasting with probabilistic deep learning (IceNet, EarthArXiv PDF) — https://eartharxiv.org/repository/object/2027/download/4873/
