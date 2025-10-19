@@ -1,138 +1,117 @@
-Based on the MST paper's FC3 (Task Verification) failure category [file:5], I'll design a targeted ablation study to isolate the verifier agent's impact. The paper shows FC3 accounts for 8.64% of failures, with three sub-modes: FM-3.1 (Premature Termination, 13.61%), FM-3.2 (Incorrect Verification, 9.16%), and FM-3.3 (No or Incomplete Verification, 31.41%) [file:5].
+Below is a concrete ablation plan focused on FC3 (Task Verification) in multi-agent LLM systems, with a suitable system/benchmark, minimal modifications to isolate the verifier’s contribution, the FC3-aligned failure modes to tag, and the metrics to track.
 
-## **Intuition**
+Recommended system and benchmark
+- System: ChatDev (lightweight, open-source “software company” multi-agent pipeline; easy to add/remove a Verifier role) or MetaGPT (more modular, role-based pipelines). Use whichever you already have integrated; both allow inserting a Verifier between Implementer and Merger/Reviewer with minimal code.
+- Benchmark:
+  - Primary: SWE-bench Lite or SWE-bench (if infra allows) to exploit ground-truth unit tests for an objective oracle of “task completed.” This directly supports measuring verification false accepts/rejects. [SWE-bench: Can Language Models Resolve Real-World GitHub Issues?, 2023]
+  - Secondary: HumanEval/MBPP variants for smaller-scale checks; use embedded unit tests as the oracle.
 
-Verifier agents act as quality gates in multi-agent workflows—they catch errors before propagation and signal when work meets acceptance criteria. Ablating them tests whether explicit verification is genuinely protective or just adds latency. If removing verification doesn't degrade outcomes, it suggests the upstream agents already self-correct adequately; if failures spike, you've quantified the verifier's value.
+Why these choices: They let the Verifier agent check concrete acceptance criteria (unit tests/issue reproduction), making FC3 failures observable and quantifiable. The MST paper emphasizes that multi-agent systems often underperform expectations and require principled failure analysis and evaluation beyond headline success rates [P1].
 
-## **Why this is principled**
+Minimal modifications for verifier ablation
+Implement these as toggles in the same pipeline to keep all other factors fixed (same prompts, same tools, same seeds/temperatures, identical Implementer/Reviewer roles):
 
-Ablation studies isolate causal factors by systematically removing components [P7]. For multi-agent systems, ChatDev [P3] provides a well-documented software development workflow with explicit reviewer roles, making it ideal for controlled intervention. Tracking failure modes at the granularity the MST paper defines (FM-3.1, FM-3.2, FM-3.3) lets you map ablation effects to specific breakdown mechanisms rather than relying on coarse success rates.
+A. Baseline (Explicit Verifier)
+- Verifier has access to: task spec, diffs, logs, and test runner; it can request revisions and decide acceptance/termination.
 
----
+B. No-Verifier (Removal)
+- Remove the Verifier role; Implementer hands off directly to Reviewer/Merger who must accept/terminate. All prompts, tools, and temperatures unchanged.
 
-## **Recommended Benchmark & System**
+C. Tool-blinded Verifier (Access ablation)
+- Keep Verifier but revoke tool access (no tests/commands). It must verify from text/spec only. This isolates the value of external tools in verification.
 
-**Primary choice: ChatDev [P3] on HumanEval or MBPP**
-- **Why**: ChatDev has explicit reviewer agents (code reviewer, test engineer) that perform verification in its waterfall workflow [P3]. The codebase is open-source, well-documented, and modular.
-- **Benchmark**: HumanEval (164 problems) or MBPP (500 problems) for code generation. Both have executable test suites, enabling automated correctness checks.
-- **Alternative**: If you want broader task coverage, consider SWE-bench (real GitHub issues), but it's higher variance and requires more compute.
+D. Silent Verifier (Decision ablation)
+- Verifier can comment but cannot gate acceptance; Reviewer/Merger must ignore its accept/reject signal. Tests whether mere critique (without authority) changes outcomes.
 
----
+E. Self-check Instead of Verifier (Role conflation ablation)
+- Replace Verifier with Implementer self-critique (one extra self-review turn) at fixed budget. Tests separation-of-duties benefit versus single-agent self-check.
 
-## **Minimal Ablation Modifications**
+Keep: fixed number of iterations, identical routing, identical tool set for non-ablated roles, same temperature and max tokens, same seeds, same test-time budget.
 
-Implement three conditions (run each for ≥50 tasks, 3 seeds):
+FC3 failure modes to tag during runs
+Define operational tags aligned to FC3; if you are mapping to MST labels, use your paper’s exact FM-3.x names/IDs in your logging schema:
 
-### **Condition A: Full System (Baseline)**
-- Standard ChatDev with all agents: CEO, CTO, Programmer, Code Reviewer, Tester, Designer.
-- Reviewer agent validates code against requirements; Tester writes and runs unit tests.
+- FM-3.1 Mis-specified acceptance criteria: Verifier applies criteria misaligned with the task or benchmark oracle (e.g., treating style warnings as blocking).
+- FM-3.2 False acceptance (false positive verification): Verifier accepts when the oracle (unit tests/issue status) is failing.
+- FM-3.3 False rejection (false negative verification): Verifier rejects when the oracle is passing.
+- FM-3.4 Non-actionable verification feedback: Verifier requests changes without concrete, test-linked guidance; leads to churn.
+- FM-3.5 Inconsistent criteria across turns: Verifier applies inconsistent standards between iterations.
+- FM-3.6 Tool-misuse in verification: Verifier fails to run tests, misreads logs, or misinterprets pass/fail signals.
 
-### **Condition B: No Explicit Verifier (Ablation)**
-- **Modification**: Remove Code Reviewer and Tester agents from the workflow.
-- **Routing change**: After Programmer generates code, route directly to final output (skip review/test phases).
-- **Prompt adjustment**: Add one sentence to Programmer's prompt: "Ensure your code is correct and complete before submitting."
-- **Rationale**: Tests whether implicit self-verification by the Programmer suffices.
+Note: If the MST paper provides precise names for FM-3.2/FM-3.3, align the above “false acceptance/rejection” to those exact definitions; confirm the mapping in the paper’s failure taxonomy table [P1].
 
-### **Condition C: Passive Verifier (Control)**
-- **Modification**: Keep Code Reviewer and Tester in the loop, but disable their ability to reject/request revisions.
-- **Implementation**: Verifier agents still generate feedback, but the system always accepts the Programmer's output regardless.
-- **Rationale**: Controls for the presence of verification prompts/context without the enforcement mechanism. Distinguishes "having a verifier" from "acting on verification."
+Primary performance metrics
+Task-level outcomes
+- Success rate (pass@1) on oracle tests.
+- Time-to-success (iterations to first passing solution).
+- Token/compute cost to success.
 
----
+Verifier-centric metrics (use the oracle as ground truth)
+- Verification precision = accepted solutions that truly pass / all accepted.
+- Verification recall = truly passing solutions that get accepted / all truly passing.
+- False acceptance rate (FAR) = FM-3.2 frequency.
+- False rejection rate (FRR) = FM-3.3 frequency.
+- Calibration: Expected Calibration Error (ECE) between verifier confidence and correctness; reliability curve.
 
-## **Failure Modes to Track**
+Collaboration/process metrics
+- Number of rework cycles triggered by Verifier.
+- Share of non-actionable feedback (FM-3.4).
+- Tool-use success for verification (rate of correctly executed tests vs tool errors; FM-3.6).
+- Stopping-condition accuracy: fraction of episodes where “termination” coincides with oracle success.
 
-Map each run to MST's taxonomy [file:5]:
+Ablation experiments
+Run all experiments on the same task set with paired evaluation (per-task comparisons) to enable stronger statistics.
 
-### **FM-3.1: Premature Termination**
-- **Definition**: System halts before task completion (e.g., partial code, missing functions).
-- **Detection**: Compare generated code to ground-truth function signatures. Flag if <80% of required functions are present.
-- **Hypothesis**: Ablation (Condition B) will increase FM-3.1 because no verifier signals incompleteness.
+1) With vs Without Verifier (effect of explicit verification)
+- Conditions: Baseline vs No-Verifier.
+- Hypothesis: The explicit Verifier reduces FAR (FM-3.2) and increases success rate on SWE-bench(-Lite); effect size depends on test access and critique quality. Conjecture, to be tested [P1].
+- Metrics: Success rate, FAR/FRR, verification precision/recall, time-to-success, token cost.
+- Analysis: Paired McNemar test for success differences; bootstrap CIs for FAR/FRR deltas.
 
-### **FM-3.2: Incorrect Verification**
-- **Definition**: Verifier approves incorrect output or rejects correct output.
-- **Detection**: 
-  - False acceptance: Code fails unit tests but was approved by verifier.
-  - False rejection: Code passes tests but verifier requested changes.
-- **Hypothesis**: Condition C (passive verifier) will expose FM-3.2 rates by logging verifier decisions without enforcement.
+2) Tool Access Ablation (value of external tools in verification)
+- Conditions: Baseline vs Tool-blinded Verifier.
+- Hypothesis: Removing test access increases FAR/FRR and reduces verification precision; more non-actionable feedback (FM-3.4) as the Verifier guesses from text. Conjecture.
+- Metrics: Verification precision/recall, FAR/FRR, tool-misuse (should drop to zero by design), success rate.
+- Analysis: Compare precision/recall; report delta success rate and churn (rework cycles).
 
-### **FM-3.3: No or Incomplete Verification**
-- **Definition**: Verifier skips checks or only validates subset of requirements.
-- **Detection**: 
-  - Log which verification steps were executed (syntax check, logic review, test coverage).
-  - Flag if <50% of expected checks occurred.
-- **Hypothesis**: Condition B will show 100% FM-3.3 (by design); Condition A should show <10% if ChatDev's workflow is robust.
+3) Authority vs Advice (does gating power matter?)
+- Conditions: Baseline vs Silent Verifier vs Self-check Instead of Verifier.
+- Hypothesis: A Verifier with accept/reject authority outperforms an advisory-only Verifier, and both outperform a self-check Implementer on false acceptance control (FM-3.2). Conjecture consistent with the need for principled verification in MAS [P1].
+- Metrics: FAR/FRR, success rate, rework cycles, stopping-condition accuracy.
+- Analysis: Trade-off plots of FAR vs success; measure whether authority reduces premature termination on failing outputs.
 
----
+Optional extensions (if budget allows)
+- Strictness sweep: vary Verifier temperature and “strictness” prompt; trace ROC-like curve between FRR and FAR to identify an operating point.
+- Replace Verifier model: same prompt/tools with a stronger/weaker LLM to isolate model quality effects on verification.
+- Reviewer-Only vs Verifier-Only: to separate code-quality review from acceptance verification.
 
-## **Performance Metrics**
+Methodological controls
+- Use the same seeds, temperatures, and tool versions; log every tool call and test result.
+- Pre-register stopping criteria and iteration budget.
+- Use paired evaluation and report CIs; test for significance (e.g., McNemar for paired binary success; bootstrap for rate differences).
+- Release a failure-mode–tagged trace log to allow external auditing of FC3 labels [P1].
 
-### **Primary Metrics**
-1. **Pass@1 (functional correctness)**: % of tasks where generated code passes all unit tests on first attempt.
-2. **Failure mode distribution**: % of failed runs attributed to FM-3.1, FM-3.2, FM-3.3 vs. other categories (FC1: Role Allocation, FC2: Inter-Agent Conversation).
-3. **Revision cycles**: Mean number of Programmer ↔ Reviewer iterations before acceptance (Condition A only).
+Practical notes
+- Prefer SWE-bench Lite initially to keep infra manageable; scale up once instrumentation is stable.
+- Add one thin “Verification API” boundary in the codebase so you can flip between Baseline/ablations without touching other roles.
+- Implement automatic FM tagging where possible:
+  - FM-3.2/3.3 are automatable via oracle vs Verifier decision.
+  - FM-3.6 from tool stderr/exit codes.
+  - FM-3.4 via a simple rubric classifier; validate with spot human checks.
 
-### **Secondary Metrics**
-4. **Latency**: Total tokens generated and wall-clock time per task.
-5. **Error propagation**: % of runs where an early mistake (e.g., misunderstood requirement) persists to final output. Compare Condition A vs. B.
-6. **Test coverage**: % of ground-truth edge cases covered by generated tests (Condition A vs. C).
+Anchors and context
+- MST context: Multi-agent systems often deliver modest gains over single-agent baselines and benefit from failure-mode–aware evaluation; FC3-style verification is a key locus of error to diagnose [P1].
+- Domain-specific auditing work similarly argues for moving beyond final-answer accuracy to diagnose collaborative failure modes, including verification steps [P2].
 
-### **Diagnostic Metrics**
-7. **Verifier precision/recall** (Condition A):
-   - Precision: Of code flagged by verifier, % that actually had bugs.
-   - Recall: Of buggy code, % caught by verifier.
-8. **Self-correction rate** (Condition B): % of tasks where Programmer's initial output is correct without external review.
+Citations
+- [P1] Why Do Multi-Agent LLM Systems Fail? — http://arxiv.org/abs/2503.13657v2
+- [P2] MedAgentAudit: Diagnosing and Quantifying Collaborative Failure Modes in Medical Multi-Agent Systems — http://arxiv.org/abs/2510.10185v1
+- MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework — http://arxiv.org/abs/2308.00352v7
+- SWE-bench: Can Language Models Resolve Real-World GitHub Issues? — http://arxiv.org/abs/2310.06770v3
+- ChatDev (repository) — https://github.com/OpenBMB/ChatDev
 
----
-
-## **Three Concrete Experiments**
-
-### **Experiment 1: Verifier Necessity**
-- **Objective**: Quantify whether explicit verification improves correctness beyond self-checking.
-- **Setup**: Run Conditions A (full) and B (no verifier) on HumanEval (164 tasks × 3 seeds = 492 runs each). Use GPT-4 or Claude-3.5-Sonnet as the base LLM.
-- **Metrics**: Pass@1, FM-3.1 rate, FM-3.3 rate (by definition 0% for A, 100% for B), error propagation rate.
-- **Expected outcome**: If Pass@1 drops >10 percentage points in Condition B and FM-3.1 increases >15%, the verifier is causally important. If Pass@1 is within 5%, the Programmer already self-corrects adequately.
-- **Interpretation**: A large gap justifies verifier agents; a small gap suggests investing in better Programmer prompts instead.
-- **Follow-up**: If Condition B underperforms, test whether adding a single "self-review" step (Programmer critiques own code) recovers performance at lower cost than a separate agent.
-
-### **Experiment 2: Verification Enforcement vs. Presence**
-- **Objective**: Isolate whether verifier value comes from generating feedback or from enforcing revisions.
-- **Setup**: Compare Condition A (enforcing) vs. Condition C (passive) on 100 MBPP tasks × 3 seeds. Log all verifier feedback in both conditions.
-- **Metrics**: Pass@1, FM-3.2 rate (false accepts/rejects), revision cycles (A only), verifier precision/recall.
-- **Expected outcome**: If Condition C's Pass@1 matches Condition B (no verifier), feedback alone is insufficient—enforcement is key. If Condition C is closer to A, the verifier's diagnostic value (even without enforcement) helps the Programmer.
-- **Interpretation**: High FM-3.2 in Condition A (incorrect verification) would indicate the verifier itself is unreliable, suggesting you need better verifier prompts or a stronger model.
-- **Follow-up**: Analyze verifier feedback quality: compute BLEU/ROUGE between verifier comments and ground-truth bug descriptions (if available) or manually label a sample of 30 feedback instances for relevance.
-
-### **Experiment 3: Failure Mode Attribution**
-- **Objective**: Determine which FC3 sub-modes dominate when verification is absent and whether they correlate with task difficulty.
-- **Setup**: Run Condition B (no verifier) on 200 mixed tasks (100 HumanEval + 100 MBPP). Manually annotate all failures (target: ≥50 failures) using MST's taxonomy [file:5]. Stratify by task difficulty (cyclomatic complexity or test count).
-- **Metrics**: FM-3.1 vs. FM-3.3 prevalence, correlation between task complexity and failure mode, qualitative error patterns.
-- **Expected outcome**: Hypothesis—FM-3.1 (premature termination) will dominate on complex tasks (>5 test cases), while FM-3.3 (incomplete verification) appears uniformly. If FM-3.2 appears despite no verifier, it indicates the Programmer is attempting implicit verification but doing it incorrectly.
-- **Interpretation**: If FM-3.1 is rare but Pass@1 is still low, failures are likely in other categories (FC1: role confusion, FC2: communication breakdown), suggesting verification isn't the bottleneck.
-- **Follow-up**: For tasks where Condition B fails but Condition A succeeds, diff the conversation traces to identify the exact verifier intervention that prevented failure (e.g., "Reviewer caught off-by-one error in line 12").
-
----
-
-## **Implementation Checklist**
-
-Before running:
-1. **Baseline reproduction**: Verify you can reproduce ChatDev's reported performance on a small subset (10 tasks) to ensure setup correctness.
-2. **Annotation protocol**: Draft a 1-page rubric mapping failure symptoms to FM-3.1/3.2/3.3 with 3 examples each. Test inter-rater agreement on 20 runs (target κ > 0.7).
-3. **Compute budget**: Estimate token costs. For 492 runs × 3 conditions × ~5K tokens/run ≈ 7.4M tokens. At GPT-4 rates (~$0.03/1K tokens), budget ~$220.
-4. **Stop rule**: If Condition B's Pass@1 is within 3% of Condition A after 100 tasks, you can likely stop early (verification has minimal impact).
-
----
-
-## **Key Questions for You**
-
-1. **Compute/time budget**: Do you have access to API credits for ~500 runs, or should I suggest a smaller pilot (e.g., 50 tasks, 1 seed)?
-2. **Annotation capacity**: Will you manually label failure modes, or do you want me to suggest an LLM-as-judge approach for automated classification?
-3. **Baseline preference**: Are you committed to ChatDev, or open to alternatives like MetaGPT (which has a different verification structure—product manager reviews instead of code reviewer)?
-
----
-
-## **Citations**
-
-[P3] ChatDev: Communicative Agents for Software Development — http://arxiv.org/abs/2307.07924v5  
-[P7] AblationBench: Evaluating Automated Planning of Ablations in Empirical AI Research — http://arxiv.org/abs/2507.08038v1  
-[file:5] MST Paper, Figure/Table on page 5 showing FC3 breakdown
+Key takeaways
+- Use a role-based system (ChatDev/MetaGPT) plus SWE-bench(-Lite) to make verification observable via unit-test oracles.
+- Ablate the Verifier’s presence, tool access, and authority to isolate its function.
+- Track FAR/FRR (FM-3.2/FM-3.3), verification precision/recall, stopping-condition accuracy, and process costs.
+- Use paired designs and CIs; publish labeled traces so others can inspect FC3 failures.

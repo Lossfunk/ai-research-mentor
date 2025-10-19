@@ -1,56 +1,56 @@
-Great! Before I give you tailored advice, I need to understand your situation better. Let me ask a few essential questions:
+Great—here’s a practical, low-friction way to start AI research that builds skill, confidence, and evidence you can publish.
 
-## Context Questions
+Where to start (choose one tractable niche)
+- Parameter-efficient fine-tuning (PEFT) for LLMs with LoRA: Lets you get meaningful results on a single GPU by training a small number of parameters while keeping the base model frozen [P1]. See practice-focused guidance for LoRA hyperparameters and pitfalls [P7]. 
+- Data-centric ML: Study how data quality, augmentation, and labeling choices affect performance and robustness; this is a high-leverage, under-explored space in many applied settings [P10].
+- Rigor and reproducibility as a first-class goal: Follow reporting checklists and transparent methodology from the start to produce trustworthy results, even on small projects [P3][P4]. If you work with LLMs in applied domains, see empirical study design guidance emphasizing transparency and reproducibility [P2].
 
-1. **Resources & Time**: What's your current situation—are you a student, working professionally, self-studying? How many hours per week can you dedicate to AI research? Do you have access to compute (GPUs, cloud credits)?
+A simple 6-week starter plan
+- Week 1: Pick a narrow question + dataset + baseline. Set up a reproducible repo: pinned versions, config files, seeds, exact data splits, and an experiment tracker (e.g., wandb/MLflow) [P3][P4][P9].
+- Week 2: Reproduce a baseline exactly. Write down an analysis plan (metrics, statistical tests), pre-define ablations, and define pass/fail thresholds for your hypotheses [P3][P4][P9].
+- Weeks 3–4: Run controlled ablations (change one factor at a time), use multiple seeds, and log all configs and random states [P3]. For LLMs, follow domain-specific empirical guidance where available [P2].
+- Week 5: Analyze results with confidence intervals or nonparametric tests; report effect sizes and variance across seeds [P3][P9].
+- Week 6: Write a short report with a reproducibility checklist and a one-click script to reproduce main/ablations results [P4][P9].
 
-2. **Background**: What's your technical background? (e.g., programming experience, math/stats knowledge, ML coursework or projects you've done)
+Three concrete, falsifiable starter experiments
+1) LoRA hyperparameter sensitivity on a small instruction-tuning task
+- Hypothesis: Increasing LoRA rank r improves instruction-following accuracy up to a mid-range (e.g., r=16) after which gains plateau; alpha has a smaller effect when scaled with r.
+- Setup: Base model (e.g., open 1–3B parameter model), small instruction dataset (2–10k examples), LoRA with r ∈ {4, 8, 16, 32}, alpha ∈ {8, 16, 32}, single GPU, 3 seeds.
+- Metrics: Exact match on held-out instructions, BLEU/ROUGE for generation, and calibration (ECE).
+- Controls: Same tokenizer, same train/val split, same optimizer/scheduler, early stopping based on validation.
+- Expected outcome: Diminishing returns beyond moderate ranks; clear seed variability reported with CIs [P1][P7].
 
-3. **Interests**: What aspects of AI excite you most? (e.g., understanding how models work, building applications, theoretical foundations, specific domains like vision/language/robotics, AI safety)
+2) Data quality vs. quantity in image classification (data-centric baseline)
+- Hypothesis: At fixed compute, improving label cleanliness (reducing injected noise) yields larger accuracy gains than adding 20% more noisy data; basic augmentation helps but cannot fully offset label noise.
+- Setup: CIFAR-10 or similar; create training sets with 0%, 10%, 20% symmetric label noise; train a small ResNet under identical training budgets; with/without a simple augmentation policy (e.g., flips/crops kept constant across trials), 5 seeds.
+- Metrics: Top-1 accuracy, calibration (ECE), and robustness to distribution shift (e.g., CIFAR-10-C corruption subset).
+- Expected outcome: Clean labels dominate modest data increases; report full factorial results with uncertainty [P10].
 
-4. **Support & Collaboration**: Do you have access to mentors, research groups, or collaborators? Or are you starting solo?
+3) Reproducibility stress test for a basic supervised baseline
+- Hypothesis: Reported single-number gains of ≤1 percentage point vanish when evaluated across seeds and stratified splits; the variance across seeds is comparable to or larger than the claimed improvement.
+- Setup: Choose a published baseline (e.g., small vision or text classifier); replicate it exactly; run 10 seeds; evaluate on multiple, pre-registered data folds.
+- Metrics: Mean ± 95% CI for accuracy/F1; paired tests across seeds/folds; effect size (Cohen’s d).
+- Expected outcome: If the improvement is real, it remains significant after accounting for variance; if not, you’ll quantify instability and provide stronger reporting per REFORMS [P3][P4].
 
-5. **Goals & Timeline**: What's your biggest goal right now—learn fundamentals, publish a paper, get into a PhD program, contribute to open problems? Any specific timeline or milestone?
+Working style and checklists
+- Make your repo reproducible from day one: environment.yml/requirements.txt, pinned versions, scripts for data download/splitting, and a run.sh that reproduces the main table [P4][P9].
+- Predefine ablations and controls; change one factor at a time; log all configs; use multiple seeds; report uncertainty and effect sizes [P3][P9].
+- If working with LLMs in applied studies (e.g., code, SE tasks), follow domain-specific empirical guidance to avoid common pitfalls and ensure transparent reporting [P2].
+- Document ethical and responsible model development choices (data provenance, known limitations, appropriate use) [P6].
 
----
+What to read next (short list)
+- Survey and practice for LoRA/PEFT to pick sensible hyperparameters and tasks [P1][P7].
+- REFORMS reporting standards and the open-repro handbook to structure your workflow and paper from the start [P3][P4][P9].
+- Data-centric ML overview to inspire impactful, compute-efficient projects focused on data rather than model scale [P10].
 
-## Immediate Guidance (While You Think)
+If you share your background (e.g., vision/NLP, access to GPUs, coding comfort), I can help tailor one of the experiments above into a concrete project plan with dataset, baseline code, and an evaluation table template.
 
-**Intuition**: The best entry point into AI research isn't reading everything or picking the "perfect" problem—it's building hands-on experience with real systems while developing taste for what makes problems interesting [G3][G10]. Research skill comes from an explore-understand loop: you try things, notice surprises, and refine hypotheses [G5].
-
-**Why this is principled**: Effective researchers focus on tractable, important problems where they can get feedback quickly [G1][G15]. Starting with reproduction of existing work or small extensions lets you build intuition about what works, develop research taste through concrete examples [G19], and avoid "seductive but low-impact" projects that look impressive but teach you little [G1].
-
-### Three Concrete Starting Paths (pick based on your answers above):
-
-**Path A – Reproduction-First (Best for building fundamentals)**
-- Pick a recent paper (last 1-2 years) in an area you find interesting
-- Reproduce one key result or figure from scratch
-- Document what worked, what didn't, and one thing that surprised you
-- *Why*: Gives you real signal about research quality, builds debugging skills, and often reveals new questions [G2][G5]
-
-**Path B – Tutorial + Extension (Best for learning while contributing)**
-- Work through a high-quality tutorial (e.g., Neel Nanda's mech interp guide [G7], or a domain-specific walkthrough)
-- Identify one small unexplored variation or question
-- Run a crisp 1-week experiment to test it
-- *Why*: Structured learning with a clear path to original contribution [G15]
-
-**Path C – Problem-Driven (Best if you have a specific curiosity)**
-- Start with a concrete question you're genuinely curious about
-- Spend 3 days reading what's known (not everything, just enough to orient)
-- Design the simplest possible experiment to test one hypothesis
-- *Why*: Intrinsic motivation sustains research through difficulties; personal fit matters [G12]
-
-Once you answer the questions above, I'll give you specific next steps, paper recommendations, and a 2-week starter plan tailored to your situation.
-
----
-
-## Citations
-
-- [G1] How Not To Choose A Research Project — https://www.lesswrong.com/posts/kDsywodAKgQAAAxE8/how-not-to-choose-a-research-project
-- [G2] 20240926 How To Impactful Ai Research — https://gigazine.net/gsc_news/en/20240926-how-to-impactful-ai-research/
-- [G3] What Is Research And How To Do It — https://letters.lossfunk.com/p/what-is-research-and-how-to-do-it
-- [G5] How I Think About My Research Process Explore Understand — https://www.alignmentforum.org/posts/hjMy4ZxS5ogA9cTYK/how-i-think-about-my-research-process-explore-understand
-- [G10] 1986 Hamming — https://gwern.net/doc/science/1986-hamming
-- [G12] Principles Of Effective Research — http://michaelnielsen.org/blog/principles-of-effective-research/
-- [G15] Opinionated Guide Ml Research.Html — http://joschu.net/blog/opinionated-guide-ml-research.html
-- [G19] Taste — https://colah.github.io/notes/taste/
+Citations
+- [P1] Parameter-efficient fine-tuning in large language models: a survey of methodologies — https://link.springer.com/article/10.1007/s10462-025-11236-4?error=cookies_not_supported&code=24f52ad3-5ff0-4cca-b8c3-296a4b7355a6
+- [P2] Guidelines for Empirical Studies in Software Engineering involving Large Language Models — https://arxiv.org/html/2508.15503v2
+- [P3] REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://reforms.cs.princeton.edu/
+- [P4] REFORMS: Reporting Standards for Machine Learning Based Science — https://arxiv.org/abs/2308.07832
+- [P6] The Responsible Foundation Model Development Cheatsheet: A Review of Tools & Resources — https://arxiv.org/abs/2406.16746
+- [P7] Practical Tips for Finetuning LLMs Using LoRA (Low-Rank Adaptation) — https://magazine.sebastianraschka.com/p/practical-tips-for-finetuning-llms
+- [P9] Open, rigorous and reproducible research: A practitioner’s handbook — https://stanforddatascience.github.io/best-practices/
+- [P10] DMLR: Data-centric Machine Learning Research -- Past, Present and Future — https://arxiv.org/abs/2311.13028

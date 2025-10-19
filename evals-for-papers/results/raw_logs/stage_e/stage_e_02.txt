@@ -1,112 +1,68 @@
-Based on the PeerRead paper, I can see the aspect score prediction models showed only slight improvements over the mean baseline [PeerRead.pdf:7]. Let me help you frame these limitations constructively and develop a strong contingency plan.
+Below is a concise way to frame the limitations of aspect score prediction in PeerRead and a concrete contingency plan that anticipates modest gains and sets decision points.
 
-## **Intuition**
-Modest gains in predictive tasks often signal that the problem is either inherently difficult (high human disagreement, subjective judgments) or that the signal available in the features is limited. Rather than treating this as a failure, it's an opportunity to characterize *why* the task is hard and what that reveals about peer review itself.
+How to frame the limitations
+- Subjective, noisy labels cap the ceiling. Aspect scores (e.g., originality, clarity, impact) are subjective and reviewer-specific; inter-rater variability likely limits the maximum achievable performance from text alone. Explicitly position model gains against a noise ceiling estimated from reviewer disagreement and repeated reviews per paper when available [P2].  
+- Signal–target mismatch. Some aspects depend on unobserved context (e.g., novelty vs. the broader literature, impact vs. community needs), which is not fully present in a single manuscript’s text. This structurally constrains predictability, even for strong models [P2].  
+- Dataset size, heterogeneity, and shift. PeerRead spans venues and years and contains variable numbers of reviews/papers, which can induce distribution shifts and reviewer-style confounds that depress generalization [P2].  
+- Metrics and problem formulation. Treating ordinal aspect scores as regression with point estimates ignores ordinal structure and uncertainty; small “modest” gains may partly reflect metric insensitivity (e.g., MSE vs. rank or calibration metrics) [P2].  
+- Predictive models as surrogates for human judgments. Predictive systems may fail to capture latent goals and evaluation heuristics of human reviewers; even well-fit models can underperform on tasks requiring judgment under context mismatch [P1].
 
-## **Why this is principled**
-Strong papers acknowledge limitations transparently and turn them into insights. The PeerRead paper explicitly states its goal is "to demonstrate potential uses of PeerRead; rather than develop the best model to address this task" [PeerRead.pdf:7], which is a defensible framing. This positions the dataset contribution as primary and the models as proof-of-concept baselines for future work.
+Contingency plan (phased, with go/no-go criteria)
+Phase 0 — Measurement and ceilings (2–3 weeks)
+- Reproduce PeerRead baselines and your current models on identical splits.  
+- Estimate label noise and a ceiling: inter-reviewer agreement per aspect; bootstrap split-half reliability; reviewer-normalized z-scores; and an “oracle” ensemble using multiple reviews per paper (when available) [P2].  
+- Go/no-go: If current performance is within 10–20% of the estimated ceiling, deprioritize model complexity and pivot to task reframing or label aggregation.
 
----
+Phase 1 — Robust problem formulation and evaluation (3–5 weeks)
+- Switch to ordinal/quantile modeling and report calibration: ordinal logistic or isotonic regression heads; evaluate Spearman/Kendall, ECE, Brier score, and correctness within ±1 bin.  
+- Model reviewer/venue effects: mixed-effects or hierarchical heads; reviewer- or venue-normalized targets and leave-reviewer-out validation.  
+- Robust splits: year- and venue-held-out splits; report in-domain vs. out-of-domain gaps [P2].  
+- Go/no-go: If ordinal + calibration + hierarchical modeling yields <5–10% relative improvement vs. Phase 0, proceed to reframing.
 
-## **Framing the Limitations**
+Phase 2 — Reframing for utility and signal (4–8 weeks)
+- Pairwise/ranking tasks: predict which of two papers scores higher on a given aspect; report pairwise accuracy and Kendall tau.  
+- Coarser bins and triage: map scores to low/medium/high to reduce label noise and support practical triage; evaluate macro-F1 and calibration.  
+- Retrieval-augmented context for subjective aspects: incorporate literature-aware features (citation overlap/novelty proxies) or retrieval-augmented encoders for originality/impact, with strict ablations to avoid leakage.  
+- Go/no-go: If ranking or coarse-bin tasks show stronger and consistent improvements with better calibration, pivot project scope to triage/ranking as the primary contribution.
 
-### **1. Lead with the Dataset Contribution**
-Position the modest model performance as *expected* given the task difficulty, not as a shortcoming:
+Phase 3 — Data and label quality (parallel/ongoing)
+- Label aggregation: apply probabilistic label aggregation (e.g., per-reviewer reliability weighting) and compare to raw labels; quantify ceiling shifts.  
+- Active curation: collect small, higher-consensus subsets (multiple annotators, adjudication) for a clean benchmark; show gap between noisy vs. clean supervision to justify future investment.  
+- Error analyses: stratify by aspect, venue, paper length, section ablations to identify where signal lives (e.g., methods vs. intro).
 
-**Suggested framing:**
-- "Aspect score prediction represents a challenging task due to the inherently subjective nature of peer review judgments. Our models achieve modest improvements over the mean baseline (RMSE reduction of ~X%), which we attribute to..."
-- Emphasize that establishing strong baselines and releasing the dataset enables future research to tackle this difficult problem
+Risk management and reporting
+- Pre-register evaluation and negative results; report ceilings and calibration alongside accuracy to contextualize “modest” gains [P2].  
+- Ethical and leakage controls: if using metadata (authors, citations), document and ablate; keep a “paper-text-only” track for fair comparability.  
+- Resource gating: stop escalating model complexity once you are within the measured ceiling, and redirect to reframing or label quality.
 
-### **2. Diagnose Why the Task is Hard**
-Turn the limitation into an analysis contribution. Add a subsection analyzing:
-- **Inter-annotator agreement**: How much do reviewers disagree on aspect scores? If agreement is low, that's your ceiling
-- **Feature informativeness**: Which features correlate most with scores? Are there aspects where text features simply don't capture the judgment?
-- **Dataset size effects**: Learning curves showing whether more data would help or if you've plateaued
+Three falsifiable experiments
+1) Noise ceiling and ordinal reformulation  
+- Hypothesis: Ordinal objectives with calibration-aware evaluation yield significantly better rank consistency and calibration than MSE regression, even if raw RMSE improves modestly.  
+- Variables: Loss (MSE vs. ordinal logistic), evaluation metrics (RMSE, Spearman, ECE), aspect type.  
+- Metrics: ΔSpearman ≥ +0.05 and ΔECE ≤ −0.03 averaged across aspects; statistical tests via bootstrap CIs.  
+- Expected outcome: Ordinal models improve rank consistency and calibration for subjective aspects (originality/impact) more than for clarity [P2].
 
-**Key questions to answer:**
-1. What's the human agreement level on these aspect scores? (This sets your theoretical upper bound)
-2. Do certain aspects (e.g., "clarity") predict better than others (e.g., "novelty")? Why might that be?
-3. Is there evidence that the task requires reasoning beyond surface features?
+2) Reviewer/venue normalization and generalization  
+- Hypothesis: Reviewer- and venue-normalized targets with hierarchical modeling reduce out-of-domain degradation on venue-held-out splits.  
+- Variables: Target normalization (none vs. z-score per reviewer/venue), head type (standard vs. hierarchical), split (random vs. venue-held-out).  
+- Metrics: Relative drop from in-domain to held-out in Spearman/Kendall; calibration (ECE).  
+- Expected outcome: Normalization + hierarchical heads reduce OOD drop by ≥20% relative compared to unnormalized baselines [P2].
 
-### **3. Reframe as a Benchmark Challenge**
-Position modest performance as establishing a difficult benchmark:
-- "These results establish aspect score prediction as a challenging benchmark for future work in computational peer review analysis"
-- Compare to other subjective prediction tasks (sentiment, argumentation quality) where baselines are also modest
+3) Retrieval-augmented originality prediction  
+- Hypothesis: Adding literature-aware features (e.g., retrieval of nearest related works and overlap-based novelty proxies) improves originality prediction more than clarity prediction, indicating task–signal alignment.  
+- Variables: Context (paper-only vs. paper+retrieval snippets), aspect (originality vs. clarity), model (frozen vs. fine-tuned encoder).  
+- Metrics: ΔSpearman and ΔBrier for originality vs. clarity; ablations to ensure gains are not due to leakage.  
+- Expected outcome: Significant gains for originality (ΔSpearman ≥ +0.05) but not clarity, supporting the signal–target mismatch claim [P2].
 
----
+How to write this up
+- Emphasize measured ceilings and uncertainty to contextualize modest improvements (not a failure of modeling, but a property of the task and labels) [P2].  
+- Position contributions around (i) principled evaluation and calibration, (ii) reframed tasks with clearer utility (ranking/triage), and (iii) data quality evidence.  
+- Include negative results where improvements are within the noise ceiling, and redirect to practical use-cases where models add value despite modest absolute gains [P1][P2].
 
-## **Contingency Plan for Future Work**
+Citations
+- [P1] Limitations of Agents Simulated by Predictive Models — http://arxiv.org/abs/2402.05829v1
+- [P2] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — http://arxiv.org/abs/1804.09635v1
 
-### **Phase 0 (Next 2 weeks) – Diagnostic Analysis**
-
-Before proposing future work, validate what's limiting performance:
-
-**Deliverable 1: Agreement Analysis**
-- Calculate inter-reviewer agreement (Krippendorff's α or ICC) for each aspect score
-- If agreement < 0.6, you have a strong explanation for modest performance
-- **Hypothesis**: Aspects with higher agreement will show better model performance
-
-**Deliverable 2: Error Analysis**
-- Sample 30-50 high-error predictions and manually categorize failure modes
-- Look for patterns: Are errors random or systematic? Do models struggle with specific score ranges (e.g., borderline papers)?
-- **Expected outcome**: Identify 2-3 concrete failure modes to guide future work
-
-### **Future Work Directions (Conditional on Phase 0)**
-
-**Direction 1: Multi-Task Learning with Auxiliary Signals**
-- *Hypothesis*: Aspect scores correlate with each other and with acceptance decisions; joint prediction may improve individual aspect prediction
-- *Minimal test*: Train a multi-task model predicting all aspects + acceptance simultaneously
-- *Metrics*: Per-aspect RMSE, correlation between predicted aspects
-- *Expected pattern*: If aspects share underlying factors, multi-task should outperform single-task by 5-10%
-- *Follow-up*: Analyze learned representations to understand aspect relationships
-
-**Direction 2: Incorporate Review Text as Supervision**
-- *Hypothesis*: Reviewer comments contain richer signals about aspect judgments than paper text alone
-- *Minimal test*: Extract sentences from reviews mentioning specific aspects (e.g., "clarity" mentions) and use as additional training signal
-- *Metrics*: RMSE improvement, attention weight analysis
-- *Expected pattern*: Models should attend to paper sections that reviewers explicitly critique
-- *Pitfall*: Review text may not be available at submission time (clarify use case)
-
-**Direction 3: Characterize Inherent Task Difficulty**
-- *Hypothesis*: Some papers are inherently harder to score (e.g., interdisciplinary work, novel methods)
-- *Minimal test*: Cluster papers by prediction error and analyze characteristics (topic diversity, citation patterns, linguistic complexity)
-- *Metrics*: Cluster purity, feature importance for high vs. low error groups
-- *Expected outcome*: Identify paper types where automated scoring is/isn't feasible
-- *Contribution*: Practical guidance on when to trust automated aspect prediction
-
----
-
-## **Recommended Framing in Paper**
-
-**Limitations Section:**
-```
-While our models improve over the mean baseline, gains remain modest 
-(RMSE reduction of X%). We attribute this to three factors: (1) the 
-inherently subjective nature of peer review, evidenced by inter-reviewer 
-agreement of α=Y on aspect scores; (2) the limited signal available in 
-submission text alone, as many aspects (e.g., experimental soundness) 
-require domain expertise and detailed evaluation; and (3) dataset size, 
-with only Z labeled examples per aspect. These results establish aspect 
-score prediction as a challenging benchmark for future work.
-```
-
-**Future Work Section:**
-```
-Future work could explore: (1) multi-task learning to leverage 
-correlations between aspects; (2) incorporating review text to 
-understand what signals reviewers use; (3) characterizing which 
-paper types are amenable to automated scoring; and (4) developing 
-confidence-aware models that abstain on difficult cases.
-```
-
----
-
-## **Next Actions (Choose 1-2)**
-
-1. **Run agreement analysis** (4 hours): Calculate inter-reviewer agreement for each aspect; if low, this becomes your primary explanation
-2. **Conduct error analysis** (6 hours): Sample high-error cases and categorize failure modes to guide future work
-3. **Draft limitations section** (2 hours): Write 1-2 paragraphs using the framing above, then we can refine
-
-**Critical question:** Do you have access to multiple reviews per paper to calculate inter-reviewer agreement? If not, that's a limitation to acknowledge but doesn't prevent the other analyses.
-
-What's your biggest concern about how reviewers will perceive the modest gains—are you worried about novelty, contribution, or something else?
+Sources
+- Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications (PeerRead) [P2]
+- Shah et al., 2024. Limitations of Agents Simulated by Predictive Models [P1]

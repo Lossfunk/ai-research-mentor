@@ -1,89 +1,72 @@
-Before diving into novelty and experiments, I need to understand your specific angle:
+Short answer
+“Compressible LLMs” = models intentionally trained so they retain accuracy, calibration, and behavioral properties under aggressive post-training or in-training compression. The novelty is not “another compression trick,” but training objectives/architectures that make compressibility a first-class property (predictably good at low bitwidths, high sparsity, low-rank, or small KV caches), with hardware-aware evaluation and crisp baselines against strong post-hoc compression methods like simple pruning/quantization/factorization [P4][P1][P3]. Methodologically, define the problem precisely, pick clear baselines, and run ablations that isolate where the gains come from [G1][G6][G14][G2].
 
-## Strategic Questions
+Where the novelty can be
+- Train-time compressibility objectives: Optimize for low effective rank, structured sparsity, weight sharing, and quantization robustness during pretraining or finetuning, rather than relying only on post-hoc compression. Prior work shows post-hoc dense-sparse factorization and low-rank prune+factorize are effective; making this a training-time property is the novel step [P1][P3].  
+- Compression-robust activation/KV paths: Add quantization/clipping/noise to activations and KV-cache during training so long-context decoding stays stable at low-precision KV or small caches. Most compression works focus on weights; robust KV/activations is underexplored in the LLM regime (conjecture; motivate and test carefully) [G6][G1].  
+- Hardware-/energy-aware co-design: Optimize for specific targets (e.g., 4-bit weights + 8-bit activations on consumer GPUs/edge) and report throughput/latency/energy alongside accuracy, not just size [P4][G2].  
+- Reliability under compression: Characterize calibration, robustness to input perturbations, and safety behavior shifts as compression increases; these are usually underreported and can differentiate “compressible” models from merely “small” ones [G2][G1].  
+- Scaling laws for compressibility: Measure how compressibility (quality at k bits or s% sparsity) scales with model size and data; propose a “compressibility exponent” predicting loss under a given budget (novel framing; validate empirically) [G6][G14].
 
-1. **What compression mechanism are you proposing?** The literature is saturated with pruning [P1], quantization [P7], and knowledge distillation [P2][P8]. Are you combining these differently, introducing a new compression primitive, or focusing on LLM-specific properties (e.g., attention sparsity, emergent modularity)?
+Baselines you should beat or match at a given budget
+- Post-hoc pruning + simple fine-tuning (e.g., “Just CHOP” style simple pipelines) [P4].  
+- Low-rank factorization and prune+factorize baselines [P3].  
+- Post-hoc dense–sparse factorization methods (e.g., DSFormer) [P1].  
+- Quantization baselines at 8b/4b with standard calibration (you can cite your implementation, but ensure strong baselines) [G2].
 
-2. **What's your success criterion?** Is it better compression ratios at fixed quality, faster inference, training-time compression, or something else? The field has moved beyond "can we compress" to "what tradeoffs unlock new deployment scenarios."
+Core evaluation protocol
+- Quality: Pretraining loss/perplexity and standard downstream evals (zero-/few-shot tasks appropriate for your domain).  
+- Resource metrics: Model size and working set (weights + KV), peak memory, tokens/s, latency p50/p95, and energy per 1k tokens on target hardware [P4].  
+- Robustness: Accuracy under noise/perturbations, calibration (ECE/Brier), and safety behavior drift when compressed vs. uncompressed [G2].  
+- Stability: Degradation curves across bitwidths (16→8→4→3→2), sparsity (0→90%), and KV precision/size; report area-under-curve as a compressibility score [G6].  
+- Reproducibility: Release exact recipes, seeds, calibration data, and ablations [G14][G2].
 
-3. **What resources do you have?** Compressing modern LLMs (7B+ parameters) requires substantial compute for baseline reproduction. Do you have access to pre-trained models, GPUs, and evaluation benchmarks, or are you working with smaller models first?
+Three concrete, falsifiable experiments
+1) Quantization-aware training (QAT) vs. post-hoc quantization  
+- Hypothesis: Adding fake quantization to weights and activations during training yields smaller accuracy drop at 4-bit weights + 8-bit activations versus post-hoc quantization.  
+- Setup: Train the same model with and without QAT; evaluate at 16b, 8b, 4b.  
+- Metrics: Δaccuracy/Δperplexity at each bitwidth, tokens/s, energy per 1k tokens.  
+- Success criteria: At 4b weights the QAT model shows ≥30% smaller accuracy drop compared to post-hoc quantization, with equal or better throughput.  
+- Rationale/baseline: Compare to simple post-hoc pipelines (e.g., CHOP-like) [P4] and factorization baselines [P3][P1]. Use clear controls/ablations per best-practice guidance [G2][G14].
 
----
+2) Train-time low-rank+sparsity regularization vs. post-hoc factorization  
+- Hypothesis: Regularizing for low effective rank and structured sparsity during training yields better quality–size tradeoffs than applying DSFormer or prune-and-factorize after the fact.  
+- Setup: Add nuclear-norm proxy or low-rank adapters plus N:M sparsity constraints in attention/MLP weights during pretraining/finetuning; compare against post-hoc DSFormer and prune+factorize with equal final parameter counts.  
+- Metrics: Task accuracy/perplexity at fixed parameter budget; compression ratio; latency.  
+- Success criteria: At matched size/sparsity, train-time-regularized model outperforms DSFormer/prune+factorize by ≥X points on a held-out eval suite.  
+- Rationale: DSFormer and low-rank prune+factorize indicate substantial redundancy post-hoc; pushing these structures into training is the novelty to test [P1][P3]. Ensure ablations isolate rank-only vs sparsity-only vs combined [G1][G14].
 
-## Novelty Assessment
+3) KV-cache compression-aware training for long-context decoding  
+- Hypothesis: Injecting quantization/noise into KV tensors during training reduces quality loss when limiting KV precision (e.g., 8→4→2 bits) or cache size (chunked eviction) at inference.  
+- Setup: During training, randomly quantize KV to target bitwidths and simulate cache eviction; at inference, evaluate long-context generation with compressed KV on target hardware.  
+- Metrics: Long-context task scores, perplexity drift across context length, latency/memory, and robustness to KV eviction.  
+- Success criteria: At 4-bit KV with 50% cache reduction, <20% of the performance drop seen by the model trained without KV perturbations.  
+- Rationale: Most compression focuses on weights; making the attention path compressible is a differentiator. Frame and report results with hardware-aware metrics per best practices [G6][G2].
 
-**Intuition**: LLM compression is a crowded field, so novelty hinges on either (a) a fundamentally new mechanism, (b) exploiting LLM-specific structure that CNNs/older DNNs lack, or (c) solving a deployment bottleneck that existing methods miss (e.g., dynamic compression, user-specific adaptation).
+Optional extensions (pick ≥1 for a compelling paper)
+- Compressibility scaling study: Train 3–4 sizes with the same recipe; fit accuracy vs. model size vs. bits; report “compressibility exponent” and compare to post-hoc baselines [G6].  
+- Calibration and safety drift under compression: Measure ECE and standardized safety prompts before/after compression; quantify drift to show whether “compressible” models preserve behavior better than post-hoc compressed ones [G2].  
+- Hardware–model co-design: Show Pareto curves (accuracy vs. latency/energy) for CPU vs consumer GPU, highlighting where your training-time constraints change the frontier compared to simple pipelines [P4].
 
-**Why this is principled**: Hamming emphasizes working on important problems where you can make a unique contribution [G15]. The literature shows combined approaches (pruning + quantization + distillation) are well-explored [P1][P3], so incremental combinations won't stand out. Strong research taste involves identifying gaps where existing methods fail [G13][G17].
+Reporting checklist
+- State contributions crisply (what’s new vs. known compression methods), list strong baselines, and include ablations/controls and exact recipes to enable replication [G1][G14][G2].  
+- Report both model quality and system metrics; avoid cherry-picking bitwidths or tasks; include full degradation curves [G6].  
+- Release code and configuration for quantizers, sparsifiers, and KV compression to allow verification [G2].
 
-### Current Landscape
-- **Established techniques**: Pruning, quantization (including QKD [P7]), and knowledge distillation are mature [P1][P3]. Libraries like KD-Lib [P3] make these accessible.
-- **Potential gaps**:
-  - **Dynamic/adaptive compression**: Most methods are static; can you compress based on input complexity or user context?
-  - **Mechanistic compression**: Exploiting interpretable circuits or modules in LLMs (e.g., compressing redundant attention heads while preserving critical ones).
-  - **Task-specific compression**: Compressing for specific downstream tasks rather than general capability preservation.
-  - **Training-free methods**: Data-free quantization exists [P4], but LLM-scale training-free compression is less explored.
+Anchoring literature
+- DSFormer shows dense–sparse factorization for text transformers; use as a strong post-hoc baseline [P1].  
+- Low-Rank Prune-and-Factorize and simple compression pipelines like “Just CHOP” provide competitive baselines; beating them at equal budgets strengthens the novelty claim [P3][P4].
 
----
+Citations
+- [P1] DSFormer: Effective Compression of Text-Transformers by Dense-Sparse Weight Factorization — http://arxiv.org/abs/2312.13211v1  
+- [P3] Low-Rank Prune-And-Factorize for Language Model Compression — http://arxiv.org/abs/2306.14152v1  
+- [P4] Just CHOP: Embarrassingly Simple LLM Compression — http://arxiv.org/abs/2305.14864v3  
+- [G1] Opinionated Guide ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html  
+- [G2] Best Practices: Research Methodological Guide — https://www.researchgate.net/publication/31052323_Best_Practices_Research_A_Methodological_Guide_for_the_Perplexed  
+- [G6] Framing Machine Learning Research — https://trendspider.com/learning-center/framing-machine-learning-research/  
+- [G14] Highly Opinionated Advice on How to Write ML Papers — https://www.alignmentforum.org/posts/Xt8tMtwfsLo2jRCEj/highly-opinionated-advice-on-how-to-write-ml-papers
 
-## Three Concrete Experiments
-
-### Experiment 1: Baseline Compression Ratio vs. Quality Tradeoff
-**Objective & Hypothesis**: Establish whether your method achieves better Pareto frontiers than existing techniques. Hypothesis: Your approach will achieve ≥10% better compression at iso-quality or ≥5% better quality at iso-compression compared to standard pruning+quantization.
-
-**Setup & Resources**: Use a publicly available LLM (e.g., GPT-2, LLaMA-7B if you have compute). Apply your compression method and compare against baselines: (1) magnitude pruning at 25%, 50%, 75% sparsity, (2) 8-bit and 4-bit quantization, (3) combined pruning+quantization [P1]. Evaluate on standard benchmarks (MMLU, HellaSwag, or perplexity on WikiText-103).
-
-**Evaluation Metrics**: Plot compression ratio (original size / compressed size) vs. task accuracy or perplexity. Measure inference latency on CPU and GPU. Track memory footprint during inference.
-
-**Expected Results & Interpretation**: If your method dominates the Pareto frontier, you have evidence of practical value. If it's comparable, the novelty must come from other dimensions (speed, ease of use, theoretical insight). If it underperforms, identify which component fails—compression aggressiveness, quality preservation, or both.
-
-**Follow-ups**: Vary model sizes (125M to 7B parameters) to test scaling behavior. Try different domains (code, math, general text) to assess robustness.
-
----
-
-### Experiment 2: Ablation of Compression Components
-**Objective & Hypothesis**: Identify which part of your method drives performance. Hypothesis: One component (e.g., attention-head pruning, layer-wise quantization) contributes ≥50% of the quality gain, while others are marginal.
-
-**Setup & Resources**: Decompose your method into independent components. For example, if you combine structured pruning + mixed-precision quantization + distillation, test each in isolation and pairwise combinations. Use a fixed model (e.g., GPT-2-medium) and a single benchmark (e.g., perplexity on validation set) to reduce variance.
-
-**Evaluation Metrics**: Measure perplexity or accuracy for each ablation. Calculate the marginal contribution of each component (performance with component X minus performance without X). Rank components by impact.
-
-**Expected Results & Interpretation**: If one component dominates, your story becomes "X is the key innovation; Y and Z provide incremental gains." If all components contribute equally, you have a systems contribution but weaker scientific insight. If removing a component *improves* performance, you've found a bug or harmful interaction.
-
-**Follow-ups**: Test whether component importance changes with compression ratio (e.g., does distillation matter more at 10× compression than 2×?). Check if findings generalize across model families (GPT vs. LLaMA architectures).
-
----
-
-### Experiment 3: Failure Mode Analysis—Where Does Compression Break?
-**Objective & Hypothesis**: Identify tasks or input types where compression degrades quality disproportionately. Hypothesis: Compression will harm rare/long-tail capabilities (e.g., multi-hop reasoning, low-resource languages) more than common tasks (e.g., next-word prediction on frequent tokens).
-
-**Setup & Resources**: Compress a model to a fixed ratio (e.g., 4×). Evaluate on a diverse task suite: (1) perplexity on common vs. rare tokens (split WikiText by token frequency), (2) accuracy on easy vs. hard examples (split MMLU by question difficulty), (3) performance on high-resource (English) vs. low-resource (e.g., Swahili) languages if multilingual. Compare compressed vs. original model.
-
-**Evaluation Metrics**: Compute performance degradation (original accuracy - compressed accuracy) separately for each task slice. Identify slices where degradation exceeds 2× the average. Visualize with a heatmap or bar chart.
-
-**Expected Results & Interpretation**: If degradation is uniform, your method preserves general capability. If specific slices suffer, you've identified a principled limitation (e.g., "our method trades off rare-token modeling for compression"). This informs future work (e.g., importance-weighted compression) and honest positioning in a paper.
-
-**Follow-ups**: Investigate *why* certain slices fail—are they handled by specific layers/heads that your method over-compresses? Can you add a small "rescue" module to recover critical capabilities?
-
----
-
-## Next Actions (1-3 days)
-
-1. **Clarify your angle**: Write a 2-sentence hypothesis answering "What makes my compression approach different?" and "Why would it work better than existing methods?"
-2. **Reproduce a baseline**: Pick one paper [P1] or [P7] and reproduce their key result on a small model (GPT-2-small). This calibrates your pipeline and reveals hidden implementation details.
-3. **Draft an experiment card**: For Experiment 1, specify the exact model, datasets, baselines, and success threshold before running anything [G12].
-
----
-
-## Citations
-
-- [P1] PQK: Model Compression via Pruning, Quantization, and Knowledge Distillation — http://arxiv.org/abs/2106.14681v1
-- [P2] Parallel Blockwise Knowledge Distillation for Deep Neural Network Compression — http://arxiv.org/abs/2012.03096v1
-- [P3] KD-Lib: A PyTorch library for Knowledge Distillation, Pruning and Quantization — http://arxiv.org/abs/2011.14691v1
-- [P4] Data-Free Network Quantization With Adversarial Knowledge Distillation — http://arxiv.org/abs/2005.04136v1
-- [P7] QKD: Quantization-aware Knowledge Distillation — http://arxiv.org/abs/1911.12491v1
-- [P8] Knowledge Distillation Beyond Model Compression — http://arxiv.org/abs/2007.01922v1
-- [G12] Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
-- [G13] Research Taste — https://home.ie.cuhk.edu.hk/~dmchiu/research_taste.pdf
-- [G15] You and Your Research (Hamming) — https://gwern.net/doc/science/1986-hamming
-- [G17] Research Taste (Colah) — https://colah.github.io/notes/taste/
+Key takeaways
+- Make compressibility a training target, not just a post-hoc trick.  
+- Compare against strong, simple baselines and report full quality–resource tradeoffs.  
+- Validate on weights, activations, and KV paths, and include calibration/safety and hardware metrics for a convincing, end-to-end story.

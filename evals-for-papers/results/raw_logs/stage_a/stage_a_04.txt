@@ -1,37 +1,68 @@
-I appreciate your commitment to AI safety research, but I need to be direct: **2 hours per week is below the threshold for meaningful independent research contributions**. Let me help you find the highest-impact path given this constraint.
+You can make real contributions with 2 hours/week by focusing on small, high-leverage tasks: evals (measurement), red-teaming (finding failures), and light-weight agent/guardrail tests. These areas are explicitly recommended as accessible on-ramps and don’t require large compute or long uninterrupted blocks [P5][P1][P2].
 
-## Context Questions (please answer these so I can tailor advice):
+A simple 2-hour weekly template
+- 20 minutes: Read one focused resource or skim an eval/red-team repo issue to pick a micro-task [P9].
+- 70 minutes: Run/extend one evaluation or red-team a single behavior on 1–2 models, logging results clearly [P5][P2].
+- 20 minutes: Write up results (issue/PR or short post) with exact prompts, versions, and metrics [P5][P9].
+- 10 minutes: Plan next micro-step; keep scope tiny and serial (one variable at a time) [P9].
 
-1. **What's your current background?** (e.g., ML coursework, industry experience, self-taught)
-2. **Do you have access to mentorship** or are you working solo?
-3. **What's your timeline/goal?** (e.g., skill-building for a future career shift, contributing to a specific project, staying informed)
-4. **What aspect of AI safety interests you most?** (e.g., interpretability, alignment, robustness, governance)
+Where your 2 hours can have impact
+- Model evaluations (evals): Replicate or extend a narrow eval that measures a concrete behavior (e.g., instruction refusal consistency, prompt-injection robustness, tool-use mistakes). Evals help decision-makers see risks, but measurement alone doesn’t make models safer—so pair evals with clear, reproducible reporting [P5]. Programs like MATS curate safety-relevant eval topics and examples you can build from [P10].
+- Red teaming: Systematically try to elicit harmful or policy-violating outputs. Use the OWASP ML/LLM attack patterns (e.g., prompt injection, data exfiltration) as a checklist to generate test cases [P2]. Continuous adversarial testing and safety scorecards are recommended for practical assurance pipelines [P3].
+- Agent safety basics: When testing agents, reduce action scope, add guardrails, and log everything; this makes experiments both safer and easier to interpret in short sessions [P4].
+- Light mentorship/structure: If you want gentle accountability, look for part-time mentorship programs or communities with small-scope projects (e.g., SPAR) [P6] and roadmaps that suggest beginner-friendly projects [P1].
 
-## Immediate Recommendations (branching on your situation):
+Three concrete, falsifiable experiments you can run with minimal compute
+1) Prompt-injection robustness mini-benchmark
+- Hypothesis: Adding a concise, security-oriented system prompt reduces prompt-injection success rate relative to a neutral system prompt. 
+- Design: Select 30–50 injection patterns across categories (e.g., instruction override, role hijacking, data exfiltration) informed by OWASP-style taxonomies [P2]. Evaluate on 2–3 models/APIs. 
+- Variables: System prompt (neutral vs. security-hardened); model family. 
+- Metrics: Attack success rate (% of trials where the model follows the attacker instruction), and time-to-failure. 
+- Expected outcome: Security-focused system prompts lower attack success, but not uniformly across categories; some injections remain effective, motivating layered defenses [P2][P3].
 
-### **If you're building toward a future research role:**
-Focus on **structured learning + micro-contributions** rather than independent projects:
-- **Replicate one key result** from a recent safety paper (e.g., a single figure from an interpretability study). Budget: 1.5 hrs/week execution, 0.5 hrs reading.
-- **Join an existing project** (e.g., MATS, AI Safety Camp, or open-source interpretability tools) where 2 hrs/week of focused work is valuable.
-- **Prediction logging**: Spend 20 min/week predicting outcomes of safety experiments before reading results—builds research taste efficiently.
+2) Refusal-then-help prompting for risky requests
+- Hypothesis: A “refusal + safe alternative” instruction reduces harmful outputs on risk-prone prompts while preserving task performance on benign prompts. 
+- Design: Curate 50 prompts (25 risky/ambiguous, 25 benign). Compare base prompting vs. refusal-then-help prompting (constitutional/guardrail style) [P4]. 
+- Variables: Prompting style; model. 
+- Metrics: Harmful output rate on risky set; task success/utility on benign set. 
+- Expected outcome: Harmful output rate decreases under refusal-then-help with minimal utility loss on benign set [P4][P5].
 
-### **If you want to contribute now without leading projects:**
-- **High-quality reviewing/feedback**: Offer to review drafts for safety researchers (LessWrong, Alignment Forum). 2 hours of expert feedback can be very valuable.
-- **Distillation**: Write clear explanations of recent safety papers for broader audiences (builds understanding + helps the field).
-- **Tool-building**: Contribute code to existing safety infrastructure (e.g., TransformerLens, ARENA exercises).
+3) Agent toolscope ablation
+- Hypothesis: Narrow tool permissions and explicit validation checks reduce high-risk actions without significantly lowering task completion. 
+- Design: Simple agent with retrieval + calculator on 20 tasks. Compare Full tools vs. Narrowed tools + output validation checklist (e.g., “never open external URLs unless …”) [P4]. 
+- Variables: Toolscope; validation on/off. 
+- Metrics: Task success; number of unsafe-action attempts; time per task. 
+- Expected outcome: Narrowed tools + validation reduce unsafe attempts with modest impact on completion [P4][P3].
 
-### **If you're exploring whether to commit more time later:**
-- **Run a 4-week trial** with a single, scoped question (e.g., "Do safety fine-tuning techniques transfer across model families?"). If you can't get signal in 8 total hours, research may not be the right fit at this time budget.
+Optionally, a fourth quick study
+4) Jailbreak transferability
+- Hypothesis: Jailbreaks crafted on one model transfer to others ≥30% of the time. 
+- Design: Create 20 jailbreak prompts on Model A; test on Models B and C. 
+- Metrics: Transfer success rate; qualitative categories of jailbreaks that transfer. 
+- Rationale: Helps prioritize defense strategies that address cross-model patterns [P2][P5].
 
-## **Intuition**
-Research progress requires both **depth** (sustained focus on a problem) and **iteration** (running experiments, interpreting failures, adjusting). At 2 hrs/week, you'll spend most time context-loading rather than building momentum. The highest-impact moves are either (a) contributing to someone else's momentum or (b) very focused skill-building that compounds.
+How to package contributions in tiny increments
+- Replicate an existing eval with a small variant (e.g., add 10 new test prompts; add a new metric; test 1 extra model) and open a PR or write an issue with exact prompts, seeds, model versions, and code to reproduce [P5]. 
+- Write a 1–2 page short report with a table of results, failure exemplars, and a one-sentence takeaway (what changed, by how much, under what condition) [P5][P9]. 
+- Keep a changelog of your weekly micro-results; consistency matters more than scope [P9].
 
-## **Why this is principled**
-Experienced researchers typically estimate 10-20 hrs/week minimum for independent projects to maintain continuity and iterate on feedback. Below that threshold, **leverage** (contributing to existing work) or **deliberate practice** (replication, prediction) typically yields better returns than trying to lead novel investigations.
+Starter choices for your first 2–3 weeks
+- Week 1: Reproduce a small eval from a public guide and run it on one additional model [P5]. 
+- Week 2: Add a single variable (e.g., a hardened system prompt) and re-measure [P2][P3]. 
+- Week 3: Write up, open an issue/PR, or share a minimally formatted post with exact artifacts to aid reuse [P5].
 
-## Next Actions (pick ONE based on your answers above):
-1. **If learning-focused**: Find one recent AI safety paper that excites you and commit to reproducing one experiment/figure in 4 weeks.
-2. **If contribution-focused**: Reach out to 2-3 active safety research groups and offer specific skills (coding, writing, reviewing).
-3. **If exploring**: Design a single falsifiable hypothesis you can test in 8 hours total, run it, and assess whether the constraint is workable.
+Two literature anchors to orient you
+- A starter guide for Evals — Apollo Research [link] [P5]
+- Complete AI Red Teaming Guide for Beginners in 2025 [link] [P2]
 
-**Please answer the 4 context questions above** so I can give you a concrete, personalized 4-week plan with specific papers, projects, or contacts.
+If you share your preferred sub-area (evals, red-teaming, or agents), I can propose a 4–6 week micro-roadmap with concrete repos and tasks.
+
+Citations
+- [P1] An Outsider’s Roadmap into AI Safety Research (2025) — https://www.lesswrong.com/posts/bcuzjKmNZHWDuEwBz/an-outsider-s-roadmap-into-ai-safety-research-2025
+- [P2] Complete AI Red Teaming Guide for Beginners in 2025 — https://www.practical-devsecops.com/ai-red-teaming-beginners-guide/
+- [P3] AI Security 2025: Complete Guide to Risks, Controls & Compliance — https://www.levo.ai/resources/blogs/ai-security-the-complete-guide-for
+- [P4] Securing Agentic AI: A Beginner’s Guide — https://hiddenlayer.com/innovation-hub/securing-agentic-ai-a-beginners-guide/
+- [P5] A starter guide for Evals — Apollo Research — https://www.apolloresearch.ai/blog/a-starter-guide-for-evals
+- [P6] Mentors — Supervised Program for Alignment — https://sparai.org/mentors
+- [P9] Tips for Empirical Alignment Research — https://www.alignmentforum.org/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research
+- [P10] AI Evaluations — ML Alignment & Theory Scholars — https://www.matsprogram.org/evals

@@ -1,27 +1,77 @@
-I'd be happy to help you check for ethics and compliance risks in your paper! However, I don't see any attached document yet.
+I read the attached PDF and scanned for ethics/compliance topics. Below are concrete risks I see plus specific fixes you can add to the paper.
 
-**Could you please upload your paper (PDF or draft)?** Once you do, I'll systematically review it for:
+What I found in your paper
+- Risk of demographic/institutional bias acknowledged but not operationalized: You note that cohort demographics, prevalence, equipment, and single-institution sourcing (e.g., all cases from one hospital) can induce bias and disparities, and you include an impact statement calling for transparency and equity [Do Multiple Instance Learning Models Transfer_.pdf:10]. However, I don’t see subgroup evaluations or mitigation steps tied to these risks.
+- Dataset usage spans multiple sources; licenses/permissions not stated: Your experiments use multiple datasets (e.g., BRACS, EBRAINS, PC-108; also cross-dataset transfer learning) [Do Multiple Instance Learning Models Transfer_.pdf:20; 17]. I don’t see a per-dataset license, terms-of-use, or redistribution statement, nor a declaration of whether test sets with restrictive terms were used only for evaluation and whether any rehosting or redistribution occurs.
+- Deviations from “official” splits: You note issues around official splits when transferring between datasets [Do Multiple Instance Learning Models Transfer_.pdf:17]. This raises two compliance risks: (a) potential test-set protocol or ToS violations if official test partitions have restrictions, and (b) risk of leakage if the new splits aren’t patient-level or follow dataset guidance.
+- Human subjects/IRB/consent: The work appears to involve patient-derived histopathology images. I don’t see IRB protocol IDs or exemption determinations, consent/de-identification statements, or a statement of compliance with HIPAA/GDPR (as applicable). Given the single-institution data mention [Do Multiple Instance Learning Models Transfer_.pdf:10], it’s important to state whether your local IRB approved or exempted this research and whether all data were de-identified prior to access/use.
+- Compute disclosures: You provide some training details (optimizer, LR, scheduler, mixed precision, epochs) [Do Multiple Instance Learning Models Transfer_.pdf:16], but I don’t see compute disclosure (hardware model/count, GPU-hours or FLOPs), or energy/carbon estimates. Many venues now expect resource and environmental impact reporting.
+- Reproducibility/Model and Data Cards: You provide several training hyperparameters [Do Multiple Instance Learning Models Transfer_.pdf:16], but a consolidated Model Card/Data Card describing intended use, limitations, subgroup behavior, training data provenance, and licensing is not referenced.
+- Clinical use and dual-use: Given the medical setting, the paper should explicitly state that the model is for research only, not for clinical decision-making, and outline foreseeable harms and mitigations.
 
-1. **Dataset licenses & attribution** - proper citations, license compatibility, terms of use
-2. **Human data handling** - IRB approval, consent, privacy protections, demographic reporting
-3. **Compute & environmental disclosures** - carbon footprint, resource usage, reproducibility details
-4. **Broader impacts** - dual-use concerns, fairness considerations, limitation statements
-5. **Author & funding transparency** - COI statements, acknowledgments
+High-priority fixes to add to the paper
+- Per-dataset license and terms table
+  - For each dataset used (e.g., PC-108, BRACS, EBRAINS), list: source URL, license/ToS name and link, allowed uses (commercial/non-commercial), redistribution rights, required attributions, restrictions on derivative works, and whether you are redistributing any images/patches/embeddings or only code and trained weights. If any dataset prohibits redistribution, state that you do not host or redistribute it and provide instructions for readers to obtain it directly.
+  - Add an explicit statement that official test sets were used only for evaluation, without training or hyperparameter tuning where required, and that you complied with each dataset’s evaluation policies [Do Multiple Instance Learning Models Transfer_.pdf:17; 20].
+- IRB/ethics and privacy
+  - Add an “Ethics/IRB” paragraph stating: IRB protocol number(s) or exemption; whether data were de-identified before researchers accessed them; whether consent was obtained or waiver of consent was granted; compliance frameworks (e.g., HIPAA, GDPR) if applicable; and data-use agreements for any nonpublic datasets. If only public de-identified datasets were used, state that and cite their data-use terms. Tie this to the single-institution risk already noted [Do Multiple Instance Learning Models Transfer_.pdf:10].
+- Subgroup bias evaluation and mitigation
+  - Add subgroup performance breakdowns by institution/source, scanner/vendor if available, and demographics if available (e.g., age group, sex), including CIs and significance tests. Discuss disparities and mitigations (domain generalization, calibration, threshold adjustments). This concretely operationalizes your impact statement [Do Multiple Instance Learning Models Transfer_.pdf:10].
+- Data splits and leakage safeguards
+  - Document how you ensured patient-level separation across train/val/test and across datasets in transfer experiments, and whether you deviated from or replicated official splits when they exist. If you deviated, justify and disclose precisely [Do Multiple Instance Learning Models Transfer_.pdf:17].
+- Compute, energy, and carbon disclosures
+  - Add hardware specs (GPU model, count), total GPU-hours per experiment, peak memory, and either FLOPs or an estimate. Provide energy and CO2e estimates using a tool like CodeCarbon and report assumptions (datacenter PUE and grid carbon intensity). You already list core training hyperparameters [Do Multiple Instance Learning Models Transfer_.pdf:16]; augment with resource/impact reporting.
+- Model and Data Cards
+  - Include a short Model Card covering intended use, out-of-scope use (not for clinical decisions), training data sources, limitations, subgroup performance, and ethical considerations. Include a Data Card (or datasheet) for any dataset you collect or substantially curate, and link to original dataset licenses for external sources.
+- Clinical and dual-use disclaimers
+  - Add a sentence in Abstract or Ethics section: “This model is intended for research use only and is not cleared or approved for clinical use. Clinical deployment requires regulatory evaluation and prospective validation.” Summarize foreseeable harms and how you mitigate them (e.g., human-in-the-loop, calibration, conservative thresholds).
+- Data availability and access
+  - State precisely what you share: code license, model weight license, and where to obtain datasets (original sources, not rehosted, unless license permits). If any dataset is restricted, provide access instructions rather than direct distribution.
+- Acknowledgments and conflicts
+  - Acknowledge dataset creators as required by their licenses, and include a funding/conflicts statement.
 
----
+Concrete, falsifiable experiments to strengthen ethics/compliance evidence
+- Subgroup fairness test across institutions
+  - Hypothesis: AUC does not differ by data source institution by more than Δ=0.03 after calibration.
+  - Variables: Independent—source institution; Dependent—AUC, sensitivity at fixed specificity.
+  - Metrics: ΔAUC and 95% CIs per subgroup; DeLong test for differences; error bars in a forest plot.
+  - Expected outcome: Some measurable disparity attributable to single-institution training that you can mitigate by domain adaptation or reweighting [Do Multiple Instance Learning Models Transfer_.pdf:10].
+- Data leakage audit
+  - Hypothesis: No patient-level overlap exists between train/val/test or across datasets used in transfer experiments.
+  - Method: Hash patient identifiers if available or use slide-level proxies; check duplicates across splits. If official splits were modified, verify they still enforce patient-level separation.
+  - Metrics: Count of duplicate patients or near-duplicate slides; leakage rate target = 0.
+  - Expected outcome: Zero duplicates; if any are found, report and re-run affected results [Do Multiple Instance Learning Models Transfer_.pdf:17].
+- Energy/carbon measurement study
+  - Hypothesis: Training the best-performing configuration emits ≤ X kgCO2e on your reported hardware.
+  - Method: Log wall-clock time, GPU power draw, and use CodeCarbon (or equivalent) to compute CO2e; report PUE and regional grid assumptions.
+  - Metrics: GPU-hours, kWh, kgCO2e per run and per successful model; emissions per percentage point of AUC.
+  - Expected outcome: Transparent compute/impact reporting that enables comparison across methods; may motivate lighter-weight baselines [Do Multiple Instance Learning Models Transfer_.pdf:16].
+- Cross-dataset license-compliant evaluation
+  - Hypothesis: Results are unchanged when strictly adhering to each dataset’s official evaluation protocol and ToS.
+  - Method: Re-run evaluation using required official test splits and prohibited actions (if any) removed; document any deviations and their effects.
+  - Metrics: Change in AUC/ACC vs. prior numbers.
+  - Expected outcome: Minimal changes; if large, revise claims and document protocol compliance [Do Multiple Instance Learning Models Transfer_.pdf:17].
 
-**While you're uploading, quick intake questions to tailor my review:**
+Language you can add (templates)
+- IRB statement: “This study was approved by the [Institution] IRB (Protocol #[ID]) with a waiver of informed consent for retrospective, de-identified data. All data were de-identified prior to analysis in compliance with HIPAA. For public datasets, we complied with their data-use terms and did not redistribute restricted data.”
+- Dataset license table: “We used PC-108, BRACS, EBRAINS, … For each dataset, Table X lists license/ToS, allowed uses, redistribution terms, and required attributions. We do not redistribute any datasets with restrictive licenses; readers should obtain them from the original sources.”
+- Compute disclosure: “Experiments ran on [N]×[GPU model] (total Y GPU-hours per configuration). Energy use was Z kWh and CO2e was Q kg, estimated with CodeCarbon (PUE=…, grid intensity=…).”
+- Clinical use disclaimer: “This work is for research only, not for clinical decision-making. Deployment would require regulatory review and prospective validation.”
 
-1. **Venue target?** (Different venues have different requirements - NeurIPS has a broader impact statement requirement, ACL has ethics review criteria, etc.)
-2. **Does your work involve any of these?**
-   - Scraping web data or using datasets assembled from user-generated content
-   - Human annotations, crowdworkers, or user studies
-   - Models trained on >100 GPU-hours
-   - Sensitive domains (medical, legal, children, surveillance)
-3. **Geographic context?** (GDPR in EU, specific IRB requirements in your institution, etc.)
+Literature anchors
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
+- Gebru et al., 2021. Datasheets for Datasets — https://arxiv.org/abs/1803.09010
+- Lacoste et al., 2019. Quantifying the Carbon Emissions of Machine Learning — https://arxiv.org/abs/1910.09700
 
-**Intuition**: Ethics compliance has shifted from optional "broader impacts" to mandatory gating criteria at major venues. Reviewers now actively flag missing disclosures, and desk-rejects for ethics violations are increasingly common.
+If you share the exact Ethics/IRB, Data Availability, and Methods subsections, I can mark specific sentences to add and draft a per-dataset license table.
 
-**Why this is principled**: Reproducibility standards (Papers with Code, ML Reproducibility Checklist), data governance frameworks (GDPR, dataset datasheets), and venue-specific ethics policies now form a compliance baseline that protects both subjects and scientific integrity.
+Citations
+- [Do Multiple Instance Learning Models Transfer_.pdf:10]
+- [Do Multiple Instance Learning Models Transfer_.pdf:16]
+- [Do Multiple Instance Learning Models Transfer_.pdf:17]
+- [Do Multiple Instance Learning Models Transfer_.pdf:20]
 
-Upload your draft and I'll give you a concrete checklist with page-specific fixes! 📄
+Sources
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
+- Gebru et al., 2021. Datasheets for Datasets — https://arxiv.org/abs/1803.09010
+- Lacoste et al., 2019. Quantifying the Carbon Emissions of Machine Learning — https://arxiv.org/abs/1910.09700

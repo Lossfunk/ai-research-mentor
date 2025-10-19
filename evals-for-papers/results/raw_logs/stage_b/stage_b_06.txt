@@ -1,16 +1,57 @@
-I'd be happy to help evaluate your idea! To give you the most useful feedback, I need to understand what you're proposing.
+Short answer: yes—mixing biological datasets with transformer models is viable and increasingly standard, but success depends on careful data curation, leakage control, and rigorous evaluation on the right benchmarks. Surveys and evaluations across genomics, proteins, and multi-omics report clear gains when transformers are pretrained on large biological corpora and evaluated with domain-appropriate splits and metrics [P1][P3][P9][P10].
 
-**Could you share:**
-1. **The core idea**: What specific biological data are you working with (sequences, images, graphs, time-series)? What task or question are you trying to solve with transformers?
-2. **Your motivation**: What gap or limitation in current approaches would this address?
-3. **Initial thoughts on approach**: Any specific transformer architecture or adaptation you're considering?
+Where transformers tend to work now
+- Genomics (DNA/RNA): Genome language models learn regulatory “grammar” from raw sequence and can transfer to tasks like enhancer/promoter classification and variant effect prediction; pretraining choices (tokenization, masking, context length) matter [P1][P8].  
+- Proteins: Protein foundation models (e.g., ESM, ProtBERT) show strong transfer to structure/function/property prediction, but fair evaluation requires homology-aware splits; recent benchmarks standardize tasks and metrics across many endpoints [P2][P9].  
+- Multi-omics and cross-modal learning: New benchmarks evaluate single-omics, cross-omics alignment, and multi-omics tasks, enabling systematic comparison of contrastive and generative approaches [P10].  
+- Broader biomedicine: Transformers have been applied across text, sequences, images, and graphs, with ongoing work on explainability to support scientific and clinical use [P3].
 
-**Before we dive deep, let me also gather some context to tailor my advice:**
+Key pitfalls and how to avoid them
+- Data leakage: Use homology- or similarity-aware splits for sequences; avoid donor, cell-line, or batch leakage for omics; standardize cross-omics partitions for paired modalities [P9][P10].  
+- Baselines and ablations: Compare against strong non-transformer and size-matched baselines; ablate pretraining, tokenization, context length, and fine-tuning protocols [P3].  
+- Pretraining vs fine-tuning: Expect large gains from domain-pretraining; scaling data and model size helps but saturates without high-quality, diverse corpora [P1][P8].  
+- Evaluation: Use domain-appropriate metrics (e.g., AUROC/AUPRC for classification, correlation for regression, top-k retrieval for cross-modal alignment) and report uncertainty across multiple seeds [P9][P10].  
+- Interpretability and clinical relevance: Apply attribution/probing and report limitations; avoid overclaiming mechanistic insight without supporting analyses [P3].
 
-- **Resources**: What's your compute access like (local GPU, cloud credits, cluster)? How many hours per week can you dedicate to this?
-- **Background**: Are you currently in a course, working on a thesis, or exploring independently? What's your experience level with transformers and biological data?
-- **Collaboration**: Do you have advisor/mentor support? Access to domain experts in biology?
-- **Timeline**: Any target deadlines or milestones (conference submission, thesis defense, etc.)?
-- **Biggest bottleneck**: What feels like the hardest part right now—getting data, choosing the right architecture, evaluation, or something else?
+Representative benchmarks, tasks, and metrics
+- Proteins: ProteinBench covers tasks spanning function, stability, structure-derived properties; emphasizes fair splits and standardized metrics such as AUROC/AUPRC and correlation [P9].  
+- Genomics: Surveys summarize common tasks (regulatory element classification, chromatin/TF binding, variant impact, gene expression prediction) with MLM/sequence-to-label setups; metrics commonly AUROC/AUPRC and correlation for quantitative outputs [P1][P8].  
+- Multi-omics: COMET provides single-omics, cross-omics, and multi-omics tasks with unified evaluation (classification F1/AUPRC, regression correlation, cross-modal retrieval/top-k) [P10].  
+- Biomedicine broadly: Reviews map transformer use across modalities and discuss explainability/evaluation considerations [P3].
 
-Once I understand your specific idea and context, I can help assess viability, identify potential pitfalls, suggest concrete experiments, and point you toward relevant recent work.
+Three concrete, falsifiable experiments you can run
+1) Genomic LM scale and tokenization ablation  
+- Hypothesis: Scaling genome pretraining data and using k-mer tokenization with longer context improves regulatory prediction vs byte/BPE tokenization.  
+- Setup: Pretrain masked LMs on human+vertebrate genomes under three tokenizations (byte-BPE, 6-mer, 10-mer) and two context lengths (1 kb, 4 kb). Fine-tune on regulatory tasks (e.g., enhancer/promoter classification; variant effect prediction).  
+- Variables: Pretraining corpus size; tokenization; context length; fine-tuning dataset size.  
+- Metrics: AUROC/AUPRC for classification; Spearman/Pearson for quantitative predictions.  
+- Expected outcome: Larger corpora and longer contexts help; k-mer tokenization yields stronger transfer on sequence-level tasks, but benefits may taper at very long k [P1][P8].
+
+2) Protein property prediction with homology-aware evaluation  
+- Hypothesis: Domain-pretrained transformers outperform non-pretrained or size-matched baselines on function/stability tasks under strict homology clustering; naive random splits overestimate performance.  
+- Setup: Evaluate a pretrained protein LM vs (a) randomly initialized transformer matched in size and (b) strong non-transformer baseline across ProteinBench tasks. Compare random vs homology-clustered splits.  
+- Variables: Pretraining status; architecture/baseline; split strategy.  
+- Metrics: AUROC/AUPRC/correlation as defined per task; delta between random and homology-aware splits.  
+- Expected outcome: Significant drop from random to homology-aware splits; pretrained LM maintains performance edge under fair splits [P9].
+
+3) Cross-omics contrastive pretraining vs supervised baselines  
+- Hypothesis: Contrastive pretraining on paired omics (e.g., scRNA-seq + ATAC-seq) improves retrieval/alignment and downstream classification versus purely supervised training.  
+- Setup: Use COMET tasks for cross-omics alignment; train (a) contrastive transformer encoders on paired modalities and (b) supervised models on each modality.  
+- Variables: Pretraining objective (contrastive vs supervised), pairing ratio, negative sampling strategy.  
+- Metrics: Cross-modal retrieval top-1/5 accuracy; downstream classification AUPRC; robustness to batch/donor shifts.  
+- Expected outcome: Contrastive models achieve better retrieval and transfer, with gains robust to moderate batch/donor shifts if splits are donor-aware [P10].
+
+Practical next steps
+- Choose a target domain (genomics, proteins, or multi-omics) and adopt the corresponding benchmark first (ProteinBench, COMET, or tasks summarized in Gene-LLMs). Start with a strong domain-pretrained transformer and implement leakage-safe splits [P1][P9][P10].  
+- Define 1–2 high-impact downstream tasks and lock metrics/splits upfront. Pre-register ablations (tokenization, context, pretraining size) to avoid garden-of-forking-paths.  
+- Report multiple seeds, calibration metrics, and model/data cards; include attribution/probing analyses where claims of biological insight are made [P3].
+
+Citations
+- [P1] Gene-LLMs: a comprehensive survey of transformer-based genomic language models for regulatory and clinical genomics — https://www.frontiersin.org/journals/genetics/articles/10.3389/fgene.2025.1634882/full  
+- [P2] A Comprehensive Review of Transformer-based language models in bioinformatics — https://arxiv.org/html/2507.13646v1  
+- [P3] Transformer models in biomedicine — https://pmc.ncbi.nlm.nih.gov/articles/PMC11287876/  
+- [P8] Transformers and Genome Language Models — https://www.nature.com/articles/s42256-025-01007-9  
+- [P9] ProteinBench: A Holistic Evaluation of Protein Foundation Models — https://arxiv.org/abs/2409.06744  
+- [P10] COMET: Benchmark for Comprehensive Biological Multi-omics Evaluation Tasks and Language Models — https://arxiv.org/abs/2412.10347
+
+If you share more specifics about your datasets and target tasks, I can tailor the experiment designs and baselines.
