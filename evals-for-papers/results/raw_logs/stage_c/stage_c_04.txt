@@ -1,217 +1,180 @@
-Turnkey plan: zero-compute, black-box LLM research on token-efficiency, robustness, and calibration
-
 1) Problem framing and goals
+Focus: Make high-impact, compute-light contributions by advancing evaluation, reproducibility, and documentation practices for LLM/NLP systems using existing models via public inference APIs and human-centered methods. This leverages:
+- Systematic synthesis (PRISMA) to map and assess practices without training models [1].
+- Reproducibility checklists and artifact audits to quantify scientific rigor and what correlates with replicable results [2][3].
+- Behavioral test design (e.g., CheckList) to uncover failures aggregate metrics miss, using small, carefully curated test suites and limited API calls [6].
+- Transparent documentation (Datasheets, Model Cards) to improve model understanding and reduce misuse [4][5].
 
-Project scope
-- Black-box, training-free evaluation and methods for improving token efficiency, robustness to prompt paraphrase, uncertainty calibration, and safety for LLMs accessed via public APIs. Benchmarks: MMLU, TruthfulQA, MT-Bench, BBQ, RealToxicityPrompts. We follow HELM-style, multi-metric evaluation to avoid single-number overfitting [1].
+Primary goals (6 months):
+- Deliver a PRISMA-compliant systematic review of current LLM evaluation practices and metric validity.
+- Build and validate a small-scope behavioral test suite and red-teaming protocol that reveals failures beyond accuracy; share as an open resource.
+- Conduct a limited-scope reproducibility audit of recent LLM papers (documentation, seeds, data, scripts) and analyze associations with result stability.
+- Author two high-quality documentation exemplars (Datasheet + Model Card) for widely used open models, with a small user study on usefulness.
 
-Objectives with numerical targets
-- Token-efficiency: Achieve ≥95% task performance retention versus uncompressed prompts while reducing input tokens by 40–60% on MMLU and TruthfulQA (macro-averaged across subjects) [8][4][3].
-- Self-consistency under fixed budget: Under a fixed total token budget B, majority-vote self-consistency with k small CoT generations (k≥5) outperforms a single long CoT by ≥2.0 absolute points on MMLU and MT-Bench, with ≤10% cost overhead relative to the long-CoT baseline [7][2][4].
-- Paraphrase robustness: Reduce worst-case paraphrase sensitivity (max − min accuracy across N paraphrases per task) by ≥50% relative to single-prompt baseline on MMLU and TruthfulQA; target absolute variance ≤3 points [1][4][3].
-- Calibration with abstention: Using black-box conformal prediction built from model scores or verbalized confidence, achieve 90% marginal coverage with ≤15% abstention rate on multiple-choice subsets (MMLU, TruthfulQA MC) [P5][P2].
-- Safety and bias: Reduce average toxicity probability on RealToxicityPrompts by ≥50% via system-prompt interventions while keeping task accuracy on MMLU/TruthfulQA within −1.0 point of baseline; reduce stereotypical bias on BBQ (Δ-bias) by ≥25% without harming overall accuracy [5][6][1].
+Methodology grounding: Prioritize clear questions, crisp experiments, and transparent reporting [G1][G10]; choose tractable, high-leverage problems over compute-heavy ones [G7]. Use PRISMA for reviews and the NeurIPS/JMLR reproducibility guidance for audits [1][2][3]. Use CheckList/Dynabench principles for behavioral test design [6][7]. Note: The unified research tool surfaced a broad review [P1] that mentions PRISMA and reproducibility but is off-target for LLM evaluation; we therefore cite primary sources directly [1–7].
 
-Success criteria
-- At least three of the five objectives above are met simultaneously across two families of models (e.g., one frontier closed model and one open model hosted via an API), with pre-registered metrics and standardized evaluation protocols [1][2].
+2) Experiments
+Experiment 1: Behavioral test suites catch failures missed by aggregate accuracy
+- Hypothesis: Carefully designed CheckList-style tests expose previously unreported LLM failure modes (contrast sets, MFTs, perturbations) even when benchmark accuracy is high [6].
+- Setup: 
+  - Task scope: basic reasoning + instruction-following (e.g., negation handling, numeracy, safety disclaimers).
+  - Build ~60 minimal test cases across 6 phenomena using CheckList-style templates. Use 2–3 public models via the Hugging Face free Inference API in small batches [10].
+  - Limit calls via sampling 5–10 examples per phenomenon to stay within zero-compute constraints.
+- Baselines: 
+  - Model-level baseline: reported benchmark accuracy (e.g., a simple subset of a public task or your suite’s aggregate accuracy).
+  - Human baseline on a 10–15 item subset (via small volunteer group).
+- Evaluation metrics:
+  - Failure rates per phenomenon; delta vs. aggregate accuracy.
+  - Robustness gap under minimal perturbations (e.g., paraphrase, distractor insertion).
+  - Inter-annotator agreement (Cohen’s kappa) on 20% of items.
+- Expected outcomes:
+  - Significant failure rates in at least 2 phenomena despite strong aggregate accuracy.
+  - Perturbation-induced drops >10 percentage points on some targeted skills.
+  - A compact, reusable test suite released publicly.
+- Evidence: Behavioral testing reveals beyond-accuracy issues [6]; adversarial collection benefits evaluation [7].
 
-2) Experiments (5 total; 2–4 ablations each)
-
-Experiment 1: Training-free prompt compression for token efficiency
-- Hypothesis H1: Prompt compression achieves ≥95% performance retention with 40–60% token reduction on MMLU and TruthfulQA. Falsify if retention <95% or token reduction <40% [8][4][3].
+Experiment 2: Reproducibility checklists correlate with stability of reported results
+- Hypothesis: Papers satisfying key checklist items (data/code availability, seeds, hyperparameters, environment) show more stable results when lightly replicated or cross-verified [2][3].
 - Setup:
-  - Models: Two black-box models with logprobs support if available (e.g., GPT-4o-mini, Claude 3.5 via API; one open model via hosted API). Temperatures: 0.0 and 0.7.
-  - Datasets: MMLU (public test split; report per-subject and macro average) [4]; TruthfulQA MC and generation sets [3].
-  - Methods: 
-    - Baseline: Original prompts (no compression).
-    - Heuristic compression: rule-based deletion of redundant descriptors, instruction deduplication, and few-shot example pruning.
-    - LLMLingua-style compression pipeline (zero-train) applied via an API or CPU-only execution; target 30–70% compression [8].
-  - Hyperparameters: compression ratio targets r ∈ {0.3, 0.5, 0.7}; temperature ∈ {0.0, 0.7}; max_tokens fixed across methods.
-- Ablations:
-  1) Compression ratio r sweep and effect on accuracy and token cost.
-  2) With vs without chain-of-thought (CoT) prompting under equal total token budget.
-  3) Few-shot pruning: 0/1/3/5 examples.
-  4) Model family sensitivity (closed vs open).
-- Baselines: No compression; naive truncation (limit instruction to K tokens); published LLMLingua settings where applicable [8].
-- Metrics: Accuracy (MMLU macro; TruthfulQA MC), token usage (input/output), cost; retention = method accuracy / baseline accuracy.
-- Expected outcomes: 40–60% input token reduction with 95–98% accuracy retention; if CoT is used, retention ≥95% under matched token budget; failure indicates over-aggressive compression [8][4][3].
+  - Sample: 30–50 recent LLM evaluation papers from top venues.
+  - Score each paper with a rubric derived from the NeurIPS checklist and Pineau et al. criteria [2][3][9].
+  - Attempt “lite” replication: run an open model via API on a small subset (e.g., 20–30 items) approximating their evaluation to compute directionally consistent trends.
+- Baselines:
+  - Descriptive baseline: overall mean checklist score.
+  - Compare high-score vs low-score papers on replication success (binary) and deviation magnitude.
+- Evaluation metrics:
+  - Correlation between checklist score and replication success.
+  - Median absolute deviation between reported and rechecked performance on a small subset.
+- Expected outcomes:
+  - Positive association between checklist adherence and reproducibility proxies.
+  - Actionable guidance on which checklist items are most predictive of stability.
+- Evidence: Formal checklists and reporting standards improve reproducibility [2][3][9].
 
-Experiment 2: Self-consistency vs single-shot under fixed budget
-- Hypothesis H2: Under a fixed total token budget B, k-sample self-consistency (k∈{5,10,20}) achieves ≥2.0 points higher accuracy than single long-CoT generation on MMLU and MT-Bench QA categoricals. Falsify if gain <2.0 points [7][2][4].
+Experiment 3: Model documentation improves practitioner understanding and intended-use alignment
+- Hypothesis: Providing Model Cards and Datasheets improves practitioners’ decision quality and reduces misuse compared to standard README-style docs [4][5].
 - Setup:
-  - Models: Same as Exp1. Temperature ∈ {0.6, 0.8}; top_p=0.95.
-  - Datasets: MMLU (MC) [4]; MT-Bench single-turn QA subsets compatible with automatic correctness checks (e.g., math/code categories where reference exists) [2].
-  - Methods:
-    - Baseline: One CoT generation with max_output_tokens=T.
-    - Self-consistency: k generations with shorter outputs; majority voting (MC) or answer string normalization.
-  - Budgeting: Ensure total tokens (input+output) match within ±10% across conditions.
-- Ablations:
-  1) k ∈ {5,10,20} vs single-shot.
-  2) Temperature ∈ {0.0, 0.6, 0.8}.
-  3) With vs without CoT phrasing (e.g., “Let’s think step by step”).
-- Baselines: Single-shot no-CoT; single-shot with CoT [7].
-- Metrics: Accuracy; token cost; win rate on MT-Bench sub-questions if automated; tie-breaker rules.
-- Expected outcomes: +2–5 points average on MMLU; diminishing returns beyond k=10; optimal temperature around 0.6–0.8 [7][4][2].
+  - Select 2 open models with limited official documentation.
+  - Author Model Card + Datasheet for each using the original frameworks [4][5].
+  - User study: randomized between-subjects online study (n=30–40 practitioners) comparing standard README vs enhanced documentation; tasks include choosing a model for a use case and identifying risks.
+- Baselines:
+  - Control arm: standard README or brief model page.
+- Evaluation metrics:
+  - Decision quality score (rubric-based), time to decision, risk identification count, and self-reported confidence.
+- Expected outcomes:
+  - Statistically significant improvements in risk identification and alignment with intended use in the treatment group.
+- Evidence: Datasheets and Model Cards improve transparency and help reduce misuse [4][5].
 
-Experiment 3: Paraphrase-robust prompting and ensemble smoothing
-- Hypothesis H3: Prompt-ensemble (N paraphrases, majority vote) reduces worst-case paraphrase drop by ≥50% and halves variance versus single-prompt baseline on MMLU and TruthfulQA. Falsify if worst-case drop reduction <50% [1][4][3].
+Experiment 4 (optional): PRISMA review of LLM evaluation metrics for reasoning validity
+- Hypothesis: Many evaluation metrics used for “reasoning” conflate surface accuracy with construct validity; a PRISMA review will reveal gaps and inconsistent operationalization [1].
 - Setup:
-  - Models: Same as Exp1.
-  - Datasets: MMLU (subset of 10 representative subjects for throughput) [4]; TruthfulQA MC+gen [3].
-  - Methods:
-    - Generate N=10 semantically equivalent paraphrases of the instruction and exemplars using a separate LLM; audit with lexical overlap and semantic similarity filters.
-    - Inference via each paraphrase; aggregate via majority vote (MC) or confidence-weighted voting (if logprobs available).
-  - Controls: Single canonical prompt; CoT vs no-CoT.
-- Ablations:
-  1) N ∈ {3,5,10}.
-  2) Paraphrase diversity (high vs low lexical change).
-  3) Vote aggregator: simple majority vs confidence-weighted (if logprobs).
-- Baselines: Canonical prompt; random paraphrase selection; average of 3 paraphrases without filtering.
-- Metrics: Mean accuracy; std dev; worst-case drop; pairwise agreement; token cost per example.
-- Expected outcomes: Variance reduced by 40–60%; worst-case drop reduced by ≥50%; small token overhead mitigated by combining with token compression from Exp1 [1][4][3].
+  - Register a protocol, define inclusion/exclusion, search strings, and screening process per PRISMA 2020 [1].
+  - Extract metric definitions, reported validity evidence, and failure analyses.
+- Baselines:
+  - None (systematic review).
+- Evaluation metrics:
+  - Taxonomy coverage; fraction of papers providing validity arguments; inter-rater reliability for screening.
+- Expected outcomes:
+  - A taxonomy of reasoning metrics and identified validity gaps, informing Experiment 1’s design.
+- Evidence: PRISMA provides rigorous, transparent review methodology [1].
 
-Experiment 4: Black-box conformal prediction for calibrated abstention
-- Hypothesis H4: Split-conformal set prediction or abstention yields ≥90% marginal coverage with ≤15% abstention on MMLU MC and TruthfulQA MC. Falsify if empirical coverage <90% or abstention >15% [P5][P2].
-- Setup:
-  - Models: Same as Exp1; collect either (a) token-level logprobs for choice tokens when available; or (b) verbalized confidence elicitation (“Probability answer is correct: X%”) with calibration mapping.
-  - Datasets: MMLU MC (held-out calibration set 20%; evaluation 80%) [4]; TruthfulQA MC [3].
-  - Methods:
-    - Score function: negative margin between top-2 options (from logprobs) or learned monotone mapping from verbalized confidence to probability.
-    - Use inductive conformal prediction with calibration split to determine thresholds for 1-set vs abstain (or prediction sets) [P5].
-- Ablations:
-  1) Score variants: logprob margin vs verbalized confidence.
-  2) Calibration sizes: 5%, 10%, 20%.
-  3) Temperature effects on scores.
-- Baselines: Fixed-confidence thresholding without conformal correction; naive abstention by “I don’t know” detection.
-- Metrics: Empirical coverage; average set size; abstention rate; Brier score/ECE if probabilities are available.
-- Expected outcomes: 90–93% coverage with 10–15% abstention using logprob margins; 88–92% with verbalized confidence; improved reliability vs non-conformal baselines [P5][P2].
+Two literature anchors:
+- Pineau et al., Improving Reproducibility in Machine Learning Research (JMLR 2021) [2].
+- Ribeiro et al., Beyond Accuracy: Behavioral Testing of NLP Models with CheckList (ACL 2020) [6].
 
-Experiment 5: Safety and bias auditing with instruction/system-prompt interventions
-- Hypothesis H5: Safety-tuned system prompts reduce mean toxicity probability by ≥50% on RealToxicityPrompts, while Δ-bias on BBQ decreases by ≥25%, with ≤1.0 point accuracy loss on MMLU/TruthfulQA. Falsify if toxicity reduction <50% or accuracy drop >1.0 point [5][6][4][3].
-- Setup:
-  - Models: Same as Exp1.
-  - Datasets: RealToxicityPrompts (use toxicity classifier such as Perspective API or open replicas; report mean P(toxic)) [5]; BBQ for bias (report Δ-bias and accuracy) [6]; MMLU and TruthfulQA for utility [4][3].
-  - Methods:
-    - System-prompt templates emphasizing harmlessness, neutrality, and instruction to abstain on unsafe content.
-    - Refusal+redirect templates; style constraints limiting demeaning language.
-- Ablations:
-  1) Safety prompt variants: short vs long; refusal emphasis vs redirection.
-  2) Temperature ∈ {0.0, 0.7}.
-  3) With vs without token compression (to check interaction with safety).
-- Baselines: Default system prompt; safety-off settings where available.
-- Metrics: Mean toxicity probability; % toxic continuations; BBQ Δ-bias; accuracy on MMLU/TruthfulQA; token costs.
-- Expected outcomes: 50–70% toxicity reduction; 25–40% Δ-bias reduction; ≤1 point average utility loss [5][6][4][3].
+3) Timeline for the next 6 months with milestones
+Month 1: Scope and protocols
+- Finalize project scope; select model set and phenomena for tests [6].
+- Draft PRISMA protocol; define search strings and screening criteria [1].
+- Design reproducibility audit rubric (derive from [2][3][9]); pilot on 3 papers.
+- Draft Model Card/Datasheet templates [4][5].
+Milestones: Registered protocol (OSF), finalized rubrics, pilot test suite v0.1.
 
-3) Timeline (6 months; bi-weekly checkpoints)
+Month 2: Build small-scope test suite and pilot audits
+- Author 60 behavioral test items across 6 phenomena; validate with 2–3 volunteers.
+- Run limited API calls to 2–3 models; collect preliminary results [10].
+- Audit 15 papers with the checklist; refine rubric.
+Milestones: Test suite v1.0; interim audit report; preregister Experiment 1 and 2 analyses.
 
-Month 1: Protocols, infra, and preregistration
-- Week 1–2: Define task subsets; finalize metrics; preregister hypotheses, datasets, and analysis on OSF. Deliverable: Protocol v1.0 with acceptance criteria.
-- Week 3–4: Build reproducible evaluation harness (Python 3.11, Hugging Face datasets, deterministic seeding; API wrappers; logging). Deliverable: CI-validated repo; HELM-style reporting templates [1].
-- Go/no-go: If API access/logprobs unavailable, pivot conformal experiment to verbalized confidence variant [P5].
+Month 3: Documentation and user study prep
+- Write Model Cards and Datasheets drafts for 2 models [4][5].
+- Prepare user study instruments and pilot with 5 participants.
+- Extend paper audits to 30–50 total; begin light replications on small subsets.
+Milestones: Documentation drafts; IRB/ethics self-assessment; audit dataset frozen.
 
-Month 2: Baseline replication and data splits
-- Week 5–6: Replicate baseline accuracies on MMLU/TruthfulQA; measure token budgets. Deliverable: Baseline report ±95% CIs.
-- Week 7–8: Implement paraphrase generation/filters; finalize calibration splits. Deliverable: Calibration datasets and paraphrase bank.
+Month 4: Main data collection
+- Run full behavioral tests on selected models via API (throttled) [10].
+- Conduct user study (n=30–40) using online forms; analyze early results.
+- Complete light replications and finalize reproducibility analysis.
+Milestones: Cleaned datasets; pre-analysis plans executed.
 
-Month 3: Experiments 1–2
-- Week 9–10: Run prompt compression sweeps; analyze retention vs compression. Checkpoint: r–accuracy curves; Pareto frontier.
-- Week 11–12: Run self-consistency under budget. Deliverable: Budgeted accuracy gains; ablation plots.
-- Go/no-go: If H1 or H2 clearly falsified, adjust compression heuristics or increase k modestly.
+Month 5: Analysis and writing
+- Analyze behavioral test outcomes; compare to aggregate accuracy; compute robustness gaps [6].
+- Statistical analysis of audit vs replication outcomes [2][3].
+- Analyze user study outcomes; incorporate qualitative feedback.
+Milestones: Draft figures/tables; paper drafts for (i) test suite + findings, (ii) reproducibility audit, (iii) documentation user study.
 
-Month 4: Experiments 3–4
-- Week 13–14: Paraphrase-robust ensembles; variance/worst-case analysis. Deliverable: Robustness report.
-- Week 15–16: Conformal prediction; coverage/abstention tradeoffs. Deliverable: Calibration curves; coverage guarantees [P5][P2].
-- Decision: If verbalized confidence underperforms, prioritize models with logprob APIs for final runs.
+Month 6: Consolidation and submission
+- Integrate PRISMA review narrative; finalize all manuscripts [1].
+- Release artifacts: test suite, audit rubric and dataset, documentation templates.
+- Target venues: ACL/NAACL workshops on evaluation (e.g., Humeval), NeurIPS Datasets and Benchmarks or Reproducibility workshops; FAccT/AAAI workshops for documentation/ethics.
+Milestones: Preprints, submissions, artifact repositories.
 
-Month 5: Experiment 5 and integration
-- Week 17–18: Safety/bias interventions; run toxicity and BBQ evaluations. Deliverable: Safety vs utility tradeoff analysis [5][6].
-- Week 19–20: Integrated recipe combining compression + self-consistency + paraphrase ensembles + calibration. Deliverable: End-to-end pipeline; Pareto analysis.
+4) Resources (compute, tools, datasets)
+- Compute: None required locally. Use:
+  - Hugging Face Inference API free tier to query small-to-medium models with strict rate limits [10].
+  - Spreadsheet/statistics tools (Google Sheets/R, Python locally for stats if possible; otherwise browser-based tools).
+- Tools:
+  - CheckList for behavioral test design [6].
+  - Dynabench principles and Dynaboard for holistic evaluation framing [7].
+  - NeurIPS Reproducibility Checklist and Pineau et al. as audit basis [2][3][9].
+  - OSF or GitHub Pages for preregistration, artifact sharing, and transparency.
+  - Survey tools (Google Forms) for user studies.
+- Datasets/material:
+  - Small, hand-authored test items (your test suite).
+  - For light replications: subsets of public benchmarks (tiny slices) compatible with fair use; document sampling.
+  - Paper corpus for audit (30–50 recent LLM evaluation papers).
+- Documentation frameworks:
+  - Datasheets for Datasets [4].
+  - Model Cards for Model Reporting [5].
 
-Month 6: Writing, robustness checks, and release
-- Week 21–22: Stress tests on extra subjects; sensitivity to temperature, k, r; reproducibility reruns with new API snapshots.
-- Week 23–24: Paper draft, artifacts, and open-source release (dataset cards, scripts, configs). Deliverable: Submission-ready manuscript; replication package.
-- Submission go/no-go: Proceed if at least three primary objectives met; otherwise reframe to negative results paper with preregistered deviations.
+5) Risks and mitigations table
+- Risk: API rate limits or model unavailability.
+  - Mitigation: Predefine tiny batches; cache responses; diversify providers; schedule off-peak queries [10].
+- Risk: Human annotation noise.
+  - Mitigation: Clear instructions; training examples; dual annotation with adjudication; report inter-annotator agreement.
+- Risk: IRB/ethics for user studies.
+  - Mitigation: Use minimal-risk protocols; anonymize; obtain informed consent; consider institutional review or community ethics checklist.
+- Risk: Low external validity of small test suite.
+  - Mitigation: Cover diverse phenomena; release suite for community extensions; transparently report limits [6][7].
+- Risk: Novelty overlap with existing evaluations.
+  - Mitigation: PRISMA scoping to ensure gap; register protocol; focus on underexplored phenomena [1].
+- Risk: Reproducibility audit subjectivity.
+  - Mitigation: Use established checklists and double-coding; publish rubric and inter-rater reliability [2][3][9].
+- Risk: Limited practitioner recruitment for user study.
+  - Mitigation: Recruit via forums, student groups; compensate with recognition; reduce session time to 10–12 minutes.
+- Risk: Legal/ethical issues around model outputs.
+  - Mitigation: Filter sensitive content; document safety considerations in Model Cards; follow platform acceptable-use policies [5].
 
-4) Resources
+6) Stretch ideas or follow-up directions
+- Public micro-benchmark hub: a website hosting your small-scope behavioral tests, with community submissions and leaderboards (evaluation-as-a-service ethos) [7].
+- Cross-model documentation study: Compare how documentation quality varies across model providers; propose a minimal standard distilled from Model Cards + Datasheets [4][5].
+- Construct validity audits: Formalize a rubric for assessing whether an evaluation actually measures the claimed construct (reasoning, alignment), and apply it to 100+ papers via crowd annotation (scalable, non-compute).
+- Red-teaming playbooks: Release scenario-based templates for safely probing models’ safety and instruction-following failures with minimal tokens.
 
-Compute
-- GPUs: None required. CPU-only is sufficient for orchestration and analysis.
-- API inference: 1–3 models; estimated 5–10M tokens total over 6 months (depends on breadth; throttle with subsets).
-- Memory: 8–16 GB RAM sufficient for local processing.
-
-Datasets and versions/splits
-- MMLU (Hendrycks et al., v1; public test). Use official subject taxonomy; retain dev subsets for pilot [4].
-- TruthfulQA (2021; MC and generation sets). Use standard scoring scripts [3].
-- MT-Bench (2023; use categories with objective references; for judge-based scoring, fix the judge model version) [2].
-- BBQ (2021; hand-built bias benchmark). Report Δ-bias and accuracy as per paper [6].
-- RealToxicityPrompts (2020; ≥100k prompts). Use fixed 25k-sample subset and Perspective API or equivalent classifier for toxicity probability [5].
-- Calibration splits: For conformal, reserve 10–20% of each dataset for calibration only (no tuning on eval) [P5].
-
-Tooling and libraries
-- Python 3.11, Hugging Face datasets ≥2.19, NumPy ≥1.26, pandas ≥2.2, SciPy ≥1.11, scikit-learn ≥1.4.
-- OpenAI/Anthropic/Together/other API SDKs pinned to specific versions; log all model snapshot IDs and parameters.
-- Experiment tracking: Weights & Biases or MLflow; YAML configs; deterministic random seeds.
-- Toxicity scoring: Perspective API client (or Detoxify as a sensitivity analysis).
-- Conformal utilities: lightweight custom code following split-conformal recipes [P5]; document score functions.
-
-Estimated API budget
-- Token planning per experiment:
-  - Exp1: ~1.5M tokens (compression sweeps across subjects).
-  - Exp2: ~2M tokens (k-sampling).
-  - Exp3: ~1.5M tokens (N paraphrases).
-  - Exp4: ~0.5–1M tokens (scoring + calibration).
-  - Exp5: ~0.5M tokens (toxicity/bias + utility checks).
-- Adjust by subsetting subjects (e.g., 10–20 subjects) to keep totals ≤5M tokens.
-
-5) Risks and mitigations
-
-- API variability across time
-  - Probability: Medium; Impact: Medium–High.
-  - Mitigation: Log model version/timestamp; rerun key results within 7 days; report confidence intervals and versioned sensitivity analysis [1][2].
-
-- Lack of logprob access
-  - Probability: Medium; Impact: Medium.
-  - Mitigation: Use verbalized confidence with monotone calibration; switch to models providing logprobs; report both variants [P5].
-
-- Prompt leakage/contamination concerns
-  - Probability: Medium; Impact: Medium.
-  - Mitigation: Use public benchmarks with established leakage checks; include negative controls; document any suspect items [1][4].
-
-- Cost overrun due to token usage
-  - Probability: Medium; Impact: Medium.
-  - Mitigation: Early pilot with 5–10 subjects; enforce token budgets; reuse outputs where allowed; cache results; prefer shorter outputs.
-
-- Measurement error in safety metrics
-  - Probability: Medium; Impact: Medium.
-  - Mitigation: Use multiple toxicity detectors (Perspective + alternative); compute confidence intervals; perform manual audit on a random subset [5].
-
-- Overfitting to paraphrase bank
-  - Probability: Medium; Impact: Medium.
-  - Mitigation: Hold out paraphrase templates generated by a different model; release paraphrases to enable external replication.
-
-6) Integrated recipe and scaling study
-
-- Integration: The final recipe layers (a) compression to reduce tokens (Exp1), (b) self-consistency to recover/improve accuracy under a fixed budget (Exp2), (c) paraphrase ensembles to stabilize variance (Exp3), and (d) conformal abstention to guarantee coverage (Exp4). Safety prompts (Exp5) are orthogonal and can be applied to all stages.
-- Scaling study:
-  - Pareto analysis over (token cost, accuracy, coverage, toxicity). Map fronts for r ∈ [0.3,0.7], k ∈ [1,20], N ∈ [1,10], and abstention budget ∈ [5%,20%].
-  - Sensitivity analysis: temperature, top_p, and per-model family robustness; report cross-model averages with HELM-like multi-metric sheets [1].
-  - Cross-dataset generalization: Evaluate parameter settings chosen on MMLU on TruthfulQA/BBQ to test transfer.
-- Expected consolidated outcome: A simple, training-free pipeline that provides (i) strong accuracy retention at 40–60% lower token cost, (ii) better reliability (lower paraphrase variance), and (iii) calibrated abstention with target coverage, while improving safety at marginal utility loss. If objectives are not met, negative results will be documented with preregistered hypotheses and ablations (still valuable as evaluation science) [1][2][3][4].
-
-Why this is meaningful with zero compute
-- All methods are training-free and rely on public APIs and open benchmarks; the intellectual contribution is rigorous evaluation design, token-efficiency methods, and calibration/robustness analysis, which align with community best practice (HELM) and widely studied techniques like self-consistency and conformal prediction [1][7][P5].
+Optional next step
+If helpful, I can draft the PRISMA protocol (research questions, search strings, inclusion/exclusion, screening flow) and the reproducibility audit rubric this week so you can start immediately.
 
 Citations
-- [P1] Unveiling and Harnessing Hidden Attention Sinks: Enhancing Large Language Models without Training through Attention Calibration — http://arxiv.org/abs/2406.15765v1
-- [P2] Kandinsky Conformal Prediction: Efficient Calibration of Image Segmentation Algorithms — http://arxiv.org/abs/2311.11837v1
-- [P3] Uncertainty-Calibrated Test-Time Model Adaptation without Forgetting — http://arxiv.org/abs/2403.11491v2
-- [P4] Calibrated Uncertainty Quantification for Operator Learning via Conformal Prediction — http://arxiv.org/abs/2402.01960v2
-- [P5] Self-Calibrating Conformal Prediction — http://arxiv.org/abs/2402.07307v3
-- [1] Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
-- [2] Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://arxiv.org/abs/2306.05685
-- [3] TruthfulQA: Measuring How Models Mimic Human Falsehoods — https://arxiv.org/abs/2109.07958
-- [4] Measuring Massive Multitask Language Understanding (MMLU) — https://arxiv.org/pdf/2009.03300
-- [5] RealToxicityPrompts — https://arxiv.org/pdf/2009.11462
-- [6] BBQ: A Hand-Built Bias Benchmark for Question Answering — https://arxiv.org/abs/2110.08193
-- [7] Self-Consistency Improves Chain-of-Thought Reasoning in LMs — https://arxiv.org/pdf/2203.11171
-- [8] LLMLingua: Compressing Prompts for Accelerated Inference — https://arxiv.org/html/2310.05736
+- [G1] Schulman, An Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G7] Hamming, You and Your Research — https://gwern.net/doc/science/1986-hamming
+- [G10] Nielsen, Principles of Effective Research — http://michaelnielsen.org/blog/principles-of-effective-research/
+- [1] PRISMA 2020 statement (BMJ) — https://pubmed.ncbi.nlm.nih.gov/33782057/
+- [2] Pineau et al., Improving Reproducibility in Machine Learning Research (JMLR 2021) — https://jmlr2020.csail.mit.edu/papers/volume22/20-303/20-303.pdf
+- [3] The Machine Learning Reproducibility Checklist (v2.0) — https://www.cs.mcgill.ca/~jpineau/ReproducibilityChecklist.pdf
+- [4] Gebru et al., Datasheets for Datasets — https://arxiv.org/pdf/1803.09010
+- [5] Mitchell et al., Model Cards for Model Reporting — https://arxiv.org/pdf/1810.03993
+- [6] Ribeiro et al., Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://aclanthology.org/2020.acl-main.442.pdf
+- [7] Kiela et al., Dynabench: Rethinking Benchmarking in NLP — https://aclanthology.org/2021.naacl-main.324.pdf
+- [9] NeurIPS Paper Checklist Guidelines — https://neurips.cc/public/guides/PaperChecklist
+- [10] Hugging Face Inference API documentation — https://huggingface.co/docs/hub/en/models-inference
+- [P1] Trustworthy AI in Alzheimer’s Disease (cites PRISMA, reproducibility; generic) — https://citius.gal/static/21b436241ccbee8b312ce563a9884369/online_s10462_023_10415_5_2023031311303956_823aa87ab5.pdf

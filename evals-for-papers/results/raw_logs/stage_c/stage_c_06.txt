@@ -1,221 +1,116 @@
-Below is a turnkey, publication-grade execution plan tailored to federated learning (FL) under low-resource constraints common in LMICs (limited bandwidth, intermittent connectivity, heterogeneous/low-end devices, and stricter privacy needs). Core design choices reference evidence for communication-efficient FL [P6], resource-constrained client training [P3], and deployments in African settings facing connectivity and device heterogeneity [P1], as well as privacy-preserving FL in low-resource languages [P5] and low-bandwidth platforms [P4]. Where possible, we use well-known federated benchmarks (LEAF) and robust frameworks (Flower, TFF) for reproducibility.
+1. Problem framing and goals
+- Problem: Design and evaluate federated learning (FL) methods that remain accurate, fair, and cost-efficient under constraints typical in low-resource countries: intermittent connectivity, very low bandwidth, limited/heterogeneous device compute and energy, and highly non-IID, unbalanced data. Communication overhead and stragglers are primary bottlenecks in cross-device FL; both worsen under poor networks [P1], [P5]. Heterogeneous data and devices degrade convergence and global model quality; personalization can help [P2], [P6].
+- Primary goals:
+  - Reduce communication and wall-clock time without sacrificing accuracy [P1], [P5].
+  - Improve fairness and tail-client performance via personalization under non-IID data [P2], [P6].
+  - Achieve robustness to dropouts/stragglers via asynchronous or deadline-aware aggregation [P4], [P5].
+  - Measure and reduce energy/monetary costs per trained model round.
+  - Maintain privacy with secure aggregation and quantify the utility cost of differential privacy [P6].
+- Application scope: Begin with public cross-device FL benchmarks that emulate heterogeneity (LEAF, FedScale) and impose realistic network/energy constraints; later, seek one small real-world pilot (e.g., health or education) if feasible. Note: Field-quality evaluations in low-resource countries are limited; most published evidence is survey-level and simulation-based [P1], [P2], [P5], [P6]. We will explicitly simulate target constraints and, if possible, add a limited pilot to collect authoritative evidence.
+- Literature anchors:
+  - Kairouz et al., Advances and Open Problems in Federated Learning — a canonical reference that frames communication, heterogeneity, privacy, and systems constraints [P6].
+  - LEAF and FedScale benchmarks for realistic cross-device FL workloads [1], [2].
 
-1) Problem framing and goals
+2. Experiments
+All experiments run on LEAF (FEMNIST, Shakespeare) and FedScale tasks (e.g., StackOverflow, SpeechCommands) with injected constraints: bandwidth caps (64–256 kbps), 30–60% client dropouts, heterogeneous device profiles (CPU-only vs GPU), and energy budgets. We will run three statistically independent trials per condition, report mean ± 95% CI, and release code and configs.
 
-Target settings
-- Cross-device FL with intermittent 2G/3G/unstable Wi-Fi, heterogeneous clients (Android phones and low-cost SBCs like Raspberry Pi), and regional data from clinics or schools. Field evidence indicates such heterogeneity and connectivity constraints in African deployments [P1], and EU-funded initiatives target low-bandwidth federated platforms [P4].
-- Tasks for evaluation:
-  - Medical imaging: Chest X-ray multilabel classification (CheXpert v1.0) with simulated hospital clients (non-IID partitions by site) to reflect LMIC deployments [P1]; dataset for benchmarking only (no PHI) [W2].
-  - On-device text prediction/toy NLP: Shakespeare next-word prediction (LEAF) to stress non-IID clients [W1].
-  - Vision benchmark: FEMNIST (LEAF) for fast ablations on non-IID handwriting data [W1].
+Experiment 1: Communication-efficient FL under low bandwidth
+- Hypothesis: Gradient/weight compression plus more local steps can reduce bytes transferred by ≥5× with ≤1–2% absolute accuracy loss vs standard FedAvg in low-bandwidth settings [P3], [P5].
+- Setup: Compare FedAvg, FedProx, and SCAFFOLD with communication compression (QSGD, SignSGD, Top-k sparsification) and local steps (FedAvg-L with E∈{1,5,10}). Simulate 64–256 kbps uplink/downlink and 100–400 ms RTT. Datasets: FEMNIST [1], StackOverflow [2].
+- Baselines: FedAvg FP32 (no compression), FedOpt-Adam; client sampling at 10% per round with synchronous aggregation [P6].
+- Evaluation metrics: Test accuracy; bytes communicated per round and to target accuracy; rounds and wall-clock time to reach 90% of FedAvg accuracy; client participation rate under bandwidth caps.
+- Expected outcomes: Compressed updates + modest local steps substantially reduce bytes and time to target accuracy with small accuracy loss; aggressive compression or too many local steps degrade accuracy under highly non-IID data [P3], [P5], [P6].
 
-Specific, measurable objectives (numerical)
-- Utility retention: Achieve ≥92% of centralized baseline AUROC (CheXpert), ≥95% of centralized baseline Top-1 accuracy (FEMNIST), and ≥95% of centralized baseline perplexity/accuracy for Shakespeare within 200–500 rounds.
-- Communication budget: Reduce client uplink per round by ≥4× vs. 32-bit dense gradients (target ≤200 KB/round/client for CNN/LSTM-scale models) via quantization/sparsification with error feedback [P6].
-- Energy/device load: Reduce peak RAM by ≥2× and client energy by 30–50% versus full-model training using layer-wise training/depth dropout [P3].
-- Straggler robustness: Maintain <10% utility degradation when 30–50% clients are slow/offline via asynchronous or buffered strategies (latency-tolerant scheduling).
-- Privacy: End-to-end ε ≤ 3 (δ = 1e-5) with DP-FedAvg and secure aggregation, while retaining ≥88% (CheXpert AUROC) and ≥92% (FEMNIST accuracy) of the non-DP FL utility [P5].
-- Fairness: Between-client performance disparity (e.g., per-site AUROC or per-client accuracy) ≤5 percentage points.
+Experiment 2: Personalization for non-IID and fairness
+- Hypothesis: Personalized FL (Per-FedAvg, pFedMe, FedBN) improves the 10th-percentile client accuracy and calibration vs a single global model under non-IID splits [P2], [P6].
+- Setup: Non-IID splits by client (e.g., writer- or user-based partitioning). Compare global FedAvg/FedProx vs Per-FedAvg, pFedMe, and FedBN. Keep communication budget equal across methods.
+- Baselines: FedAvg global model; local-only training (no FL) as a reference upper bound for personalization.
+- Evaluation metrics: Overall accuracy; client-wise accuracy distribution (10th/50th/90th percentiles); ECE calibration; fairness gap (max-min client accuracy); bytes to target fairness.
+- Expected outcomes: Personalized methods close the tail-client gap by several percentage points with small extra computation, especially when client data distributions are skewed [P2], [P6].
 
-Success criteria
-- Pass if all of: utility retention targets, ≥4× comms reduction, ≥2× memory reduction and ≥30% energy savings, ε ≤ 3 with utility within stated bands, and fairness disparity ≤5 pp. Fail if any of these fall short at final evaluation.
+Experiment 3: Straggler/dropout robustness via asynchronous or deadline-aware FL
+- Hypothesis: Asynchronous or deadline-based partial aggregation reduces wall-clock time to target accuracy by ≥25% with ≤1% accuracy loss vs synchronous FedAvg under 40–60% dropouts [P4], [P5].
+- Setup: Implement synchronous FedAvg with (a) random client sampling and (b) deadline-based early aggregation; compare to an asynchronous server (e.g., FedAsync-style) with staleness-aware weighting. Inject intermittent connectivity and variable compute speeds.
+- Baselines: Synchronous FedAvg with fixed round timeouts.
+- Evaluation metrics: Wall-clock time and rounds to target accuracy; staleness distribution; robustness to correlated dropouts; final accuracy.
+- Expected outcomes: Deadline-aware and asynchronous variants reach target accuracy faster and tolerate higher dropout rates at small or moderate accuracy cost [P4], [P5].
 
-2) Experiments (5 core experiments; each includes 2–4 ablations)
+Experiment 4: Energy- and cost-aware client selection
+- Hypothesis: Selecting clients by marginal utility per joule (or per dollar of data) reduces energy by ≥30% at comparable accuracy vs random sampling [P1], [P5].
+- Setup: Measure device energy during local training and transmission (Android Battery Historian or Monsoon Power Monitor) to build simple per-client energy models. Compare random vs energy-aware sampling (maximize expected gradient diversity per joule).
+- Baselines: Random client sampling; uniform participation.
+- Evaluation metrics: Joules and monetary data cost per round and to target accuracy; accuracy; fairness across low- vs high-end devices.
+- Expected outcomes: Energy-aware sampling cuts energy and data costs with negligible accuracy change; may slightly increase fairness gaps if not combined with fairness constraints [P1], [P5]. We will include a fairness-regularized variant.
 
-Common setup for all experiments (unless stated otherwise)
-- Datasets and splits:
-  - CheXpert v1.0 (train/val/test per original paper; simulate K=10–20 “sites” by stratified splitting by study/hospital metadata if available; otherwise stratify by patient ID) [W2].
-  - LEAF FEMNIST v1 (natural per-user partitioning) and LEAF Shakespeare (per-role/character partitioning) [W1].
-- Models:
-  - CheXpert: ResNet-18/34 (ImageNet init), multilabel sigmoid head.
-  - FEMNIST: 2–4 layer CNN (~1–2M params).
-  - Shakespeare: 1–2 layer LSTM (256–512 hidden units).
-- Frameworks: Flower 1.x for orchestration [W3], TensorFlow Federated (TFF) for DP-FedAvg baselines [W4].
-- Hardware clients: Raspberry Pi 4/5 or Android phones (8–12 GB system RAM phones), on-device instrumentation (Battery Historian or Android BatteryManager; RAPL-like proxies not available on ARM; use external power meters where feasible).
-- Aggregation server: 1–2× A100 40GB or A6000 48GB for fast simulation/baselines; CPU-only aggregator also tested for field realism.
-- FL hyperparameters:
-  - Local optimizer: SGD with momentum 0.9 or Adam; LR grid: {1e-3, 5e-4, 1e-4}; local epochs E ∈ {1, 2, 5}; batch size B ∈ {16, 32}.
-  - Client fraction C ∈ {0.05, 0.1, 0.2}; rounds R up to 500.
-  - Non-IID degree: simulate via Dirichlet α ∈ {0.1, 0.3, 1.0} for FEMNIST/Shakespeare to stress personalization.
-- Metrics:
-  - Utility: AUROC/mAP (CheXpert), accuracy (FEMNIST), perplexity or next-token accuracy (Shakespeare).
-  - Systems: uplink/downlink bytes/round, wall-clock per round, client memory peak (GB), client energy per round (mWh), participation rate.
-  - Privacy: ε, δ from DP accountant; secure aggregation correctness.
-  - Fairness: dispersion of per-client performance (std dev), worst-group vs overall gap.
+Experiment 5: Privacy-utility trade-offs (DP + secure aggregation)
+- Hypothesis: With secure aggregation and user-level DP-SGD, epsilon in [3–8] yields <2–4% absolute accuracy drop vs no DP on these tasks, with additional runtime/communication overhead [P6].
+- Setup: Implement secure aggregation at the server; add user-level DP-SGD noise accounting and clipping. Sweep noise multipliers and participation rates at fixed communication budgets.
+- Baselines: No-DP secure aggregation; pure FedAvg.
+- Evaluation metrics: Utility (accuracy), privacy (ε under standard accounting), runtime, bytes; degradation across tail clients.
+- Expected outcomes: DP reduces accuracy more under highly non-IID and small client participation; secure aggregation adds modest overhead but preserves utility [P6].
 
-Experiment 1 — Communication-efficient FL under bandwidth constraints
-- Hypothesis H1: Quantization + sparsification with error feedback reduces uplink by ≥4× while retaining ≥95% of FedAvg utility on FEMNIST and ≥92% on CheXpert. Falsify if comms reduction <4× or utility <95% (FEMNIST) or <92% (CheXpert) of FedAvg.
-- Methods:
-  - Baseline: FedAvg 32-bit dense updates.
-  - Methods: QSGD 8-bit, top-k sparsification (k ∈ {1%, 5%}) with error-feedback; hybrid 8-bit + top-k; transmit model deltas vs. gradients. Communication-efficient FL is broadly effective per surveys [P6].
-- Ablations (2–4):
-  - Quantization level: 8-bit vs 4-bit.
-  - Sparsity k: 1%, 5%, 10%.
-  - Client fraction C: 5%, 10%, 20%.
-  - Error-feedback on/off.
-- Evaluation and thresholds:
-  - Track bytes/client/round; target ≤200 KB/round for CNN/LSTM-scale models and ≥4× reduction vs baseline [P6].
-  - Utility thresholds as in H1.
-  - Expected outcome: 4–10× reduction with ≤2–5 pp utility drop depending on dataset [P6].
-- Notes: Use Flower to implement strategies and collect per-round network stats [W3]. Reference to communication-reduction methods aligns with review evidence [P6].
+3. Timeline for the next 6 months with milestones
+- Month 1: Infrastructure and baselines
+  - Stand up FL stack (Flower or FedML), implement network emulation (tc/netem) and dropout/straggler models. Reproduce FedAvg/FedProx on LEAF FEMNIST, Shakespeare, and FedScale StackOverflow [1], [2]. Instrument communication and energy logging. Draft ethics/privacy plan.
+- Month 2: Communication-efficiency (Exp 1)
+  - Implement compression (QSGD, SignSGD, Top-k) and local-step sweeps. Complete ablations: compression levels, local steps, client sampling rates. Draft section on comms results with statistical CIs.
+- Month 3: Personalization (Exp 2)
+  - Implement Per-FedAvg, pFedMe, FedBN; non-IID severity sweeps. Add fairness metrics and calibration. Prepare figures for client distribution performance.
+- Month 4: Straggler/asynchrony (Exp 3)
+  - Implement deadline-based and asynchronous aggregation. Vary dropout correlations and staleness penalties. Summarize wall-clock benefits vs accuracy.
+- Month 5: Energy/cost-aware sampling (Exp 4)
+  - Collect device energy traces; fit energy models; run sampling policies. Add fairness-regularized variant. Sensitivity to energy model errors.
+- Month 6: Privacy-utility (Exp 5) and integration
+  - Integrate secure aggregation and user-level DP. Sweep ε and participation rates. Finalize cross-experiment synthesis; prepare artifacts (code, configs, Dockerfiles) and paper draft.
 
-Experiment 2 — Resource-constrained client training (layer-wise and depth dropout)
-- Hypothesis H2: Layer-wise training + depth dropout reduces memory by ≥2× and energy by 30–50% with ≤2 pp utility drop vs. full-model local training on FEMNIST/Shakespeare; ≤3 pp on CheXpert. Falsify if memory reduction <2×, energy savings <30%, or utility drop exceeds limits.
-- Methods:
-  - Baselines: FedAvg full-model; FedProx full-model (μ tuned).
-  - Methods: Federated Layer-wise Learning and Federated Depth Dropout per [P3].
-- Ablations:
-  - Trainable depth fraction: 25%, 50%, 75% of layers.
-  - Depth dropout schedule: fixed vs. annealed.
-  - Local epochs E: 1 vs 2 vs 5 to probe compute/energy trade-offs.
-- Evaluation:
-  - Peak RAM on device, per-round energy, local compute time; utility as above.
-  - Expected: 2–3× RAM reduction; 30–50% energy savings; ≤2–3 pp accuracy/AUROC loss [P3].
-- Evidence: Techniques explicitly target memory/compute/communication constraints for edge devices [P3].
+4. Resources (compute, tools, datasets)
+- Compute:
+  - Server: 1–2 GPUs (e.g., A6000/A100) or CPU-only if models are small; 64–128 GB RAM. Persistent storage for checkpoints/metrics.
+  - Clients: Simulated clients (containers/threads) plus a small pool (5–20) of real low-end Android phones or Raspberry Pi 4 for validation of energy/latency effects.
+- Tools:
+  - FL frameworks: Flower or FedML for orchestration; TensorFlow Federated or PyTorch for models.
+  - Benchmarks: LEAF (FEMNIST, Shakespeare) and FedScale (e.g., StackOverflow, SpeechCommands) [1], [2].
+  - Network/energy: Linux tc/netem for bandwidth/latency; Monsoon Power Monitor or Android Battery Historian for energy; Prometheus/Grafana for telemetry.
+  - Privacy: TensorFlow Privacy or Opacus; secure aggregation via PySyft/OpenMined or framework-native support.
+- Datasets:
+  - LEAF: FEMNIST, Shakespeare (non-IID, cross-device) [1].
+  - FedScale: StackOverflow, SpeechCommands, Reddit-like workloads with realistic client traces [2].
+  - Optional: add a small, de-identified local corpus relevant to target communities (e.g., bilingual SMS-like text), with IRB approval.
 
-Experiment 3 — Personalization and non-IID robustness
-- Hypothesis H3: Personalized FL (e.g., Per-FedAvg-style fine-tuning or partial local adaptation such as head-only training) achieves ≥3 pp improvement in worst-client accuracy vs. global-only models under strong non-IID (Dirichlet α=0.1), while keeping overall accuracy within 2 pp of global model. Falsify if worst-client gain <3 pp or overall drop >2 pp.
-- Methods:
-  - Baselines: Global FedAvg; FedProx.
-  - Methods: Head-only local adaptation (frozen backbone + local head), local fine-tuning for 1–3 epochs at end of training, FedBN-style batchnorm localization for images.
-- Ablations:
-  - Non-IID severity α: 0.1, 0.3, 1.0.
-  - Personalization fraction: last layer vs. last block vs. full fine-tune.
-  - Participation rates: 5% vs 20%.
-- Evaluation:
-  - Report mean and 10th-percentile client performance; worst-group gap ≤5 pp as goal; references highlight severe heterogeneity in African FL deployments motivating personalization [P1].
-- Expected: 3–8 pp uplift for tail clients with minor overall utility change; tighter fairness dispersion.
+5. Risks and mitigations table
+- Risk: Simulations may not reflect real low-resource networks; results overfit to emulator settings.
+  - Mitigation: Calibrate emulator with measurements from at least 5–10 real devices on varied networks; include a small real-device evaluation subset in each experiment; report sensitivity analyses [P4], [P5].
+- Risk: Non-IID severity is mis-specified, biasing personalization results.
+  - Mitigation: Use multiple non-IID generators and real partitions from LEAF/FedScale; report results across severities [1], [2], [P2].
+- Risk: Energy measurements noisy or device-specific.
+  - Mitigation: Repeat measurements, normalize by task, and build simple per-device energy models with uncertainty, then test robustness to model error.
+- Risk: Communication compression harms convergence on some tasks.
+  - Mitigation: Pair compression with optimizer variants (FedOpt), error-feedback, and tune local steps; early-stop on divergence [P3], [P5].
+- Risk: Asynchronous training destabilizes convergence.
+  - Mitigation: Use staleness-aware weighting and bounded delay; hybrid deadline-based partial aggregation [P4], [P5].
+- Risk: Privacy mechanisms degrade utility more than expected.
+  - Mitigation: Tune clipping/participation; adopt personalization to recover tail performance; clearly report ε-utility curves [P6].
+- Risk: Security/poisoning attacks.
+  - Mitigation: Use secure aggregation; add robust aggregation (trimmed mean, median) in ablations; monitor update anomalies [P6].
+- Risk: Reproducibility gaps.
+  - Mitigation: Release full configs, seeds, hardware specs, and Docker images; run 3+ trials with CIs.
 
-Experiment 4 — Asynchrony and straggler robustness under intermittent connectivity
-- Hypothesis H4: Buffered/asynchronous aggregation (e.g., staleness-aware averaging) maintains ≥90% utility of synchronous FedAvg when 30–50% of clients are stragglers/offline, and reduces time-to-target by ≥30%. Falsify if final utility <90% or time reduction <30%.
-- Methods:
-  - Baseline: Synchronous FedAvg with fixed round windows.
-  - Methods: Asynchronous or buffered server (bounded staleness S ∈ {2, 5}) and partial aggregation thresholds (e.g., proceed when m updates arrive).
-- Ablations:
-  - Staleness bound S: 1, 2, 5.
-  - Proceed thresholds m: 20%, 50%, 80% of selected clients.
-  - Client availability model: duty cycle 20%, 50%.
-- Evaluation:
-  - Wall-clock to reach 90% of final accuracy; final utility.
-  - Expected: 30–50% faster convergence to target with small utility loss. Low-resource deployments report connectivity issues motivating asynchrony [P1]; we empirically validate.
-
-Experiment 5 — Privacy-preserving FL with DP and secure aggregation
-- Hypothesis H5: DP-FedAvg with secure aggregation achieves ε ≤ 3 (δ=1e-5) with utility ≥88% of non-DP FL on CheXpert and ≥92% on FEMNIST/Shakespeare. Falsify if ε > 3 at target utility or utility falls below thresholds.
-- Methods:
-  - Baselines: Non-DP FedAvg; Secure aggregation only.
-  - Methods: DP-FedAvg (Gaussian noise σ ∈ {0.5, 1.0, 1.5}; clip norm C ∈ {0.1, 0.5, 1.0}); secure aggregation protocol.
-- Ablations:
-  - σ and C grid; client fraction C; participation frequency.
-  - Post-training local fine-tuning without aggregation (privacy-preserving if on-device only).
-- Evaluation:
-  - Privacy accountant for ε, δ; utility retention; per-client fairness.
-  - Expected: Utility drops of 3–10 pp depending on σ and task; DP FL has been demonstrated for low-resource language hate speech detection [P5].
-
-Baselines and SOTA anchors
-- Core baselines: Centralized training oracle; FedAvg; FedProx; non-FL local-only model; non-private vs DP; synchronous vs asynchronous.
-- Communication-efficient anchors: Quantization and sparsification with error feedback [P6].
-- Resource-constrained training anchors: Layer-wise and depth dropout [P3].
-- Deployment/heterogeneity anchors: African multi-country FL in healthcare [P1]; low-bandwidth adaptive platforms [P4].
-- Privacy anchor: DP-FedAvg in low-resource language classification [P5].
-
-Evaluation metrics and thresholds (summary)
-- Utility retention thresholds: ≥92% (CheXpert AUROC vs centralized), ≥95% (FEMNIST accuracy), ≥95% (Shakespeare perplexity/accuracy retention).
-- Systems: uplink/round ≤200 KB/client for CNN/LSTM-scale models; memory ≥2× reduction; energy ≥30% reduction; time-to-target ≥30% faster with asynchrony.
-- Privacy: ε ≤ 3, δ=1e-5; fairness disparity ≤5 pp.
-
-3) Timeline (6 months with bi-weekly checkpoints)
-
-Month 1: Baselines and simulation harness
-- Week 1–2: Stand up Flower/TFF stacks; implement metrics logging (bytes/round, energy proxies); reproduce centralized baselines on CheXpert, FEMNIST, Shakespeare. Deliverables: Reproduction reports within ±1–2 pp of known baselines (CheXpert AUROC ~0.80–0.85 typical for ResNet-18; document exact achieved). Go/no-go: If centralized baselines underperform by >3 pp, fix data/augmentation/training.
-- Week 3–4: Implement FedAvg/FedProx; establish non-IID splits and availability models; first FL curves. Deliverables: FedAvg curves with >85% of centralized utility by 200–300 rounds in simulations.
-
-Month 2: Communication-efficient FL
-- Week 1–2: Add 8-bit quantization and top-k with error-feedback; run FEMNIST/Shakespeare sweeps. Deliverables: ≥4× comms reduction with ≥95% utility retention on FEMNIST/Shakespeare [P6].
-- Week 3–4: Extend to CheXpert; network profiling on 3G emulation; optimize serialization. Go/no-go: If comms reduction <3× or utility loss >5 pp, pivot to hybrid (quantization + sparsification) and tune error-feedback.
-
-Month 3: Resource-constrained training
-- Week 1–2: Implement layer-wise training and depth dropout [P3]; measure RAM and energy on Raspberry Pi/Android testbed. Deliverables: ≥2× RAM reduction, ≥30% energy savings with ≤2–3 pp utility drop.
-- Week 3–4: Combine with comms compression; stress test under α=0.1 non-IID. Go/no-go: If energy savings <25% or utility loss >3 pp, refine trainable depth schedule, reduce local epochs.
-
-Month 4: Personalization and asynchrony
-- Week 1–2: Add personalization (head-only, FedBN-style); evaluate fairness dispersion and worst-client uplift. Deliverables: ≥3 pp uplift for lower-decile clients, overall drop ≤2 pp.
-- Week 3–4: Introduce asynchronous/buffered server; measure time-to-target under 30–50% stragglers. Deliverables: ≥30% time reduction with ≥90% final utility. Go/no-go: If stability issues persist, cap staleness and increase buffer thresholds.
-
-Month 5: Privacy and small field pilot
-- Week 1–2: Integrate DP-FedAvg with secure aggregation in simulation; sweep σ, C; target ε ≤ 3 with utility thresholds. Deliverables: Privacy-utility frontier plots; recommended operating point [P5].
-- Week 3–4: 10–20-device pilot (phones/Raspberry Pis) on FEMNIST/Shakespeare with selected recipe; collect real network/energy traces. Deliverables: Field logs showing ≤200 KB/round uplink median, battery drain ≤2% per 10 rounds. Go/no-go: If field overhead >2× simulation, add adaptive client sampling and larger local epochs.
-
-Month 6: Integrated scaling study and paper
-- Week 1–2: Full Pareto analysis across utility–bandwidth–energy–privacy; sensitivity to client fraction, non-IID severity, and participation rate.
-- Week 3–4: Finalize paper code release and artifact; draft submission. Success: All success criteria met or trade-offs characterized with clear operating points.
-
-4) Resources
-
-Compute and devices
-- Aggregation/simulation: 1–2× NVIDIA A100 40GB or A6000 48GB; optional 4× RTX 4090 for parallel sweeps. Estimated GPU-hours over 6 months: 1,500–2,000 (CheXpert centralized and FL sims dominate).
-- Clients (testbed): 10–20 Android phones (6–8 GB RAM), 10–20 Raspberry Pi 4/5 (4–8 GB RAM). External USB power meters for energy validation.
-- Storage: 2–4 TB for datasets, checkpoints, logs.
-
-Datasets and versions
-- CheXpert v1.0 (official split; label uncertainty handled per original protocol) [W2].
-- LEAF FEMNIST (LEAF 2018 release) and LEAF Shakespeare [W1].
-- Non-IID partitioning scripts and Dirichlet samplers included in artifact.
-
-Tooling and libraries (pin at execution time; example tested versions)
-- Flower 1.x (e.g., 1.7.0) [W3].
-- TensorFlow Federated (e.g., 0.71.0) [W4].
-- PyTorch 2.2+/TensorFlow 2.14+ (depending on model stack).
-- Opacus (for DP in PyTorch) or TFF DP intrinsics; PySyft or native protocol for secure aggregation.
-- Android profiling: Battery Historian; Linux perf/psutil for SBCs.
-
-5) Risks and mitigations
-
-Risk | Probability | Impact | Mitigation
-- Unstable connectivity inflates staleness | High | Medium | Asynchronous/buffered aggregation with bounded staleness; opportunistic client selection; adaptive round timeouts (Exp. 4).
-- Communication compression harms convergence | Medium | Medium | Error-feedback; hybrid quantization+sparsification; tune k and bitwidth (Exp. 1) [P6].
-- Layer-wise training underperforms on CheXpert | Medium | Medium–High | Increase trainable depth fraction; periodic full-layer refresh; knowledge distillation to recover accuracy (Exp. 2) [P3].
-- DP utility drop too large at ε ≤ 3 | Medium | High | Increase client fraction and local epochs to reduce noise impact; per-layer clipping; post-training on-device fine-tuning (Exp. 5) [P5].
-- Energy measurements noisy on phones | Medium | Medium | Use external power meters; average over many rounds; standardize background processes.
-- Fairness gaps persist for tail clients | Medium | Medium | Personalized heads, FedBN for images, targeted sampling of underperforming clients (Exp. 3) [P1].
-- Secure aggregation CPU/memory overhead on server | Low–Medium | Medium | Batch-wise secure aggregation; efficient cryptographic libraries; server scaling.
-
-6) Integrated recipe and scaling study
-
-Integration path
-- Start with robust FedAvg/FedProx baselines (Month 1), layer in communication compression (Month 2), then resource-constrained training (Month 3). These address bandwidth and device memory/energy jointly [P6, P3].
-- Add personalization to reduce fairness gaps under non-IID [P1], and asynchrony to handle stragglers (Month 4).
-- Apply DP + secure aggregation and choose operating points on the privacy–utility frontier informed by [P5] (Month 5).
-- Conduct integrated sensitivity and Pareto analyses (Month 6):
-  - Sensitivity: client fraction C, local epochs E, non-IID α, sparsity k, bitwidth, depth fraction, DP σ/C, staleness bound S.
-  - Pareto fronts: Utility vs. (bandwidth, energy, ε). Identify operating points that meet: ≥92% AUROC CheXpert, ≤200 KB/round, ≥30% energy savings, ε ≤ 3.
-  - Report per-client dispersion and worst-group metrics to ensure equity.
-
-Planned analyses
-- Statistical efficiency vs. system efficiency trade-offs: curves of rounds-to-target vs. bytes-to-target [P6].
-- Fairness vs. personalization: worst-decile uplift vs. average utility (Exp. 3).
-- Privacy vs. utility: ε–utility frontier with DP-FedAvg (Exp. 5) [P5].
-- Robustness to availability: time-to-target under varying straggler rates with asynchrony (Exp. 4); deployments indicate this is critical in LMICs [P1, P4].
-
-Expected outcomes (numerical ranges, contingent on tasks)
-- Comms: 4–10× reduction with ≤2–5 pp utility drop [P6].
-- Memory/energy: 2–3× RAM reduction; 30–50% energy savings; ≤2–3 pp utility loss [P3].
-- Personalization: ≥3–8 pp worst-client uplift; ≤2 pp average drop.
-- Asynchrony: ≥30–50% faster time-to-target; ≥90% final utility of synchronous.
-- Privacy: ε ≤ 3 at 3–10 pp utility drop on NLP/vision; secure aggregation with minimal utility impact [P5].
-
-Literature anchors to replicate/extend
-- Democratizing AI in Africa: Federated Learning for Low-Resource Edge Devices — replicate their multi-country setup characteristics and device heterogeneity; evaluate additional communication/energy metrics [P1].
-- Towards Federated Learning Under Resource Constraints via Layer-wise Training and Depth Dropout — replicate memory/energy improvements; extend to medical imaging and add DP [P3].
+6. Stretch ideas or follow-up directions
+- Hierarchical FL with community/edge micro-servers to reduce WAN hops and enable store-and-forward during outages [P4].
+- Incentive-aware client selection (e.g., airtime credits), balancing fairness and energy/cost budgets.
+- Joint model compression and personalization (knowledge distillation during personalization rounds) to cut both on-device compute and communication [P3], [P6].
+- Fairness-aware objectives (e.g., group-DRO-style losses) for underserved client groups.
+- Semi-supervised FL to leverage abundant unlabeled on-device data with minimal labels.
 
 Citations
-- [P1] Democratizing AI in Africa: Federated Learning for Low-Resource Edge Devices — https://arxiv.org/html/2408.17216v1
-- [P3] Towards Federated Learning Under Resource Constraints via Layer-wise Training and Depth Dropout — https://research.google/pubs/towards-federated-learning-under-resource-constraints-via-layer-wise-training-and-depth-dropout/
-- [P4] Inclusive artificial intelligence using adaptive federated learning (AIFIX) — https://cordis.europa.eu/project/id/101213225
-- [P5] Privacy-Preserving Federated Learning for Hate Speech Detection — https://aclanthology.org/2025.naacl-srw.13/
-- [P6] Communication overhead reduction in federated learning: a review — https://link.springer.com/article/10.1007/s41060-024-00691-x
-- [W1] LEAF: A Benchmark for Federated Settings — https://arxiv.org/abs/1812.01097 and https://leaf.cmu.edu/
-- [W2] CheXpert: A Large Chest Radiograph Dataset — https://arxiv.org/abs/1901.07031
-- [W3] Flower: A Friendly Federated Learning Research Framework — https://arxiv.org/abs/2007.14390
-- [W4] TensorFlow Federated — https://www.tensorflow.org/federated
+- [P1] Exploring the Practicality of Federated Learning: A Survey Towards the Communication Perspective — https://arxiv.org/html/2405.20431v1
+- [P2] Heterogeneous Federated Learning: State-of-the-art and Research Challenges — https://export.arxiv.org/pdf/2307.10616v2.pdf
+- [P3] Communication overhead reduction in federated learning: a review — https://link.springer.com/article/10.1007/s41060-024-00691-x
+- [P4] Enabling Federated Learning across the Computing Continuum: Systems, Challenges and Future Directions — https://hal.science/hal-04659211v1/file/Enabling_FL_across_the_CC_Systems_Challenges_and_Future_Directions.pdf
+- [P5] Towards Efficient Communications in Federated Learning: A Contemporary Survey — https://export.arxiv.org/pdf/2208.01200v2.pdf
+- [P6] Advances and Open Problems in Federated Learning — https://inria.hal.science/hal-02406503v2/document
+- [1] LEAF: A Benchmark for Federated Settings — https://arxiv.org/pdf/1812.01097
+- [2] FedScale: Benchmarking Model and System Performance of Federated Learning — https://arxiv.org/pdf/2105.11367
 
-Notes on evidence coverage: We relied on peer-reviewed and community-acknowledged sources for communication efficiency [P6], resource-constrained layer-wise/depth dropout [P3], and LMIC deployment contexts [P1, P4]. For personalization and asynchrony, we use standard techniques consistent with the literature and deployment needs; the plan includes empirical validation where direct citations are limited.
+Optional next step
+- Spin up the baseline stack (Flower + LEAF FEMNIST) and reproduce FedAvg/FedProx with bandwidth capped at 128 kbps, logging bytes/time/accuracy; this produces initial calibration plots for Experiment 1 within one week.
