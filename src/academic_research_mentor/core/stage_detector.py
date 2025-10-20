@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 # Simple heuristic stage detector based on user turn content.
@@ -26,6 +26,8 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "brainstorm",
             "explore ideas",
             "open ended",
+            "getting started",
+            "not sure",
         ],
     ),
     "B": (
@@ -39,6 +41,9 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "direction",
             "angle",
             "approach sketch",
+            "framing",
+            "baseline choice",
+            "compare baselines",
         ],
     ),
     "C": (
@@ -55,6 +60,12 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "baseline plan",
             "ablation plan",
             "risks",
+            "design",
+            "hyperparameter",
+            "setup",
+            "configuration",
+            "planning",
+            "study design",
         ],
     ),
     "D": (
@@ -68,6 +79,12 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "writeup",
             "writing first draft",
             "figure draft",
+            "analysis",
+            "interpret",
+            "reporting",
+            "results",
+            "visualization",
+            "summary",
         ],
     ),
     "E": (
@@ -82,6 +99,14 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "math check",
             "proof check",
             "polish",
+            "presentation",
+            "flow",
+            "clarity",
+            "narrative",
+            "story",
+            "tone",
+            "visuals",
+            "communication",
         ],
     ),
     "F": (
@@ -93,9 +118,22 @@ _STAGE_DEFS: Dict[str, Tuple[str, List[str]]] = {
             "final",
             "simulate reviews",
             "ready to submit",
+            "cover letter",
+            "author response",
+            "checklist",
+            "last mile",
         ],
     ),
 }
+
+
+def _stage_marker(text: str) -> Optional[str]:
+    lowered = text.lower()
+    for code in ("A", "B", "C", "D", "E", "F"):
+        marker = f"stage {code.lower()}"
+        if marker in lowered or marker + "+" in lowered:
+            return code
+    return None
 
 
 def detect_stage(user_text: str) -> Dict[str, object]:
@@ -106,6 +144,10 @@ def detect_stage(user_text: str) -> Dict[str, object]:
     text = (user_text or "").strip().lower()
     if not text:
         return {"code": "A", "name": _STAGE_DEFS["A"][0], "confidence": 0.30}
+
+    marker = _stage_marker(text)
+    if marker:
+        return {"code": marker, "name": _STAGE_DEFS[marker][0], "confidence": 0.8}
 
     best_code = "A"
     best_score = 0
