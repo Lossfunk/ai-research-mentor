@@ -1,0 +1,421 @@
+[Turn 0] SYSTEM:
+You're preparing to write your first conference paper and need help structuring the narrative, deciding what results to include, and understanding how to frame your contributions clearly.
+
+[Turn 1] USER:
+How do I even decide what my central story is when every experiment feels equally important?
+
+[Turn 1] ASSISTANT:
+Stage: B – Idea (choosing the central claim and aligning evidence)
+
+Quick intake to tailor advice:
+- Compute/time: What’s your weekly time budget and compute access (e.g., 1 GPU vs cluster)?
+- Project context: What are the 2–3 candidate claims you could make today?
+- Mentorship/venue: Do you have a target venue and timeline?
+- Bottleneck: Is your uncertainty about importance, robustness, generality, or story clarity?
+
+How to pick your central story when everything feels important
+- Write 2–3 one-sentence claims. Each must be falsifiable and title-ready (e.g., “X improves Y by Z via mechanism M, robust across R”). Then force-rank them by: importance-to-field, robustness, generality, mechanistic clarity, and cost-to-support.
+- Build an evidence map: for each claim, list the minimal figures needed to convince a skeptical reviewer and which you already have. The claim that can be convincingly supported with the fewest, cleanest figures usually wins.
+- Storyboard before writing: lay out a 5-figure arc where every result directly advances the one claim (Context→Content→Conclusion at paper, section, and paragraph levels) [P3]. Readers track a single throughline better; structure should match reader expectations and put the “point” where the reader looks for it [P1].
+
+Three concrete, falsifiable experiments to decide the story
+1) Mechanism knockout/mediation test
+- Objective & hypothesis: If mechanism M is the core driver of your gains, removing or randomizing M should erase most of the improvement.
+- Setup: Implement +M, −M, and sham-control variants; hold training budget, data, and seeds fixed. Use your primary dataset and one secondary dataset.
+- Metrics & success: Δperformance between +M and −M; “mediation fraction” = (Δbaseline→full − Δ−M→full)/Δbaseline→full. Success if ≥50% of gains vanish without M.
+- Interpretation: High mediation → mechanism-centered story is credible; low mediation → pick a different central claim.
+- Follow-ups: Interaction tests (M × dataset size; M × compute) to see when M matters most.
+
+2) Breadth and invariance sweep
+- Objective & hypothesis: The best central story shows consistent effect across regimes (datasets, scales, or noise conditions).
+- Setup: 3 diverse datasets or 3 scales (small/medium/large). Hold hyperparameters via tuned-once policy to avoid cherry-picking.
+- Metrics & success: Effect size with CIs, rank consistency across settings, and heterogeneity (I²). Success if effects are positive and stable with low heterogeneity.
+- Interpretation: Stable, cross-regime gains argue for a general claim; heterogeneous gains suggest a scoped, “works when R holds” story.
+- Follow-ups: Identify moderators (e.g., data diversity) and phrase the claim with explicit preconditions.
+
+3) Cost-benefit and constraint robustness
+- Objective & hypothesis: The strongest story delivers improvement per unit cost and survives realistic constraints.
+- Setup: Vary compute (epochs/steps), data fraction, and wall-clock. Compare your method vs baseline at matched budgets.
+- Metrics & success: Improvement per $/GPU-hour, area-under-constraint-curve (AUC) for retained performance under resource limits. Success if your method dominates the Pareto frontier.
+- Interpretation: If you’re Pareto-dominant, a “practical value” story is compelling; if not, pivot to a mechanistic or conditional story.
+- Follow-ups: Profile where cost concentrates and simplify to a minimal, still-dominant variant.
+
+Recommendations
+- Draft three title+abstract variants (one per claim), each with a 5-figure storyboard; pick the variant with the cleanest mediation, most stable cross-regime effect, or best cost-normalized dominance.
+- Use the C-C-C structure ruthlessly in each section and figure caption so every result earns its place serving one claim [P3][P1].
+
+Intuition
+- When many results compete, the “best” story is the one that is easiest to explain, most robust across settings, and cheapest to defend convincingly. Knockouts, breadth sweeps, and cost-normalized comparisons reveal which claim survives scrutiny.
+
+Why this is principled
+- Papers land when readers can grasp one central contribution, with every section aligned to it via context→content→conclusion; this is a core writing heuristic and reader-expectation principle [P3][P1]. Prioritizing robustness, generality, and mechanism aligns with how reviewers evaluate significance and credibility.
+
+Next actions (2–3 hours)
+- Write 3 one-sentence claims and a 5-figure storyboard for each.
+- Run the smallest feasible mechanism knockout (Exp 1) on your primary dataset (single seed) to get a directional mediation estimate.
+- Share your ranked claims and a screenshot of your evidence map; I’ll help lock the story and prune figures.
+
+Citations
+- [P1] The Science of Scientific Writing — https://www.semanticscholar.org/paper/The-Science-of-Scientific-Writing-Gopen-Swan/85db537f57baebdf03e95155cae0910019f68cd1
+- [P3] Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+
+Literature anchors
+- Gopen & Swan, The Science of Scientific Writing — https://www.semanticscholar.org/paper/The-Science-of-Scientific-Writing-Gopen-Swan/85db537f57baebdf03e95155cae0910019f68cd1
+- Mensh & Kording, Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+
+[Turn 2] USER:
+When I force-rank my candidate claims, should I value broad generality over a sharper but narrower mechanistic insight?
+
+[Turn 2] ASSISTANT:
+Stage: B → C — narrowing the central claim and designing decision experiments
+
+Short answer: Default to the claim you can make truest, clearest, and cheapest—then let data decide. Prefer broad generality if effects are consistent with minimal tuning across ≥2–3 regimes; prefer a sharper mechanistic insight if it explains most of the gains and yields testable predictions that reduce confusion. [G14][G9]
+
+Strategic questions
+- Venue fit: Which audience are you targeting (applied vs. theory/interpretability)? Their bar for generality vs mechanism differs. [G6]
+- Evidence status: Do you already have a clean knockout/mediation showing your mechanism explains ≥50% of the gain?
+- Heterogeneity: How variable are your effects across datasets/scales right now (rough I² or CI overlap)?
+- Constraints: Do you have budget for a 3× dataset/scale sweep in the next week? If not, a precise mechanistic claim may be the faster, truer story. [G1][G3]
+
+Decision rule (practical)
+- Pick generality if: the effect reproduces with a tuned-once policy across ≥3 settings, confidence intervals don’t wildly diverge, and you can show this in ≤2 figures. [G14]
+- Pick mechanism if: a knockout/causal test removes most of the gain, the mechanism predicts when/why the method works, and it simplifies the design space (fewer knobs). [G6]
+
+Three concrete, falsifiable experiments to choose the story
+1) Mediation/knockout quantification
+- Objective & hypothesis: If mechanism M is core, removing or randomizing M erases most gains.
+- Setup: Implement +M, −M, and sham-control; hold seeds, budget, and data fixed. Run on primary dataset plus one secondary.
+- Metrics & success: Δ(+M vs −M); mediation fraction = (Δbaseline→full − Δ−M→full)/Δbaseline→full. Success if ≥50% of gains vanish without M.
+- Interpretation: High mediation supports a mechanism-centered story; low mediation suggests leaning into a generality claim.
+- Follow-ups: Test M × dataset size or M × compute interactions to map where the mechanism actually matters. [G14]
+
+2) Breadth and invariance sweep
+- Objective & hypothesis: A general claim should be stable across regimes.
+- Setup: 3 diverse datasets or 3 scales; tune once on a dev setting and freeze. Avoid per-task cherry-picking. [G14]
+- Metrics & success: Effect sizes with CIs, rank consistency, heterogeneity (I²). Success if effects are positive and low-heterogeneity.
+- Interpretation: Stable effects → generality story; heterogeneous effects → scoped claim (“works when R holds”) or mechanism-first framing.
+- Follow-ups: Moderator analysis (e.g., data diversity, label noise) to explicitly state preconditions.
+
+3) Predictive mechanism test (out-of-regime forecasting)
+- Objective & hypothesis: A good mechanism yields predictive power about when/where the method works.
+- Setup: Fit a simple predictor using mechanism-derived features (e.g., diagnostic signals) on 2 settings; predict performance gains on a held-out, distinct setting.
+- Metrics & success: R² or calibration of predicted vs observed gains; pre-registered decision threshold (e.g., R² ≥ 0.4).
+- Interpretation: If mechanism features forecast gains OOD, a mechanism-centered story is compelling; if not, favor a generality claim or narrow the mechanism.
+- Follow-ups: Ablate features to isolate which mechanistic signal actually carries predictive weight. [G6]
+
+Recommendations
+- Draft two 5-figure storyboards (Generality vs Mechanism). Run Experiments 1–2 at smallest scale (single seed) to get directional signals within 1–2 days. Choose the story whose evidence is cleaner and cheaper to defend. [G3][G14]
+- If compute is tight, bias toward the mechanism path (clean knockouts > sprawling sweeps). If you have budget for breadth, bias toward generality. [G1][G3]
+
+Intuition
+- Reviewers reward whatever they can trust fastest: either “it works broadly with minimal tuning” or “it works because of this specific, tested mechanism.” The better-justified path becomes your central story.
+
+Why this is principled
+- Focusing on important, tractable claims and using crisp experiments to reduce uncertainty aligns with effective research practice and taste development. It converts ambiguity into decisive evidence while respecting cost. [G9][G3][G14][G1]
+
+Next actions (2–3 hours)
+- Pre-register thresholds: mediation ≥50% for mechanism; I² low and rank consistency for generality.
+- Run a minimal knockout on your primary dataset and a 3-setting mini-sweep with tuned-once policy.
+- Post the quick results; we’ll pick the story and finalize the 5-figure arc.
+
+Literature anchors
+- Hamming, You and Your Research — importance and taste; pick big but tractable claims — https://gwern.net/doc/science/1986-hamming [G9]
+- Schulman, An Opinionated Guide to ML Research — crisp experiments, tuned-once policies, avoid cherry-picking — http://joschu.net/blog/opinionated-guide-ml-research.html [G14]
+
+Citations
+- [G1] How Not To Choose A Research Project — https://www.lesswrong.com/posts/kDsywodAKgQAAAxE8/how-not-to-choose-a-research-project
+- [G3] Principles Of Effective Research — http://michaelnielsen.org/blog/principles-of-effective-research/
+- [G6] Highly Opinionated Advice On How To Write ML Papers — https://www.alignmentforum.org/posts/Xt8tMtwfsLo2jRCEj/highly-opinionated-advice-on-how-to-write-ml-papers
+- [G9] 1986 Hamming — https://gwern.net/doc/science/1986-hamming
+- [G14] Opinionated Guide Ml Research.Html — http://joschu.net/blog/opinionated-guide-ml-research.html
+
+[Turn 3] USER:
+If my knockout test is inconclusive but the breadth sweep looks clean, can I still lead with the generality claim and relegate mechanism to future work?
+
+[Turn 3] ASSISTANT:
+Stage: B → C — choosing the lead claim and locking the evidence plan
+
+Short answer: Yes. If your breadth sweep is clean and reproducible with a tuned-once policy, lead with the generality claim, clearly scope it, and move the mechanistic hypothesis to “limitations/open questions” and Future Work. Keep the paper centered on one throughline so readers don’t chase two stories at once [P1][P2][P9]. Report effect sizes, CIs, and heterogeneity across regimes to substantiate generality and pre-register simple decision thresholds to avoid over-claiming [P3][P4].
+
+Strategic questions
+- How many regimes did your sweep cover, and was it truly tuned-once across them (no per-task retuning)? [P2]
+- Can you quantify cross-regime heterogeneity (e.g., I²) and show consistent rank orderings? [P3]
+- Was the knockout “inconclusive” due to low power or because the effect persisted? If power-limited, a smaller, higher-signal causal test may still be feasible [P4][P6].
+- What venue are you aiming for? Some emphasize broad utility over mechanism; either way, be explicit about scope and open questions [P9].
+
+Recommendations
+- Lead with a scoped generality claim (e.g., “Method X improves Y across {A,B,C} under tuned-once configs”), and state the mechanism as a plausible but unconfirmed explanation with targeted future tests [P1][P2][P9].
+- Make generality airtight: freeze configs; report effect sizes with CIs and heterogeneity; include one stress-test regime shift (e.g., noise or scale) to show invariance boundaries [P3][P2].
+- Add a limitations paragraph explicitly noting that mechanism remains unresolved and outlining the concrete causal tests you’ll run next [P9].
+
+Three concrete, falsifiable experiments to support this path
+1) Tuned-once cross-regime replication
+- Objective & hypothesis: Show that gains persist with a single fixed configuration across diverse regimes. Hypothesis: positive, stable effect across ≥3 datasets or scales.
+- Setup: Tune on one dev regime, freeze hyperparameters, and evaluate on 3 held-out regimes. Use fixed seeds and report per-regime results.
+- Metrics & success: Effect size with 95% CIs, rank consistency, and heterogeneity (I²). Success if effects are consistently positive with low-to-moderate heterogeneity. This directly substantiates a generality-first story [P2][P3].
+- Interpretation: Stable effects justify leading with generality; high heterogeneity suggests a scoped claim with explicit preconditions.
+- Follow-ups: Add one OOD regime (e.g., domain shift) to establish boundaries of applicability [P3].
+
+2) Invariance stress test under realistic constraints
+- Objective & hypothesis: Gains should survive practical constraints (less data/compute, label noise). Hypothesis: method retains a higher fraction of baseline performance under constraints.
+- Setup: Vary data fraction, training budget, and controlled label noise; keep configs frozen from dev tuning.
+- Metrics & success: Area-under-constraint-curve (performance vs budget), relative improvement per GPU-hour, and degradation slopes. Success if your method dominates or remains Pareto-competitive across constraints [P3].
+- Interpretation: Pareto dominance strengthens a utility-centric generality claim; if not, restrict scope to regimes where it dominates.
+- Follow-ups: Profile cost concentrations and simplify to a minimal dominant variant.
+
+3) Focused, higher-power causal probe of the mechanism
+- Objective & hypothesis: If prior knockout was inconclusive, run a smaller, higher-sensitivity test to check necessity. Hypothesis: removing the hypothesized component reduces gains materially.
+- Setup: Randomized assignment to +M vs −M (and sham control), matched budgets, and a setting with larger effect size-to-noise ratio. Pre-register a minimum detectable effect and a stop rule [P6][P4].
+- Metrics & success: Δ(+M − −M), mediation fraction, with CIs. Success if ≥50% of gains vanish without M; otherwise, mechanism remains unconfirmed.
+- Interpretation: A null or small effect supports relegating mechanism to future work; a clear effect upgrades mechanism to a secondary figure with cautious framing [P4].
+
+Intuition
+- Readers trust what they can verify fastest: consistent gains across regimes with frozen configs. If mechanism evidence is weak, don’t dilute the narrative; center the reliable result and clearly mark open mechanisms.
+
+Why this is principled
+- A single, coherent throughline improves comprehension and persuasion; scope and limitations should be explicit, not implied [P1][P9]. Robustness across regimes with tuned-once evaluation reduces cherry-picking risk and is aligned with reproducibility and generalizability standards in empirical ML [P2][P3][P4].
+
+Next actions (2–3 hours)
+- Freeze your best dev-tuned config; compute effect sizes, CIs, and I² over your completed sweep; draft a one-sentence generality claim [P2][P3].
+- Write a limitations paragraph that explicitly defers mechanism and names Experiment 3 as future work with a pre-registered threshold [P4][P9].
+- Share the sweep table and the limitations text; I’ll help tighten the claim and figure order.
+
+Literature anchors
+- Mensh & Kording, Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+- Schulman, Highly Opinionated Advice on How to Write ML Papers — https://www.alignmentforum.org/posts/eJGptPbbFPZGLpjsp/highly-opinionated-advice-on-how-to-write-ml-papers
+
+Citations
+- [P1] Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+- [P2] Highly Opinionated Advice on How to Write ML Papers — https://www.alignmentforum.org/posts/eJGptPbbFPZGLpjsp/highly-opinionated-advice-on-how-to-write-ml-papers
+- [P3] REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://www.science.org/doi/10.1126/sciadv.adk3452
+- [P4] Design Principles for Falsifiable, Replicable and Reproducible Empirical ML Research — https://arxiv.org/html/2405.18077v1
+- [P6] Experimentology — https://experimentology.io/Experimentology.pdf
+- [P9] Paper Writing Best Practices - ICML 2025 — https://icml.cc/Conferences/2022/BestPractices
+
+[Turn 4] USER:
+Which single figure should anchor the generality section if I can only show one?
+
+[Turn 4] ASSISTANT:
+Stage: B → C — locking the evidence plan and figure design
+
+Short answer: Use a tuned-once forest plot of effect sizes with 95% CIs across your regimes, plus a pooled estimate and heterogeneity (I²). This communicates magnitude, consistency, and scope in one glance, while minimizing cherry-pick risk. If your audience cares deeply about efficiency, a Pareto frontier (performance vs compute) is the one acceptable alternative—but default to the forest plot.
+
+Note: No sources found for “best single figure to demonstrate generality across regimes” in our guideline search; recommendations below follow general reproducibility and paper-structure guidance. Conjecture where noted.
+
+Strategic questions
+- Which 4–8 regimes (datasets/scales/shifts) most represent your claim’s scope?
+- Can you run ≥3 seeds per regime to show CIs, or else report bootstrap CIs?
+- Is compute a gating concern for your audience (argues for a Pareto inset or alternative)?
+
+Anchor figure specification (practical)
+- Forest plot (recommended): One row per regime; x-axis = standardized effect size (or Δmetric vs baseline) with 95% CIs; vertical zero-line; point size ∝ effective sample (e.g., seeds); right column shows per-regime Nseeds and dev-tuned-once note. Include a pooled random-effects estimate at bottom (diamond) and I² as heterogeneity. Caption should state “tuned once on dev, frozen elsewhere,” Nseeds, metrics, and pre-registered success thresholds.
+- Alternative if efficiency is central: Pareto frontier with methods’ performance vs GPU-hours, showing your method’s dominance across budgets. If you choose this, add small error bars or light CIs from seeds and note the tuned-once policy in the caption.
+
+Three concrete, falsifiable experiments that feed this figure
+1) Tuned-once cross-regime replication
+- Objective & hypothesis: Gains persist across ≥4 regimes with a single frozen config. Hypothesis: positive effect with low-to-moderate heterogeneity.
+- Setup: Tune on one dev regime; freeze hyperparameters. Evaluate across 4–8 regimes, 3 seeds each if possible.
+- Metrics & success: Per-regime effect sizes with 95% CIs; pooled random-effects estimate; I². Success if pooled effect > 0 and I² is modest; ranks are mostly consistent.
+- Interpretation: Clean, consistent effects justify leading with generality; high I² pushes you to narrow scope.
+
+2) OOD boundary probe
+- Objective & hypothesis: Define the boundary of applicability. Hypothesis: effect remains positive under one realistic shift (e.g., label noise or domain shift), though attenuated.
+- Setup: Add one OOD regime (shifted domain or noise). Keep configs frozen.
+- Metrics & success: Effect size with CI; note any attenuation. Success if still > 0; if null/negative, state preconditions explicitly in the caption and text.
+- Interpretation: Confirms scope and avoids over-claiming; informs the figure’s ordering and caption.
+
+3) Seed-sensitivity and power check
+- Objective & hypothesis: Effects are not artifacts of a lucky seed. Hypothesis: median effect remains positive with narrow CIs as seeds increase.
+- Setup: On 1–2 representative regimes, run 5–10 seeds; compute CIs via bootstrap or t-based intervals.
+- Metrics & success: CI width vs seeds; variance explained by seeds vs treatment. Success if CI includes positive region and narrows with added seeds.
+- Interpretation: Supports credible CIs in the main forest plot and justifies Nseeds reported.
+
+Intuition
+- A forest plot compresses “does it work, by how much, and how consistently?” into one frame, which is exactly what readers need to trust a generality claim.
+
+Why this is principled
+- Tuned-once, cross-regime reporting reduces cherry-picking and improves reproducibility; clear figure structure aligned to a single throughline improves reader comprehension. These match widely endorsed recommendations for empirical ML reporting and paper structure.
+
+Next actions (2–3 hours)
+- Assemble per-regime Δmetrics with seeds; compute 95% CIs and I²; draft the forest plot.
+- Write a caption stating tuned-once policy, Nseeds, pooled estimate, and pre-registered thresholds.
+- If efficiency matters to your venue, prepare a small Pareto inset or keep it as a supplementary figure.
+
+Literature anchors
+- Mensh & Kording, Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+- Design Principles for Falsifiable, Replicable and Reproducible Empirical ML Research — https://arxiv.org/abs/2405.18077
+
+Citations
+- Ten simple rules for structuring papers — https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1005619
+- Design Principles for Falsifiable, Replicable and Reproducible Empirical ML Research — https://arxiv.org/abs/2405.18077
+
+[Turn 5] USER:
+Should I include the I² value in the figure caption or save it for the main text?
+
+[Turn 5] ASSISTANT:
+Stage: C — sharpening reporting and figure design
+
+No sources found for “whether to place I² in the caption vs main text.” Recommendations below are Conjecture.
+
+Short answer: Put the I² value in the figure caption so the anchor figure is self-contained, and explain its implication (low/moderate/high heterogeneity and what that means for scope) in the main text. Exception: if I² is high/nuanced and needs methodological caveats, keep the number in the caption but defer detailed interpretation to the text.
+
+Decision rule
+- Default: Include in caption — pooled effect, I², Nseeds, number of regimes, metric, and “tuned-once” note. Readers who skim figures get the core generality signal without hunting in the text.
+- Move nuance to text when: I² is large (>~50%), sensitive to model choice (fixed vs random effects), or unstable due to few regimes; add a one-sentence, plain-English interpretation in Results.
+- If space is tight: Keep pooled effect and I² in the caption; move seed-level CI method and modeling choices to Methods.
+
+Practical caption template
+“Tuned once on dev, frozen elsewhere; 6 regimes, 3 seeds/regime. Points show Δmetric vs baseline with 95% CIs; diamond = random-effects pooled effect = +2.3 (95% CI [1.1, 3.5]); heterogeneity I² = 18% (low).”
+
+Strategic questions
+- How many regimes and seeds do you have (is I² stable)? 
+- Is I² low/moderate (supports showing it prominently) or high (requires careful scoping language)?
+
+Intuition
+- Many reviewers skim figures first. Including I² in the caption makes the generality claim verifiable at a glance, while the text provides needed nuance.
+
+Why this is principled
+- Self-contained figures reduce ambiguity and cherry-pick concerns, while separating display (caption) from interpretation (text) keeps the narrative clear and defensible.
+
+Next actions (30–45 min)
+- Compute pooled effect and I²; drop them into the caption with N and tuned-once note.
+- Add one sentence in Results interpreting the magnitude of I² and how it affects your claim’s scope. 
+- If I² is high, add explicit preconditions for when the method works.
+
+[Turn 6] USER:
+If my I² ends up high, what’s the quickest way to decide which regimes to drop or re-scope without rerunning everything?
+
+[Turn 6] ASSISTANT:
+Stage: C — scoping the claim under high heterogeneity
+
+Short answer: Yes—use influence diagnostics on the results you already have to do a fast, principled triage. Run leave-one-out (LOO) meta-analysis, compute per-regime influence and studentized residuals, and inspect a Baujat plot to identify which regimes both drive the pooled effect and the heterogeneity; then either (a) re-scope the claim with an explicit moderator (“works when R holds”), or (b) drop pre-specified outliers with a transparent rule and justify in text. This can be done without rerunning any training. [4][5][3][8]
+
+Strategic questions
+- Do you have per-regime effect sizes with standard errors (or enough to bootstrap them)? [9]
+- What likely moderators are already logged (domain, dataset size, label noise, compute budget)? These enable quick meta-regression without reruns. [9][10]
+- Is your venue comfortable with scoped claims (e.g., “under X–Y conditions”)?
+
+Fast triage algorithm (no reruns)
+1) Random-effects fit + LOO: Fit a random-effects meta-analysis over regimes; compute pooled effect and I², then LOO to see ΔI² and Δpooled-effect when each regime is removed. Flag regimes whose removal reduces I² materially (e.g., ≥15–20%) or flips the conclusion. [9][5]
+2) Influence diagnostics: Compute hat values, Cook’s distance, DFFITS, and externally studentized residuals per regime; flag regimes with |residual| > 2 or high Cook’s D. [4][5]
+3) Baujat plot: Visualize each regime’s contribution to heterogeneity vs overall effect; regimes in the upper-right are top candidates for investigation or scoped exclusion. [3]
+4) Moderator check (meta-regression): Regress effect size on pre-logged moderators (e.g., domain shift, data size, noise rate, model scale). If a moderator explains heterogeneity and the sign is consistent, reframe the claim around that moderator. [9][10]
+5) Robustness to modeling choices: Recompute with alternative τ² estimators (REML, DL, Paule–Mandel) and robust variance; retain conclusions that are stable across estimators. [10][9]
+6) Pre-specify a trimming rule: If needed, apply a transparent rule (e.g., drop regimes with externally studentized residual > 2 and Cook’s D above the conventional threshold), report both full and trimmed analyses, and justify in Limitations. [5][8]
+7) Decide scope: If pooled effect stays positive and I² drops after removing ≤1–2 clearly influential regimes, present the trimmed analysis as primary and the full analysis in supplement; otherwise, keep all regimes and state explicit preconditions where gains hold (scoped claim). [8]
+
+Anchor figure tweak
+- Keep the forest plot but add: pooled effect, I², and a small inset or note indicating the trimmed analysis outcome; mark flagged regimes with a symbol and explain the pre-specified rule in the caption. [8][9]
+
+Three concrete, falsifiable experiments/analyses you can run now
+1) Leave-one-out influence analysis
+- Hypothesis: High I² is driven by ≤2 regimes; removing any single flagged regime reduces I² by ≥15% without flipping the pooled effect’s sign.
+- Setup: Use your existing per-regime effect sizes/SEs; run LOO random-effects meta-analysis and record ΔI² and Δpooled-effect per regime.
+- Metrics & success: Max ΔI², stability of pooled effect sign/magnitude, count of influential regimes.
+- Interpretation: If ≤2 regimes explain most heterogeneity and trimming them stabilizes results, proceed with a trimmed primary analysis plus full-analysis supplement; otherwise, prefer a scoped claim over trimming. [5][9]
+- Follow-ups: Sensitivity to τ² estimator choice (REML vs DL vs PM). [10]
+
+2) Moderator meta-regression from existing logs
+- Hypothesis: A logged moderator (e.g., domain shift or dataset size) explains a significant share of heterogeneity and predicts effect direction.
+- Setup: Fit meta-regression with effect size ~ moderator(s), weighted by inverse-variance.
+- Metrics & success: Moderator coefficient sign/CI, R²-like measure for heterogeneity explained, residual I².
+- Interpretation: Significant, stable moderator → re-scope claim (“X improves Y when moderator ≥ T”) and keep all regimes; non-significant → rely on influence trimming or maintain a cautious general claim with explicit uncertainty. [9][10]
+- Follow-ups: Add interaction terms only if pre-logged to avoid fishing.
+
+3) Outlier-robust re-estimation
+- Hypothesis: The pooled positive effect is robust to outliers under robust variance or alternative τ² estimators.
+- Setup: Refit the meta-analysis using robust variance estimation and multiple τ² estimators (REML, DL, Paule–Mandel).
+- Metrics & success: Pooled effect sign, CI overlap across estimators, change in I².
+- Interpretation: Stability across estimators supports keeping all regimes with a scoped statement; instability suggests either trimmed primary analysis or narrowing the claim. [10][9]
+- Follow-ups: Document estimator choice and rationale in Methods.
+
+Recommendations
+- Prefer re-scoping (“works under R”) when a clear moderator explains heterogeneity; use trimmed analysis only with a pre-specified, defensible rule and always show the full analysis in supplement. [8]
+- Log the triage rule in your repo (analysis plan.md) so it’s auditable and not post hoc.
+
+Intuition
+- High I² usually means one or two regimes are either genuinely different or noisy; LOO and influence diagnostics quickly reveal whether you have an “exception that proves the rule” or a pattern that demands a scoped claim.
+
+Why this is principled
+- Influence diagnostics, LOO sensitivity, and moderator analyses are standard tools for handling heterogeneity in meta-analysis; they let you refine scope without cherry-picking and without new runs. Reporting both full and trimmed/conditioned analyses aligns with transparent, reproducible practice. [5][3][8][9]
+
+Next actions (60–90 minutes)
+- Compute LOO, influence diagnostics, and a Baujat plot; list the top two influential regimes. [4][5][3]
+- Run a single-moderator meta-regression using your existing metadata; draft a scoped one-sentence claim if the moderator is significant. [9]
+- Decide: scoped claim vs trimmed analysis; update the forest plot caption with pooled effect, I², trimmed outcome, and the pre-specified rule. [8]
+
+Literature anchors
+- Viechtbauer, The metafor Package: A Meta-Analysis Package for R — https://cran.r-project.org/web/packages/metafor/metafor.pdf
+- Cochrane guidance on dealing with heterogeneity (overview and sensitivity analysis norms) — https://www.researchgate.net/publication/50195256_Dealing_with_substantial_heterogeneity_in_Cochrane_reviews_Cross-sectional_study
+
+Citations
+- [3] Baujat plot to identify studies contributing to heterogeneity — https://www.researchgate.net/figure/Baujat-plot-to-identify-studies-contributing-to-heterogeneity-Each-study-is-represented_fig3_282122880
+- [4] Plot of Influence Diagnostics - The metafor Package — https://www.metafor-project.org/doku.php/plots:plot_of_influence_diagnostics
+- [5] metafor: Meta-Analysis Package for R (influence/LOO diagnostics) — https://cran.r-project.org/web/packages/metafor/metafor.pdf
+- [8] Dealing with substantial heterogeneity in Cochrane reviews — https://www.researchgate.net/publication/50195256_Dealing_with_substantial_heterogeneity_in_Cochrane_reviews_Cross-sectional_study
+- [9] General Package for Meta-Analysis (meta) — https://cran.r-project.org/web/packages/meta/meta.pdf
+- [10] Alternative Measures of Between-Study Heterogeneity in Meta-analysis — https://pmc.ncbi.nlm.nih.gov/articles/PMC5106349/
+
+[Turn 7] USER:
+If I trim a regime, do I still list it (grayed out) in the forest plot so reviewers see the full scope?
+
+[Turn 7] ASSISTANT:
+Stage: C — figure design decision under sensitivity/trim rules
+
+Short answer: Default to a clean main forest plot that shows only the regimes included in the primary analysis; move trimmed/removed regimes to a clearly labeled sensitivity analysis figure (main-text inset or supplement). Note in the main caption the pre-specified trim rule and report pooled effect and I² for both full vs trimmed analyses. This matches common sensitivity-analysis practice and keeps the anchor figure self-contained without clutter. [1][2]
+
+Decision rule
+- Main figure: only included regimes; caption states “trim rule = X,” and gives pooled effect/I² for full vs trimmed (e.g., “full: +2.1, I²=62%; trimmed: +2.4, I²=18%”). [1][2]
+- Sensitivity display: separate forest plot (supplement or inset) showing all regimes, with excluded ones grayed out or marked (†) and the same rule in the caption. [1]
+- If space is tight: keep main plot clean and add a compact table in supplement listing excluded regimes and diagnostics (e.g., studentized residual, Cook’s D). [2]
+
+Two quick checks before finalizing
+- Was the trimming rule pre-specified (e.g., studentized residual > 2)? If not, label as exploratory and prefer a scoped claim over trimming. [1]
+- Does the pooled effect’s sign/magnitude remain stable from full to trimmed? If unstable, keep all regimes and re-scope the claim in text. [2]
+
+Intuition
+- Reviewers skim figures first; mixing included and excluded regimes in one dense plot risks confusion. A clean primary figure plus a clearly labeled sensitivity companion shows transparency without diluting the main message.
+
+Why this is principled
+- Cochrane-style guidance emphasizes pre-specifying sensitivity rules and reporting primary and sensitivity analyses distinctly and transparently; separating displays reduces cherry-pick concerns while keeping the narrative clear. [1][2]
+
+Next actions (30–45 min)
+- Update the main forest plot to included regimes only; add caption lines for trim rule and full vs trimmed pooled effect/I². [2]
+- Create a supplementary/inset sensitivity forest plot with excluded regimes grayed or marked and the same rule in the caption. [1]
+
+Citations
+- [1] Manual sensitivity analyses — Cochrane RevMan Knowledge Base — https://documentation.cochrane.org/revman-kb/manual-sensitivity-analyses-260702581.html
+- [2] Cochrane Handbook (graph recommendations; reporting primary vs sensitivity analyses) — https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/graph-recommendations
+
+[Turn 8] USER:
+If I gray-out the trimmed regimes in the sensitivity inset, should I still sort them by influence or keep the original dataset order?
+
+[Turn 8] ASSISTANT:
+Stage: C — figure design decision for the sensitivity inset
+
+Short answer: Keep the same dataset order as the main forest plot to minimize mapping cost for readers; annotate influence instead of reordering. Add a right-hand column with an influence metric (e.g., ΔI² on leave-one-out, Cook’s D rank, or externally studentized residual) and gray out trimmed regimes. Exception: if the inset appears only in the supplement and stands alone, sort by influence to foreground the rationale, but state the trim rule clearly in the caption.
+
+Decision rule
+- Inset adjacent to main figure: preserve original order; add an influence column and mark the top-2 influential regimes with a symbol (†). Keep identical x-axis limits and metric labels for 1:1 comparability.
+- Supplement-only sensitivity: sort by influence (highest first), and include the full vs trimmed pooled effect and I² in the caption, plus the exact trim rule (e.g., studentized residual > 2).
+- If you have many regimes: cluster layout—main-order preserved, but place trimmed regimes as a gray block at the bottom, internally sorted by influence, separated with a thin divider.
+
+Practical spec
+- Columns: regime name | Δmetric (CI) | influence metric (e.g., ΔI² on LOO or Cook’s D) | trim marker.
+- Visual encoding: gray fill for trimmed; dagger (†) for top-2 influential; right margin note: “Trim rule: studentized residual > 2; full vs trimmed pooled = X vs Y; I² = A% vs B%.”
+- Consistency: same x-range and CI style as the main plot; no per-regime retuning notes beyond what’s in the main caption.
+
+Strategic questions
+- How many regimes were trimmed (n≤2 vs many)? If many, use the cluster layout to prevent clutter.
+- Which influence metric do you trust most (ΔI² LOO vs Cook’s D)? Pick one and stick to it to avoid multiple competing rankings.
+
+Intuition
+- Readers anchor on the main figure’s order. Preserving it in the inset reduces cognitive load and makes it obvious which lines correspond; an influence column communicates the rationale without forcing a second mental re-sorting.
+
+Why this is principled
+- Keeping displays self-consistent aids skimming and reduces misinterpretation risk; separating ordering from influence communication aligns with transparent sensitivity analysis while avoiding cherry-pick optics. Clear trim rules in captions maintain reproducibility norms.
+
+Next actions (30–45 min)
+- Compute LOO ΔI² and studentized residuals; pick one influence metric.
+- Build the inset with the same order as the main plot, gray out trimmed regimes, and add the influence column; mark top-2 with †.
+- Update caption with trim rule and full vs trimmed pooled effect and I².
