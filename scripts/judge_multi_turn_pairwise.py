@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import random
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from academic_research_mentor.rich_formatter import print_error, print_info, print_success
@@ -77,6 +78,8 @@ def run_pairwise_judges(
     *,
     judge_specs: Sequence[str],
     label: str,
+    repeats: int,
+    seed: Optional[int],
 ) -> None:
     if not PAIRWISE_PROMPT_PATH.exists():
         raise FileNotFoundError(f"Pairwise judge prompt missing: {PAIRWISE_PROMPT_PATH}")
@@ -92,36 +95,67 @@ def run_pairwise_judges(
     mentor_map = _find_transcript_files(mentor_dir)
     baseline_map = _find_transcript_files(baseline_dir)
 
+    rng = random.Random(seed)
+
     for scenario in scenarios:
         mentor_text = _load_transcript(mentor_map[scenario])
         baseline_text = _load_transcript(baseline_map[scenario])
 
-        human_prompt = prompt_template.replace("{{SYSTEM_A}}", mentor_text).replace("{{SYSTEM_B}}", baseline_text)
-
         judge_outputs: List[Dict[str, object]] = []
-        votes = {"A": 0, "B": 0, "Tie": 0}
+        votes = {"mentor": 0, "baseline": 0, "tie": 0}
 
         for name, client in judge_clients:
-            try:
-                raw = client.invoke(human_prompt)
-                response = raw if isinstance(raw, str) else getattr(raw, "content", "") or str(raw)
-            except Exception as exc:  # noqa: BLE001
-                judge_outputs.append({"judge": name, "raw": str(exc), "parsed": {"winner": "Tie"}, "error": True})
-                votes["Tie"] += 1
-                continue
+            for run_idx in range(repeats):
+                judge_label = f"{name}#{run_idx + 1}" if repeats > 1 else name
+                mentor_as_a = rng.random() < 0.5
+                if mentor_as_a:
+                    prompt_text = prompt_template.replace("{{SYSTEM_A}}", mentor_text).replace("{{SYSTEM_B}}", baseline_text)
+                    assignment = {"A": "mentor", "B": "baseline"}
+                else:
+                    prompt_text = prompt_template.replace("{{SYSTEM_A}}", baseline_text).replace("{{SYSTEM_B}}", mentor_text)
+                    assignment = {"A": "baseline", "B": "mentor"}
+                try:
+                    raw = client.invoke(prompt_text)
+                    response = raw if isinstance(raw, str) else getattr(raw, "content", "") or str(raw)
+                except Exception as exc:  # noqa: BLE001
+                    judge_outputs.append({"judge": judge_label, "raw": str(exc), "parsed": {"winner": "Tie"}, "error": True})
+                    votes["tie"] += 1
+                    continue
 
-            parsed = parse_pairwise_output(response) or {"winner": "Tie"}
-            winner = parsed.get("winner")
-            if winner not in {"A", "B", "Tie"}:
-                winner = "Tie"
-            votes[winner] += 1
-            judge_outputs.append({"judge": name, "raw": response, "parsed": parsed})
+                parsed = parse_pairwise_output(response) or {"winner": "Tie"}
+                winner = parsed.get("winner")
+                if winner not in {"A", "B", "Tie"}:
+                    winner = "Tie"
+                if winner == "Tie":
+                    votes["tie"] += 1
+                    winner_actual = "tie"
+                else:
+                    actual = assignment[winner]
+                    votes[actual] += 1
+                    winner_actual = actual
+                judge_outputs.append(
+                    {
+                        "judge": judge_label,
+                        "raw": response,
+                        "parsed": parsed,
+                        "mapping": assignment,
+                        "winner_actual": winner_actual,
+                    }
+                )
 
-        majority = max(votes, key=votes.get)
+        max_votes = max(votes.values()) if votes else 0
+        if list(votes.values()).count(max_votes) > 1 or max_votes == 0:
+            majority = "tie"
+        else:
+            majority = max(votes, key=votes.get)
         payload = {
             "scenario": scenario,
             "label": label,
-            "judges": [name for name, _ in judge_clients],
+            "judges": [
+                f"{name}#{run_idx + 1}" if repeats > 1 else name
+                for name, _ in judge_clients
+                for run_idx in range(repeats)
+            ],
             "judge_outputs": judge_outputs,
             "winner": majority,
             "votes": votes,
@@ -140,6 +174,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--judge", dest="judges", action="append", required=True, help="Judge model spec (repeatable)")
     parser.add_argument("--label", required=True, help="Label for output directory")
     parser.add_argument("--prompt-ids", nargs="*", help="Optional subset of scenarios to score")
+    parser.add_argument("--repeats", type=int, default=1, help="Number of passes per judge (default: 1)")
+    parser.add_argument("--seed", type=int, help="Optional random seed for judge ordering")
     return parser.parse_args(argv)
 
 
@@ -156,8 +192,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not scenarios:
         raise RuntimeError("No overlapping scenarios found to judge")
 
-    print_info(f"Pairwise judging {len(scenarios)} scenario(s) with judges: {args.judges}")
-    run_pairwise_judges(scenarios, mentor_dir, baseline_dir, judge_specs=args.judges, label=args.label)
+    print_info(
+        f"Pairwise judging {len(scenarios)} scenario(s) with judges: {args.judges} and repeats={args.repeats}"
+    )
+    run_pairwise_judges(
+        scenarios,
+        mentor_dir,
+        baseline_dir,
+        judge_specs=args.judges,
+        label=args.label,
+        repeats=max(1, args.repeats),
+        seed=args.seed,
+    )
     print_success(f"Completed pairwise judging for label={args.label}")
     return 0
 
