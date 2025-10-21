@@ -1,85 +1,72 @@
-Great background for AI—your physics training gives you an edge in modeling, experimentation, and uncertainty. Here’s a compact, evidence-based onramp tailored to a physics PhD.
+Given your physics background, you already have many of the hard parts: math maturity, numerical methods, and model-building instincts. The fastest way to become productive is to (1) get fluent with the ML tooling and evaluation culture, then (2) tackle a physics-flavored problem with tight, falsifiable hypotheses.
 
-Step 0: Pick a lane that matches your strengths
-- Scientific ML for dynamical systems and PDEs: surrogate modeling, physics-informed ML, differentiable simulators.
-- Probabilistic modeling and simulation-based inference (SBI): infer parameters of simulators when likelihoods are intractable.
-- General ML foundations: optimization, deep learning, and reproducible experimental practice.
+A focused 6-week ramp
+Week 1–2: Get hands-on with core ML tooling
+- Implement a minimal training loop in PyTorch (datasets, dataloaders, optimizer, LR schedule, evaluation, logging). Target: train a small CNN on CIFAR-10 to a plausible accuracy range; write your own eval code and track seeds.
+- If you prefer a course flow: CS231n for practical deep learning math/vision; fast.ai for end-to-end practice.
+- References: PyTorch Tutorials; CS231n.
 
-A focused 6–8 week plan
-Weeks 1–2: Tooling and a baseline
-- Stack: Python + PyTorch (or JAX if you prefer functional style), NumPy, Matplotlib; version control, conda/uv, and a clear experiment config system.
-- Reproduce a minimal baseline on a small, physics-relevant task (e.g., a 1D PDE or a simple oscillator). Fix random seeds; log metrics and configs.
+Week 3: Reproducibility and experiment design
+- Adopt a checklist from day one (document seeds, data splits, metrics, hardware, and compute budget).
+- Build a baseline and lock it (configs under version control). Change one factor at a time.
 
-Weeks 3–5: One controlled research-style experiment
-- Choose one core idea (physics-informed loss, symplectic dynamics, or SBI).
-- Run a clean ablation with ≥3 seeds; report mean±std; keep train/val/test split honest.
+Week 4–6: Pick one physics-adjacent track and run 2–3 small experiments
+- Physics-informed modeling (PINNs and variants): encode ODE/PDE residuals into the loss; great for forward and inverse problems.
+- Symbolic regression for scientific discovery (AI Feynman, PySR): recover analytic relations from data; leverages your intuition about invariances and units.
+- Emulator/surrogate models for simulators: approximate a slow solver with a small NN to speed up parameter sweeps or inverse problems.
 
-Weeks 6–8: Rigor and reporting
-- Stress test generalization (out-of-distribution initial conditions/forcing).
-- Add uncertainty quantification (calibration, coverage).
-- Write a 3–4 page report with hypothesis, method, results, limitations, and full reproducibility details.
+Three concrete, falsifiable experiments you can do now
+All are doable on a single GPU (or even CPU for small versions); report mean ± std over 3–5 seeds, with a clear train/val/test split.
 
-Three concrete, falsifiable starter experiments
-1) Physics-informed vs purely data-driven on a 1D PDE
-- Hypothesis: A PINN with a PDE residual term achieves lower L2 solution error than an equally sized data-only network when data are noisy or sparse.
-- Task: 1D heat or Burgers’ equation on [0,1]×[0,T]; generate synthetic solutions via a stable finite-difference solver; add Gaussian noise to observations; hold out unseen initial conditions for test.
-- Models:
-  - Data-only: MLP or small 1D U-Net trained to fit observed u(x,t).
-  - PINN: same network + PDE residual in the loss; automatic differentiation for u_t and u_xx.
-- Protocol: Vary number of observation points (e.g., 32, 128) and noise σ (e.g., 0, 0.05). 5 seeds per setting.
-- Metrics: Test L2 error over the space-time grid; boundary-condition violation rate; wall-clock. Report mean±std.
-- Falsification: If the data-only model matches or beats PINN in L2 error across seeds at σ≥0.05 and 32 points, the hypothesis fails.
-- Anchor: Raissi et al., Physics-Informed Neural Networks (PINNs) — shows how to incorporate PDE residuals in the loss.
+1) PINN on 1D Burgers’ or heat equation
+- Hypothesis: Non-dimensionalizing inputs and targets reduces final PDE-residual loss by ≥20% versus training on raw scales under identical training budgets.
+- Data/Setup: Collocation points sampled uniformly in space-time; boundary and initial data from the analytic solution. Two models: identical architectures and optimizers; one trained on raw scales, one on normalized variables. 5 seeds.
+- Metrics: PDE residual MSE on a held-out grid; solution MAE vs ground truth; wall-clock to reach a fixed validation residual. Reject if improvement <20% or not significant.
+- Anchor: PINNs overview and codebase (Raissi et al.); see also recent reviews for extensions.
 
-2) Conserving dynamics: Hamiltonian NN vs standard MLP on a pendulum
-- Hypothesis: A Hamiltonian Neural Network (HNN) exhibits significantly lower energy drift and better long-horizon state prediction than a standard MLP learned on short rollouts.
-- Task: Damped and undamped pendulum; train on short trajectories; test on long-horizon rollouts with new initial conditions.
-- Models:
-  - Baseline: MLP fθ(x) predicting next state or derivatives.
-  - HNN: learns scalar Hθ(q,p); time derivatives via Hamilton’s equations.
-- Protocol: Train with identical data budgets; evaluate 1000-step rollouts; 5 seeds.
-- Metrics: Energy drift (mean absolute change per step), RMSE of state over horizon; stability (NaNs).
-- Falsification: If MLP’s median energy drift ≤ HNN’s across seeds, hypothesis fails.
-- Anchor: Greydanus et al., Hamiltonian Neural Networks — inductive bias for conservative systems.
+2) Symbolic regression on Feynman relations
+- Hypothesis: Adding dimensionless features (e.g., Buckingham π terms) increases exact-recovery rate on 20 randomly chosen Feynman formulas by ≥10 percentage points compared to using raw variables only.
+- Data/Setup: Use the AI Feynman dataset; generate noisy samples (e.g., Gaussian 1–5%). Compare PySR/AI Feynman runs with and without handcrafted dimensionless groups. 10 random restarts per formula; time cap per run.
+- Metrics: Exact recovery rate; expression complexity; out-of-sample MSE. Reject if gain <10 pp.
+- Anchors: AI Feynman dataset; PySR.
 
-3) Simulation-based inference for a noisy oscillator
-- Hypothesis: Neural posterior estimation (SNPE) attains better calibrated posteriors (nominal 95% intervals contain true parameters ≈95% of the time) than ABC with the same simulator budget when the likelihood is intractable but simulations are cheap.
-- Task: Damped harmonic oscillator with unknown (ω, ζ); simulator generates noisy time series given parameters; define summary statistics (spectral peak, decay, autocorr).
-- Methods:
-  - ABC with distance on summaries.
-  - SNPE (density estimator for p(θ|x); use sbi or equivalent).
-- Protocol: Fix a simulator budget (e.g., 50k sims). Evaluate coverage on a grid of ground-truth parameters; 3 independent runs.
-- Metrics: Empirical coverage of 50/90/95% credible regions; posterior RMSE of MAP; simulation efficiency (coverage vs sims).
-- Falsification: If ABC’s coverage is equal or better than SNPE at matched budget across runs, the hypothesis fails.
-- Anchor: Cranmer et al., Simulation-Based Inference (likelihood-free inference with neural density estimators).
+3) Neural surrogate for a simple simulator
+- Hypothesis: A 2–3 layer MLP trained on 50k samples of a cheap ODE solver (e.g., damped oscillator mapping parameters → solution summary stats) achieves ≤5% relative error on unseen parameters, and is ≥50× faster at inference than the solver on CPU.
+- Data/Setup: Sample parameters from a prior; compute summary targets (peak amplitude, period, decay constant). Compare: (a) MLP vs (b) k-NN baseline. 5 seeds.
+- Metrics: Relative error on a held-out parameter grid; throughput (samples/sec). Reject if error >5% or speedup <50× at matched accuracy.
 
-Optional fourth experiment (if you prefer imaging/vision)
-4) Equivariance pays: E(n)-equivariant vs non-equivariant GNN on small molecular properties (QM9 subset)
-- Hypothesis: An E(n)-equivariant GNN attains lower MAE than a non-equivariant MPNN at equal parameter count.
-- Metrics: MAE on U0 or dipole; falsification if non-equivariant matches performance across seeds.
+How to choose your first niche (quick heuristics)
+- Like PDEs/inverse problems? Start with PINNs and then explore operator learning (e.g., Fourier Neural Operators) once you’re comfortable.
+- Prefer interpretability and theory-building? Start with symbolic regression on Feynman datasets, then try hybrid pipelines (learn features → regress symbols).
+- Need immediate utility for lab workflows? Build a surrogate for a slow simulation or an ML-based estimator that replaces a hand-tuned pipeline.
 
-What to study (just enough, in parallel with coding)
-- Optimization and deep learning basics: SGD/AdamW, regularization, overfitting, validation. Reproduce a simple image classifier to solidify tooling.
-- Scientific ML themes to prioritize:
-  - Inductive biases: physics-informed losses, symmetries (Hamiltonian, equivariance).
-  - Uncertainty and evaluation: calibration, coverage, OOD tests.
-  - Reproducibility: seeds, config management, clear data splits.
+Daily habits that compound fast
+- Keep experiments tiny and frequent (hours, not weeks). Predefine success and stop criteria.
+- Track seeds, configs, and commit hashes; script data preprocessing; save environment files.
+- Compare to simple baselines (persistence, linear/AR models, k-NN) before complex models.
+- Write a 1–2 page report per experiment (motivation, hypothesis, setup, results, caveats).
 
-Practical tips from scientific computing to ML
-- Start with small, controlled problems where you can generate ground truth with a known solver; you’ll know when the ML model is wrong.
-- Always include a simple baseline (finite-difference solver, least-squares fit, or ABC) to check that the learned model adds value.
-- Use multiple seeds and report mean±std; plot learning curves and residuals; keep units and scales consistent.
-- Stress test on out-of-distribution initial conditions/forcing; physics models often fail gracefully—document when and why.
+Optional next steps after 6 weeks
+- Scale the PINN to a 2D PDE with sparse boundary data (ill-posed inverse problem).
+- Try a physics task with real data (e.g., time-series from an instrument) and quantify domain shift vs synthetic data.
+- Read 1–2 field-defining papers in your chosen niche and replicate a figure on a toy problem.
 
-Two anchor readings to ground your path
-- Raissi, M., Perdikaris, P., Karniadakis, G. Physics-Informed Neural Networks: A deep learning framework for solving forward and inverse problems involving nonlinear PDEs. https://arxiv.org/abs/1711.10561
-- Cranmer, K., Brehmer, J., Louppe, G. The Frontier of Simulation-Based Inference. https://arxiv.org/abs/1911.01429
+If you tell me your target domain (e.g., fluids, plasmas, materials, astro), compute (laptop vs one GPU), and comfort with PyTorch, I can turn this into a 4-week micro-syllabus with exact hyperparameters and code pointers.
 
-If you share your preferred subdomain (fluids, plasma, HEP, astro, materials) and your compute (CPU-only vs single GPU), I can tailor datasets, code templates, and training budgets for one of the experiments above.
+Literature anchors (start here)
+- PyTorch Tutorials — https://docs.pytorch.org/tutorials/index.html
+- CS231n: Deep Learning for Computer Vision — https://cs231n.stanford.edu/
+- Physics-Informed Neural Networks and Extensions (review) — https://arxiv.org/abs/2408.16806
+- PINNs code (Raissi et al.) — https://github.com/maziarraissi/PINNs
+- AI Feynman dataset (symbolic regression) — https://space.mit.edu/home/tegmark/aifeynman.html
+- PySR (symbolic regression in Python/Julia) — https://github.com/MilesCranmer/PySR
 
 Sources
-- Raissi, Perdikaris, Karniadakis (2019). Physics-Informed Neural Networks — https://arxiv.org/abs/1711.10561
-- Greydanus et al. (2019). Hamiltonian Neural Networks — https://arxiv.org/abs/1906.01563
-- Cranmer, Brehmer, Louppe (2020). The Frontier of Simulation-Based Inference — https://arxiv.org/abs/1911.01429
-- Satorras, Hoogeboom, Welling (2021). E(n) Equivariant Graph Neural Networks — https://arxiv.org/abs/2102.09844
-- PyTorch Tutorials — https://pytorch.org/tutorials/
+- PyTorch Tutorials — https://docs.pytorch.org/tutorials/index.html
+- CS231n — https://cs231n.stanford.edu/
+- Raissi et al., PINNs (code) — https://github.com/maziarraissi/PINNs
+- Karniadakis et al., “Physics-Informed Neural Networks and Extensions” (review) — https://arxiv.org/abs/2408.16806
+- AI Feynman dataset — https://space.mit.edu/home/tegmark/aifeynman.html
+- PySR — https://github.com/MilesCranmer/PySR
+
+Note: An internal “mentorship-guidelines” tool wasn’t available, so I relied on widely used public sources above.

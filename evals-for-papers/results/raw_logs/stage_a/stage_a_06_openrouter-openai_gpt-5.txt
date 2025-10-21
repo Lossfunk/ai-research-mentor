@@ -1,51 +1,47 @@
-You can do solid, publishable AI research without heavy math by focusing on careful experiments, evaluation, and data-centric work. Here’s a short path plus three “math‑light” but rigorous experiments you can run with basic Python and open models.
+You can do solid AI research without loving math. Focus on empirical, data-centric, and evaluation work: designing careful tests, cleaning data, comparing simple interventions, and reporting results clearly. That’s real research—and it’s publishable when done rigorously.
 
-Pick a math‑light lane
-- Prompting and evaluation for LLMs: Study how prompts/guards change accuracy, hallucination, and safety. Strong payoff with minimal theory [5].  
-- Retrieval‑augmented generation (RAG): Test whether adding citations or retrieval reduces hallucinations on small QA tasks [1].  
-- Data quality/label noise: Show how simple cleaning improves model reliability on small image or text datasets [4].
+A fast, low-math path
+- Pick a narrow, evaluatable problem with ready baselines:
+  - Truthfulness/toxicity evaluation of LLMs (prompting and decoding changes).
+  - Data-centric improvements: label error detection, deduplication, and documentation on a small text classifier.
+- Reproduce a tiny baseline first, then change one thing at a time. Track seeds, exact prompts/configs, and use simple stats (mean ± std over 3–5 runs; a paired t-test on per-item scores).
+- Write as you go: 1–2 pages per experiment (hypothesis, setup, metrics, results, caveats).
 
-Minimal 4–6 week plan (3–5 hours/week)
-- Week 1: Pick one lane. Set up a tiny, reproducible harness (fixed seeds, CSV logging, config files). Decide metrics beforehand.  
-- Week 2: Reproduce a baseline on a 100–500 example slice; write a 1‑page prereg with your hypotheses and analysis plan.  
-- Weeks 3–4: Run the experiment over 3 independent runs; compute mean, std, and 95% CIs; make simple plots.  
-- Weeks 5–6: Add one ablation (e.g., temperature, top‑p, retrieval size), write a 3–4 page note with limitations, and share code.
+Three concrete, falsifiable experiments (low math; single GPU or API)
+1) Guardrail prompting for truthfulness (TruthfulQA, multiple-choice)
+- Hypothesis: A concise guardrail system prompt (“answer carefully; avoid myths; cite facts if unsure”) increases MC accuracy by ≥5 percentage points vs. a neutral system prompt on a 100-question subset, with identical decoding.
+- Setup: Sample 100 TruthfulQA MC items (stratify by category). Same model, temperature, and top-p; vary only the system prompt. 5 seeds (sampling seeds). Report MC accuracy mean ± std; paired t-test across questions (p < 0.05). Reject if <5 pp or not significant.
+- Why it’s valid: TruthfulQA targets common falsehoods; prompting and evaluation are standardized, so improvements are interpretable [TruthfulQA, 2022](https://aclanthology.org/2022.acl-long.229/).
 
-Three concrete, falsifiable experiments
-1) RAG with required citations vs. no retrieval on open‑domain QA
-- Hypothesis: RAG with sentence‑level citations reduces hallucinations while maintaining answer accuracy compared to no‑retrieval generation [1].  
-- Data/task: Build a tiny Wikipedia subset (100–300 Q/A pairs) from a few pages; answers must be directly supported by the source.  
-- Conditions: (a) No‑RAG; (b) RAG with top‑k=5; (c) RAG + “must cite span” prompt.  
-- Metrics: Exact match/F1; attributable answer rate = fraction of answers with a correct supporting citation; hallucination rate = unsupported assertions. Use a rubric and spot human checks.  
-- Falsification: If attributable rate does not increase or hallucination rate does not drop under RAG+citation (within 95% CI), the hypothesis fails.
+2) Decoding to mitigate toxicity (RealToxicityPrompts)
+- Hypothesis: Lower temperature (0.2 vs 0.8) at fixed top-p reduces mean toxicity score by ≥10% on a 200-prompt sample with ≤5% change in continuation length, holding max tokens constant.
+- Setup: Randomly sample 200 prompts. Generate continuations with two temperatures; score toxicity using Detoxify or the dataset’s recommended classifier. Report mean ± std toxicity and length; paired test across prompts. Reject if toxicity reduction <10% or if length shrinks >5% (trivial truncation).
+- Why it’s valid: RealToxicityPrompts measures toxic degeneration from innocuous prompts; decoding is a controllable, low-code lever [Gehman et al., 2020](https://aclanthology.org/2020.findings-emnlp.301/).
 
-2) Prompting strategies: direct answer vs. chain‑of‑thought (CoT) vs. self‑consistency on reasoning QA
-- Hypothesis: Few‑shot CoT improves accuracy over direct answers on commonsense/strategy questions; self‑consistency (vote over diverse CoT samples) improves further at modest cost [2].  
-- Data/task: StrategyQA or a 200‑item slice of CommonsenseQA.  
-- Conditions: (a) Direct answering; (b) Few‑shot CoT; (c) CoT + self‑consistency (e.g., sample 5 rationales, majority vote).  
-- Metrics: Accuracy; response length; latency/cost.  
-- Falsification: If CoT or self‑consistency do not outperform direct answering within CIs, the hypothesis fails.
+3) Data-cleaning impact on a small classifier (AG News or Emotion)
+- Hypothesis: A simple cleaning pass (deduplication by exact/near-duplicate hashes, removing label conflicts found via cross-validation) improves test accuracy by ≥1.0 percentage point over a baseline fine-tune of DistilBERT, at fixed compute.
+- Setup: Train baseline DistilBERT on AG News (or Emotion). Cleaning steps: deduplicate train texts; identify likely label errors with confidence-based cross-validation (e.g., cleanlab or simple agreement heuristics); remove top-k suspected errors; retrain. 5 seeds. Report accuracy and calibration (ECE) mean ± std; paired test across seeds. Reject if gain <1.0 pp or ECE worsens materially.
+- Why it’s valid: Label errors and data issues are common and materially affect results; small, principled cleaning often helps [Northcutt et al., 2021](https://arxiv.org/abs/2107.02104).
 
-3) Data‑centric boost: simple label‑error cleaning on a noisy classifier
-- Hypothesis: Removing or down‑weighting likely label errors improves test accuracy and calibration vs. training on noisy data, at fixed model/compute [4].  
-- Data/task: CIFAR‑10 (or a 10‑class text dataset). Inject 20% symmetric label noise into train only; keep a clean test set.  
-- Conditions: (a) Train baseline; (b) Remove top 10% likely label errors via small‑loss pruning or a library like cleanlab; (c) Reweight suspected noisy points instead of removing.  
-- Metrics: Test accuracy; negative log‑likelihood; Expected Calibration Error (ECE).  
-- Falsification: If cleaning/reweighting does not improve accuracy or NLL/ECE relative to baseline (within CIs), the hypothesis fails.
+Minimal weekly cadence (2–4 hours/week works too)
+- Week 1: Pick one experiment and reproduce the baseline on a 100–200 item subset. Lock evaluation code.
+- Week 2: Run the intervention across 5 seeds. Log exact prompts/configs and random seeds.
+- Week 3: Analyze results with simple stats; add 1 ablation (e.g., tweak wording; different temperature).
+- Week 4: Write up: concise problem statement, hypothesis, setup, results (tables/figures with mean ± std), caveats, and a link to a minimal repo/notebook.
 
-What to deliver
-- Reproducible repo: one script, pinned environment, config files, per‑example outputs, and a short README.  
-- 3–4 page report: problem, hypotheses, methods, results (mean±std, 95% CIs), ablation, failure analysis, and limitations.  
-- Keep it honest: predefine metrics/splits; avoid tuning on test; report negative results clearly.
+What you’ll learn without heavy math
+- Careful evaluation design and reporting.
+- Data hygiene and documentation (model/dataset cards).
+- How small, controlled changes affect behavior—core research skill.
 
-Why this works without heavy math
-- These projects rely on software craftsmanship, careful measurement, and clear writing. The core ideas are supported by prior work on retrieval for knowledge‑intensive tasks [1], prompting strategies for reasoning [2], and the outsized impact of data quality on model performance [4], and are framed within modern evaluation practice [5].
+Two literature anchors to orient your write-up
+- TruthfulQA: Measuring How Models Mimic Human Falsehoods (ACL 2022) — a standard truthfulness benchmark you can extend with prompt/decoding interventions: https://aclanthology.org/2022.acl-long.229/
+- Model Cards for Model Reporting (FAccT 2019) — a practical template for documenting models and evaluations you can adopt in your thesis/notebook: https://dl.acm.org/doi/10.1145/3287560.3287596
 
-Quick tailoring question: Which lane sounds most interesting (prompting/evals, RAG with citations, or data quality), and do you have access to a small GPU or just CPU/API?
+If you share your compute (API only vs one GPU) and preferred domain (LLMs vs small text classifiers), I’ll return exact code templates, prompts, and evaluation scripts tailored to one of the experiments above.
 
-Citations
-[1] Lewis et al., Retrieval‑Augmented Generation for Knowledge‑Intensive NLP — https://arxiv.org/abs/2005.11401  
-[2] Wei et al., Chain‑of‑Thought Prompting Elicits Reasoning in Large Language Models — https://arxiv.org/abs/2201.11903  
-[3] Gehman et al., RealToxicityPrompts: Evaluating Neural Toxic Degeneration in Language Models — https://arxiv.org/abs/2009.11462  
-[4] Northcutt et al., Confident Learning: Estimating Uncertainty in Dataset Labels — https://arxiv.org/abs/1911.00068  
-[5] Liang et al., Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
+Sources
+- TruthfulQA (Lin et al., 2022) — https://aclanthology.org/2022.acl-long.229/
+- RealToxicityPrompts (Gehman et al., 2020) — https://aclanthology.org/2020.findings-emnlp.301/
+- Northcutt et al., 2021. Pervasive Label Errors in Test Sets Destabilize Machine Learning Benchmarks — https://arxiv.org/abs/2107.02104
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
