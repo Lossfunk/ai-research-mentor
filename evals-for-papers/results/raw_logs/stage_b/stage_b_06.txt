@@ -1,57 +1,45 @@
-Short answer: yes—mixing biological datasets with transformer models is viable and increasingly standard, but success depends on careful data curation, leakage control, and rigorous evaluation on the right benchmarks. Surveys and evaluations across genomics, proteins, and multi-omics report clear gains when transformers are pretrained on large biological corpora and evaluated with domain-appropriate splits and metrics [P1][P3][P9][P10].
+Short answer: yes, it’s viable—provided you define a concrete prediction task, control batch effects and leakage, and benchmark against strong non-transformer baselines. Multiple recent works show that transformers and multimodal models can (a) predict gene expression from histopathology and (b) improve downstream clinical tasks when fusing images with molecular features [P2][P3][P7]. New datasets aligning slides and transcriptomics further lower the barrier to experimentation [P6], and spatial transcriptomics modeling is an active area where transformer-like and diffusion architectures are being explored [P1][P8].
 
-Where transformers tend to work now
-- Genomics (DNA/RNA): Genome language models learn regulatory “grammar” from raw sequence and can transfer to tasks like enhancer/promoter classification and variant effect prediction; pretraining choices (tokenization, masking, context length) matter [P1][P8].  
-- Proteins: Protein foundation models (e.g., ESM, ProtBERT) show strong transfer to structure/function/property prediction, but fair evaluation requires homology-aware splits; recent benchmarks standardize tasks and metrics across many endpoints [P2][P9].  
-- Multi-omics and cross-modal learning: New benchmarks evaluate single-omics, cross-omics alignment, and multi-omics tasks, enabling systematic comparison of contrastive and generative approaches [P10].  
-- Broader biomedicine: Transformers have been applied across text, sequences, images, and graphs, with ongoing work on explainability to support scientific and clinical use [P3].
+Practical guidance to make it work
+- Nail the task and alignment: Specify supervised targets (e.g., per-gene expression, molecular subtype, survival) and whether you have paired data (e.g., slide–RNA) vs weak alignment (cohort-level). Paired slide–gene expression enables direct supervision and clearer evaluation [P2][P3][P6].  
+- Guard against leakage and batch effects: Split by patient/institution; reserve an out-of-cohort test set (different hospital/scanner/assay) to assess generalization [P7]. Use stain normalization and include cohort/batch covariates; report results stratified by site.  
+- Baselines to beat: Elastic net or random forest on hand-crafted features; CNNs or co-expression CNNs for image→gene expression [P3].  
+- Metrics that matter: For image→gene expression, per-gene Pearson r/MSE and gene-set-level concordance (e.g., pathway-level correlation). For classification, AUROC/AUPRC; for prognosis, C-index. Evaluate cross-cohort drop (ID vs OOD).  
+- Pretraining and fusion: Start with ImageNet- or pathology-pretrained ViTs; compare early vs late fusion when combining slides and transcriptomic embeddings [P7].  
+- Interpretability and biological plausibility: Relate salient regions/genes to pathways (e.g., enrichment on attention-selected genes/tiles); avoid causal claims—these are correlational unless backed by interventional evidence.  
+- Reporting: Include data/model cards; describe tissue types, assay kits, scanners, and preprocessing; release splits and code for reproducibility.
 
-Key pitfalls and how to avoid them
-- Data leakage: Use homology- or similarity-aware splits for sequences; avoid donor, cell-line, or batch leakage for omics; standardize cross-omics partitions for paired modalities [P9][P10].  
-- Baselines and ablations: Compare against strong non-transformer and size-matched baselines; ablate pretraining, tokenization, context length, and fine-tuning protocols [P3].  
-- Pretraining vs fine-tuning: Expect large gains from domain-pretraining; scaling data and model size helps but saturates without high-quality, diverse corpora [P1][P8].  
-- Evaluation: Use domain-appropriate metrics (e.g., AUROC/AUPRC for classification, correlation for regression, top-k retrieval for cross-modal alignment) and report uncertainty across multiple seeds [P9][P10].  
-- Interpretability and clinical relevance: Apply attribution/probing and report limitations; avoid overclaiming mechanistic insight without supporting analyses [P3].
+Three concrete, falsifiable experiments
+1) Slide-to-gene expression prediction with ViT vs CNN baselines  
+Hypothesis: A ViT trained on H&E tiles predicts a subset of genes better than a matched CNN and regression baselines, with robust performance on a held-out institution.  
+Setup: Use a slide–RNA paired dataset (e.g., STimage-1K4M or similar cohorts) and tile-level ViT with patient-level splits; compare to a ResNet/CNN and to co-expression CNNs [P3]; optionally include ImageNet pretraining.  
+Metrics: Per-gene Pearson r and MSE on ID and OOD cohorts; fraction of genes with r>0.2; pathway-level correlation (GSEA on predicted vs observed).  
+Expected outcome: ViT outperforms CNNs on a subset of genes; performance drops OOD but remains above baselines for robust genes [P2][P3][P6].
 
-Representative benchmarks, tasks, and metrics
-- Proteins: ProteinBench covers tasks spanning function, stability, structure-derived properties; emphasizes fair splits and standardized metrics such as AUROC/AUPRC and correlation [P9].  
-- Genomics: Surveys summarize common tasks (regulatory element classification, chromatin/TF binding, variant impact, gene expression prediction) with MLM/sequence-to-label setups; metrics commonly AUROC/AUPRC and correlation for quantitative outputs [P1][P8].  
-- Multi-omics: COMET provides single-omics, cross-omics, and multi-omics tasks with unified evaluation (classification F1/AUPRC, regression correlation, cross-modal retrieval/top-k) [P10].  
-- Biomedicine broadly: Reviews map transformer use across modalities and discuss explainability/evaluation considerations [P3].
+2) Multimodal fusion for clinical endpoints  
+Hypothesis: Fusing slide-derived embeddings with measured (or predicted) transcriptomic features improves subtype classification or survival prediction vs single-modality models.  
+Setup: Build late-fusion models combining ViT features with RNA embeddings; compare to image-only and RNA-only models. Evaluate cross-cohort generalization (train on Site A, test on Site B).  
+Metrics: AUROC/AUPRC (subtype), C-index (survival), and OOD delta; ablations for fusion strategy (early vs late) and calibration.  
+Expected outcome: Fusion improves ID and OOD performance over single modalities, consistent with reported gains from combining pathology and transcriptomics [P7].
 
-Three concrete, falsifiable experiments you can run
-1) Genomic LM scale and tokenization ablation  
-- Hypothesis: Scaling genome pretraining data and using k-mer tokenization with longer context improves regulatory prediction vs byte/BPE tokenization.  
-- Setup: Pretrain masked LMs on human+vertebrate genomes under three tokenizations (byte-BPE, 6-mer, 10-mer) and two context lengths (1 kb, 4 kb). Fine-tune on regulatory tasks (e.g., enhancer/promoter classification; variant effect prediction).  
-- Variables: Pretraining corpus size; tokenization; context length; fine-tuning dataset size.  
-- Metrics: AUROC/AUPRC for classification; Spearman/Pearson for quantitative predictions.  
-- Expected outcome: Larger corpora and longer contexts help; k-mer tokenization yields stronger transfer on sequence-level tasks, but benefits may taper at very long k [P1][P8].
+3) Spatial transcriptomics completion from histology with transformer backbones  
+Hypothesis: Incorporating transformer features into a spatial transcriptomics completion pipeline improves spatial gene prediction versus non-transformer backbones.  
+Setup: On spatial transcriptomics datasets, predict spatially resolved expression from H&E images. Compare transformer-based encoders versus CNN encoders within a completion framework; add spatial priors (e.g., neighborhood attention).  
+Metrics: Gene-wise spatial Pearson r, spot-level MSE, spatial autocorrelation (Moran’s I) preservation; generalization across tissue types.  
+Expected outcome: Transformer encoders yield higher spatial correlation and better structure preservation than CNN counterparts, aligning with recent progress in ST completion models [P1][P8].
 
-2) Protein property prediction with homology-aware evaluation  
-- Hypothesis: Domain-pretrained transformers outperform non-pretrained or size-matched baselines on function/stability tasks under strict homology clustering; naive random splits overestimate performance.  
-- Setup: Evaluate a pretrained protein LM vs (a) randomly initialized transformer matched in size and (b) strong non-transformer baseline across ProteinBench tasks. Compare random vs homology-clustered splits.  
-- Variables: Pretraining status; architecture/baseline; split strategy.  
-- Metrics: AUROC/AUPRC/correlation as defined per task; delta between random and homology-aware splits.  
-- Expected outcome: Significant drop from random to homology-aware splits; pretrained LM maintains performance edge under fair splits [P9].
+Anchor papers to start with
+- Generating crossmodal gene expression from cancer histopathology improves multimodal AI predictions — http://arxiv.org/abs/2502.00568v3 [P7]  
+- STimage-1K4M: A histopathology image-gene expression dataset for spatial transcriptomics — http://arxiv.org/abs/2406.06393v2 [P6]
 
-3) Cross-omics contrastive pretraining vs supervised baselines  
-- Hypothesis: Contrastive pretraining on paired omics (e.g., scRNA-seq + ATAC-seq) improves retrieval/alignment and downstream classification versus purely supervised training.  
-- Setup: Use COMET tasks for cross-omics alignment; train (a) contrastive transformer encoders on paired modalities and (b) supervised models on each modality.  
-- Variables: Pretraining objective (contrastive vs supervised), pairing ratio, negative sampling strategy.  
-- Metrics: Cross-modal retrieval top-1/5 accuracy; downstream classification AUPRC; robustness to batch/donor shifts.  
-- Expected outcome: Contrastive models achieve better retrieval and transfer, with gains robust to moderate batch/donor shifts if splits are donor-aware [P10].
-
-Practical next steps
-- Choose a target domain (genomics, proteins, or multi-omics) and adopt the corresponding benchmark first (ProteinBench, COMET, or tasks summarized in Gene-LLMs). Start with a strong domain-pretrained transformer and implement leakage-safe splits [P1][P9][P10].  
-- Define 1–2 high-impact downstream tasks and lock metrics/splits upfront. Pre-register ablations (tokenization, context, pretraining size) to avoid garden-of-forking-paths.  
-- Report multiple seeds, calibration metrics, and model/data cards; include attribution/probing analyses where claims of biological insight are made [P3].
+If you share the specific modalities (e.g., slides + bulk RNA vs single-cell + images) and tasks you have in mind, I can tailor architectures, baselines, and evaluation plans.
 
 Citations
-- [P1] Gene-LLMs: a comprehensive survey of transformer-based genomic language models for regulatory and clinical genomics — https://www.frontiersin.org/journals/genetics/articles/10.3389/fgene.2025.1634882/full  
-- [P2] A Comprehensive Review of Transformer-based language models in bioinformatics — https://arxiv.org/html/2507.13646v1  
-- [P3] Transformer models in biomedicine — https://pmc.ncbi.nlm.nih.gov/articles/PMC11287876/  
-- [P8] Transformers and Genome Language Models — https://www.nature.com/articles/s42256-025-01007-9  
-- [P9] ProteinBench: A Holistic Evaluation of Protein Foundation Models — https://arxiv.org/abs/2409.06744  
-- [P10] COMET: Benchmark for Comprehensive Biological Multi-omics Evaluation Tasks and Language Models — https://arxiv.org/abs/2412.10347
-
-If you share more specifics about your datasets and target tasks, I can tailor the experiment designs and baselines.
+- [P1] Latent Gene Diffusion for Spatial Transcriptomics Completion — http://arxiv.org/abs/2509.01864v1
+- [P2] Breast Cancer Histopathology Image based Gene Expression Prediction using Spatial Transcriptomics data and Deep Learning — http://arxiv.org/abs/2303.09987v1
+- [P3] Transcriptome-wide prediction of prostate cancer gene expression from histopathology images using co-expression based convolutional neural networks — http://arxiv.org/abs/2104.09310v1
+- [P4] Leveraging Vision-Language Embeddings for Zero-Shot Learning in Histopathology Images — http://arxiv.org/abs/2503.10731v1
+- [P5] Histopathology Image Report Generation by Vision Language Model with Multimodal In-Context Learning — http://arxiv.org/abs/2506.17645v1
+- [P6] STimage-1K4M: A histopathology image-gene expression dataset for spatial transcriptomics — http://arxiv.org/abs/2406.06393v2
+- [P7] Generating crossmodal gene expression from cancer histopathology improves multimodal AI predictions — http://arxiv.org/abs/2502.00568v3
+- [P8] Spatial Transcriptomics Analysis of Spatially Dense Gene Expression Prediction — http://arxiv.org/abs/2503.01347v2

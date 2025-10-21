@@ -1,75 +1,123 @@
-Below is a practical, evidence‑based plan to design, pilot, and evaluate federated learning (FL) in low‑resource countries, where bandwidth is scarce, client devices are heterogeneous, and connectivity is intermittent. It includes a 6‑month timeline, concrete experiments with falsifiable criteria, and literature anchors.
+1. Problem framing and goals
+- Objective: Design, pilot, and rigorously evaluate a federated learning (FL) program tailored to low-resource and LMIC settings, where bandwidth is scarce, connectivity is intermittent, devices are heterogeneous, and data sovereignty/privacy constraints are strict. We target communication robustness, privacy-by-design, and equitable performance across sites.
+- Scope and application tracks:
+  - Track A (imaging): cross-silo FL for clinical imaging triage/quality control using small on-prem nodes.
+  - Track B (tabular/text): cross-silo FL for primary-care risk prediction or stock-out forecasting at clinics.
+- Success criteria (6 months):
+  - Technical: Achieve within 2–5 percentage points of a centralized-training upper bound while reducing uplink by ≥5× via compression/async protocols; maintain training despite 30–50% client dropouts per round [1][3].
+  - Privacy: Provide documented client-level privacy guarantees (ε, δ) and secure aggregation, with governance-aligned SOPs [4].
+  - Equity: Narrow worst-site performance gap by ≥20% via personalization under non-IID data [2].
+- Rationale: Federated averaging is the canonical baseline for decentralized training but struggles under non-IID data and irregular participation; proximal and asynchronous/personalized methods address these realities common in LMIC deployments [1][2][3]. Health data FL demands explicit privacy-preserving practices and governance even when data never leaves sites [4]. Resource constraints in Africa/LMICs further motivate edge-friendly training, sparse/quantized updates, and offline-first protocols [5].
 
-Objectives and constraints
-- Primary objective: Train a useful global model without moving raw data across borders, robust to non‑IID data, poor connectivity, and limited hardware. Use privacy safeguards appropriate for sensitive domains (e.g., health).
-- Key constraints to bake in:
-  - Intermittent/slow uplinks: prioritize sparse/quantized updates, partial participation, and asynchronous rounds [1][4][5][6][9].
-  - Non‑IID data and client drift: add proximal or control‑variates corrections (e.g., FedProx/SCAFFOLD) [3].
-  - Privacy: secure aggregation + calibrated differential privacy (DP) where feasible [2][7][8].
-  - Governance: in‑country aggregation to respect data sovereignty; auditability and opt‑out paths.
+2. Experiments
+Experiment 1: Connectivity-robust FL under low bandwidth and intermittent participation
+- Hypothesis: Asynchronous FL with update compression achieves near-FedAvg accuracy while tolerating 30–50% client dropouts and reducing uplink bytes by ≥5× versus vanilla FedAvg [1][3].
+- Setup:
+  - Design: 6–10 sites (or emulated nodes) with heterogeneous data sizes; simulate 2G/3G uplink (64–512 kbps) and daily outages. Use Flower or comparable framework with async server and buffered updates; apply Top-K sparsification (e.g., 1–5%), 8-bit quantization, and periodic error feedback.
+  - Optimizers: Compare FedAvg, FedProx (μ∈{0.001, 0.01}) and an asynchronous FL variant with stale update handling [1][2][3].
+  - Tasks: One imaging (e.g., small chest X-ray triage proxy) and one tabular (e.g., risk stratification) using public datasets partitioned non-IID to mirror site differences.
+- Baselines: Centralized training upper bound; FedAvg synchronous (no compression).
+- Evaluation metrics:
+  - Global: AUROC/F1/accuracy on a held-out IID test set; convergence rounds and wall-clock to reach a target metric.
+  - Systems: Uplink bytes per round; rounds completed per day; staleness distribution; availability-adjusted throughput.
+  - Robustness: Performance with 0%, 30%, 50% random client unavailability per round.
+- Expected outcomes: Async+compression closes ≥80–95% of the gap to FedAvg accuracy, with ≥5× lower uplink and graceful degradation under 30–50% dropouts, consistent with asynchronous FL under irregular clients [1][3].
 
-System architecture (minimal, robust)
-- Clients: low‑end PCs or Android devices running a lightweight client; training with small batches and few local epochs (e.g., 1–5) to limit compute and drift [1].
-- Transport: gRPC/MQTT with resumable uploads; schedule upload windows during off‑peak hours; store‑and‑forward when offline.
-- Aggregation:
-  - Primary: centralized in‑country server running FedAvg with partial participation (e.g., sample 5–20% of clients per round) [1].
-  - Optional: hierarchical FL if regions have local hubs (district hospitals → national aggregator) to cut long‑haul traffic.
-- Communication‑efficiency: top‑k sparsification and/or vector quantization (e.g., QSGD) for uplinks; error‑feedback to preserve convergence [5][6].
-- Robustness to heterogeneity: SCAFFOLD or proximal regularization to counter client drift [3].
-- Privacy: secure aggregation so the server only sees the sum of updates; DP noise and clipping to provide formal privacy guarantees when required [2][7][8].
-- Framework: Flower or OpenFL on server; TensorFlow Federated or PyTorch clients. These support partial participation and custom compressors.
+Experiment 2: Personalization for non-IID data and equity across sites
+- Hypothesis: Personalized FL (proximal regularization + local last-layer tuning) reduces worst-site error by ≥20% vs. a single global model under severe label/feature shift [2].
+- Setup:
+  - Data partitions: Label skew and feature shift across sites; hold-out per-site test sets.
+  - Methods: FedProx (μ sweep), local fine-tuning of last layer after each global round, and simple per-site adapters (e.g., LoRA on final layers) composed with the global backbone.
+- Baselines: Global FedAvg model evaluated per site.
+- Evaluation metrics:
+  - Equity: Worst-site and median-site AUROC/F1; Gini coefficient of per-site performance; calibration error per site.
+  - Stability: Variance across rounds; catastrophic forgetting of minority sites.
+- Expected outcomes: Personalized methods improve tail-site metrics with minimal loss in global average, consistent with proximal/personalized FL literature for heterogeneous clients [2][3].
 
-Six‑month rollout plan (milestones)
-- Month 1: Design and simulation
-  - Select a concrete task (e.g., chest X‑ray triage, malaria smear classification, or tabular risk scoring) and define metrics (AUC/F1, calibration, bytes/round).
-  - Simulate FL on a central dataset with non‑IID shards; sweep local epochs, batch sizes, participation rate; prototype compression (top‑k, 8‑bit QSGD) and SCAFFOLD vs FedAvg [1][3][5][6].
-  - Milestone: Choose a default recipe (e.g., FedAvg + SCAFFOLD, 10% participation, 2 local epochs, 8‑bit quantized updates).
-- Month 2: Minimal viable pilot (3–5 sites)
-  - Deploy in‑country aggregator; enable secure aggregation; schedule nightly upload windows; collect telemetry on bytes, round time, failures [2][9].
-  - Milestone: Stable training across 100–200 rounds with <5% site dropout per round and bounded bandwidth (e.g., <10 MB/client/day).
-- Months 3–4: Scale and personalize (10–20 sites)
-  - Add personalization (e.g., freeze backbone; train small local head) and/or fine‑tune last layers locally after global convergence.
-  - Introduce DP (per‑example clipping + Gaussian noise) if required by policy; calibrate epsilon to meet utility targets [7][8].
-  - Milestone: Global model reaches ≥95% of centralized baseline AUC while cutting uplink bytes ≥10× vs uncompressed [5][6].
-- Months 5–6: Hardening and evaluation
-  - Run formal evaluations: fairness across sites, calibration, robustness to outages; finalize cost/benefit and governance report.
-  - Milestone: Decision to productionize with SOPs for monitoring, incident response, and model updates.
+Experiment 3: Privacy–utility trade-offs with client-level DP and secure aggregation
+- Hypothesis: Client-level DP (per-client clipping + Gaussian noise) and secure aggregation can achieve ε≤5 (δ=1e−5) over the 6-month training window with ≤2–4 point absolute performance drop vs. non-private FL, meeting common health-privacy expectations [4].
+- Setup:
+  - Implement client gradient clipping and noise addition targeting cumulative ε budgets; use secure aggregation (cryptographic protocol) on the server for update aggregation.
+  - Sweep noise multipliers to map utility vs. privacy frontier.
+- Baselines: Non-private FL (no clipping/noise), and clipping-only.
+- Evaluation metrics: Task performance; privacy accounting (ε, δ) across rounds; update leakage proxies (membership inference risk, if feasible).
+- Expected outcomes: A measured privacy–utility curve enabling policy selection; secure aggregation eliminates server visibility of raw updates and reduces risk of inadvertent disclosure in healthcare contexts [4].
 
-Core experiments and ablations (falsifiable)
-E1. Communication compression under low bandwidth
-- Compare: FedAvg (full‑precision) vs top‑k sparsification (1%, 5%) vs 8‑bit QSGD, all with error‑feedback [5][6].
-- Hypothesis: ≥10× reduction in uplink bytes with ≤1–2 AUC points loss vs. full‑precision at the same rounds. Falsify if loss >2 points or reduction <5×.
-- Measurements: bytes/client/round, wall‑clock time to target AUC, convergence stability.
+Experiment 4: Cost/energy-aware client selection for edge devices
+- Hypothesis: Energy-aware client selection (choose participants by residual battery/solar charge and historical contribution diversity) cuts per-round energy by ≥25% without degrading convergence compared to random selection under the same participation cap [5].
+- Setup:
+  - Hardware: Mix of Jetson Nano/Raspberry Pi–class nodes with inexpensive power meters; intermittent power emulation.
+  - Schedulers: Random-K clients vs. energy-aware (score by predicted marginal utility × available energy).
+- Baselines: Random client sampling at fixed K.
+- Evaluation metrics: Energy (Wh) per round; model quality over time; fraction of rounds skipped due to low power; device fatigue balance.
+- Expected outcomes: Reduced energy per round and fewer “dead” devices participating under energy-aware scheduling, aligning with edge constraints emphasized for Africa/LMIC deployments [5].
 
-E2. Mitigating non‑IID client drift
-- Compare: FedAvg vs FedAvg+prox (μ ∈ {0.001, 0.01}) vs SCAFFOLD (control variates) [3].
-- Hypothesis: SCAFFOLD or prox reduces variance in round‑to‑round metrics and improves final AUC by ≥1–3 points on skewed partitions. Falsify if improvement <1 point.
-- Measurements: AUC/F1, gradient norm drift, participation variance.
+3. Timeline for the next 6 months with milestones
+- Month 1: Governance, design, and testbed
+  - Secure site agreements and DUA/SOPs; define tasks and metrics; set up FL server (cloud or national data center) and 6–10 node testbed with bandwidth throttling and power monitors.
+  - Milestones: Protocol v1 (privacy, security, failover); baselines (centralized, FedAvg) established on public data.
+- Month 2: Connectivity-robust FL (Exp. 1)
+  - Implement async server, compression (Top-K + 8-bit), and dropout simulation; run imaging and tabular tracks.
+  - Milestones: Report on accuracy vs. bytes and dropout rates; pick best async/compression configuration.
+- Month 3: Personalization (Exp. 2)
+  - Add FedProx and local last-layer tuning; quantify equity metrics and per-site calibration; select operating point.
+  - Milestones: Equity report with worst-site improvement ≥20% target.
+- Month 4: Privacy (Exp. 3)
+  - Integrate client-level DP and secure aggregation; run ε sweeps; update governance artifacts; dry-run incident response.
+  - Milestones: Privacy–utility curve and recommended ε/δ; secure-agg validation report.
+- Month 5: Energy/cost (Exp. 4) and field pilot kick-off
+  - Deploy energy-aware scheduling; begin small field pilot (2–3 real sites) with offline-first queuing and SMS/USSD fallbacks for orchestration.
+  - Milestones: Energy report; pilot SRE dashboard (uptime, rounds/day).
+- Month 6: Consolidation and preprint
+  - Stress-test under extreme outages; finalize SOPs, model cards, and deployment playbook; write preprint and share open artifacts that do not include sensitive data.
+  - Milestones: End-to-end blueprint with results, configs, and reproducibility package.
 
-E3. Partial participation and async tolerance
-- Compare: synchronous FedAvg with 10%, 20%, 40% participation vs asynchronous aggregation with bounded staleness (τ ∈ {2, 5}) [1][4].
-- Hypothesis: At 10–20% participation and intermittent clients, asynchronous aggregation reaches target AUC ≥30% faster in wall‑clock time. Falsify if speedup <10% or AUC degrades by >2 points.
-- Measurements: time‑to‑X AUC, staleness distribution, straggler impact.
+4. Resources (compute, tools, datasets)
+- Hardware and networking
+  - Server: 1 modest GPU or CPU-only VM with reliable storage and TLS termination.
+  - Clients: 6–10 edge nodes (Jetson Nano or Raspberry Pi 4 with 4–8 GB RAM), 4G routers, offline cache (ext4 SSD), and simple power monitors.
+- Software
+  - FL framework: Flower (lightweight, research-friendly; supports heterogeneous clients and custom strategies) [6].
+  - Privacy: Secure aggregation implementation; DP accounting library (e.g., moments accountant).
+  - MLOps: Git + CI; Prometheus/Grafana for rounds/uptime; encrypted logging; device management via MDM or Ansible.
+- Datasets (public, to prototype before real data)
+  - Imaging proxy: Public chest X-ray datasets (non-IID partitions) to emulate cross-site distribution; small ultrasound proxy if relevant.
+  - Tabular proxy: Open health or logistics datasets (e.g., risk prediction, stock-out forecasting) partitioned by “site.”
+  - Note: We did not find a high-confidence, peer-reviewed LMIC-specific FL dataset via the quick search. To strengthen evidence, we will curate non-IID site partitions from public datasets and document partition statistics; in parallel, draft a DUA for limited local data access.
+- Security/governance
+  - Threat modeling, DPIA, and SOPs for incident response and key management; consent and transparency materials aligned with local regulations [4].
 
-E4. Privacy–utility trade‑off with DP and secure aggregation
-- Setup: Per‑example clipping (C ∈ {0.5, 1.0, 2.0}) + Gaussian noise (σ yielding ε ∈ {3, 5, 8} over 100–300 rounds) with moments accountant; secure aggregation on [2][7][8].
-- Hypothesis: With secure aggregation, DP at ε≈5, δ=1e‑5 yields ≤2 AUC‑point loss vs no‑DP. Falsify if loss >2 points or training destabilizes.
-- Measurements: AUC/F1, calibration, computed ε, bytes overhead from secure aggregation.
+5. Risks and mitigations table
+- Intermittent connectivity and power outages disrupt rounds
+  - Mitigations: Asynchronous FL with buffered updates, resumable uploads, and opportunistic participation; SMS/USSD out-of-band control channel [3][5].
+- Severe non-IID data hurts global model utility at minority sites
+  - Mitigations: FedProx and local adapters; equity-aware evaluation and per-site calibration; optional site-specific thresholds [2].
+- Privacy expectations unmet (regulators/ethics)
+  - Mitigations: Client-level DP with explicit ε/δ, secure aggregation, and strict server hardening; governance documentation and audits [4].
+- Limited bandwidth inflates costs/time
+  - Mitigations: Update sparsification/quantization; fewer but larger local steps; periodic aggregation windows; model distillation for small models [1][3][5].
+- Model poisoning or data integrity attacks
+  - Mitigations: Robust aggregation (median/Krum), anomaly detection on updates, client attestation, and rate limits.
+- Organizational buy-in and capacity
+  - Mitigations: Training for local IT/clinicians; co-design workshops; simple dashboards demonstrating value (uptime, local performance).
+- Framework gaps or instability
+  - Mitigations: Start with Flower; keep interfaces modular to swap strategies; integration tests and rollbacks [6].
 
-E5. Personalization to reduce site disparities
-- Compare: pure global model vs local‑head personalization or last‑layer tuning after global training.
-- Hypothesis: Worst‑site AUC improves by ≥2–4 points without harming average AUC. Falsify if worst‑site gain <1 point or average drops >1 point.
-- Measurements: per‑site AUC, between‑site disparity (e.g., std. dev.), inference latency overhead.
+6. Stretch ideas or follow-up directions
+- Split learning for ultra-thin clients (send activations, not gradients) to further reduce bandwidth; compare to FL.
+- Personalization with lightweight adapters (LoRA) within FL to improve on-device specialization without bloating uplink.
+- Semi-supervised FL: self-training or consistency regularization using plentiful unlabeled local data.
+- Scheduling via reinforcement learning to optimize participation under bandwidth/energy constraints.
+- Cross-border FL with data sovereignty controls and per-jurisdiction policies; audit trails for compliance.
 
-Operational checklist (low‑resource ready)
-- Connectivity: resumable uploads, exponential backoff, and local caching of updates; nightly windows for communication.
-- Fault tolerance: tolerate 50–80% of clients being offline in a round; sample new cohorts each round [1].
-- Security/governance: mTLS, key rotation, secure aggregation; in‑country aggregation to satisfy data‑locality requirements [2][9].
-- Monitoring: per‑round metrics (utility, bytes, failures), fairness dashboards (site‑level performance), privacy accounting (if DP on).
+Citations
+[1] McMahan et al., 2017. Communication-Efficient Learning of Deep Networks from Decentralized Data (FedAvg) — https://proceedings.mlr.press/v54/mcmahan17a.html  
+[2] Li et al., 2020 (MLSys). Federated Optimization in Heterogeneous Networks (FedProx) — https://proceedings.mlsys.org/paper/2020/file/38af86134b65d0f10fe33d30dd76442e-Paper.pdf  
+[3] Ma et al., 2023 (PMLR). Asynchronous Personalized Federated Learning with Irregular Clients — https://proceedings.mlr.press/v189/ma23b/ma23b.pdf  
+[4] Rieke et al., 2024. Privacy preservation for federated learning in health care — https://pmc.ncbi.nlm.nih.gov/articles/PMC11284498/  
+[5] Kinyua et al., 2024. Democratizing AI in Africa: Federated Learning for Low-Resource Edge Devices — https://arxiv.org/abs/2408.17216  
+[6] Implementation and Evaluation of a Federated Learning Framework (framework survey incl. Flower) — https://www.mdpi.com/1999-5903/15/11/358
+Note on evidence scope: [6] provides general framework discussion rather than LMIC-specific trials; we use it to justify tool selection. For stronger LMIC field evidence, we will document a pilot protocol and seek site collaborations; we did not find peer-reviewed, LMIC-specific FL RCTs in the quick scan.
 
-Risks and mitigations
-- Sparse/quantized updates hinder convergence: add error‑feedback and modest local epochs; fall back to 8‑bit if 4‑bit fails [5][6].
-- Severe non‑IID prevents learning: strengthen proximal term or use SCAFFOLD; increase participation rate temporarily [3].
-- Intermittent connectivity stalls rounds: allow asynchronous aggregation with staleness bounds and aggressive partial participation [4].
-- Privacy budget too costly: consider secure aggregation without DP first; if DP required, tune clipping and noise via small pilots to hit ε targets with acceptable utility [2][7][8].
-
+Optional next step
+- Approve Month 1 setup (governance + testbed) and the Experiment 1 protocol; we will deliver a week-2 dry run demonstrating async+compressed FL operating over a throttled 3G link with end-to-end metrics collection.

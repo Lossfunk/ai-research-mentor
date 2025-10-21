@@ -1,132 +1,140 @@
 1. Problem framing and goals
-- Core research question: How reliable, robust, and transparent are no‑code AutoML systems on tabular datasets, and how do no‑code large language model (LLM) prompting strategies compare across public reasoning/QA benchmarks?
-- Motivation and grounding:
-  - Prior work has compared capabilities and performance of AutoML tools, but systematic, user-centered evaluation of no-code settings (time-to-result, usability, documentation quality) remains underexplored [P1]. Benchmarking best practices highlight leakage control, dataset curation, and lifecycle governance, which many ad‑hoc evaluations omit [P2]. Reporting standards and documentation (e.g., model cards/datasheets) improve rigor and reproducibility [P3], [P9]. For LLM prompting, step-by-step reasoning evaluation and its pitfalls are actively studied, motivating careful protocols beyond raw accuracy [P4]; reproducibility frameworks stress variance across runs/tools [P6].
-- Primary objectives:
-  1) Quantify performance, robustness, and cost/time-to-result of GUI-based AutoML on standard tabular datasets with strict leakage controls.
-  2) Assess transparency and documentation quality (explanations, model cards/datasheets) produced using only built-in no-code features.
-  3) Evaluate no-code prompting strategies (e.g., chain-of-thought, self-consistency) on public QA/reasoning subsets with reproducible, low-friction procedures.
-- Success criteria:
-  - A reproducible benchmark report (preregistered) with at least 8 tabular datasets covering classification/regression, clear leakage controls, and variance estimates; and a prompting study on at least 3 QA datasets, each with ≥200 items, with protocol preregistration, inter-annotator reliability, and transparent reporting [P2], [P3], [P9].
-  - An open replication package: protocol, dataset cards, model cards, prompts, results sheets, and instructions.
+- Problem: Create and evaluate a fully no-code/low-code methodology for building and testing prompt strategies and retrieval-augmented generation (RAG) systems using cloud-based evaluators and public benchmarks. The work targets reproducibility and accessibility for researchers without Python skills, focusing on truthfulness, reasoning, and grounding. Surveys of LLMs highlight the need for rigorous evaluation across tasks, prompting, and tool use [P2].
+- Research questions:
+  1) Do structured prompting strategies (few-shot, chain-of-thought) outperform zero-shot on reasoning and truthfulness benchmarks in no-code settings?
+  2) Does adding RAG improve factuality and reduce hallucinations compared with direct prompting across general QA tasks?
+  3) How reliable are built-in cloud evaluators (AWS Bedrock, Azure AI Foundry, Google Vertex AI) relative to human judgments and automatic metrics?
+  4) Can abstention/“refuse when unsure” prompts reduce false answers without sacrificing too much coverage? [P4]
+- Scope and constraints:
+  - No coding required; use vendor UIs and point-and-click tools for setup, evaluation, and exports [7][9][10].
+  - Public, easily accessible datasets/benchmarks: MMLU (general knowledge) [3], GSM8K (grade-school math) [4], TruthfulQA (truthfulness) [5], BBH (reasoning) [6]; RAG evaluation via RAGAS metrics where supported by tools/docs [2][8].
+- Primary goals:
+  - Deliver a reproducible, no-code evaluation harness and report for prompts and RAG variants on 3–4 benchmarks with transparent protocols, dataset splits, and reporting checklists [P2].
+  - Provide evidence on reliability and limitations of built-in evaluators vs. human evaluation and automated metrics [7][9][10][12].
+  - Produce reusable evaluation artifacts (prompt sheets, evaluation forms, exportable CSVs) and an ethics note on toxicity/harms measurement with cautions about black-box toxicity APIs [13][14].
 
 2. Experiments
-Experiment 1: No-code AutoML on tabular data (baseline capability and performance)
-- Hypothesis: Across diverse tabular datasets, multiple no-code AutoML platforms achieve comparable performance to strong tree-based baselines within a small margin, with variation by dataset type; time-to-first-solution and cost differ substantially by platform [P1], [P2].
-- Setup (no coding):
-  - Tools: H2O Driverless AI (GUI trial), Google Vertex AI AutoML Tables (GUI), Azure ML Studio AutoML (UI), MLJAR (UI). Record platform versions.
-  - Datasets (public, classic, low-risk): from OpenML/UCI (e.g., OpenML Adult, Credit-g, Higgs-small, Covertype, Churn, California Housing, YearPredictionMSD, Bike Sharing). Prepare datasheets for each dataset before training [P9].
-  - Protocol: For each dataset, do a fixed 80/20 holdout with an additional internal validation via platform defaults; disable target leakage by removing obvious post-outcome features and applying time-aware splits when timestamps exist [P2]. Cap training time uniformly per tool (e.g., 1 hour/dataset).
-- Baselines:
-  - Simple baselines configured in-tool: logistic regression/GLM and single Gradient Boosted Trees (or XGBoost default if available).
-  - AutoML full autopilot mode for each tool with identical time budget.
+Experiment 1: Prompting strategies for reasoning and truthfulness (no-code)
+- Hypothesis: Few-shot and chain-of-thought (CoT) prompting will outperform zero-shot on reasoning (GSM8K, BBH) and maintain or improve truthfulness (TruthfulQA), with measurable gains in task accuracy. Also test abstention prompts to reduce false claims [5][6][4][P4].
+- Setup:
+  - Models: Use the same deployed LLM(s) across three cloud evaluators (one per platform if needed) using their UIs to control prompts and batch evaluations [7][9][10].
+  - Prompts: Zero-shot; Zero-shot + “abstain if unsure”; Few-shot; CoT; CoT + self-consistency (majority vote via multi-sample setting if available in UI).
+  - Datasets: GSM8K subset (200 items), BBH subset (≥200 items), TruthfulQA (MC and generation subsets where available) [4][6][5]. If the platforms limit dataset size, stratify by category.
+  - Procedure: Upload tasks via CSV/JSON UI; run each prompt condition with identical prompts across platforms; export results as CSV from each platform [7][9][10].
+- Baselines: Zero-shot prompt without abstention.
 - Evaluation metrics:
-  - Classification: ROC-AUC, PR-AUC (for imbalance), F1, log loss, calibration error (ECE).
-  - Regression: RMSE, MAE, R^2, calibration plot (prediction vs observed).
-  - Operational: time-to-first-solution, total runtime, cost (cloud pricing), clicks/steps, UI errors encountered.
-- Expected outcomes:
-  - Performance clustering with small but significant differences across platforms; calibration and log loss may differentiate tools beyond accuracy; operational metrics reveal notable differences in speed/cost [P1], [P2].
-  - Documented dataset cards and model cards improve interpretability and reproducibility [P3], [P9].
+  - GSM8K: exact match (EM) using answer key; platform evaluator accuracy if provided [4][9][10].
+  - BBH: accuracy via provided keys or majority human adjudication if no auto-key [6][12].
+  - TruthfulQA: truthfulness score (per answer key) and rate of confident falsehoods [5].
+  - Human evaluation: binary correctness and confidence on a 50–100 item stratified sample using Label Studio UI [12].
+- Expected outcomes: A measurable accuracy increase for few-shot and CoT over zero-shot on GSM8K and BBH; abstention expected to lower the rate of false claims on TruthfulQA with a modest drop in coverage [5][6][4][P4]. These are hypotheses to be confirmed empirically.
 
-Experiment 2: Robustness to distribution shift and data hygiene
-- Hypothesis: Under temporal or covariate shifts, autopilot ensembles degrade more than simpler baselines on certain datasets; stricter leakage controls reduce apparent performance but increase external validity [P2].
-- Setup (no coding):
-  - For time-stamped datasets, use train on earlier period, test on later period; for others, produce stratified splits that intentionally vary feature distributions (e.g., geography-based split).
-  - Apply identical time budgets and settings as Experiment 1.
-- Baselines:
-  - Same simple baselines as Experiment 1 and “best” AutoML per platform from Experiment 1.
+Experiment 2: RAG vs. direct prompting for factual QA (no-code knowledge bases)
+- Hypothesis: RAG improves factual accuracy and grounding while lowering hallucination rates vs. direct prompting on open-domain QA, as measured by RAGAS faithfulness/answer correctness and platform RAG evaluation reports [1][2][8].
+- Setup:
+  - Build a knowledge base in AWS Bedrock Knowledge Bases UI from a small, public corpus (e.g., Wikipedia slices for history/science categories or a domain-specific public corpus) [8].
+  - Create identical question sets (200–300 items) derived from or aligned with the corpus; if available, test NQ-like or curated QA sets.
+  - Conditions: Direct LLM prompting (no retrieval) vs. RAG (retrieval+prompting); vary chunking/window sizes as ablations.
+  - Run evaluations via Bedrock’s knowledge base evaluation job; also run RAGAS-like scoring if the UI exposes faithfulness and context precision metrics, or export responses/contexts for human rating [8][2].
+- Baselines: Direct prompting with best prompt from Experiment 1.
 - Evaluation metrics:
-  - Primary: generalization gap (validation vs shifted test), relative performance drop (%), calibration drift (change in ECE).
-  - Secondary: SHAP/feature-importance stability across splits if provided in-platform; otherwise, compare top-k features surfaced by each tool.
-- Expected outcomes:
-  - Measurable performance drop under shift; simpler models may show smaller degradation on some datasets; findings illustrate the importance of benchmark design and leakage checks [P2].
+  - Faithfulness/groundedness and context precision/recall (RAGAS-style) [2][8].
+  - QA accuracy (EM/F1) when answer keys exist.
+  - Human evaluation: “Is the answer supported by the retrieved context?” binary + confidence [12].
+- Expected outcomes: RAG shows higher faithfulness/grounding and equal or better QA accuracy versus direct prompting on corpus-derived questions [1][2][8].
 
-Experiment 3: Transparency, documentation, and usability assessment (human study)
-- Hypothesis: Tools differ in quality/completeness of explanations and documentation; providing standardized model cards/datasheets improves user trust and facilitates replication [P3], [P9].
-- Setup (no coding):
-  - Participants: 5–10 graduate-level readers (or domain practitioners). Materials: exported model reports/explanations from each platform for 3 datasets; a checklist derived from REFORMS/reporting standards and documentation practices (model cards/datasheets) [P3], [P9].
-- Baselines:
-  - Each tool’s default report vs the same report augmented with a standardized model card/datasheet you complete.
+Experiment 3: Evaluator reliability study (cloud evaluators vs. human and automatic metrics)
+- Hypothesis: Built-in evaluators from AWS Bedrock, Azure AI Foundry, and Vertex AI correlate with human judgments on correctness and groundedness but can disagree in edge cases (e.g., subtle reasoning or adversarial wording) [7][9][10].
+- Setup:
+  - Take a 200-item stratified sample from Experiments 1–2 outputs (balanced across tasks and difficulty).
+  - Score with each platform’s evaluator; export scores [7][9][10].
+  - Human evaluation in Label Studio with a rubric for correctness, faithfulness (for RAG), and harmful/toxic content (binary + Likert severity) [12].
+  - Optional: Run Perspective API on the same sample to flag toxicity but treat as exploratory given known issues with black-box toxicity APIs [13][14].
+- Baselines: Human majority vote acts as reference.
 - Evaluation metrics:
-  - Likert scales (clarity, sufficiency, actionability), task time (how long to locate key info: performance, limitations, data splits), error rates (misinterpretations), inter-annotator agreement (Cohen’s kappa or Krippendorff’s alpha).
-- Expected outcomes:
-  - Augmented documentation improves comprehension/time-to-answer; tool-level differences surface in explanation clarity and coverage [P3], [P9].
+  - Agreement metrics (percent agreement; simple Cohen’s kappa for two raters; or platform-provided inter-rater guidance if available). Compute summaries in a spreadsheet from exported CSVs.
+  - Error analysis: categorize disagreements (reasoning, factuality, ambiguity).
+- Expected outcomes: Moderate-to-high correlation between platform evaluators and human judgments overall but noticeable failure modes in long reasoning and adversarial cases. Toxicity API flags do not perfectly align with human harm judgments; document limitations [14].
 
-Experiment 4: No-code LLM prompting strategies on reasoning/QA tasks
-- Hypothesis: Chain-of-thought (CoT) with self-consistency improves accuracy on multi-step reasoning compared to direct answers, but with variance across models and datasets; majority-vote self-consistency stabilizes results [P4], [P6].
-- Setup (no coding):
-  - Use hosted LLM UIs (e.g., ChatGPT, Claude, Gemini). Select 3 public datasets/subsets: arithmetic (GSM8K small subset), commonsense (CSQA subset), open-domain (TriviaQA subset). Use fixed random subsets (e.g., first 200 items) to keep manual evaluation feasible. Document prompts and instructions precisely.
-  - Conditions: Direct-answer baseline; CoT prompt; CoT + self-consistency (e.g., 5 samples, majority vote).
-- Baselines:
-  - Direct-answer prompts without reasoning steps.
-- Evaluation metrics:
-  - Exact match / accuracy; macro-F1 (if applicable); calibration proxy via self-reported confidence; cost and time per 100 questions; variance across 3 sessions/days.
-- Expected outcomes:
-  - CoT + self-consistency improves accuracy on reasoning-heavy tasks with nontrivial variance; careful evaluation and reporting needed to avoid overclaiming [P4], [P6].
+Optional Experiment 4 (if time allows): Cross-benchmark generalization
+- Hypothesis: The best prompt/RAG settings identified on one dataset generalize partially but not fully to others; tuning per task remains beneficial [3][5][6][4].
+- Setup: Apply best configurations from Experiments 1–2 to MMLU subsets and TruthfulQA; record performance shifts [3][5].
+- Evaluation: Accuracy (MMLU), truthfulness score (TruthfulQA).
+- Expected outcomes: Mixed transfer; motivates task-aware prompt/RAG selection.
 
 3. Timeline for the next 6 months with milestones
-- Month 1: Preregistration and setup
-  - Finalize research questions, datasets list, evaluation metrics; create preregistration on OSF.
-  - Build templates: datasheets (for each dataset), model cards (per model), experiment log sheets [P3], [P9].
-  - Pilot 1 dataset across all AutoML tools to validate procedure; refine leakage checks and time budgets [P2].
-- Month 2: AutoML benchmarking (core datasets)
-  - Run Experiment 1 across 4–5 datasets; collect performance, calibration, cost/time; draft preliminary tables/plots.
-  - Begin Experiment 2 on 2 datasets with natural time splits.
-- Month 3: Complete robustness and documentation pass
-  - Finish Experiment 2 across all applicable datasets; analyze generalization gaps.
-  - Generate tool-native reports; draft model cards/datasheets; start Experiment 3 protocol and materials [P3], [P9].
-- Month 4: Human study + LLM prompting pilot
-  - Conduct Experiment 3 with 5–10 evaluators; compute IAA (kappa/alpha).
-  - Pilot Experiment 4 on one QA dataset; refine prompts and sampling [P4], [P6].
-- Month 5: LLM prompting main runs and analysis
-  - Complete Experiment 4 on all 3 QA datasets; collect variance across sessions; compile results.
-  - Integrate all findings; stress-test claims against benchmarking best practices [P2].
-- Month 6: Write-up, artifact packaging, and submission
-  - Finalize figures, tables, documentation; assemble replication package (protocol, data splits, model cards/datasheets, prompts, raw outputs).
-  - Internal peer review; target venue selection; submission.
+- Month 1:
+  - Accounts and governance: Set up AWS Bedrock, Azure AI Foundry, and Vertex AI Studio; enable evaluation features [7][9][10].
+  - Protocol preregistration and checklists (tasks, prompts, sample sizes, decision rules). Draft rubric for human evaluation and consent/instructions [12].
+  - Assemble datasets: subsets of GSM8K, BBH, TruthfulQA; curate RAG corpus and QA sets [4][6][5][8].
+- Month 2:
+  - Run Experiment 1 small pilots to finalize prompt variants and UI workflows; lock prompt templates.
+  - Begin full Experiment 1 runs; export CSVs and set up spreadsheets for metrics and figures.
+- Month 3:
+  - Build knowledge base(s) and run Experiment 2 pilots (tune chunk size, top-k retrieval) [8].
+  - Execute full Experiment 2; export RAG evaluation reports and human evaluation batches [8][2][12].
+- Month 4:
+  - Run Experiment 3 evaluator agreement study; complete human ratings; compile agreement metrics [7][9][10][12].
+  - Interim paper outline; register figures/tables to produce.
+- Month 5:
+  - Error analysis; ablations write-up (e.g., prompt length, RAG top-k).
+  - Draft Methods with reproducibility details (prompts, dataset splits, model and platform versions).
+- Month 6:
+  - Finalize results and discussion; limitations and ethics sections (toxicity evaluation caveats) [14].
+  - Prepare submission: choose venue (workshop on LLM evaluation/reproducibility), compile artifacts for a public repository (prompts, evaluation sheets, anonymized outputs).
 
 4. Resources (compute, tools, datasets)
-- Compute
-  - Cloud credits for AutoML (estimate: $300–$1,000 depending on datasets/time budgets). Track cost per run.
-  - LLM UI usage: allocate ~$100–$300 for multi-sample self-consistency runs across 3 models.
-- Tools (no/low-code)
-  - AutoML: H2O Driverless AI (GUI), Google Vertex AI AutoML Tables (GUI), Azure ML Studio AutoML (UI), MLJAR (UI) [P1].
-  - Workflow/annotation: KNIME or RapidMiner for data prep if needed (drag-and-drop), Label Studio (UI) for human study materials.
-  - Documentation: OSF for preregistration; templates for datasheets/model cards [P9].
-- Datasets
-  - Tabular: OpenML/UCI classic tasks (classification and regression), with attention to leakage and license notes [P2].
-  - QA/reasoning: GSM8K subset, CSQA subset, TriviaQA subset; confirm licenses/usage permissions and sampling protocol [P4].
+- Compute/platforms (no code):
+  - AWS Bedrock evaluation and knowledge base evaluation [7][8].
+  - Azure AI Foundry evaluators and datasets UI [9].
+  - Google Vertex AI model and app evaluation [10].
+- Human evaluation:
+  - Label Studio cloud or local UI for annotators [12].
+- Optional automated checks:
+  - Perspective API for toxicity (exploratory; document limitations) [13][14].
+- Datasets/benchmarks:
+  - MMLU subsets for general knowledge [3].
+  - GSM8K for math reasoning [4].
+  - TruthfulQA for truthfulness [5].
+  - BBH for challenging reasoning [6].
+  - RAG corpus: curated public Wikipedia slices or domain corpora compliant with licenses; store documents in Bedrock Knowledge Bases [8].
+- Tools for reliability and reporting:
+  - CSV exports and spreadsheets for statistics; templated reporting tables.
+  - RAG evaluation reports and RAGAS-style metrics where available [2][8].
 
-5. Risks and mitigations
-- Data leakage or benchmark artifacts inflate results
-  - Mitigation: Strict split policies (time-aware when available), pre-registered feature exclusion rules, auditing per BetterBench guidance [P2].
-- Cross-platform configuration mismatch
-  - Mitigation: Fix uniform time budgets, enable/disable similar features across tools, log all defaults; report any unavoidable differences transparently [P1], [P2].
-- Cost/time overruns on cloud AutoML
-  - Mitigation: Pilot small time budgets; early stopping; prioritize a representative subset of datasets; cap per-dataset spend.
-- Limited interpretability/export restrictions
-  - Mitigation: Use tools with built-in explainability; supplement with standardized model cards and datasheets documenting gaps [P3], [P9].
-- Human study bias/low reliability
-  - Mitigation: Clear rubrics, blinded materials, multiple raters; compute inter-annotator agreement and revise rubric if kappa/alpha < 0.6.
-- LLM variance and nondeterminism
-  - Mitigation: Multiple sessions, fixed prompts, self-consistency aggregation; report variability and seeds where configurable [P6].
-- Tool/version drift during study
-  - Mitigation: Freeze versions during runs; archive screenshots/configs; report exact build numbers [P2].
+5. Risks and mitigations table
+- Platform changes to evaluators or models — Lock versions/dates in Methods; export timestamped reports; rerun a tiny verification subset at submission time [7][9][10].
+- Dataset licensing or TOS conflicts — Use public, well-known benchmarks with permissive licenses; cite sources; avoid scraping restricted content [3][4][5][6].
+- Evaluator bias or drift — Triangulate with human ratings and cross-platform evaluators; include error analysis; avoid overreliance on a single evaluator [7][9][10][12].
+- Toxicity measurement validity — Treat Perspective API as exploratory; validate with human harm ratings; discuss known issues of black-box toxicity evaluation [13][14].
+- Cost overruns — Pilot with small subsets; cap tokens/batch sizes; monitor platform usage dashboards; prioritize most informative conditions.
+- Ambiguity in ground truth — Prefer tasks with answer keys (GSM8K, MMLU); for generative tasks, use dual human adjudication and tie-break rules [3][4][12].
+- Reproducibility (no code) gaps — Archive prompts, evaluation configurations, CSV exports, and platform screenshots in a public repository with a README; include data statements [P2].
 
 6. Stretch ideas or follow-up directions
-- Fairness and calibration audits: Add datasets with sensitive attributes (e.g., Adult) and compute demographic parity difference, equalized odds; calibrate with temperature scaling in tools that support it [P2].
-- Cross-tool ensembles: Evaluate whether simple ensembling of the best models across tools (where export is possible) yields gains; document feasibility/usability constraints.
-- Tabular benchmark expansion: Incorporate emerging tabular benchmark suites to broaden coverage (e.g., living benchmarks) if licensing and access allow [P2].
-- Prompting generalization: Compare prompting strategies across multiple LLM providers and tasks (math vs commonsense) and add error taxonomy analysis informed by reasoning evaluation surveys [P4].
-- Reproducibility checklists: Map results to REFORMS and produce a compliance summary; release public templates others can adapt [P3], [P9].
-
-Citations
-- [P1] Evaluation and Comparison of AutoML Approaches and Tools — https://ar5iv.labs.arxiv.org/html/1908.05557
-- [P2] BetterBench: Assessing AI Benchmarks, Uncovering Issues, and Establishing Best Practices — https://arxiv.org/html/2411.12990
-- [P3] REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://reforms.cs.princeton.edu/
-- [P4] Evaluating Step-by-step Reasoning Traces: A Survey — https://arxiv.org/html/2502.12289v1
-- [P6] An Analyst-Inspector Framework for Evaluating Reproducibility of LLMs in Data Science — https://arxiv.org/abs/2502.16395
-- [P9] The Responsible Foundation Model Development Cheatsheet — https://arxiv.org/html/2406.16746v4
+- Domain-specific RAG: Apply the methodology to a specific domain (e.g., healthcare policy or finance with public documents) and measure gains in groundedness and reduced hallucinations under strict abstention prompts [1][2][P4].
+- LLM-as-judge calibration: Compare platform evaluators to an LLM-judge with rubric prompts; measure calibration against human ratings and investigate failure modes.
+- Active evaluation design: Use disagreement-driven sampling (items where evaluators disagree) to focus expensive human evaluation effort.
+- Cross-vendor RAG: Replicate RAG experiments on Azure/AWS/Vertex-native knowledge base features to compare retrieval quality and grounding reports [7][8][9][10].
+- Transparency artifact: Publish a no-code evaluation cookbook (screenshots, CSV templates, prompts) as a companion resource.
 
 Optional next step
-- If you want, I can generate a preregistration template and a one-click checklist (datasheet/model card forms, run logs, cost tracker) tailored to the exact tool mix you choose.
+- I can draft your preregistration template (objectives, hypotheses, datasets, prompts, metrics, analysis plan) and a Label Studio annotation guide you can use with reviewers or collaborators.
+
+Citations
+- [P2] A Survey of Large Language Models — https://arxiv.org/pdf/2303.18223
+- [P4] Don't Hallucinate, Abstain: Identifying LLM Knowledge Gaps via Multi-LLM Collaboration — https://www.researchgate.net/publication/384216001_Don't_Hallucinate_Abstain_Identifying_LLM_Knowledge_Gaps_via_Multi-LLM_Collaboration
+- [1] Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks — https://arxiv.org/abs/2005.11401
+- [2] RAGAS: Automated Evaluation of Retrieval Augmented Generation — https://arxiv.org/abs/2309.15217
+- [3] MMLU (Measuring Massive Multitask Language Understanding) — https://github.com/hendrycks/test
+- [4] GSM8K: Training Verifiers to Solve Math Word Problems — https://arxiv.org/pdf/2110.14168
+- [5] TruthfulQA: Measuring How Models Mimic Human Falsehoods — https://arxiv.org/abs/2109.07958
+- [6] Challenging BIG-Bench Tasks and Whether Chain-of-Thought Can Help — https://arxiv.org/abs/2210.09261
+- [7] Evaluate the performance of Amazon Bedrock resources — https://docs.aws.amazon.com/bedrock/latest/userguide/evaluation.html
+- [8] Review RAG evaluation job reports and metrics (Bedrock Knowledge Bases) — https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-evaluation-report.html
+- [9] General purpose evaluators – Azure AI Foundry — https://learn.microsoft.com/en-us/azure/ai-foundry/concepts/evaluation-evaluators/general-purpose-evaluators
+- [10] Model evaluation in Vertex AI — https://cloud.google.com/vertex-ai/docs/evaluation/introduction
+- [11] Giskard UI quickstart — https://docs.giskard.ai/hub/ui/index.html
+- [12] Label Studio (open-source annotation UI) — https://labelstud.io/
+- [13] Perspective API research — https://perspectiveapi.com/research/
+- [14] On the Challenges of Using Black-Box APIs for Toxicity Evaluation (EMNLP 2023) — https://aclanthology.org/2023.emnlp-main.472.pdf

@@ -1,0 +1,428 @@
+Based on the retrieved evidence on low-power coral reef monitoring [1,2,3], underwater computer vision [4,5], and citizen science approaches [6,7], I can now construct a comprehensive research execution plan.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Core Problem:**  
+Coral reefs face unprecedented threats from climate change, ocean acidification, and pollution, with 50% of reefs already lost and 90% at risk by 2050. Traditional monitoring relies on manual surveys by expert divers—expensive, infrequent, and geographically limited. Volunteer divers (recreational divers, citizen scientists) represent a massive untapped resource (millions of dives annually), but lack tools for systematic, quantitative reef assessment [6,7].
+
+**Key Technical Challenges:**
+- **Low-power constraints:** Underwater cameras/housings have limited battery life (2–4 hours); edge devices must run on <5W power budgets
+- **Underwater image degradation:** Color attenuation (red wavelengths absorbed), backscatter, turbidity, variable lighting [1,4]
+- **Real-time processing:** Volunteers need immediate feedback during dives (not post-processing)
+- **Non-expert users:** System must be intuitive, requiring minimal training
+- **Data heterogeneity:** Diverse camera types, dive conditions, geographic locations [6]
+- **Ecological metrics:** Beyond detection—need coral cover, bleaching severity, species diversity, disease prevalence
+
+**Primary Goals (6-month scope):**
+1. **Develop ultra-low-power CV models** (<500 mW inference) for coral detection, bleaching assessment, and species classification on edge devices (Jetson Nano, Coral TPU, smartphone)
+2. **Design volunteer-friendly mobile app** with real-time feedback, automated quality control, and GPS/depth tagging
+3. **Create benchmark dataset** from volunteer diver footage with expert annotations
+4. **Validate system** through pilot deployment with 20–50 volunteer divers across 3–5 reef sites
+5. **Establish data pipeline** for aggregating volunteer data into reef health dashboards for marine managers
+
+**Scientific Contributions:**
+- Novel lightweight architectures for underwater CV (knowledge distillation, pruning, quantization) [2]
+- Benchmark dataset for citizen science coral monitoring
+- Open-source toolkit (hardware + software) for volunteer-based reef monitoring
+- Empirical validation of volunteer data quality vs. expert surveys
+
+**Impact Metrics:**
+- **Coverage:** 10–100× increase in monitored reef area vs. traditional surveys
+- **Cost:** <$500 per monitoring unit (vs. $10,000+ for professional systems)
+- **Accuracy:** >85% agreement with expert annotations for coral cover and bleaching
+- **Adoption:** 50+ volunteer divers trained and actively contributing data
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Ultra-Lightweight Coral Detection and Segmentation**
+
+**Hypothesis:**  
+Knowledge distillation from YOLOv8/v11 [1] to MobileNetV3 or EfficientNet-Lite, combined with 8-bit quantization, can achieve >80% mAP for coral detection while running at >10 FPS on edge devices (<500 mW power).
+
+**Setup:**
+- **Model architecture:**
+  - *Teacher:* YOLOv8-medium or YOLOv11 (state-of-the-art for underwater detection [1])
+  - *Student:* MobileNetV3-Small, EfficientNet-Lite0, or custom lightweight architecture
+  - *Compression:* Knowledge distillation + pruning (50–70% sparsity) + INT8 quantization
+  - *Task:* Object detection (bounding boxes) + semantic segmentation (pixel-wise coral masks)
+- **Training data:**
+  - Existing datasets: EILAT [1], UCSD Moorea Labeled Corals, CoralNet
+  - Augmentation: Underwater-specific (color shift, backscatter simulation, turbidity)
+  - Synthetic data: Render coral scenes in Blender/Unity with physics-based underwater lighting
+- **Edge deployment targets:**
+  - NVIDIA Jetson Nano (5W, $99)
+  - Google Coral USB Accelerator (2W, $60)
+  - Smartphone (Android, TensorFlow Lite)
+- **Optimization:**
+  - TensorRT (NVIDIA), Edge TPU compiler (Google), TFLite (mobile)
+  - Mixed precision (FP16/INT8)
+
+**Baselines:**
+- YOLOv8-nano (smallest YOLO variant)
+- MobileNetV2 + SSD (standard mobile detection)
+- Mask R-CNN (accuracy upper bound, not deployable on edge)
+
+**Evaluation Metrics:**
+- **Accuracy:** mAP@0.5, mAP@0.5:0.95 (detection); mIoU (segmentation)
+- **Efficiency:** Inference time (ms), FPS, power consumption (mW), model size (MB)
+- **Robustness:** Performance across lighting conditions, turbidity levels, camera types
+- **Compression ratio:** Student vs. teacher model size and FLOPs
+
+**Expected Outcomes:**
+- Achieve mAP >0.80 (vs. 0.85–0.90 for full YOLOv8) with 10–20× speedup
+- Run at 15–30 FPS on Jetson Nano, 10–20 FPS on Coral TPU, 5–10 FPS on smartphone
+- Model size <10 MB (vs. 50–100 MB for full models)
+- Power consumption <500 mW (enables 4–8 hour battery life)
+
+---
+
+### **Experiment 2: Coral Bleaching Severity Assessment**
+
+**Hypothesis:**  
+A multi-task CNN trained on color histograms and texture features can classify bleaching severity (healthy, pale, bleached, dead) with >85% accuracy, robust to underwater color distortion and camera white balance variations.
+
+**Setup:**
+- **Model architecture:**
+  - Lightweight backbone (MobileNetV3, EfficientNet-Lite)
+  - Multi-task head: (1) bleaching classification (4 classes), (2) color correction regression
+  - Attention mechanism to focus on coral regions (ignore background)
+- **Preprocessing:**
+  - Underwater color correction (CLAHE, white balance, red channel restoration) [4]
+  - Normalize for camera/lighting variations
+- **Training data:**
+  - CoralWatch color chart images (standardized bleaching reference)
+  - Expert-annotated bleaching surveys (NOAA, AIMS, ReefCheck)
+  - Augmentation: Simulate color shifts, lighting variations
+- **Bleaching severity scale:**
+  - Healthy (normal pigmentation)
+  - Pale (partial pigmentation loss)
+  - Bleached (severe pigmentation loss, white)
+  - Dead (algae overgrowth, skeletal structure)
+
+**Baselines:**
+- Color histogram + SVM (traditional ML)
+- ResNet-18 (standard CNN baseline)
+- Expert diver assessment (ground truth)
+
+**Evaluation Metrics:**
+- **Classification accuracy:** Per-class precision, recall, F1-score
+- **Agreement with experts:** Cohen's kappa, confusion matrix
+- **Robustness:** Performance across camera types, depths (0–30m), lighting conditions
+- **Calibration:** Expected Calibration Error (ECE)
+
+**Expected Outcomes:**
+- Achieve 85–90% accuracy (vs. 90–95% expert agreement)
+- Robust to camera variations (accuracy drop <5% across 5 camera types)
+- Identify bleaching 2–4 weeks earlier than visual inspection (pale stage)
+- Enable quantitative bleaching severity maps (not just binary healthy/bleached)
+
+---
+
+### **Experiment 3: Volunteer Data Quality and Calibration**
+
+**Hypothesis:**  
+Automated quality control (blur detection, coverage assessment, species verification) combined with gamification and feedback will improve volunteer data quality to >80% usability (vs. <50% for unfiltered citizen science data).
+
+**Setup:**
+- **Quality control pipeline:**
+  - *Image quality:* Blur detection (Laplacian variance), exposure check, resolution validation
+  - *Coverage assessment:* Ensure sufficient coral in frame (>30% of image)
+  - *Species verification:* Cross-check volunteer labels with model predictions, flag discrepancies
+  - *Spatial coverage:* GPS clustering to ensure diverse sampling (not all from same spot)
+- **Gamification:**
+  - Real-time feedback: "Great shot! Coral detected." vs. "Too blurry, try again."
+  - Leaderboards: Points for high-quality images, species diversity, geographic coverage
+  - Badges: "Bleaching Detective," "Species Expert," "Deep Diver"
+- **Calibration protocol:**
+  - Training module: 20-minute tutorial with example images
+  - Validation quiz: 10 images, must achieve >80% accuracy
+  - Ongoing feedback: Compare volunteer labels to expert consensus
+- **Pilot deployment:**
+  - Recruit 20–50 volunteer divers via dive shops, reef NGOs, social media
+  - Provide waterproof smartphone cases or loan GoPro cameras
+  - Deploy at 3–5 reef sites (Caribbean, Pacific, Red Sea for diversity)
+
+**Baselines:**
+- Unfiltered volunteer data (no quality control)
+- Expert diver surveys (gold standard)
+- Existing citizen science platforms (Reef Check, CoralWatch)
+
+**Evaluation Metrics:**
+- **Data quality:** Fraction of images passing quality filters
+- **Accuracy:** Agreement between volunteer labels and expert annotations (Cohen's kappa)
+- **Engagement:** Participation rate, images per volunteer, retention over 6 months
+- **Coverage:** Total reef area surveyed, geographic diversity, temporal frequency
+- **Cost-effectiveness:** Cost per high-quality image vs. expert surveys
+
+**Expected Outcomes:**
+- Improve usable data fraction from 40–50% (unfiltered) to 75–85% (with QC)
+- Achieve volunteer-expert agreement kappa >0.70 (substantial agreement)
+- Collect 5,000–10,000 high-quality images from 20–50 volunteers
+- Demonstrate 10–50× cost reduction vs. expert surveys ($5–$10 per image vs. $100–$500)
+
+---
+
+### **Experiment 4: Real-Time Mobile App and Edge Deployment**
+
+**Hypothesis:**  
+A mobile app with on-device inference (TensorFlow Lite) can provide real-time coral detection and bleaching assessment during dives, with <2-second latency and <10% battery drain per hour.
+
+**Setup:**
+- **Mobile app features:**
+  - *Camera interface:* Live viewfinder with coral detection overlay (bounding boxes, species labels)
+  - *Real-time feedback:* "Coral detected," "Bleaching severity: Pale," "Image quality: Good"
+  - *Metadata capture:* GPS, depth (from dive computer via Bluetooth), timestamp, water temperature
+  - *Offline mode:* Store images locally, sync when back on land
+  - *Dashboard:* Personal stats (corals detected, species count, bleaching alerts)
+- **Edge device options:**
+  - *Smartphone:* Android app with TensorFlow Lite (primary deployment)
+  - *Jetson Nano:* Waterproof housing for advanced users (higher accuracy, longer battery)
+  - *GoPro + Coral TPU:* Attach USB accelerator to action camera (experimental)
+- **Optimization:**
+  - Model quantization (INT8)
+  - Frame skipping (process every 2nd or 3rd frame)
+  - Adaptive resolution (lower res for real-time, full res for storage)
+- **User testing:**
+  - Lab testing: Simulate dive conditions (underwater tank, controlled lighting)
+  - Field testing: 10 volunteer divers, 20 dives, collect usability feedback
+
+**Baselines:**
+- Post-processing workflow (upload images, process on cloud)
+- Manual annotation (volunteer labels images after dive)
+- Existing apps (Reef Check, iNaturalist—no real-time CV)
+
+**Evaluation Metrics:**
+- **Latency:** Time from capture to detection result (ms)
+- **Battery life:** Hours of continuous use
+- **Accuracy:** On-device vs. cloud model performance (mAP, F1)
+- **Usability:** System Usability Scale (SUS) score, user interviews
+- **Reliability:** Crash rate, false positive/negative rates
+
+**Expected Outcomes:**
+- Achieve <2-second latency for detection + classification
+- Battery drain <10% per hour (6–10 hour dive day feasible)
+- On-device accuracy within 5% of cloud model
+- SUS score >70 (good usability)
+- 80% of volunteers prefer real-time feedback vs. post-processing
+
+---
+
+### **Experiment 5: Aggregated Reef Health Dashboard and Validation**
+
+**Hypothesis:**  
+Aggregating volunteer data into spatiotemporal reef health maps will reveal bleaching trends and hotspots with >80% correlation to expert surveys, enabling early warning systems for marine managers.
+
+**Setup:**
+- **Data aggregation pipeline:**
+  - Collect volunteer images with GPS, depth, timestamp
+  - Run cloud-based models (higher accuracy than edge) for verification
+  - Aggregate metrics: Coral cover (%), bleaching prevalence (%), species diversity (Shannon index)
+  - Spatiotemporal analysis: Heatmaps, time series, anomaly detection
+- **Dashboard features:**
+  - Interactive map: Zoom to reef sites, view coral cover and bleaching over time
+  - Alerts: Automated bleaching alerts when prevalence >20% (early warning)
+  - Comparison: Volunteer data vs. expert surveys, satellite data (Sentinel-2)
+  - Export: Reports for marine managers, policymakers
+- **Validation:**
+  - Compare volunteer-derived metrics to expert transect surveys at same sites
+  - Cross-validate with satellite bleaching detection (Sentinel-2, MODIS) [8]
+  - Temporal validation: Track bleaching events (e.g., 2024 El Niño)
+
+**Baselines:**
+- Expert transect surveys (NOAA, AIMS, ReefCheck)
+- Satellite-based bleaching detection (coarse resolution, 10–30m pixels)
+- Existing citizen science platforms (CoralWatch, Reef Check)
+
+**Evaluation Metrics:**
+- **Spatial correlation:** Pearson r between volunteer and expert coral cover estimates
+- **Temporal correlation:** Agreement on bleaching onset, peak, recovery
+- **Early warning:** Lead time (weeks) for bleaching detection vs. expert surveys
+- **Coverage:** Number of reefs monitored, update frequency
+- **Actionability:** Marine manager feedback, policy impact
+
+**Expected Outcomes:**
+- Achieve r >0.80 correlation with expert surveys for coral cover
+- Detect bleaching 2–4 weeks earlier than traditional surveys (pale stage)
+- Monitor 10–50 reef sites (vs. 1–5 for typical expert programs)
+- Provide monthly updates (vs. annual for expert surveys)
+- Demonstrate actionable insights: 2–3 case studies where volunteer data informed management decisions
+
+---
+
+## 3. Timeline for the Next 6 Months with Milestones
+
+| **Month** | **Milestone** | **Deliverables** |
+|-----------|---------------|------------------|
+| **Month 1** | Infrastructure + Dataset Preparation | - Collect and annotate existing coral datasets (EILAT, CoralNet, UCSD Moorea)<br>- Set up edge devices (Jetson Nano, Coral TPU, test smartphones)<br>- Implement baseline models (YOLOv8, MobileNetV3)<br>- Design mobile app mockups, user interface<br>- **Deliverable:** Annotated dataset (5,000+ images), baseline model benchmarks |
+| **Month 2** | Experiments 1 & 2 (Model Development) | - Train lightweight detection models (knowledge distillation, pruning, quantization)<br>- Train bleaching classification models<br>- Optimize for edge deployment (TensorRT, TFLite)<br>- Benchmark on Jetson Nano, Coral TPU, smartphone<br>- **Deliverable:** Optimized models (<10 MB), performance report (mAP, FPS, power) |
+| **Month 3** | Experiment 4 (Mobile App Development) | - Develop Android app with TensorFlow Lite integration<br>- Implement real-time detection, metadata capture, offline mode<br>- Lab testing in underwater tank<br>- Recruit 10 beta testers (local divers)<br>- **Deliverable:** Beta app (v0.5), lab testing results |
+| **Month 4** | Experiment 3 (Pilot Deployment) | - Recruit 20–50 volunteer divers (dive shops, NGOs, social media)<br>- Conduct training sessions (online + in-person)<br>- Deploy app to volunteers, provide equipment (smartphone cases or GoPros)<br>- Begin data collection at 3–5 reef sites<br>- **Deliverable:** 50+ trained volunteers, initial data collection (1,000+ images) |
+| **Month 5** | Data Collection + Quality Control | - Monitor volunteer engagement, provide feedback<br>- Implement automated quality control pipeline<br>- Analyze volunteer data quality vs. expert annotations<br>- Conduct expert validation surveys at pilot sites<br>- **Deliverable:** 5,000–10,000 volunteer images, quality control analysis |
+| **Month 6** | Experiment 5 (Dashboard) + Integration | - Develop reef health dashboard (web-based, interactive maps)<br>- Aggregate volunteer data, generate spatiotemporal metrics<br>- Validate against expert surveys and satellite data<br>- Write manuscripts, prepare code/data release<br>- Present to marine managers, gather feedback<br>- **Deliverable:** Dashboard prototype, validation report, 1–2 papers submitted |
+
+**Key Decision Points:**
+- End of Month 2: Select best-performing model architecture for deployment (accuracy vs. efficiency tradeoff)
+- Month 3: Decide on primary deployment platform (smartphone vs. Jetson Nano) based on usability testing
+- Month 4: Assess volunteer recruitment success; if <20 volunteers, expand outreach or reduce pilot scope
+- Month 5: Evaluate data quality; if <70% usability, iterate on quality control and training
+- Month 6: Finalize publication strategy (single comprehensive paper vs. multiple specialized papers)
+
+---
+
+## 4. Resources (Compute, Tools, Datasets)
+
+### **Compute Requirements**
+- **Training (Months 1–2):**
+  - 2–4 GPUs (V100 or A100) for model training
+  - Estimated 200–400 GPU-hours
+  - Cloud cost: $800–$1,600 (AWS p3, GCP A2)
+- **Edge devices (Months 2–6):**
+  - 5× NVIDIA Jetson Nano ($99 each = $495)
+  - 5× Google Coral USB Accelerator ($60 each = $300)
+  - 10× Android smartphones (borrow or purchase used, $100–$200 each = $1,000–$2,000)
+  - Waterproof housings ($50–$100 each = $500–$1,000)
+- **Cloud infrastructure (Months 4–6):**
+  - Dashboard hosting (AWS, GCP, or Azure): $100–$300/month
+  - Data storage (images, metadata): $50–$100/month
+- **Total compute budget:** $3,000–$5,000
+
+### **Software & Tools**
+- **Deep learning frameworks:**
+  - PyTorch, TensorFlow (training)
+  - TensorFlow Lite, TensorRT, Edge TPU compiler (deployment)
+  - ONNX (model conversion)
+- **Computer vision:**
+  - OpenCV (preprocessing, augmentation)
+  - Albumentations (underwater-specific augmentation)
+  - Detectron2, MMDetection (baseline models)
+- **Mobile development:**
+  - Android Studio, Flutter (cross-platform app)
+  - TensorFlow Lite Android API
+  - Firebase (backend, analytics)
+- **Data annotation:**
+  - LabelImg, CVAT, Roboflow (bounding boxes, segmentation)
+  - CoralNet (existing coral annotation platform)
+- **Dashboard:**
+  - Leaflet, Mapbox (interactive maps)
+  - Plotly, D3.js (visualizations)
+  - Django or Flask (backend)
+- **Experiment tracking:**
+  - Weights & Biases, MLflow
+  - GitHub (version control)
+
+### **Datasets**
+1. **Existing coral datasets:**
+   - EILAT (underwater object detection) [1]
+   - UCSD Moorea Labeled Corals (100,000+ annotations)
+   - CoralNet (1M+ images, 400+ sites globally)
+   - NOAA Coral Reef Watch (bleaching alerts, satellite data)
+   - Tara Pacific Expedition (genomic + imaging data)
+2. **Bleaching references:**
+   - CoralWatch color chart (standardized bleaching scale)
+   - AIMS Long-Term Monitoring Program (expert surveys)
+   - NOAA bleaching event databases
+3. **Volunteer-collected data (Months 4–6):**
+   - 5,000–10,000 images from pilot deployment
+   - GPS, depth, timestamp, water temperature metadata
+4. **Synthetic data:**
+   - Render coral scenes in Blender/Unity (augment training data)
+   - Simulate underwater lighting, turbidity, color attenuation
+
+### **Partnerships and Collaborations**
+- **Marine science:** Partner with reef research institutions (AIMS, NOAA Coral Reef Conservation Program, Scripps Institution of Oceanography)
+- **Citizen science:** Collaborate with existing programs (Reef Check, CoralWatch, iNaturalist)
+- **Dive community:** Engage dive shops, liveaboards, dive clubs for volunteer recruitment
+- **Technology:** Seek support from NVIDIA (Jetson), Google (Coral TPU), smartphone manufacturers
+- **Funding:** Apply for grants (NSF, NOAA, Ocean Conservancy, National Geographic)
+
+### **Ethical and Regulatory Considerations**
+- **Data privacy:** Anonymize volunteer data, obtain informed consent
+- **Marine permits:** Ensure compliance with local regulations for reef monitoring
+- **Community engagement:** Involve local communities, share results with stakeholders
+- **Open science:** Release code, models, and datasets under permissive licenses
+
+---
+
+## 5. Risks and Mitigations Table
+
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+|----------|----------------|------------|----------------|
+| **Insufficient volunteer recruitment (<20 divers)** | Medium | High | - Start outreach early (Month 1), target 100+ prospects<br>- Partner with dive shops (offer free training, equipment)<br>- Gamification and incentives (certificates, leaderboards)<br>- Backup: Hire 5–10 divers if volunteer recruitment fails |
+| **Edge models too slow or inaccurate** | Medium | High | - Extensive optimization (pruning, quantization, distillation)<br>- Adaptive inference (skip frames, lower resolution)<br>- Fallback: Post-processing workflow if real-time fails<br>- Hybrid: Real-time detection + cloud verification |
+| **Underwater image quality too poor** | High | Medium | - Preprocessing: Color correction, dehazing, enhancement<br>- Quality control: Reject blurry/dark images automatically<br>- User guidance: Real-time feedback ("Too dark, move closer")<br>- Hardware: Recommend cameras with good low-light performance |
+| **Volunteer data quality too low (<70% usable)** | High | High | - Robust training protocol (tutorials, quizzes, feedback)<br>- Automated quality control (blur, coverage, species checks)<br>- Gamification (reward high-quality submissions)<br>- Expert review: Sample 10% of data for validation |
+| **Battery life insufficient (<4 hours)** | Medium | Medium | - Aggressive optimization (model size, frame skipping)<br>- Power profiling: Identify and fix battery drains<br>- Hardware: Recommend high-capacity battery packs<br>- Fallback: Offline mode (process images post-dive) |
+| **Low correlation with expert surveys (<0.70)** | Medium | High | - Careful validation: Match volunteer and expert sites/times<br>- Calibration: Adjust for systematic biases<br>- Ensemble methods: Combine multiple volunteer observations<br>- Transparency: Report limitations, confidence intervals |
+| **Deployment sites inaccessible or permits denied** | Low | Medium | - Identify 5–10 candidate sites early, apply for permits (Month 1)<br>- Backup sites in multiple regions (Caribbean, Pacific, Red Sea)<br>- Partner with local NGOs for permit facilitation<br>- Fallback: Simulate deployment with existing datasets |
+| **App crashes or usability issues** | Medium | Medium | - Extensive testing (lab + field, 10+ beta testers)<br>- Crash reporting (Firebase Crashlytics)<br>- Iterative development (monthly updates based on feedback)<br>- Fallback: Web-based upload tool if app fails |
+| **Ethical concerns from local communities** | Low | Medium | - Early engagement with stakeholders (co-design)<br>- Transparent communication about data use<br>- Share results with local communities (dashboards, reports)<br>- Ensure benefits accrue to participants (free tools, training) |
+
+---
+
+## 6. Stretch Ideas or Follow-Up Directions
+
+1. **Multi-Species Monitoring:**  
+   Extend beyond corals to detect fish, invertebrates (crown-of-thorns starfish [5]), algae, and marine debris. Build comprehensive reef biodiversity assessments.
+
+2. **3D Reef Reconstruction:**  
+   Use Structure-from-Motion (SfM) to create 3D models of reefs from volunteer videos. Enable volumetric coral cover estimates and change detection over time.
+
+3. **Acoustic Monitoring Integration:**  
+   Combine visual data with underwater audio (hydrophones) to detect reef soundscapes, fish vocalizations, and boat noise—indicators of reef health.
+
+4. **Predictive Modeling:**  
+   Use machine learning to predict bleaching risk based on temperature, light, currents, and historical data. Provide early warnings to marine managers.
+
+5. **Autonomous Underwater Vehicles (AUVs):**  
+   Deploy low-cost AUVs with edge AI for automated reef surveys in areas inaccessible to divers (deep reefs, remote locations).
+
+6. **Federated Learning for Privacy:**  
+   Train models collaboratively across dive sites without sharing raw images, preserving privacy and reducing data transfer costs.
+
+7. **Blockchain for Data Provenance:**  
+   Use blockchain to verify volunteer data authenticity, prevent tampering, and create transparent audit trails for scientific credibility.
+
+8. **Climate Change Attribution:**  
+   Link volunteer-detected bleaching events to climate models, quantify human impact on reefs, and inform policy (e.g., carbon reduction targets).
+
+9. **Global Reef Health Network:**  
+   Scale to 100+ sites globally, create open-access database for researchers, and establish standardized protocols for cross-site comparisons.
+
+10. **Educational Outreach:**  
+    Develop curriculum for schools, universities, and dive training programs. Use volunteer data to teach marine biology, conservation, and data science.
+
+---
+
+## Concrete Action Plan (First 2 Weeks)
+
+**Week 1:**
+1. **Day 1–2:** Set up development environment (PyTorch, TensorFlow, edge deployment tools)
+2. **Day 3–4:** Download and preprocess existing datasets (EILAT, CoralNet, UCSD Moorea)
+3. **Day 5–7:** Train baseline models (YOLOv8, MobileNetV3) on coral detection task
+
+**Week 2:**
+1. **Day 8–10:** Implement knowledge distillation and quantization pipelines
+2. **Day 11–12:** Benchmark models on Jetson Nano and Coral TPU (order devices if not available)
+3. **Day 13–14:** Design mobile app mockups, reach out to 10–20 potential volunteer divers and partner organizations
+
+---
+
+## Sources
+
+[1] [A Comparative Study of YOLOv8 to YOLOv11 Performance in Underwater Vision Tasks](https://arxiv.org/abs/2509.12682)  
+[2] [From underwater to aerial: a novel multi-scale knowledge distillation approach for coral reef monitoring](https://arxiv.org/abs/2502.17883)  
+[3] [Deep learning for automated coral reef monitoring: a novel system based on YOLOv8 detection and DeepSORT tracking](https://archimer.ifremer.fr/doc/00951/106312/119399.pdf)  
+[4] [Automatic Coral Detection with YOLO: A Deep Learning Approach](https://link.springer.com/chapter/10.1007/978-3-031-50485-3_16)  
+[5] [Efficient underwater ecological monitoring with embedded AI: detecting Crown-of-Thorns Starfish via DCGAN and YOLOv6](https://www.frontiersin.org/journals/marine-science/articles/10.3389/fmars.2025.1658205/full)  
+[6] [Broadscale reconnaissance of coral reefs from citizen science and deep learning](https://pmc.ncbi.nlm.nih.gov/articles/PMC12202624/)  
+[7] [Citizen science benefits coral reefs and community members alike](https://www.frontiersin.org/journals/environmental-science/articles/10.3389/fenvs.2023.1250464/full)  
+[8] [Detection of Coral Reef Bleaching Based on Sentinel-2 Multi-Temporal Imagery](https://www.frontiersin.org/journals/marine-science/articles/10.3389/fmars.2021.584263/full)  
+
+---
+
+**Optional next step:**  
+Contact the authors of the citizen science coral monitoring study [6] (González-Rivero et al.) and the YOLOv8 underwater vision paper [1] to learn from their deployment experiences and explore potential collaboration. Also reach out to Reef Check, CoralWatch, and local dive shops in target regions (e.g., Great Barrier Reef, Caribbean, Red Sea) to establish partnerships for volunteer recruitment and field validation.

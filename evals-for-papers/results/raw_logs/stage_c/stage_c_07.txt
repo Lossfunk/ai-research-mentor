@@ -1,0 +1,148 @@
+1) Problem framing and goals
+- Objective: Deliver a low-power, field-deployable computer vision workflow that volunteer divers can use to capture, pre-screen, and upload imagery that quantifies reef health (percent live coral cover, bleaching extent, and nuisance algal cover) with verifiable accuracy and known energy/latency trade-offs.
+- Constraints: Edge devices ≤10 W continuous power; per-dive operation 60–90 minutes; underwater housings; robust to lighting, turbidity, color cast; minimal diver cognitive load.
+- Key use cases:
+  - In-dive assist: On-device “quality checks” (blur/turbidity alerts, coverage guidance) and optional real-time pre-screening for obvious bleaching.
+  - Post-dive analytics: Automated patch classification/segmentation for coral cover and bleaching extent, aligned to standardized transect methods (e.g., Reef Check, GCRMN) to ensure compatibility with established ecological indicators [2][3].
+- Success criteria by month 6:
+  - Edge model mAP50 ≥0.55 for coral/bleached-coral/algae/sand on local-test imagery; absolute coral cover error ≤7 percentage points against expert annotations on 20 held-out transects.
+  - End-to-end pipeline functional with volunteer divers: ≥500 annotated quadrat images ingested and processed; energy per processed frame recorded; per-dive battery budget demonstrated.
+  - Reproducible protocol aligned with citizen-science platforms (e.g., CoralNet labeling assistance, and standardized photo-quadrat layouts) [1][2][3].
+
+2) Experiments
+Experiment 1: Energy–accuracy trade-offs for edge models
+- Hypothesis: INT8-quantized lightweight detectors/segmenters (e.g., YOLOv5n/YOLOv8n on Coral TPU; MobileNetV3/EfficientNet-Lite classifiers) achieve within 3–5% of FP32 accuracy while cutting per-frame energy by ≥3× on Raspberry Pi + Coral USB TPU [8][9].
+- Setup:
+  - Hardware: Raspberry Pi 5 + Coral USB TPU in underwater housing; INA219 or inline USB-C power meter to log current draw.
+  - Models: TFLite INT8 and FP32 baselines for MobileNetV3/EfficientNet-Lite; YOLOv5n/YOLOv8n-tiny variants compiled for Edge TPU [8][9].
+  - Data: SUIM for segmentation benchmarking; site-specific coral-quadrat images collected via standardized transects (Reef Check/GCRMN formats) [6][2][3].
+- Baselines: FP32 MobileNetV3 and YOLO small models on CPU-only; cloud inference as upper-bound (not used in-dive).
+- Metrics: Accuracy/F1 for patch classification; mAP50 for detection; energy (mJ) per inference; throughput (FPS); per-dive energy budget (Wh) consumed at target frame rate.
+- Expected outcomes: INT8 models retain ≥95% accuracy of FP32 and reduce energy ≥3×; Coral TPU variants deliver ≥10 FPS at ≤5 W system draw for 640×480 inference [8][9].
+
+Experiment 2: Effect of underwater color correction on downstream detection
+- Hypothesis: Physics-based or learned color correction (Sea-Thru; DeepSeeColor) improves mAP and coverage estimates in turbid/green water, at the cost of added latency [4][5].
+- Setup:
+  - Preprocessing arms: None (raw), Sea-Thru (offline), DeepSeeColor (accelerated on device if feasible) [4][5].
+  - Tasks: Coral/bleached-coral/algae detection and segmentation; percent cover estimation from photo quadrats.
+  - Data: Site images under varied visibility; SUIM segments for baseline; hold-out set for evaluation [6].
+- Baselines: Raw images without correction.
+- Metrics: mAP50/mAP50-95, cover estimation absolute error, and image quality metrics UIQM/UCIQE to quantify perceptual improvement (final metric choice guided by recent reviews) [11].
+- Expected outcomes: Preprocessing increases mAP by 3–8 points in turbid conditions and reduces cover error by ≥2 pp; latency adds ≤50 ms/frame with optimized pipeline (on-device DeepSeeColor may be optional if latency too high) [4][5][11].
+
+Experiment 3: Human-in-the-loop calibration and guidance
+- Hypothesis: A simple field protocol (white-balance card shot at depth + standardized quadrat framing from Reef Check/GCRMN) reduces downstream false positives and cover error versus ad hoc capture [2][3].
+- Setup:
+  - Two diver groups: protocol-compliant vs free-form capture.
+  - In-dive assist: On-device prompts for blur/low UIQM and coverage gaps; diver instruction cards.
+- Baselines: Free-form images without calibration.
+- Metrics: False positive rate for bleaching, absolute cover error, average UIQM, time per quadrat.
+- Expected outcomes: Protocol group achieves ≥20% reduction in false positives and ≥3 pp improvement in cover accuracy; higher UIQM and more consistent framing [2][3][11].
+
+Experiment 4: Transfer to local reef domain with minimal labels
+- Hypothesis: Few-shot fine-tuning (50–200 labeled tiles) with CoralNet-assisted annotation achieves ≥80% of full fine-tune performance for local sites [1].
+- Setup:
+  - Start with model trained on SUIM + prior coral imagery; fine-tune with 50/100/200 local tiles.
+  - Labeling: CoralNet auto-suggestions plus expert verification to reduce annotation burden [1].
+- Baselines: Zero-shot model; full supervised fine-tune on all local labels.
+- Metrics: mAP, F1 for classes; label-hours vs performance curve.
+- Expected outcomes: 100 tiles/class recovers ≥80% of full performance; diminishing returns beyond 200 tiles.
+
+Experiment 5: End-to-end percent cover from photo quadrats
+- Hypothesis: Lightweight segmentation plus tiling yields cover estimates within 5–7 pp of expert readings for hard coral vs macroalgae vs sand.
+- Setup:
+  - Method: Grid-sampled point classification (CoralNet convention) vs pixel segmentation aggregation; compare both [1].
+  - Data: 100 quadrats validated by two experts (consensus ground truth).
+- Baselines: Traditional manual counts; simple color-threshold baseline.
+- Metrics: Absolute percentage error; Bland–Altman agreement plots; inter-rater reliability vs model.
+- Expected outcomes: Model agrees with experts within 7 pp; point-based aggregation is more stable for low-res images [1].
+
+3) Timeline for the next 6 months with milestones
+Month 1: Foundation and kit bring-up
+- Finalize protocols: Adopt Reef Check/GCRMN transect + photo-quadrat procedures; prepare diver instruction sheets [2][3].
+- Hardware kits: Assemble 3–5 units (Pi 5 + Coral USB TPU + camera + housing + power meter) and dry-run thermal/power tests [8][9].
+- Data audit: Pull SUIM and sample CoralNet imagery; define class schema (live coral/bleached coral/macroalgae/sand/other) [6][1].
+- Milestone: Edge device runs baseline INT8 classifier/detector at ≥8 FPS in lab; protocol checklist and consent forms ready.
+
+Month 2: Baselines and collection v1
+- Field pilot with 5–10 volunteers at 1–2 sites using standardized transects; collect 1,000–2,000 images with depth/lighting notes [2][3].
+- Train/evaluate baseline models; implement energy logging.
+- Milestone: Experiment 1 completed; report on energy–accuracy trade-offs and recommended model variant.
+
+Month 3: Color correction and HIL improvements
+- Implement Sea-Thru (offline) and evaluate DeepSeeColor pathway; integrate UI quality checks and on-device guidance [4][5][11].
+- Milestone: Experiment 2 and 3 completed; decision on whether to include on-device correction or post-dive only.
+
+Month 4: Few-shot adaptation and cover estimation
+- CoralNet-assisted labeling sprint (50–200 tiles/class) and few-shot fine-tuning [1].
+- Implement point-based vs segmentation-based cover estimation; expert validation planning.
+- Milestone: Experiment 4 completed with label-efficiency curve.
+
+Month 5: End-to-end validation and protocol hardening
+- Collect second cohort (another 1,000–2,000 images) across different visibility; expert annotate 100 quadrats.
+- Run Experiment 5; stress-test hardware (90-minute dives; temperature; housing integrity).
+- Milestone: End-to-end cover error ≤7 pp on held-out transects; finalize SOPs.
+
+Month 6: Deployment, documentation, and paper artifacts
+- Consolidate datasets, code, and model cards; document energy/performance metrics per device.
+- Volunteer training materials; submission-ready methods and results; plan for broader rollout with Reef Check/partners [2].
+- Milestone: Public release of pipeline, dataset subset, and report; draft manuscript sections (methods, experiments, limitations).
+
+4) Resources (compute, tools, datasets)
+- Edge compute:
+  - 3–5 kits: Raspberry Pi 5, Coral USB TPU, high-sensitivity camera module, underwater housing, desiccant, external battery packs (≥50 Wh), inline power meters [8][9].
+  - Optional Jetson Nano/Xavier NX for comparison if available (document power/latency deltas).
+- Software:
+  - Model frameworks: TFLite/Edge TPU compiler; Ultralytics/YOLO export tools for Edge TPU; on-device telemetry logging [9][8].
+  - Labeling/annotation: CoralNet account for assisted point annotations; Label Studio for polygons if needed [1].
+- Datasets:
+  - SUIM (Semantic Segmentation of Underwater Imagery) for baseline segmentation benchmarking [6].
+  - CoralNet historical imagery and local quadrats from pilot sites [1].
+  - Literature references and protocols: Reef Check manuals; GCRMN guidelines [2][3].
+  - Optional: “Polygonal annotated dataset to optimize coral monitoring” for region-level coral mapping references [10].
+- Metrics and QA:
+  - Detection/segmentation: mAP, IoU; cover estimation absolute error.
+  - Image quality: UIQM/UCIQE; finalize metric definitions from a recent review of underwater IQA methods [11].
+  - Operations: Energy per inference (mJ), FPS, per-dive Wh consumption.
+
+5) Risks and mitigations
+- Environmental variability (turbidity/lighting/color cast)
+  - Mitigations: Calibration shot at depth; color correction in post (Sea-Thru/DeepSeeColor); robust training with augmentation; quality metric gating [4][5][11].
+- Volunteer protocol adherence
+  - Mitigations: Simple checklists; on-device prompts for blur/coverage; brief training aligned with Reef Check/GCRMN procedures [2][3].
+- Limited labeled data and domain shift
+  - Mitigations: CoralNet-assisted annotations; few-shot fine-tuning; active learning loops [1].
+- Power/thermal limits underwater
+  - Mitigations: INT8 models on Coral TPU; thermal pads; log energy and throttle FPS if needed [8][9].
+- Housing leaks/equipment failure
+  - Mitigations: Pressure/vacuum pre-dive test; redundant O-rings; silica desiccants; quick-swap spares.
+- False positives in bleaching detection
+  - Mitigations: Combine color-corrected and raw pathways; threshold tuning with expert-verified sets; conservative alerts.
+- Ethical/safety and ecological disturbance
+  - Mitigations: Follow GCRMN/Reef Check guidance on minimal impact; informed consent; anonymize diver data [2][3].
+- Metric mismatch with scientists’ needs
+  - Mitigations: Report percent cover consistent with CoralNet point sampling and Reef Check categories; involve an expert reviewer early [1][2].
+
+6) Stretch ideas or follow-up directions
+- Semi-supervised learning: Pseudo-label hard negatives from raw dives to improve algae vs bleached-coral separation; evaluate gains vs label cost.
+- Photogrammetry light: Low-overhead structure-from-motion from stills post-dive to map cover over small plots; validate georeferenced change detection.
+- Robustness toolkit: Systematically test across visibility levels; domain randomization to approximate seasonal changes.
+- Community integration: Publish a “reef health index” dashboard and enable upload from broader citizen-science communities (Reef Check chapters) [2].
+
+Optional next step
+- In Month 1, order 3 Pi 5 + Coral USB TPU kits and run Experiment 1 with SUIM and 200 locally collected quadrats; this establishes your hardware–model Pareto frontier before customizing the field protocol.
+
+Citations
+[1] CoralNet — About CoralNet — https://coralnet.ucsd.edu/about/  
+[2] Reef Check — Coral Reef Monitoring and Management Using Reef Check (Manual) — https://www.reefcheck.org/wp-content/uploads/2020/07/ICZM.pdf  
+[3] GCRMN — Caribbean guidelines for biophysical coral reef monitoring — https://icriforum.org/wp-content/uploads/2019/12/GCRMN%20caribbean%20guidelines%20for%20biophysical%20coral%20reef%20monitoring.pdf  
+[4] Akkaynak & Treibitz (CVPR 2019) — Sea-Thru: A Method for Removing Water From Underwater Images — https://openaccess.thecvf.com/content_CVPR_2019/papers/Akkaynak_Sea-Thru_A_Method_for_Removing_Water_From_Underwater_Images_CVPR_2019_paper.pdf  
+[5] DeepSeeColor (arXiv 2023) — Realtime Adaptive Color Correction for Autonomous Underwater Robots — https://arxiv.org/pdf/2303.04025  
+[6] Islam et al. (IEEE 2020) — Semantic Segmentation of Underwater Imagery (SUIM) — https://ieeexplore.ieee.org/document/9340821  
+[7] Mahmood et al. (Remote Sensing 2020) — Monitoring of Coral Reefs Using Artificial Intelligence — https://www.mdpi.com/2072-4292/12/3/489  
+[8] River Publishers (2023) — Efficient Edge Deployment Demonstrated on YOLOv5 and Coral Edge TPU — https://www.riverpublishers.com/downloadchapter.php?file=RP_9788770227902C11.pdf  
+[9] Ultralytics — Coral Edge TPU on a Raspberry Pi with Ultralytics — https://docs.ultralytics.com/guides/coral-edge-tpu-on-raspberry-pi/  
+[10] A polygonal annotated dataset to optimize coral monitoring — https://pmc.ncbi.nlm.nih.gov/articles/PMC10634335/  
+[11] Underwater Image Quality Evaluation: A Comprehensive Review — https://ietresearch.onlinelibrary.wiley.com/doi/full/10.1049/ipr2.70068
+
+Note on evidence quality: The unified literature tool surfaced off-topic items; we therefore relied on domain-specific web sources (peer-reviewed where possible, e.g., CVPR Sea-Thru, IEEE SUIM, MDPI review) and practitioner docs for deployment. For any metrics (UIQM/UCIQE) we will confirm exact formulations from the review and original papers before final reporting [11].

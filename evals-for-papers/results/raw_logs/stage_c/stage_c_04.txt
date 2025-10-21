@@ -1,180 +1,147 @@
-1) Problem framing and goals
-Focus: Make high-impact, compute-light contributions by advancing evaluation, reproducibility, and documentation practices for LLM/NLP systems using existing models via public inference APIs and human-centered methods. This leverages:
-- Systematic synthesis (PRISMA) to map and assess practices without training models [1].
-- Reproducibility checklists and artifact audits to quantify scientific rigor and what correlates with replicable results [2][3].
-- Behavioral test design (e.g., CheckList) to uncover failures aggregate metrics miss, using small, carefully curated test suites and limited API calls [6].
-- Transparent documentation (Datasheets, Model Cards) to improve model understanding and reduce misuse [4][5].
+1. Problem framing and goals
+- Framing: With no local compute, focus on research that leverages:
+  - Evaluation via existing model APIs (compute runs on provider side) and public benchmarks.
+  - Data-centric audits (documentation completeness, label quality, dataset artifacts).
+  - Reproducible, low-cost measurement studies and reporting standards.
+- Why this matters: Data-centric improvements and comprehensive evaluation can drive substantive progress without training new models, especially in the LLM era [P2]. Clear reporting and standards strengthen reproducibility and external validity [P3]. Behavioral testing and holistic evaluation frameworks already exist and can be applied using APIs [n][n].
+- Concrete goals:
+  1) Build an API-based, reproducible behavioral evaluation suite for LLMs across safety, robustness, and bias that reuses HELM scenarios and CheckList templates [n][n].
+  2) Conduct a documentation audit of widely used datasets and models against Datasheets and Model Cards, and propose a rubric and compliance baseline [n][n][P3].
+  3) Estimate and validate label noise in popular datasets via Confident Learning using zero-shot or API predictions, and quantify downstream effects [n].
 
-Primary goals (6 months):
-- Deliver a PRISMA-compliant systematic review of current LLM evaluation practices and metric validity.
-- Build and validate a small-scope behavioral test suite and red-teaming protocol that reveals failures beyond accuracy; share as an open resource.
-- Conduct a limited-scope reproducibility audit of recent LLM papers (documentation, seeds, data, scripts) and analyze associations with result stability.
-- Author two high-quality documentation exemplars (Datasheet + Model Card) for widely used open models, with a small user study on usefulness.
-
-Methodology grounding: Prioritize clear questions, crisp experiments, and transparent reporting [G1][G10]; choose tractable, high-leverage problems over compute-heavy ones [G7]. Use PRISMA for reviews and the NeurIPS/JMLR reproducibility guidance for audits [1][2][3]. Use CheckList/Dynabench principles for behavioral test design [6][7]. Note: The unified research tool surfaced a broad review [P1] that mentions PRISMA and reproducibility but is off-target for LLM evaluation; we therefore cite primary sources directly [1–7].
-
-2) Experiments
-Experiment 1: Behavioral test suites catch failures missed by aggregate accuracy
-- Hypothesis: Carefully designed CheckList-style tests expose previously unreported LLM failure modes (contrast sets, MFTs, perturbations) even when benchmark accuracy is high [6].
-- Setup: 
-  - Task scope: basic reasoning + instruction-following (e.g., negation handling, numeracy, safety disclaimers).
-  - Build ~60 minimal test cases across 6 phenomena using CheckList-style templates. Use 2–3 public models via the Hugging Face free Inference API in small batches [10].
-  - Limit calls via sampling 5–10 examples per phenomenon to stay within zero-compute constraints.
-- Baselines: 
-  - Model-level baseline: reported benchmark accuracy (e.g., a simple subset of a public task or your suite’s aggregate accuracy).
-  - Human baseline on a 10–15 item subset (via small volunteer group).
-- Evaluation metrics:
-  - Failure rates per phenomenon; delta vs. aggregate accuracy.
-  - Robustness gap under minimal perturbations (e.g., paraphrase, distractor insertion).
-  - Inter-annotator agreement (Cohen’s kappa) on 20% of items.
-- Expected outcomes:
-  - Significant failure rates in at least 2 phenomena despite strong aggregate accuracy.
-  - Perturbation-induced drops >10 percentage points on some targeted skills.
-  - A compact, reusable test suite released publicly.
-- Evidence: Behavioral testing reveals beyond-accuracy issues [6]; adversarial collection benefits evaluation [7].
-
-Experiment 2: Reproducibility checklists correlate with stability of reported results
-- Hypothesis: Papers satisfying key checklist items (data/code availability, seeds, hyperparameters, environment) show more stable results when lightly replicated or cross-verified [2][3].
+2. Experiments
+Experiment 1: API-only behavioral robustness of LLMs
+- Hypothesis: Structured prompting and minimal guardrails (system instructions + refusal policies) reduce failure rates on behavioral tests without substantially harming task accuracy. This can be measured using CheckList capabilities and HELM scenarios [n][n].
 - Setup:
-  - Sample: 30–50 recent LLM evaluation papers from top venues.
-  - Score each paper with a rubric derived from the NeurIPS checklist and Pineau et al. criteria [2][3][9].
-  - Attempt “lite” replication: run an open model via API on a small subset (e.g., 20–30 items) approximating their evaluation to compute directionally consistent trends.
+  - Models: 3–5 widely used LLM APIs (e.g., major providers’ flagship and small models).
+  - Tasks: Subset of HELM scenarios (question answering, summarization, reasoning) and CheckList capability tests (invariance, directional expectations, minimal pairs) [n][n].
+  - Interventions: Baseline prompt; +system safety prompt; +structured task decomposition; +content policy reminders.
+  - Sampling: 500–2,000 items total across tasks to stay within low budget.
 - Baselines:
-  - Descriptive baseline: overall mean checklist score.
-  - Compare high-score vs low-score papers on replication success (binary) and deviation magnitude.
+  - Default prompt (provider’s recommended basic instruction).
+  - Provider’s safety-tuned model variant (if available).
 - Evaluation metrics:
-  - Correlation between checklist score and replication success.
-  - Median absolute deviation between reported and rechecked performance on a small subset.
+  - Task performance: exact match/F1 where applicable, or rubric-based correctness using a held-out judge with deterministic rules for tasks that allow it; for open-ended tasks, limited human rating on a small subset.
+  - Robustness: CheckList pass rate across perturbations [n].
+  - Risk-aware metrics (error rates under worst-case slices inspired by HELM) [n].
 - Expected outcomes:
-  - Positive association between checklist adherence and reproducibility proxies.
-  - Actionable guidance on which checklist items are most predictive of stability.
-- Evidence: Formal checklists and reporting standards improve reproducibility [2][3][9].
+  - Quantify robustness gaps between default vs structured prompting and across models.
+  - Identify scenarios where safety prompting causes meaningful performance regressions (if any) and where it reduces harmful outputs [n].
+  - A reproducible harness and release of prompts, outputs, and analysis.
 
-Experiment 3: Model documentation improves practitioner understanding and intended-use alignment
-- Hypothesis: Providing Model Cards and Datasheets improves practitioners’ decision quality and reduces misuse compared to standard README-style docs [4][5].
+Experiment 2: Measuring bias and toxicity trade-offs using public benchmarks
+- Hypothesis: Stronger safety prompting reduces toxicity on RealToxicityPrompts and stereotype-leaning preferences on CrowS-Pairs/StereoSet with minimal degradation of helpfulness on benign prompts [n][n][n].
 - Setup:
-  - Select 2 open models with limited official documentation.
-  - Author Model Card + Datasheet for each using the original frameworks [4][5].
-  - User study: randomized between-subjects online study (n=30–40 practitioners) comparing standard README vs enhanced documentation; tasks include choosing a model for a use case and identifying risks.
+  - Datasets: RealToxicityPrompts (toxicity stress-test) [n], CrowS-Pairs (stereotypical bias minimal pairs) [n], StereoSet (intra/inter-sentence bias) [n].
+  - Models: Same APIs as Exp. 1.
+  - Prompt conditions: default vs safety-optimized system prompts; user identity disclaimers; refusal-first vs justify-and-redirect strategies.
 - Baselines:
-  - Control arm: standard README or brief model page.
+  - Default prompting; safety-tuned model variant (if available).
 - Evaluation metrics:
-  - Decision quality score (rubric-based), time to decision, risk identification count, and self-reported confidence.
+  - Toxicity: Perspective API probabilities and mean toxicity; fraction above thresholds [n].
+  - Bias: CrowS-Pairs score (prefer anti-stereotype over stereotype completions) [n]; StereoSet language-model preference scores [n].
+  - Helpfulness: Simple rubric-based correctness on benign prompts; small-sample human rating for content-preserving quality trade-offs.
 - Expected outcomes:
-  - Statistically significant improvements in risk identification and alignment with intended use in the treatment group.
-- Evidence: Datasheets and Model Cards improve transparency and help reduce misuse [4][5].
+  - Measure trade-offs between toxicity reduction and helpfulness.
+  - Identify prompt patterns that consistently reduce toxicity and bias across models [n][n][n].
 
-Experiment 4 (optional): PRISMA review of LLM evaluation metrics for reasoning validity
-- Hypothesis: Many evaluation metrics used for “reasoning” conflate surface accuracy with construct validity; a PRISMA review will reveal gaps and inconsistent operationalization [1].
+Experiment 3: Documentation audit for datasets and model releases
+- Hypothesis: A sizable fraction of widely used datasets/models lack key documentation elements (provenance, curation, intended use, limitations), and a rubric-driven audit can quantify gaps and improve reporting practices [n][n][P3].
 - Setup:
-  - Register a protocol, define inclusion/exclusion, search strings, and screening process per PRISMA 2020 [1].
-  - Extract metric definitions, reported validity evidence, and failure analyses.
+  - Sample: Top 50–100 datasets and top 30–50 models on Hugging Face by downloads.
+  - Rubric: Binary/ordinal checks derived from Datasheets (dataset motivation/provenance/collection/annotation/ethical considerations/maintenance) and Model Cards (intended use, metrics, limitations, ethical considerations) [n][n].
+  - Process: Two independent raters per item; adjudicate disagreements.
 - Baselines:
-  - None (systematic review).
+  - None (establish first public baseline). Compare against any limited prior surveys if found; otherwise note as first comprehensive audit.
 - Evaluation metrics:
-  - Taxonomy coverage; fraction of papers providing validity arguments; inter-rater reliability for screening.
+  - Coverage % per rubric field; inter-rater agreement (Cohen’s kappa); correlations between documentation completeness and downstream indicators (e.g., number of issues filed, reported harms).
 - Expected outcomes:
-  - A taxonomy of reasoning metrics and identified validity gaps, informing Experiment 1’s design.
-- Evidence: PRISMA provides rigorous, transparent review methodology [1].
+  - A transparent baseline of documentation quality; a shareable rubric and codebook; recommendations mapped to REFORMS-style reporting needs [P3].
 
-Two literature anchors:
-- Pineau et al., Improving Reproducibility in Machine Learning Research (JMLR 2021) [2].
-- Ribeiro et al., Beyond Accuracy: Behavioral Testing of NLP Models with CheckList (ACL 2020) [6].
+Experiment 4 (optional but low-cost): Label noise estimation via Confident Learning with API predictions
+- Hypothesis: Confident Learning using zero-shot/API-generated label probabilities will detect non-trivial label errors in popular classification datasets, and cleaning a small identified subset improves measured accuracy using simple classifiers [n].
+- Setup:
+  - Datasets: Choose 2–3 mid-sized classification datasets (e.g., sentiment, topic classification).
+  - Predictions: Obtain class probabilities via API zero-shot classification; run Confident Learning to flag likely mislabeled examples [n].
+  - Validation: Manual re-annotation of a small subset (n=200–400) by 2–3 annotators to estimate precision of error flags.
+  - Downstream: Evaluate a lightweight classifier using API embeddings (provider-side compute) on original vs cleaned labels.
+- Baselines:
+  - Original dataset labels; random sample of suspected errors as negative control.
+- Evaluation metrics:
+  - Estimated label error rate; precision of error detection; change in accuracy/F1 before vs after cleaning; inter-annotator agreement.
+- Expected outcomes:
+  - Evidence of label quality issues and pragmatic cleaning protocols that require no training compute [n][P2].
 
-3) Timeline for the next 6 months with milestones
-Month 1: Scope and protocols
-- Finalize project scope; select model set and phenomena for tests [6].
-- Draft PRISMA protocol; define search strings and screening criteria [1].
-- Design reproducibility audit rubric (derive from [2][3][9]); pilot on 3 papers.
-- Draft Model Card/Datasheet templates [4][5].
-Milestones: Registered protocol (OSF), finalized rubrics, pilot test suite v0.1.
+3. Timeline for the next 6 months with milestones
+- Month 1:
+  - Preregister study designs (scope, hypotheses, metrics, analysis plans). Align rubric with Datasheets/Model Cards and REFORMS [n][n][P3].
+  - Set up minimal codebase: prompt runners, logging, versioning, and evaluation scripts (include cost logging).
+  - Pilot small samples for each experiment; finalize sample sizes and budget.
+- Month 2:
+  - Run Experiment 1 pilot at scale (500–1,000 items); analyze robustness metrics; iterate prompts.
+  - Begin documentation audit: train raters, finalize rubric; double-code 10 items to calibrate.
+- Month 3:
+  - Complete Experiment 2 data collection; compute toxicity/bias metrics and helpfulness checks [n][n][n].
+  - Continue audit to 50% coverage; resolve disagreements; refine codebook.
+- Month 4:
+  - Finish audit; compute coverage statistics and inter-rater reliability; draft recommendations tied to reporting standards [P3].
+  - (Optional) Execute Experiment 4 label-noise detection; run human validation on flagged subset [n].
+- Month 5:
+  - Synthesize cross-experiment findings; ablations (prompt variants, model variants).
+  - Prepare reproducibility package (configs, seeds, prompts, outputs, scripts).
+  - Draft paper: methods, results, limitations.
+- Month 6:
+  - Internal replication on held-out subsets; sanity checks; sensitivity analyses.
+  - Finalize manuscript and artifacts; submit to an appropriate venue (e.g., evaluation/ethics/data-centric workshops or journals).
+  - Prepare public release: benchmark scripts, audit rubric, and summary dashboard.
 
-Month 2: Build small-scope test suite and pilot audits
-- Author 60 behavioral test items across 6 phenomena; validate with 2–3 volunteers.
-- Run limited API calls to 2–3 models; collect preliminary results [10].
-- Audit 15 papers with the checklist; refine rubric.
-Milestones: Test suite v1.0; interim audit report; preregister Experiment 1 and 2 analyses.
-
-Month 3: Documentation and user study prep
-- Write Model Cards and Datasheets drafts for 2 models [4][5].
-- Prepare user study instruments and pilot with 5 participants.
-- Extend paper audits to 30–50 total; begin light replications on small subsets.
-Milestones: Documentation drafts; IRB/ethics self-assessment; audit dataset frozen.
-
-Month 4: Main data collection
-- Run full behavioral tests on selected models via API (throttled) [10].
-- Conduct user study (n=30–40) using online forms; analyze early results.
-- Complete light replications and finalize reproducibility analysis.
-Milestones: Cleaned datasets; pre-analysis plans executed.
-
-Month 5: Analysis and writing
-- Analyze behavioral test outcomes; compare to aggregate accuracy; compute robustness gaps [6].
-- Statistical analysis of audit vs replication outcomes [2][3].
-- Analyze user study outcomes; incorporate qualitative feedback.
-Milestones: Draft figures/tables; paper drafts for (i) test suite + findings, (ii) reproducibility audit, (iii) documentation user study.
-
-Month 6: Consolidation and submission
-- Integrate PRISMA review narrative; finalize all manuscripts [1].
-- Release artifacts: test suite, audit rubric and dataset, documentation templates.
-- Target venues: ACL/NAACL workshops on evaluation (e.g., Humeval), NeurIPS Datasets and Benchmarks or Reproducibility workshops; FAccT/AAAI workshops for documentation/ethics.
-Milestones: Preprints, submissions, artifact repositories.
-
-4) Resources (compute, tools, datasets)
-- Compute: None required locally. Use:
-  - Hugging Face Inference API free tier to query small-to-medium models with strict rate limits [10].
-  - Spreadsheet/statistics tools (Google Sheets/R, Python locally for stats if possible; otherwise browser-based tools).
+4. Resources (compute, tools, datasets)
+- Compute:
+  - No local training. All inference via hosted APIs (provider-side compute).
+  - Optional free tiers: Google Colab Free/Kaggle for orchestration (CPU ok).
 - Tools:
-  - CheckList for behavioral test design [6].
-  - Dynabench principles and Dynaboard for holistic evaluation framing [7].
-  - NeurIPS Reproducibility Checklist and Pineau et al. as audit basis [2][3][9].
-  - OSF or GitHub Pages for preregistration, artifact sharing, and transparency.
-  - Survey tools (Google Forms) for user studies.
-- Datasets/material:
-  - Small, hand-authored test items (your test suite).
-  - For light replications: subsets of public benchmarks (tiny slices) compatible with fair use; document sampling.
-  - Paper corpus for audit (30–50 recent LLM evaluation papers).
-- Documentation frameworks:
-  - Datasheets for Datasets [4].
-  - Model Cards for Model Reporting [5].
+  - Evaluation: HELM harness or scripts for risk-aware evaluation [n]; CheckList for behavioral testing [n].
+  - Documentation audit: Datasheets/Model Cards templates; simple annotation UI (e.g., spreadsheet + instructions) [n][n].
+  - Label noise: Confident Learning (cleanlab) methodology; API classification/embeddings for predictions [n].
+  - Toxicity/bias scoring: Perspective API; CrowS-Pairs/StereoSet scoring scripts [n][n][n].
+  - Reproducibility: Git, DVC or lightweight data/version logging; preregistration on OSF.
+- Datasets/benchmarks:
+  - RealToxicityPrompts [n], CrowS-Pairs [n], StereoSet [n], HELM scenarios [n].
+- Budget:
+  - Start with a pilot budget (e.g., $100–$300) and scale carefully; log token costs per run to maintain compute accounting.
 
-5) Risks and mitigations table
-- Risk: API rate limits or model unavailability.
-  - Mitigation: Predefine tiny batches; cache responses; diversify providers; schedule off-peak queries [10].
-- Risk: Human annotation noise.
-  - Mitigation: Clear instructions; training examples; dual annotation with adjudication; report inter-annotator agreement.
-- Risk: IRB/ethics for user studies.
-  - Mitigation: Use minimal-risk protocols; anonymize; obtain informed consent; consider institutional review or community ethics checklist.
-- Risk: Low external validity of small test suite.
-  - Mitigation: Cover diverse phenomena; release suite for community extensions; transparently report limits [6][7].
-- Risk: Novelty overlap with existing evaluations.
-  - Mitigation: PRISMA scoping to ensure gap; register protocol; focus on underexplored phenomena [1].
-- Risk: Reproducibility audit subjectivity.
-  - Mitigation: Use established checklists and double-coding; publish rubric and inter-rater reliability [2][3][9].
-- Risk: Limited practitioner recruitment for user study.
-  - Mitigation: Recruit via forums, student groups; compensate with recognition; reduce session time to 10–12 minutes.
-- Risk: Legal/ethical issues around model outputs.
-  - Mitigation: Filter sensitive content; document safety considerations in Model Cards; follow platform acceptable-use policies [5].
+5. Risks and mitigations
+- Risk: API policy or model changes during study.
+  - Mitigation: Pin model versions when possible; cache prompts/outputs; rerun small stability checks monthly.
+- Risk: Measurement validity (toxicity/bias metrics may not fully capture harm).
+  - Mitigation: Use multiple metrics (Perspective + human spot checks); report metric limitations explicitly [n].
+- Risk: Small sample sizes limit statistical power.
+  - Mitigation: Preregister power targets; focus on medium-to-large effect sizes; report CIs and sensitivity analyses [P3].
+- Risk: Annotation bias in documentation audit and label verification.
+  - Mitigation: Clear codebook; double-coding; compute inter-rater kappa; adjudication protocol [P3].
+- Risk: Budget overruns from API calls.
+  - Mitigation: Progressive sampling; early stopping if effects are clear; cost dashboards.
+- Risk: Dataset licensing/ethical concerns.
+  - Mitigation: Verify licenses; avoid personal data; follow dataset creators’ use policies; include ethics statement [P3].
 
-6) Stretch ideas or follow-up directions
-- Public micro-benchmark hub: a website hosting your small-scope behavioral tests, with community submissions and leaderboards (evaluation-as-a-service ethos) [7].
-- Cross-model documentation study: Compare how documentation quality varies across model providers; propose a minimal standard distilled from Model Cards + Datasheets [4][5].
-- Construct validity audits: Formalize a rubric for assessing whether an evaluation actually measures the claimed construct (reasoning, alignment), and apply it to 100+ papers via crowd annotation (scalable, non-compute).
-- Red-teaming playbooks: Release scenario-based templates for safely probing models’ safety and instruction-following failures with minimal tokens.
-
-Optional next step
-If helpful, I can draft the PRISMA protocol (research questions, search strings, inclusion/exclusion, screening flow) and the reproducibility audit rubric this week so you can start immediately.
+6. Stretch ideas or follow-up directions
+- Release a small, fully reproducible benchmark of behavioral tests and bias/toxicity prompts with scripts and documented costs; integrate into HELM-style reporting [n].
+- Build a public documentation leaderboard for Model Cards/Datasheets completeness with recommendations and templates [n][n].
+- Cross-lingual extensions: replicate Experiments 1–2 in 2–3 additional languages using translated CheckList templates.
+- Explore data-centric mitigations: curating small, high-quality prompt sets that reduce failure rates; publish ablation on prompt design choices [P2].
+- Meta-research: analyze correlations between documentation completeness and downstream incident reports or issue tracker flags [P3].
 
 Citations
-- [G1] Schulman, An Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
-- [G7] Hamming, You and Your Research — https://gwern.net/doc/science/1986-hamming
-- [G10] Nielsen, Principles of Effective Research — http://michaelnielsen.org/blog/principles-of-effective-research/
-- [1] PRISMA 2020 statement (BMJ) — https://pubmed.ncbi.nlm.nih.gov/33782057/
-- [2] Pineau et al., Improving Reproducibility in Machine Learning Research (JMLR 2021) — https://jmlr2020.csail.mit.edu/papers/volume22/20-303/20-303.pdf
-- [3] The Machine Learning Reproducibility Checklist (v2.0) — https://www.cs.mcgill.ca/~jpineau/ReproducibilityChecklist.pdf
-- [4] Gebru et al., Datasheets for Datasets — https://arxiv.org/pdf/1803.09010
-- [5] Mitchell et al., Model Cards for Model Reporting — https://arxiv.org/pdf/1810.03993
-- [6] Ribeiro et al., Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://aclanthology.org/2020.acl-main.442.pdf
-- [7] Kiela et al., Dynabench: Rethinking Benchmarking in NLP — https://aclanthology.org/2021.naacl-main.324.pdf
-- [9] NeurIPS Paper Checklist Guidelines — https://neurips.cc/public/guides/PaperChecklist
-- [10] Hugging Face Inference API documentation — https://huggingface.co/docs/hub/en/models-inference
-- [P1] Trustworthy AI in Alzheimer’s Disease (cites PRISMA, reproducibility; generic) — https://citius.gal/static/21b436241ccbee8b312ce563a9884369/online_s10462_023_10415_5_2023031311303956_823aa87ab5.pdf
+- [P2] Data-Centric AI in the Age of Large Language Models — https://arxiv.org/abs/2406.14473
+- [P3] REFORMS: Reporting Standards for Machine Learning Based Science — https://arxiv.org/abs/2308.07832
+- [n] Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
+- [n] Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://arxiv.org/abs/2005.04118
+- [n] Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
+- [n] Datasheets for Datasets — https://arxiv.org/abs/1803.09010
+- [n] Confident Learning (JAIR) — https://dl.acm.org/doi/10.1613/jair.1.12125
+- [n] CrowS-Pairs — https://arxiv.org/pdf/2010.00133
+- [n] StereoSet — https://arxiv.org/abs/2004.09456
+- [n] RealToxicityPrompts — https://github.com/allenai/real-toxicity-prompts
+
+Optional next step
+- If you want, I can draft a 2-page preregistration for Experiments 1–2 with exact prompts, sample sizes, and an itemized API cost plan.

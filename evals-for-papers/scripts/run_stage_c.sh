@@ -17,7 +17,7 @@ uv run python -m evaluation.scripts.run_single_turn_batch \
   --output-label ${STAGE}_gpt5_baseline_oct21 \
   --skip-judge \
   --judge openrouter:google/gemini-2.5-flash-lite
-
+STAGE=stage_c
 echo "== Claude baseline :: ${STAGE} =="
 uv run python -m evaluation.scripts.run_single_turn_batch \
   --input evaluation/data/evals_single_turn.jsonl \

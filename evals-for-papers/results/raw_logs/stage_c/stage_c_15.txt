@@ -1,0 +1,141 @@
+1) Problem framing and goals
+- Problem: AI legal assistants can accelerate legal work but risk harmful errors (e.g., hallucinated citations, unsupported legal assertions) and miscalibrated user trust. Existing benchmarks (e.g., LegalBench, LexGLUE) measure task competence but do not fully capture human-centered outcomes such as trust calibration, automation bias, time-on-task, and error severity in realistic workflows. We will design and execute a rigorous, IRB-approved human-centered evaluation that measures accuracy, safety, efficiency, and trust calibration for lawyers using AI assistants on core tasks: legal research, case law grounding, and contract review [LegalBench arXiv:2308.11462; LexGLUE 2110.00976; ContractNLI EMNLP 2021; CUAD 2021] [1][2][4][3].
+- Key gaps:
+  - Legal-specific hallucination profiles and error taxonomies are emerging and require domain validation [Profiling Legal Hallucinations in LLMs, 2024] [7].
+  - Calibration and selective answering can reduce harms but need to be tested with legal professionals and legal corpora [Language Models (Mostly) Know What They Know, 2022] [8].
+  - Legal research tools with RAG still hallucinate; reliability must be quantified with strong human adjudication [Free? Assessing the Reliability of Leading AI Legal Research Tools, 2024] [7].
+- Goals:
+  1) Quantify grounded accuracy, hallucination rates, and error severity across tasks and assistant designs.
+  2) Measure trust calibration, automation bias, and efficiency for lawyers with/without uncertainty and grounding UI.
+  3) Produce a reproducible evaluation protocol, legal error taxonomy, and open materials (redacted) to inform policy and product design.
+
+2) Experiments
+Experiment 1: Retrieval-grounded research memos (offline + expert adjudication)
+- Hypothesis: A retrieval-augmented assistant with mandatory pinpoint citations and selective answering reduces hallucinations and increases grounded accuracy relative to a base LLM without retrieval, at comparable coverage [Free? 2024; LegalBench 2023] [7][1]. Adding uncertainty-based abstention further reduces severe errors [8][P1].
+- Setup:
+  - Tasks: 50–100 legal research prompts sampled from LegalBench-style tasks and public case datasets (CourtListener, Case.law CAP) with gold authorities identified by two senior attorney annotators [1][9][10].
+  - Systems: (a) Base LLM; (b) RAG with statute/case corpora; (c) RAG + “cite-then-answer” constraint; (d) RAG + uncertainty calibration + abstention thresholds (entropy, SelfCheckGPT-style self-consistency) [7][6][P1].
+  - Corpora: CourtListener bulk case law, CAP, public statutes/regulations; no client data [9][10].
+- Baselines: Base LLM; RAG without grounding enforcement; SelfCheckGPT-only guard without retrieval [6].
+- Evaluation metrics:
+  - Grounded accuracy: proportion of claims supported by cited authorities (precision/recall at claim level), citation validity (case existence + relevance), and Delusion/Unsupported spans [7].
+  - Hallucination rate: unsupported factual/legal claims per 1,000 tokens; fake citations rate [7].
+  - Calibration: selective risk curves (coverage vs. accuracy), ECE/Brier score over token- or span-level confidence [8][P1].
+  - Adjudication: two licensed attorneys; Krippendorff’s alpha; severity coding (material/non-material error).
+- Expected outcomes: RAG + cite-then-answer + abstention yields lower hallucination and higher grounded accuracy than base LLM; abstention improves severe-error reduction with acceptable coverage tradeoffs [7][8][P1].
+
+Experiment 2: Contract review with practicing lawyers (lab, randomized, within-subjects)
+- Hypothesis: An assistant that surfaces clause-level highlights and provenance (CUAD labels, ContractNLI evidence) improves recall of risk clauses and reduces task time, but may increase automation bias; adding calibrated uncertainty indicators and “evidence-first” UI aligns trust with correctness [2][3][4][8].
+- Setup:
+  - Participants: 36–48 licensed attorneys and advanced clinic students (screened for domain familiarity); randomized cross-over: with-AI vs without-AI; counterbalanced task order.
+  - Tasks: Clause identification (CUAD), entailment/consistency checks (ContractNLI-like), redline suggestions on public contracts.
+  - Conditions: (A) No-AI; (B) AI assistant (ranked clauses + suggested labels + links to contract spans); (C) AI + uncertainty badges (per clause confidence, “needs review” flags via self-consistency/entropy) [6][8].
+- Baselines: No-AI; AI without uncertainty; heuristic confidence (length-based) as naive baseline.
+- Evaluation metrics:
+  - Task: Recall@k and precision of risk clause detection; F1 on entailment; time-on-task; error severity (missed critical clause).
+  - Human factors: SUS, NASA-TLX, Trust in Automation scale; trust calibration slope (reported trust vs correctness).
+  - Safety: rate of accepting incorrect AI suggestions; automation bias index difference between conditions [automation bias literature] [12].
+- Expected outcomes: AI improves recall and time; uncertainty-aware UI reduces over-trust and high-severity acceptance without significant time penalty [2][3][12].
+
+Experiment 3: Citation reliability and hallucination containment in legal memos (live drafting)
+- Hypothesis: “Cite-before-claim” prompting plus retrieval pin-pointing reduces fake citations and unsupported legal propositions in produced memos; adding a secondary self-check pass further reduces residual errors [7][6].
+- Setup:
+  - Participants: 24–30 lawyers drafting short memos to a prompt with public facts; assistant variants: (i) Base; (ii) Cite-before-claim; (iii) Cite-before-claim + SelfCheckGPT verification + blocked output for unverifiable claims; (iv) Cite-before-claim + uncertainty-based defer-to-human when evidence absent [6][7].
+  - Corpus: CourtListener/CAP and major annotated secondary sources; strict restriction to public sources.
+- Baselines: Base LLM; RAG without verification.
+- Evaluation metrics:
+  - Fake citation rate; proportion of claims with valid pinpoint support; human-rated memo quality (blind review); rate of blocked outputs; user satisfaction.
+- Expected outcomes: Significant reduction in fake citations and unsupported claims in (iii)/(iv) vs base; minor trade-off in coverage [7][6].
+
+Anchors for experiments:
+- LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning (arXiv:2308.11462) [1]
+- LexGLUE: A Benchmark Dataset for Legal Language Understanding in English (2021) [2]
+- ContractNLI (EMNLP 2021 Findings) [4]
+- CUAD: An Expert-Annotated NLP Dataset for Legal Contract Review (2021) [3]
+- Profiling Legal Hallucinations in Large Language Models (2024) [7]
+- SelfCheckGPT: Zero-Resource Black-Box Hallucination Detection (2023) [6]
+- Language Models (Mostly) Know What They Know (2022) [8]
+- LLM Internal States Reveal Hallucination Risk (uncertainty) (2024) [P1]
+
+3) Timeline for the next 6 months with milestones
+Month 0–1: IRB, preregistration, and pilot design
+- Draft IRB protocol (minimal risk, no client data; consent; confidentiality; data retention; compensation; withdrawal rights). Consider Certificate of Confidentiality where applicable [13]. Use social/behavioral IRB pathways [15].
+- Finalize error taxonomy and coding manual using legal-specific hallucination typology [7].
+- Build RAG pipeline over CourtListener/CAP; implement “cite-then-answer,” uncertainty scoring (entropy, self-consistency), and abstention [6][8].
+- Preregister hypotheses and analysis plans (OSF).
+
+Month 2: Offline evaluation (Experiment 1)
+- Collect 50–100 prompts and gold authorities; train adjudicators; run systems; compute metrics; calibrate uncertainty thresholds.
+
+Month 3: Lab pilot + revisions
+- Pilot Experiments 2–3 with 6–8 lawyers; refine tasks, UI, instructions, and safety pauses; finalize sample size via power analysis.
+
+Month 4: Main user study (Experiment 2)
+- Recruit and run 36–48 participants; counterbalanced within-subjects; collect behavioral and survey measures; interim quality checks.
+
+Month 5: Live drafting study (Experiment 3)
+- Run 24–30 participants; evaluate citation validity and unsupported claims; qualitative debriefs.
+
+Month 6: Analysis and dissemination
+- Inter-rater reliability, preregistered analyses, ablations; draft paper; release redacted prompts, code, and evaluation rubric; submit to HCI/AI venues.
+
+4) Resources (compute, tools, datasets)
+- Compute:
+  - API-based evaluation (e.g., GPT-4 class) plus open models for ablations; modest GPU (A100 40–80GB or cluster with T4/L4) for retrieval indexing and inference at scale.
+- Tools:
+  - RAG stack: Haystack or LlamaIndex; Elasticsearch/Weaviate for indexing; LangChain orchestration.
+  - Evaluation: custom claim-level scorer; citation validator against CourtListener/CAP APIs; agreement metrics (Krippendorff’s alpha).
+  - Annotation: Prodigy or Label Studio; surveys via Qualtrics/REDCap.
+  - Logging: secure, access-controlled storage; audit trails.
+- Datasets/corpora:
+  - LegalBench tasks [1]; LexGLUE tasks [2]; CUAD contracts [3]; ContractNLI [4].
+  - Public case law: CourtListener bulk data and API [9]; Case.law (Caselaw Access Project) [10].
+  - For research safety prompts: curated “gotcha” queries from legal hallucinations profiling [7].
+
+5) Risks and mitigations table
+- Recruitment of licensed attorneys is slow; Mitigation: partner with law clinics/bar associations; offer fair compensation and flexible scheduling.
+- IRB delays due to perceived legal risk; Mitigation: emphasize public/non-client data use, minimal risk, data minimization, and confidentiality; consider Certificate of Confidentiality [13][15].
+- Participants might inadvertently input sensitive data; Mitigation: hard UI block on free-text that resembles client identifiers; training; de-identification; no upload of external documents without vetting.
+- Automation bias leading to acceptance of wrong AI suggestions; Mitigation: uncertainty badges, “evidence-first” UI, mandatory review checklists, and training on proper use; measure and cap acceptance of low-confidence suggestions [12][8].
+- Hallucinated citations harming participants’ confidence; Mitigation: synthetic tasks; post-task debrief; disclaimers that outputs are research-only; block unverifiable claims [7][6].
+- Vendor/API changes; Mitigation: keep at least one open model baseline; version pinning; snapshotting corpora.
+- Data leakage or re-identification; Mitigation: store only anonymized interactions; encrypt at rest; restrict access; documented retention and deletion schedule per IRB [15].
+- Low inter-annotator agreement; Mitigation: adjudicator training, pilot calibration, and clear rubric based on legal hallucination taxonomy [7].
+
+6) Stretch ideas or follow-up directions
+- Field deployment in law school clinics with longer-term outcomes (learning, error catch rate, time to motion draft).
+- Adaptive task triage using model uncertainty and task difficulty estimates to route to human vs AI (optimize utility-risk curve) [8][P1].
+- Comparative evaluation of different grounding strategies (case-only vs statute+secondary sources) on hallucination profiles [7].
+- Meta-evaluation: build a public, de-identified benchmark of legal hallucination cases with human rationales and severity tags to complement LegalBench [7].
+- Defense-in-depth: combine uncertainty-aware abstention with adversarial self-checks and external citation validation pipeline [6][7].
+
+IRB/ethics steps (integrated across phases)
+- Participant population: licensed attorneys and advanced law students; minimal risk behavioral study.
+- Consent: clear statement that no client data will be used; tasks are synthetic or from public docs; no legal advice is provided; right to withdraw at any time.
+- Privacy/confidentiality:
+  - Prohibit entry of client-identifying information; filter/redact any inadvertent PII; store data on encrypted, access-controlled servers with retention limits [15].
+  - Consider Certificate of Confidentiality for added protection when collecting potentially sensitive professional opinions [13].
+- Risk management: debrief participants; clearly label outputs as research-only; block unverifiable claims; provide support contacts if discomfort occurs.
+- Compensation: fair market rate for attorney time; avoid undue influence.
+- Data handling: preregistered analysis; de-identification; sharing only aggregated/anonymized results.
+- Oversight: social/behavioral IRB review; adverse event reporting plan [15].
+
+Optional follow-up suggestion
+- Before Month 2, run a 1-week dry run replicating two public findings—(a) fake-citation rate from the Stanford legal RAG study [“Free?” 2024] and (b) coverage–accuracy selective answering curves [8]—to validate your pipelines end-to-end and refine thresholds.
+
+Citations
+- [P1] LLM Internal States Reveal Hallucination Risk Faced With a Query — http://arxiv.org/abs/2407.03282v2
+- [1] LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning — https://arxiv.org/abs/2308.11462
+- [2] LexGLUE: A Benchmark Dataset for Legal Language Understanding in English — https://eprints.whiterose.ac.uk/id/eprint/178919/1/2110.00976v1.pdf
+- [3] CUAD: An Expert-Annotated NLP Dataset for Legal Contract Review — https://www.researchgate.net/publication/349963118_CUAD_An_Expert-Annotated_NLP_Dataset_for_Legal_Contract_Review
+- [4] ContractNLI: A Dataset for Document-level Natural Language Inference for Contracts — https://aclanthology.org/2021.findings-emnlp.164.pdf
+- [6] SelfCheckGPT: Zero-Resource Black-Box Hallucination Detection for Generative LLMs — https://arxiv.org/abs/2303.08896
+- [7] Profiling Legal Hallucinations in Large Language Models — https://arxiv.org/pdf/2401.01301
+- [8] Language Models (Mostly) Know What They Know — https://arxiv.org/abs/2207.05221
+- [9] CourtListener Bulk Legal Data — https://www.courtlistener.com/help/api/bulk-data/
+- [10] Caselaw Access Project (case.law) — https://case.law/about/
+- [12] Automation Bias in AI-Decision Support: Results from an Empirical Study — https://pubmed.ncbi.nlm.nih.gov/39234734/
+- [13] Certificate of Confidentiality (IRB-SBS) — https://hrpp.research.virginia.edu/teams/irb-sbs/researcher-guide-irb-sbs/certificate-confidentiality-irb-sbs
+- [15] Social and Behavioral Research - UCSF IRB — https://irb.ucsf.edu/social-and-behavioral-research
+
+Note on evidence coverage: Domain-specific legal hallucination and legal-RAG reliability sources are still sparse; we anchor to LegalBench/LexGLUE and emerging analyses of legal hallucinations and legal research tool reliability [1][2][7]. General calibration and abstention evidence is adapted from broader LLM literature and must be validated in the legal domain via the proposed experiments [8][P1]. Where sources were generic (IRB references), we selected authoritative institutional guidance and specified legal-specific operationalizations [13][15].

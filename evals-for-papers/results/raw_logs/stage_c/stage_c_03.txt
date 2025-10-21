@@ -1,134 +1,146 @@
 1) Problem framing and goals
-- Ambition vs reality: “Curing cancer with AI tomorrow” is not feasible. A high-impact, near-term objective is to improve patient selection and hypothesis generation for immunotherapy (PD-1/PD-L1), where heterogeneous benefit and toxicity remain major unmet needs. We will develop and externally validate a multimodal, pretreatment predictor of immune checkpoint inhibitor (ICI) benefit with transparent reporting and clinical utility analysis. We will adhere to TRIPOD+AI reporting, assess risk of bias with PROBAST+AI, and quantify clinical net benefit via Decision Curve Analysis (DCA). [2][3][1]
-- Primary goal: Build, calibrate, and externally validate a pretreatment model that predicts objective response and survival (PFS/OS) to anti–PD-1/PD-L1 using transcriptomics, tumor mutational burden (TMB), PD-L1, histology whole-slide images (WSI) where available, and clinical covariates. Evaluate clinical utility with DCA and prepare for early-stage prospective silent evaluation per DECIDE-AI. [1][6]
-- Scope and cohorts: Urothelial carcinoma (IMvigor210) and melanoma (Hugo 2016; Riaz 2017/2018; Gide 2019) as development and external-validation sets, reflecting diverse tumor-immune contexts. [9][10][7][8]
-- Secondary goals:
-  - Quantify incremental value of each modality (RNA, WSI, TMB, PD-L1) beyond standard biomarkers.
-  - Assess transportability across tumor types and sites.
-  - Provide mechanistic interpretability linking model signals to known T cell states and immune pathways. [7]
-  - Prepare protocol and guardrails for prospective evaluation (SPIRIT-AI, DECIDE-AI, CONSORT-AI). [5][6][4]
+- Reality check: “Cure cancer with AI tomorrow” is infeasible. A 6‑month, publication-grade plan can target clinically meaningful, measurable improvements in treatment selection and outcome prediction that align with current evidence and reporting standards. A scoping review shows very few oncology ML models achieve external validation and clinical utility; your plan should prioritize these gaps [P1].
+- Primary objective: Build and externally validate a calibrated, decision-usable predictor of immunotherapy benefit using readily accessible clinical and/or blood biomarkers, with extensions to multimodal fusion when available. This follows recent evidence that routine clinical data can identify checkpoint inhibitor benefit at scale and that multimodal fusion generally outperforms single-modality models [P8][P2].
+- Secondary objectives:
+  - Multimodal survival modeling (OS/PFS) across public cohorts (TCGA/CPTAC/TCIA/METABRIC) with rigorous calibration, net benefit, and transportability assessment [P2][P4].
+  - Prepare a prospective, “silent mode” evaluation protocol following TRIPOD-AI/PROBAST-AI and CONSORT-AI/SPIRIT-AI guidance to accelerate clinical translation [1][2][4][5].
+
+Key success criteria by 6 months
+- Statistically significant improvement over strong baselines on external validation (e.g., AUROC/C-index, time-dependent AUC, IBS).
+- Demonstrated clinical utility via decision-curve analysis with positive net benefit across clinically relevant thresholds [6][7].
+- Transparent reporting and bias assessment per TRIPOD-AI/PROBAST-AI and radiomics readiness (RQS 2.0 where applicable) [1][2][P4].
 
 2) Experiments
-All experiments use nested cross-validation within cohort, external validation across cohorts, calibration (reliability curves, Brier score), net benefit via DCA, and transparent reporting (TRIPOD+AI). [2][3][1]
-
-Experiment 1: Multimodal fusion vs. unimodal
-- Hypothesis: Multimodal fusion (RNA-seq features + TMB + PD-L1 ± WSI + clinical) improves discrimination and calibration over any single biomarker. 
-- Setup: 
-  - Data: IMvigor210 (bladder, anti–PD-L1) for development; external validation on melanoma ICI cohorts (Hugo 2016; Riaz 2017/2018; Gide 2019). [9][10][7][8]
-  - Models: Logistic/XGBoost baselines; multimodal late fusion; survival extensions with Cox/XGBoost-Survival.
-  - Preprocessing: RNA TPM/log-CPM with batch mitigation (e.g., ComBat); standardized PD-L1; harmonized TMB; basic clinical variables.
-- Baselines: TMB alone, PD-L1 alone, published RNA signatures (e.g., IFN-γ), and clinical-only models; report decision curves for each. [1]
-- Evaluation metrics: AUC-ROC/PR for response; C-index for PFS/OS; Brier; calibration slope; net benefit (DCA). [1]
-- Expected outcomes: Fusion improves AUC by 0.05–0.10 over the best unimodal baseline and yields higher net benefit across clinically plausible thresholds. If not observed, we will quantify conditions where the added modality harms performance (negative transfer). (Conjecture, to be tested.)
-
-Experiment 2: Histology WSI signal and incremental value
-- Hypothesis: WSI-derived features capture tumor-immune microenvironment signals that improve prediction beyond RNA/TMB/PD-L1, consistent with literature showing pathology-based biomarker prediction (e.g., MSI) from H&E with Transformers. [P8]
+Experiment 1: Predict immunotherapy benefit from routine clinical data (baseline-to-practice track)
+- Hypothesis: A rigorously validated ML model using routine labs and clinical variables will predict benefit from immune checkpoint inhibitors (ICIs) across multiple cancers, similar to recent multi-center findings [P8].
 - Setup:
-  - WSI feature extraction with weakly supervised MIL/Transformer (e.g., CLAM/TIA/MONAI), stain normalization, tile-level QC.
-  - Integrate WSI features with RNA/TMB/PD-L1 via late fusion.
-  - If ICI datasets lack WSIs, conduct a proxy feasibility study: predict established biomarkers (MSI, TMB-high) in matched cohorts to demonstrate WSI signal and then evaluate transferability. [P8]
-- Baselines: WSI-only model; RNA-only; TMB-only; combined without WSI.
-- Metrics: Same as E1; plus net reclassification improvement and decision curves. [1]
-- Expected outcomes: Modest but significant improvement in discrimination and net benefit when WSI is added to RNA/TMB/PD-L1; if unavailable, establish feasibility via proxy targets first. [P8]
+  - Data: Assemble multi-cancer ICI cohorts with routine labs and outcomes. Start with any accessible public or institutional cohorts; if limited, target a single tumor type first (e.g., urothelial carcinoma IMvigor210-like clinical variables; use DAC-permitted access where possible) [12]; augment with published features known to correlate with ICI outcomes (e.g., blood counts) [P8].
+  - Features: Demographics, comorbidities, line of therapy, ECOG, CBC/differentials, chemistries, inflammatory ratios, time-varying updates if available.
+  - Models: Penalized logistic regression, XGBoost, tab-transformer; apply robust feature preprocessing and leakage controls.
+  - Validation: Nested CV on development sites; hold-out external site or cohort if available; temporal validation if external site unavailable.
+- Baselines: Clinician-chosen heuristics (e.g., NLR thresholds), logistic regression with L2, and gradient boosting.
+- Metrics: AUROC/PR, calibration slope/Intercept, Brier score; decision-curve analysis (net benefit) at thresholds reflecting ICI initiation decisions [6][7].
+- Expected outcomes: Competitive AUROC with strong calibration; positive net benefit across clinically plausible thresholds; external validation demonstrates transportability (or quantifies gaps) [P8][P1].
 
-Experiment 3: Cross-cohort and cross-cancer generalization
-- Hypothesis: Immune-inflamed transcriptomic programs and T-cell states associated with ICI response generalize across tumor types, but effect sizes attenuate with domain shift. [7][8]
-- Setup: Train on bladder (IMvigor210), test on melanoma cohorts and vice versa; assess domain adaptation (e.g., CORAL) and batch correction strategies.
-- Baselines: In-domain training and evaluation.
-- Metrics: Drop in AUC/C-index vs in-domain; calibration drift; feature stability; PROBAST+AI risk of bias and applicability assessment. [3]
-- Expected outcomes: AUC degradation on out-of-domain data revealing robust vs. context-specific features; guidance for domain adaptation.
+Experiment 2: Late-fusion multimodal survival prediction (clinical + genomics ± pathology/radiology)
+- Hypothesis: Late fusion of clinical and molecular (± imaging) features improves OS/PFS prediction over single-modality models [P2].
+- Setup:
+  - Data: TCGA Pan-Cancer with clinical, mutations, expression [9]; CPTAC cohorts with WSI and proteogenomic data [10]; TCIA collections for radiology where available [8]. Tumor-specific subsets (e.g., BRCA via METABRIC) [11].
+  - Models: CoxPH and DeepSurv baselines; Random Survival Forests; late-fusion networks combining modality-specific encoders; if images are included, use pretrained encoders for WSI (e.g., ViT/CLAM-style) and radiomics features curated per RQS 2.0 [P4].
+  - Validation: Stratified temporal splits per study; cross-cohort validation (train on TCGA, test on CPTAC where label definitions align).
+- Baselines: CoxPH with clinical only; DeepSurv with clinical; single-modality models (genomics-only, imaging-only).
+- Metrics: C-index, time-dependent AUC, Integrated Brier Score (IBS); calibration curves; decision-curve analysis for risk thresholds relevant to adjuvant therapy selection [6][7].
+- Expected outcomes: Late fusion improves discrimination and reduces IBS vs. single-modality and CoxPH baselines [P2]; RQS 2.0 checklist met for any radiomics components [P4].
 
-Experiment 4: Clinical utility and treatment policy simulation
-- Hypothesis: At realistic decision thresholds (e.g., selecting top x% for ICI monotherapy), the model provides positive net benefit and acceptable number-needed-to-treat compared with treat-all or biomarker-only strategies. 
-- Setup: Use external validation sets; simulate triage policies (e.g., refer low-score patients to alternative regimens/clinical trials).
-- Metrics: Decision curves (net benefit vs threshold), NNT, avoidable non-benefit, and number of missed responders. [1]
-- Expected outcomes: A threshold band with superior net benefit vs. guideline biomarker comparators (PD-L1/TMB); if not, define required model performance to justify deployment. [1]
+Experiment 3: External validation and model updating
+- Hypothesis: Models trained on one cohort degrade in external cohorts; simple updating (recalibration, intercept/slope adjustment, transfer learning for encoders) restores performance [P1].
+- Setup:
+  - Train Experiment 1 and/or 2 models on a source cohort; evaluate on a target cohort differing in geography or time period.
+  - Apply recalibration (Platt, isotonic), intercept/slope adjustment, and domain adaptation for images if present.
+- Baselines: No update vs. recalibration vs. simple refit with small target sample.
+- Metrics: Delta in AUROC/C-index, calibration slope/Intercept; Net benefit pre- and post-update [6][7].
+- Expected outcomes: Demonstrable improvement in calibration and net benefit after updating; transparent reporting per TRIPOD-AI and risk-of-bias assessment via PROBAST-AI [1][2].
 
-Experiment 5: Mechanistic interpretability and biological plausibility
-- Hypothesis: Learned features align with T-cell inflamed states and interferon/cytotoxic signatures associated with response. [7]
-- Setup: SHAP and pathway enrichment; compare top RNA features to T-cell state markers (Sade-Feldman 2018) and immune cell composition; interrogate WSI tiles for immune hotspots.
-- Baselines: Randomized labels and permuted features to test for spurious interpretability.
-- Metrics: Enrichment FDRs; stability across cohorts; expert pathologist review for WSI.
-- Expected outcomes: Enrichment of IFN-γ signaling, CXCL9/10, GZMB; WSI tiles highlighting immune infiltration patterns aligned with responders. [7]
+Experiment 4: Biology-guided histology biomarkers for ICI response (feasibility extension)
+- Hypothesis: Histology-derived representations can infer immune microenvironment features predictive of ICI outcomes, complementing clinicogenomic data [P5].
+- Setup:
+  - Data: CPTAC WSI for relevant tumor types with transcriptomic immune signatures; where linked ICI outcomes are unavailable, use surrogate tasks (e.g., TME/immune scores) and then test transfer to small ICI cohorts if feasible [10].
+  - Models: Weakly supervised WSI MIL models; biology-guided targets (e.g., immune signatures) as auxiliary tasks [P5].
+- Baselines: Clinicogenomic-only models; image-only models without biology-guided targets.
+- Metrics: For surrogate tasks, AUROC/PR for immune signatures; for ICI outcomes, AUROC and calibration; ablation to quantify added value of WSI features.
+- Expected outcomes: Image features add incremental value to clinicogenomic predictors and/or improve generalization when combined via late fusion [P5][P2].
 
-Experiment 6: Survival modeling for delayed effects
-- Hypothesis: Mixture and non-proportional hazard survival models better capture immunotherapy-specific survival dynamics (e.g., cure fraction, delayed separation of curves) than standard Cox. [P2]
-- Setup: Compare Cox, flexible parametric, and mixture-cure models on PFS/OS; assess calibration plots by time.
-- Metrics: Time-dependent C-index, IBS, calibration, and AIC/BIC.
-- Expected outcomes: Improved fit and calibration with mixture/flexible models; better clinical interpretability for long-term benefit. [P2]
-
-Experiment 7: Prospective readiness and early-stage evaluation
-- Hypothesis: A shadow (silent) deployment is feasible with stable outputs, timely inference, and clinician acceptance, per DECIDE-AI; trial protocol elements per SPIRIT-AI and reporting per CONSORT-AI. [6][5][4]
-- Setup: 4–6 week silent run in clinic with locked model; capture time-to-result, missingness, override reasons; pre-specify endpoints and analysis.
-- Metrics: Uptime, inference latency, missing data rate, usability feedback; pre-post process metrics.
-- Expected outcomes: Operational feasibility and refined protocol/consent artifacts for a future interventional study. [6][5][4]
+Experiment 5: Clinical utility and reporting rigor
+- Hypothesis: Models with similar discrimination can differ in clinical utility; explicit DCA, calibration, and transparent reporting change deployment decisions [6][1][2].
+- Setup: For best model(s) from Experiments 1–4, run DCA across stakeholder-defined thresholds; pre-register a reporting checklist per TRIPOD-AI and assess risk of bias with PROBAST-AI; if planning a prospective pilot, align with SPIRIT-AI/CONSORT-AI [1][2][4][5].
+- Baselines: Utility assessed only by AUROC/C-index without DCA.
+- Metrics: Net benefit curves with confidence intervals; calibration curves; TRIPOD-AI/PROBAST-AI compliance scores.
+- Expected outcomes: Clear net benefit at decision thresholds; complete reporting artifacts ready for submission [1][2][4][5].
 
 3) Timeline for the next 6 months with milestones
-- Month 0–1:
-  - Finalize analysis plan; pre-register TRIPOD+AI-compliant protocol; ethics/IRB for data use and silent deployment. [2][5]
-  - Acquire and harmonize datasets: IMvigor210, Hugo 2016, Riaz 2017/2018, Gide 2019; define endpoints and censoring rules. Note: Public links for IMvigor210 R package were not retrieved directly; if unavailable, use consolidated sources (e.g., easierData) or original GEO/SRA/EGAS access. [9] Limitation: precise official IMvigor210 R package link not surfaced; we will retrieve via Bioconductor or corresponding author as needed.
-- Month 2:
-  - Preprocessing pipelines for RNA/TMB/PD-L1/clinical; implement unimodal baselines; initial WSI extraction if slides available.
-  - Establish nested CV and external validation harness; baseline DCA. [1]
-- Month 3:
-  - Train multimodal fusion models; feature selection; calibration; model cards; interpretability analyses.
-  - Survival modeling (Cox vs flexible vs mixture). [P2]
-- Month 4:
-  - Cross-cohort generalization experiments; finalize external validation; decision curve and policy simulations.
-  - Draft Results; complete PROBAST+AI risk-of-bias assessment. [3]
-- Month 5:
-  - Mechanistic validation (pathways, T-cell states); pathology expert review of WSI tiles; robustness/batch analyses.
-  - Prepare DECIDE-AI-compliant shadow deployment protocol and artifacts. [6]
-- Month 6:
-  - Shadow deployment run; collect process metrics and feedback; finalize manuscript (TRIPOD+AI), code, model card, and preprint submission. [2]
+Month 0–1: Data access, governance, and baselines
+- Secure IRB/data use agreements if using non-public data; finalize target tumor types and cohorts (TCGA/CPTAC/TCIA/METABRIC; IMvigor/ICI cohorts as available) [9][10][8][11][12].
+- Implement standardized preprocessing pipelines; define outcomes (RECIST response, OS/PFS) and censoring rules.
+- Train baseline models for Experiment 1 (clinical-only) and Experiment 2 (CoxPH/DeepSurv).
+Milestones: Data dictionaries, preprocessing scripts, baseline metrics, preregistered analysis plan aligned to TRIPOD-AI [1].
+
+Month 2: Model development and internal validation
+- Build XGBoost/tab-transformers for Experiment 1; late-fusion survival models for Experiment 2.
+- Implement strict leakage prevention, nested CV, and calibration procedures.
+Milestones: Internal CV results; ablations; initial calibration and DCA.
+
+Month 3: External validation and updating
+- Assemble external validation cohorts or temporal splits; run Experiment 3 model updating.
+- Begin Experiment 4 feasibility (WSI biology-guided task) if image data available [P5].
+Milestones: External validation report; updating gains; DCA improvements; RQS 2.0 checklist if radiomics used [P4].
+
+Month 4: Robustness, bias, and utility
+- Sensitivity analyses (missingness, shifts); subgroup analyses (stage, age, sex).
+- Comprehensive PROBAST-AI assessment; refine TRIPOD-AI reporting artifacts [2][1].
+- Finalize DCA with clinical thresholds and CI [6][7].
+Milestones: Reproducibility package; bias/robustness report; finalized decision curves.
+
+Month 5: Manuscript and translational prep
+- Draft manuscript(s) for Experiment 1 (primary) and Experiment 2; include transparent model cards and calibration.
+- If institutional pathway allows, design a silent-mode prospective evaluation protocol aligned with SPIRIT-AI/CONSORT-AI [5][4].
+Milestones: Submission-ready drafts; protocol synopsis.
+
+Month 6: Submission and code/data release
+- Submit to a translational journal; release code and synthetic or public subsets.
+- Stakeholder review with oncologists to scope a pilot decision-support study.
+Milestones: Manuscript submission; repository with documentation; pilot protocol v1.0.
 
 4) Resources (compute, tools, datasets)
-- Compute and storage:
-  - 2× GPUs (e.g., A100 40GB or 3090/4090) for WSI; CPU cluster for RNA/TMB processing; 5–10 TB storage for WSIs; encrypted PHI-safe environment if using clinical data.
-- Software:
-  - Python: scikit-learn, XGBoost, PyTorch/Lightning, MONAI, TIAToolbox/CLAM for WSI MIL; lifelines/pycox for survival; shap; statsmodels; dcav for decision curves or custom per Vickers. [1]
-  - R: Bioconductor for data access (e.g., IMvigor210/easierData proxies), survival, rms, rmda for DCA; TRIPOD+AI/PROBAST+AI checklists. [2][3]
-- Datasets:
-  - IMvigor210 (urothelial carcinoma, anti–PD-L1): expression, PD-L1, mutations, clinical; R package or alternative sources such as easierData; verify licensing. Limitation: direct official package link not surfaced here; we will obtain via Bioconductor or authors. [9]
-  - Melanoma anti–PD-1: Hugo 2016 Cell, Riaz 2017/2018 Cell; Gide 2019 Cancer Cell (PD-1 vs PD-1+CTLA-4). [10][7][8]
-  - Optional: TCGA for proxy WSI biomarker modeling (MSI/TMB-high) if ICI WSIs unavailable. [P8]
+- Compute:
+  - Tabular/genomics/survival: 16–32 vCPU, 64–128 GB RAM.
+  - Imaging (WSI/radiology): 2–4× A100 or 3090/4090 GPUs (24–80 GB VRAM) for feature extraction/fine-tuning; ~10–20 TB storage for WSI/tiles.
+- Tools:
+  - Modeling: scikit-learn, XGBoost, PyTorch/Lightning; lifelines/pycox for survival; sksurv.
+  - Calibration/utility: net benefit/DCA implementations and tutorials [6][7]; reliability diagrams.
+  - Reproducibility: DVC/MLflow; Docker; pre-registration templates per TRIPOD-AI [1].
+- Datasets (public-first):
+  - TCGA clinical/genomics for survival modeling [9].
+  - CPTAC WSI/proteogenomics for multimodal studies [10].
+  - TCIA radiology collections (e.g., RADCURE) for radiomics [8].
+  - METABRIC for breast cancer survival and treatment variables [11].
+  - ICI cohorts: IMvigor210 (DAC-controlled; use published variables or seek access) [12]; consider aggregating smaller open cohorts for response/survival [P8].
+- Methodological guidance:
+  - TRIPOD-AI/TRIPOD-ML reporting [1]; PROBAST/PROBAST-AI for bias appraisal [2][3]; CONSORT-AI/SPIRIT-AI for trials [4][5]; Radiomics Quality Score 2.0 [P4].
 
-5) Risks and mitigations
-- Small sample sizes and class imbalance in ICI cohorts
-  - Mitigation: Nested CV, external validation, uncertainty quantification, conservative feature selection, report optimism-adjusted performance (TRIPOD+AI). [2]
-- Dataset shift and batch effects across cohorts
-  - Mitigation: Harmonized preprocessing, ComBat/batch-aware modeling, domain adaptation, transportability tests; PROBAST+AI applicability assessment. [3]
-- Label noise and outcome heterogeneity (RECIST dynamics, pseudo-progression)
-  - Mitigation: Sensitivity analyses (alternate endpoints, landmarking), survival modeling that captures delayed effects and cure fraction. [P2]
-- Data leakage and overfitting
-  - Mitigation: Strict data splits by patient/site, nested CV, leakage checks; blinded external validation; preregistration. [2][3]
-- Limited WSI availability in ICI cohorts
-  - Mitigation: Proxy WSI biomarker tasks (MSI/TMB-high) to validate pipelines; collect local slides with IRB for pilot feasibility. [P8]
-- Unclear clinical utility
-  - Mitigation: Decision curves vs standard-of-care biomarkers; threshold analyses; clinician-in-the-loop review; early-stage evaluation per DECIDE-AI. [1][6]
-- Regulatory/ethical and operational barriers
-  - Mitigation: SPIRIT-AI protocol elements, CONSORT-AI reporting template for future trials; legal/data governance review. [5][4]
+5) Risks and mitigations table
+- Limited external validation cohorts for ICI response — Mitigation: prioritize routine lab–based models (broader availability), use temporal/geographic splits; pursue DAC access (IMvigor210) and report transportability gaps [P8][12].
+- Data shift and heterogeneity across centers — Mitigation: harmonize variables; apply model updating (recalibration) and domain adaptation; quantify drift impact [P1].
+- Label noise (RECIST variability, incomplete outcomes) — Mitigation: adjudicate with clear rules; sensitivity analyses; robust loss functions; exclude ambiguous cases.
+- Information leakage — Mitigation: strict separation of preprocessing fit on training only; nested CV; audit pipelines; TRIPOD-AI checklist [1].
+- Overfitting in multimodal fusion — Mitigation: modality dropout, strong regularization, early stopping; ablative baselines; report RQS and calibration [P4].
+- Limited clinical utility despite good AUROC — Mitigation: emphasize calibration, net benefit with clinically chosen thresholds; iterate with clinicians on thresholds [6][7].
+- Bias and inequities across subgroups — Mitigation: subgroup performance reporting; reweighting or group-specific calibration; PROBAST-AI assessment [2].
 
 6) Stretch ideas or follow-up directions
-- Spatial and single-cell-informed features: integrate deconvolution or single-cell-derived signatures of T-cell states to refine mechanism-aware predictors; align with Sade-Feldman T-cell states. [7]
-- Multimodal pretraining: contrastive learning across WSI–omics; domain-agnostic embeddings to improve generalization. [P8]
-- Trial design impact: simulate enrichment designs and adaptive randomization; consider time-to-event optimal phase II designs tailored to immunotherapy dynamics (e.g., designs accommodating delayed effects and non-proportional hazards). [P2]
-- Federated multi-institution collaboration for privacy-preserving external validation at scale (prospective). 
-- Health economics: link net benefit to cost-effectiveness under varying drug prices and toxicity disutility.
-
-Optional next step
-- Approve a 2-week sprint to acquire/validate IMvigor210 and melanoma cohorts, finalize the preregistered TRIPOD+AI analysis plan, and stand up the baseline pipelines (RNA/TMB/PD-L1) plus DCA scaffolding.
+- Heterogeneous treatment effect (HTE) modeling: emulate RCTs for adjuvant chemo/hormonal therapy in METABRIC using doubly robust learners; validate with negative controls and sensitivity analyses. Report per TRIPOD-AI and causal reporting best practices (acknowledging untestable assumptions) [1].
+- Foundation models: Precompute WSI and radiology embeddings; test parameter-efficient fusion to reduce compute, inspired by biology-guided signals [P5] and multimodal fusion gains [P2].
+- Trial matching: Prototype NLP for eligibility criteria parsing and patient–trial mapping; align evaluation with CONSORT-AI/SPIRIT-AI for future prospective studies [4][5].
+- Prospective “silent mode” deployment: integrate model outputs into clinic without affecting decisions to collect real-world calibration and utility signals; design per SPIRIT-AI [5].
 
 Citations
-- [1] Vickers AJ, Elkin EB. Decision curve analysis: a novel method for evaluating prediction models — https://pubmed.ncbi.nlm.nih.gov/17099194/
-- [2] TRIPOD+AI statement: updated guidance for reporting clinical prediction models that use regression or machine learning — https://pubmed.ncbi.nlm.nih.gov/38626948/
-- [3] PROBAST+AI: updated risk of bias and applicability tool for prediction models — https://www.bmj.com/content/388/bmj-2024-082505
-- [4] CONSORT-AI extension for clinical trials of AI interventions — https://www.nature.com/articles/s41591-020-1034-x
-- [5] SPIRIT-AI guidance for AI intervention trial protocols — https://www.turing.ac.uk/research/research-projects/spirit-ai-and-consort-ai-initiative
-- [6] DECIDE-AI: reporting guideline for early-stage clinical evaluation of AI decision support — https://pmc.ncbi.nlm.nih.gov/articles/PMC9116198/
-- [7] Sade-Feldman M. et al. Defining T Cell States Associated with Response to Checkpoint Immunotherapy — https://www.sciencedirect.com/science/article/pii/S0092867418313941
-- [8] Gide TN. et al. Distinct Immune Cell Populations Define Response to Anti-PD-1 and Combination Therapy — https://www.cell.com/cancer-cell/fulltext/S1535-6108(19)30037-6
-- [9] IMvigor210 resources (e.g., easierData consolidated access) — https://www.bioconductor.org/packages/release/data/experiment/html/easierData.html
-- [10] Hugo W. et al. Genomic and Transcriptomic Features of Response to Anti-PD-1 Therapy — https://pmc.ncbi.nlm.nih.gov/articles/PMC4808437/
-- [P2] Piantanida S. et al. Mixture survival models methodology: an application to cancer immunotherapy assessment — http://arxiv.org/abs/1911.09765v1
-- [P8] Bychkov D. et al. Fully transformer-based biomarker prediction from colorectal cancer histology — http://arxiv.org/abs/2301.09617v2
+- [P1] Externally validated and clinically useful machine learning algorithms to support patient-related decision-making in oncology: a scoping review — https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/s12874-025-02463-y
+- [P2] A machine learning approach for multimodal data fusion for survival prediction in cancer patients — https://www.nature.com/articles/s41698-025-00917-6
+- [P4] Radiomics Quality Score 2.0: towards radiomics readiness levels and clinical translation for personalized medicine — https://www.nature.com/articles/s41571-025-01067-1
+- [P5] Biology-guided deep learning predicts prognosis and cancer immunotherapy response — https://www.nature.com/articles/s41467-023-40890-x.pdf
+- [P7] Integration of clinical, pathological, radiological, and transcriptomic data improves prediction for first-line immunotherapy outcome in metastatic non-small cell lung cancer — https://www.nature.com/articles/s41467-025-55847-5
+- [P8] Prediction of checkpoint inhibitor immunotherapy efficacy for cancer using routine blood tests and clinical data — https://www.nature.com/articles/s41591-024-03398-5
+- [1] TRIPOD+AI statement: updated guidance for reporting clinical prediction models using AI/ML — https://www.bmj.com/content/385/bmj-2023-078378
+- [2] PROBAST-AI: updated risk of bias and applicability tool for AI-driven prediction models — https://www.bmj.com/content/388/bmj-2024-082505
+- [3] PROBAST: a tool to assess risk of bias and applicability of prediction model studies — https://pubmed.ncbi.nlm.nih.gov/30596875/
+- [4] CONSORT-AI Extension — https://www.equator-network.org/reporting-guidelines/consort-artificial-intelligence/
+- [5] SPIRIT-AI: guidelines for clinical trial protocols for interventions involving AI — https://www.nature.com/articles/s41591-020-1037-7
+- [6] Vickers AJ, Elkin EB. Decision Curve Analysis: A Novel Method for Evaluating Prediction Models — https://journals.sagepub.com/doi/10.1177/0272989X06295361
+- [7] A simple, step-by-step guide to interpreting decision curve analysis — https://diagnprognres.biomedcentral.com/articles/10.1186/s41512-019-0064-7
+- [8] The Cancer Imaging Archive (TCIA) — https://www.cancerimagingarchive.net/
+- [9] The Cancer Genome Atlas (TCGA) — https://www.cancer.gov/ccg/research/genome-sequencing/tcga
+- [10] CPTAC collections (WSI/radiology) — https://www.cancerimagingarchive.net/collection/cptac-cm/
+- [11] METABRIC dataset (Synapse) — https://www.synapse.org/Synapse:syn1688369
+- [12] IMvigor210 Data Access (EGA DAC) — https://ega-archive.org/dacs/EGAC00001001611
+
+Optional next step
+- If you can share which tumor type and what data you can access in weeks 0–1 (routine labs only vs. multimodal), I can lock the milestones to datasets, variables, and model specs and generate a preregistered analysis plan template aligned to TRIPOD-AI.

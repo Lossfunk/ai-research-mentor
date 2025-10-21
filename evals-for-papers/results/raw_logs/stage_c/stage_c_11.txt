@@ -1,0 +1,123 @@
+1. Problem framing and goals
+- Objective: Establish a cross-lab, reproducible benchmark to evaluate large-scale climate model downscaling methods with calibrated uncertainty quantification (UQ), focusing on daily precipitation and temperature from CMIP6 global climate models (GCMs) to regional scales, with evaluation against high-quality observational/reanalysis targets. We will prioritize regions with strong reference data (e.g., Europe via E-OBS/EURO-CORDEX, North America via Daymet/PRISM/Stage IV) and evaluate both mean behavior and extremes. CORDEX provides a widely used framework and regions for evaluating regional downscaling and comparability across labs [1].
+- Scope:
+  - Methods: statistical baselines (e.g., BCSD/quantile mapping), analog methods, ML super-resolution (CNN/ResNet), probabilistic generative models (diffusion/GAN), deep ensembles, quantile regression, and conformal calibration.
+  - Uncertainty: Evaluate predictive distributions and intervals using proper scoring rules (CRPS/energy score), reliability and coverage, sharpness, and extreme-event skill. Recent work has investigated probabilistic downscaling with CRPS-based evaluation for extremes in EURO-CORDEX contexts [3].
+  - Cross-lab design: Shared data formats/splits, pre-registered metrics, common containers, versioned pipelines, and independent replication of results. Method-agnostic principles of UQ-aware reproducibility apply here [P4].
+- Target outcomes:
+  1) A public benchmark suite with standardized data, splits, and metrics; 2) a paper comparing probabilistic downscaling methods across regions, variables, and climate regimes; 3) open-source code, containers, and model cards; 4) recommendations for operational use by climate services (e.g., C3S projects exploring ML-based downscaling of CMIP6) [4].
+- Anchors:
+  - Dynamical-generative downscaling demonstrates the viability of generative models for downscaling climate ensembles [2].
+  - Probabilistic downscaling of EURO-CORDEX precipitation highlights proper scoring rules and extreme-event evaluation [3].
+  - General UQ and probabilistic super-resolution methods inform design of distributional outputs and evaluation, albeit outside climate; we will adapt carefully [P1][P2][P4]. Limitation: these are not climate-specific; we will validate climate relevance via CORDEX/C3S-aligned datasets and metrics [1][4].
+
+2. Experiments
+Experiment 1: Probabilistic generative downscaling vs. statistical baselines
+- Hypothesis: Diffusion-based probabilistic downscaling achieves better CRPS and energy score than BCSD/quantile mapping and GAN-based downscaling, with improved reliability for extremes (PIT calibration), across Europe and North America [2][3].
+- Setup: 
+  - Inputs: CMIP6 daily pr, tas, tasmax at native GCM resolution; optional standardized anomalies for seasonality.
+  - Targets: E-OBS (EU), Daymet/PRISM (NA); hold out 2010–2019 for test (or region-specific recent decade) and reserve a spatial cross-validation fold (e.g., leave-one-subregion-out).
+  - Models: Diffusion downscaler (conditional on low-res fields + orography + land cover), ESRGAN/SRGAN, deterministic CNN SR; conformalized post-hoc calibration for generative samples.
+- Baselines: Bilinear interpolation; BCSD/quantile mapping (QMAP); analog methods; deterministic CNN SR (DeepSD-style).
+- Metrics: CRPS (marginal), energy score (multivariate daily fields), reliability diagrams and PIT histograms, interval coverage (80/90/95%), sharpness (interval width), Brier score for exceedances (e.g., >20 mm/day), FSS for spatial structure, tail quantile loss (q=0.95, 0.99), return-level bias (GEV-based) [3].
+- Expected outcomes: Diffusion improves CRPS/energy score and reliability over GAN/CNN; BCSD remains strong on marginal bias but underperforms on spatial structure and extremes [2][3]. If not, we will analyze miscalibration and adjust with conformal calibration.
+
+Experiment 2: Deep ensembles and quantile regression for calibrated UQ
+- Hypothesis: Deep ensembles and multi-quantile regression produce better calibrated intervals (nominal coverage within ±2%) while maintaining sharpness compared to single-model MC dropout; conformal methods guarantee marginal coverage with minimal sharpness loss [P2][P4].
+- Setup:
+  - Methods: (a) Deep ensembles of CNN SR models with heteroscedastic heads; (b) multi-quantile regression (τ ∈ {0.05,…,0.95}); (c) MC dropout; (d) conformalized quantiles and conformalized diffusion samples.
+  - Regions: EU and NA; variables: daily pr and tas; train on 1981–2009, validate 2010–2014, test 2015–2019.
+- Baselines: Non-probabilistic SR with Gaussian residuals; BCSD intervals via empirical residuals.
+- Metrics: Coverage (marginal and conditional by intensity bin), sharpness, interval score, CRPS, reliability (PIT), conditional coverage for extremes, spatial reliability (field-wise PIT).
+- Expected outcomes: Deep ensembles and multi-quantile approaches yield superior calibration–sharpness trade-offs; conformalization achieves near-nominal coverage even under distribution shift at a small sharpness cost [P2][P4]. Limitation: [P2] is general UQ; climate-specific validation will be evidenced on CORDEX-aligned regions [1][3].
+
+Experiment 3: Extreme precipitation fidelity under nonstationarity
+- Hypothesis: Models trained on reanalysis-to-observation super-resolution (ERA5→E-OBS/Daymet) and transferred to CMIP6→obs maintain calibrated extremes (q95–q99 losses, return levels) across warming trends; generative models degrade less than deterministic SR [3].
+- Setup:
+  - Train: ERA5 low-res emulation of GCM resolution → high-res observations (1981–2009); Transfer: apply to CMIP6 GCMs (historical 1995–2014; SSP3-7.0 2081–2100 downscaling).
+  - Evaluate: Historical overlap (1995–2014) for calibration; future projections for plausibility checks (physical constraints, scaling of IDF curves).
+- Baselines: BCSD/QMAP; deterministic SR; analog methods.
+- Metrics: Extreme quantile error (q95, q99), GEV parameter deviations, IDF curve RMSE, conditional coverage at high quantiles, spatial FSS for heavy-precip days, tail-conditional CRPS.
+- Expected outcomes: Generative models better preserve spatial coherence of extremes and yield better tail calibration than deterministic SR and BCSD; if transfer worsens calibration, post-hoc recalibration via conformal quantiles restores nominal coverage [2][3].
+
+Experiment 4: Multi-model, multi-region robustness and cross-lab reproducibility
+- Hypothesis: Pre-registered splits, containers, and seed control yield cross-lab reproductions within ±2% of CRPS/coverage; performance rank-order of methods is stable across GCM families and regions (EU vs NA) [P4][1].
+- Setup:
+  - GCMs: At least 4 CMIP6 models with differing physics; regions: EURO-CORDEX and NA domains [1].
+  - Each lab independently runs the same containers and reports raw outputs to a central registry; random seeds and versions fixed; artifact checksums logged.
+- Baselines: As above.
+- Metrics: Inter-lab reproducibility gap (ΔCRPS, Δcoverage, ΔFSS), rank correlation of methods across regions/models, runtime and compute variability, data integrity checks.
+- Expected outcomes: Reproducible metrics across labs with tight confidence intervals; any divergence triggers audit of seeds, data versions, and numerical libraries [P4].
+
+Experiment 5: Operational relevance and service alignment
+- Hypothesis: Methods that perform best on CRPS/coverage also meet service needs (e.g., C3S) for stable monthly updates and explainable diagnostics, without prohibitive compute [4].
+- Setup:
+  - Evaluate retraining/update cadence (quarterly/annual), inference throughput for full historical and future periods, and explainability diagnostics (saliency, feature attributions for orography/land–sea contrast).
+- Baselines: Current operational BCSD/QMAP pipelines.
+- Metrics: Throughput (grid-points/sec), cost per decade downscaled, failure rate, and diagnostic interpretability scores; maintain CRPS within 5% of Experiment 1 best model.
+- Expected outcomes: One or two candidate pipelines meet both accuracy and operational criteria; document trade-offs for climate service adoption [4].
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Governance, data, and metrics
+  - Finalize problem statement, regions, variables, and GCM list (EURO-CORDEX and NA domains) [1].
+  - Build common data pipeline (xarray+dask+zarr) and pre-registered splits; publish metrics spec (CRPS, energy score, coverage, FSS, extremes).
+  - Deliverables: Data access instructions, split manifest, metric notebooks, Docker images.
+- Month 2: Baseline reproduction
+  - Implement bilinear, BCSD/QMAP, analog, and deterministic CNN SR baselines; validate against HESS-like CRPS/extreme metrics [3].
+  - Deliverables: Baseline scores on dev set; reproducibility report across two labs.
+- Month 3: Probabilistic models v1
+  - Train diffusion/GAN probabilistic models and deep ensembles; implement quantile regression and conformal calibration [2][P2].
+  - Deliverables: Initial CRPS/coverage results; reliability diagnostics; ablation logs.
+- Month 4: Transfer and extremes
+  - ERA5→obs training; transfer to CMIP6→obs; evaluate tail metrics, IDF curves, and spatial coherence [3].
+  - Deliverables: Extreme-event benchmarking; calibrated intervals for heavy precipitation.
+- Month 5: Multi-model, cross-region robustness and ops-readiness
+  - Expand to multiple CMIP6 models and both EU/NA; stress-test reproducibility; profile throughput/cost [1][4].
+  - Deliverables: Cross-lab reproducibility report; ops-readiness assessment.
+- Month 6: Synthesis and release
+  - Draft paper, finalize benchmark suite, code, containers, and model cards; external review with CORDEX-aligned community [1].
+  - Deliverables: Preprint, data/weights DOIs, public benchmark website.
+
+4. Resources (compute, tools, datasets)
+- Compute:
+  - Training: 4–8 A100 40GB GPUs per lab (or equivalent), ~2–4 weeks for diffusion/ensemble runs per region; 50–100 TB object storage for zarr datasets and outputs; 1–2 TB RAM aggregate cluster memory for dask preprocessing.
+  - Inference/eval: CPU/GPU mix; ensure deterministic kernels and fixed seeds for reproducibility.
+- Tools:
+  - Data/compute: xarray, dask, zarr, kerchunk/intake; netCDF4; Apache Arrow; Kubernetes/SLURM; W&B or MLflow; DVC; Docker/Apptainer.
+  - Modeling: PyTorch/Lightning or JAX/Flax; diffusion libs; probabilistic scoring: properscoring, xskillscore, climpred; conformal UQ toolkits.
+  - Reproducibility: Pre-registered metrics/spec, dataset checksums, fixed seeds, containerized exact environments [P4].
+- Datasets:
+  - Inputs: CMIP6 daily variables (pr, tas, tasmax), multiple models; optionally CORDEX RCM for comparison [1].
+  - Targets: E-OBS (EU), Daymet/PRISM (NA), Stage IV (US precip), ERA5/ERA5-Land for reanalysis training; service view aligned with C3S ML downscaling focus [4].
+  - Ancillary: Orography, land–sea mask, land cover.
+
+5. Risks and mitigations table
+- Data heterogeneity across labs — Use mirrored object storage with checksums; shared preprocessing code; version lock data catalogs.
+- Metric inconsistency — Pre-register metric definitions, units, and aggregation; publish reference implementations and tests; cross-validate outputs monthly.
+- Compute shortfalls for generative models — Stage training (patch-based, mixed precision), prioritize regions, use model distillation for inference; maintain lighter-weight baselines.
+- Distribution shift (ERA5→CMIP6, region transfer) — Use conformal calibration for marginal coverage, domain adaptation diagnostics; stratify metrics by regime.
+- Extreme-event scarcity — Use pooled regional extremes, block bootstrap for uncertainty, extreme-focused losses, and return-level diagnostics; evaluate conditional coverage at tails [3].
+- Reproducibility drift (libraries, seeds) — Freeze containers, pin libraries, record seeds and cudnn determinism; replicate runs across labs monthly [P4].
+- Overfitting to a single region or GCM — Use multiple CMIP6 models and EU/NA regions; enforce cross-region CV; report rank stability.
+- Operationalization gaps — Profile throughput/cost early (Month 5); maintain a “champion–challenger” approach where BCSD/quantile mapping remains fallback.
+
+6. Stretch ideas or follow-up directions
+- Ensemble-aware generative downscaling: Condition diffusion models on multi-GCM ensembles to propagate model uncertainty; compare to RCM ensembles in CORDEX [1][2].
+- Physics-aware constraints: Incorporate conservation or Clausius–Clapeyron scaling priors; evaluate physical plausibility post-hoc (water balance checks).
+- Spatiotemporal consistency: 3D (space–time) diffusion for persistence and storm structure; score with multivariate energy score and FSS over multi-day windows [2].
+- Human-in-the-loop calibration: Regional expert review for extreme-event plausibility; integrate calibration feedback into conformal risk sets.
+- Service integration: Prototype a monthly update pipeline aligned with C3S processes; compare method readiness against operational criteria [4].
+
+Optional next step
+- Convene a 90-minute cross-lab kickoff to finalize regions, splits, and metrics; assign owners for baselines and generative methods; confirm containers and data mirrors; and sign off the Month 1 deliverables.
+
+Citations
+- [1] CORDEX — Coordinated Regional Climate Downscaling Experiment — https://cordex.org/
+- [2] Dynamical-generative downscaling of climate model ensembles — https://www.pnas.org/doi/10.1073/pnas.2420288122
+- [3] Probabilistic downscaling of EURO-CORDEX precipitation data for the assessment of future areal precipitation extremes for hourly to daily durations — https://hess.copernicus.org/articles/29/1335/2025/
+- [4] C3S: Downscaling of CMIP6 Climate Projections using Machine Learning Tools — https://climate.copernicus.eu/c3s2384-downscaling-cmip6-climate-projections-using-machine-learning-tools-fill-gaps-worldwide
+- [P1] Probabilistic Super-Resolution for High-Fidelity Physical System Simulations with Uncertainty Quantification — http://arxiv.org/abs/2502.10280v1
+- [P2] Ensemble Multi-Quantiles: Adaptively Flexible Distribution Prediction for Uncertainty Quantification — http://arxiv.org/abs/2211.14545v3
+- [P4] A Rigorous Uncertainty-Aware Quantification Framework Is Essential for Reproducible and Replicable Machine Learning Workflows — http://arxiv.org/abs/2301.05763v3
+
+Note on evidence: [P1][P2][P4] provide general UQ/probabilistic modeling guidance rather than climate-specific results; we rely on [1] CORDEX, [2] generative downscaling in climate, and [3] HESS for domain-specific anchoring. To strengthen climate-specific evidence further, we will add peer-reviewed evaluations of ML downscaling with CRPS/energy score on E-OBS/Daymet and reports from ongoing services (e.g., C3S) during Month 1 literature sweep.

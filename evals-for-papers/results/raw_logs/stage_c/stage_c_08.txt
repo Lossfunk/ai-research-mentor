@@ -1,0 +1,168 @@
+1. Problem framing and goals
+- Objective: Build and evaluate a privacy-preserving, safety-aware mental health conversational assistant using only open-source models, data, and infrastructure. The system should minimize exposure of personally identifiable information (PII), reduce leakage of training examples, and avoid unsafe advice in crisis contexts, while maintaining acceptable conversational quality and empathy.
+- Threat model and constraints:
+  - Data confidentiality: No raw PII leaves the user’s device; if server-side fine-tuning is used, de-identify data pre-flight and/or apply federated learning and differentially private fine-tuning to protect contributors’ data [1][2][3][4][5][6][7].
+  - Deployment: Prefer on-device or user-controlled local deployment (e.g., laptop/edge device) to avoid cloud data transfer where feasible [11].
+  - Training/finetuning: Use differentially private (DP) fine-tuning and/or federated learning (FL) to reduce memorization and server-side exposure [1][2][3][4].
+  - Safety: Enforce mental-health-specific refusal and escalation policies, with targeted alignment and red-teaming for self-harm, medical, and crisis content [12][13].
+  - Compliance: Follow de-identification standards and data handling good practices; validate against HIPAA de-identification methods (expert determination or Safe Harbor). We could not locate an authoritative HHS PDF directly via this search; plan includes a legal review step using official HHS guidance and GDPR data protection principles before any deployment. Interim technical references are used for de-identification practices [7] and open-source tooling [5][6]; confirm with official HHS/GDPR texts during milestone reviews.
+- Success criteria (quantitative):
+  - Privacy: Membership inference/canary exposure substantially reduced vs. non-DP baseline; target ε ≤ 5 (DP-SGD accounting) for fine-tuning, with ≤ 1% significant canary exposure rate at 95% confidence.
+  - Safety: ≥ 95% safe handling on crisis prompts (no harmful instructions; appropriate disclaimers and resource referral), ≤ 2% toxicity rate on benchmark toxicity metrics.
+  - Utility: Conversational quality comparable to non-private baselines on empathy/appropriateness metrics (e.g., human or rubric-based ratings), within 5–10% relative of baseline.
+
+Note on literature: A combined research search surfaced mainly privacy methods in other modalities and is not specific to mental-health chatbots; therefore, this plan relies on targeted, method-specific sources for DP-LLMs, federated LLMs, de-identification, datasets, and on-device inference. We will add authoritative mental-health-specific evaluation references during Month 1 curation as described below.
+
+2. Experiments
+Experiment 1: Differentially private fine-tuning for counseling-style dialog
+- Hypothesis: DP-SGD fine-tuning with careful clipping/noise and LoRA/QLoRA preserves key conversational quality while reducing memorization/prior-data leakage compared with non-DP fine-tuning [1][2].
+- Setup:
+  - Model: Open LLM (e.g., Llama 3.x 8B–13B or Mistral 7B) in int8/4-bit for efficiency.
+  - Data: EmpatheticDialogues (for empathy) [9]; filtered “Mental Health Counseling Conversations” (HF/Kaggle) with aggressive de-identification and manual spot checks [10][5][6]; optionally synthetic augmentation to reduce PHI risk.
+  - Training: DP-SGD with accountant (Rényi DP or moments accountant) and per-layer clipping; compare ε ∈ {∞ (non-DP), 8, 5, 3}. Use LoRA to limit parameter updates and improve DP utility [1][2].
+- Baselines: Non-DP fine-tuned model; instruction-tuned base without domain data.
+- Evaluation metrics:
+  - Utility: Empathy/appropriateness rubric (crowd rater or small expert panel), BLEURT/BERTScore on EmpatheticDialogues [9]; user-simulated task success (providing supportive, non-diagnostic responses).
+  - Privacy: Canary exposure tests and black-box membership inference on held-out examples; report estimated ε and δ [1][2].
+  - Safety: Toxicity (e.g., averaged classifier probability); crisis-handling checklist compliance rate [13].
+- Expected outcomes: Moderate utility degradation with decreasing ε; noticeable reduction in exposure/membership-inference success for ε ≤ 5 versus non-DP [1][2].
+
+Experiment 2: Federated fine-tuning across decentralized shards
+- Hypothesis: Federated fine-tuning with secure aggregation achieves near-centralized performance while avoiding central collection of raw text; privacy improves relative to centralized non-DP fine-tuning [3][4].
+- Setup:
+  - Framework: OpenFedLLM (simulated clients; secure aggregation; optional per-client DP noise) [3].
+  - Data: Partition EmpatheticDialogues and MH counseling conversations across ≥ 50 simulated clients to mimic decentralized users [9][10].
+  - Protocols: FedAvg vs. FedProx; compare with centralized DP-SGD (Experiment 1).
+- Baselines: Centralized non-DP fine-tune; centralized DP fine-tune (best ε from Exp. 1).
+- Evaluation metrics:
+  - Utility: Same as Exp. 1.
+  - Privacy: Server never sees raw data; optional client-side DP; evaluate membership inference on global model; compare gradient inversion risk qualitatively; report communication/computation overhead [3][4].
+- Expected outcomes: FL utility close to centralized baseline with proper hyperparameters; privacy advantages by design (no raw data centralization); potential slight utility gap vs. centralized DP [3][4].
+
+Experiment 3: End-to-end de-identification pipeline and utility impact
+- Hypothesis: A hybrid PII scrubber combining rule-based (Philter) and ML-based (Presidio) achieves high recall on PHI with minimal utility loss for downstream fine-tuning [5][6][7].
+- Setup:
+  - Pipeline: Presidio text analyzer (NER + regex) + Philter rules tuned for clinical/mental-health content [5][6].
+  - Gold evaluation: Use a de-identified clinical-text benchmark to estimate recall/precision (note domain gap) and create a small, expert-annotated MH subset for PII labels [7].
+  - Downstream: Compare model utility when trained on original vs. de-identified text (plus post-processing to re-insert neutral placeholders).
+- Baselines: No de-identification; single-tool only (Presidio or Philter).
+- Evaluation metrics:
+  - PII detection: Precision/recall/F1 for PHI categories; error taxonomy (missed names, locations, dates).
+  - Utility: Same as Exp. 1; qualitative analysis for coherence after placeholder insertion.
+- Expected outcomes: Hybrid approach increases recall and overall F1 over single-tool baselines; small but acceptable drop in conversational naturalness [5][6][7].
+
+Experiment 4: On-device inference feasibility and quantization study
+- Hypothesis: 4–8 bit quantization with llama.cpp enables sub-1s/token latency on modern laptops while preserving acceptable safety and empathy [11].
+- Setup:
+  - Models: Llama/Mistral variants quantized to GGUF (Q4_K_M, Q5, Q8) using llama.cpp [11].
+  - Hardware: Mid-range laptop CPU + optional local GPU; measure memory and runtime.
+  - Prompts: Representative counseling and crisis prompts.
+- Baselines: Non-quantized GPU inference locally.
+- Evaluation metrics: Latency (ms/token), peak RAM, throughput; utility/safety as in Exp. 1 to test quantization effect.
+- Expected outcomes: 4–5 bit quantization yields large footprint/latency reductions with minor utility loss; demonstrates feasibility of private local inference [11].
+
+Experiment 5: Targeted safety alignment for crisis handling
+- Hypothesis: Safety-tuning with task-specific refusals and escalation policies (e.g., Safe-RLHF-style datasets or rule-based guardrails) increases safe-handling rates without excessive over-refusal [12][13].
+- Setup:
+  - Data: Curate red-team prompts for self-harm, diagnosis requests, medication questions; augment with open safety datasets (e.g., SafeRLHF dataset) [12].
+  - Methods: SFT on refusals + coach language; optionally preference optimization with synthetic or expert feedback; add rule-based guardrails for hard constraints and hotline resource templates.
+- Baselines: Untuned base; general safety-tuned model (not mental-health-specific).
+- Evaluation metrics: Safe handling rate; over-refusal rate on non-crisis benign prompts; toxicity; inclusion of empathetic language and referral to appropriate resources [12][13].
+- Expected outcomes: ≥ 95% safe handling with ≤ 10% over-refusal on benign MH queries; improved clarity of disclaimers and resource referral [12][13].
+
+Experiment 6: RAG without data exfiltration
+- Hypothesis: Local-only retrieval-augmented generation (RAG) with an encrypted-at-rest local vector store yields better factuality/grounding for psychoeducation content while preserving privacy.
+- Setup:
+  - Knowledge base: Curated psychoeducation documents vetted by clinicians and public health organizations (stored locally).
+  - Vector store: Local-only (e.g., Chroma) with full-disk or filesystem-level encryption; no remote calls. Client-side prompt templating for “education, not diagnosis.”
+- Baselines: No RAG; remote web search disabled.
+- Evaluation metrics: Factuality (expert rubric); refusal adherence; latency and footprint; zero network egress validation by traffic capture.
+- Expected outcomes: Improved factual grounding with no data egress; acceptable latency overhead.
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Foundations and governance
+  - Define threat model, data flows, logging policy (no server logs containing PII).
+  - Finalize datasets and licenses; run de-identification pipeline; assemble evaluation sets (empathy, crisis prompts, toxicity).
+  - Legal/ethics consult: Confirm HIPAA de-identification approach and GDPR data minimization; register internal IRB/ethics review for any human evaluation.
+  - Milestone: Approved data handling SOP, finalized datasets, evaluation plan.
+- Month 2: DP fine-tuning track (Experiment 1)
+  - Implement DP training with LoRA; sweep ε values; run privacy audits (canary and simple membership inference).
+  - Milestone: DP vs non-DP comparison report with utility/safety/privacy metrics.
+- Month 3: De-identification and safety (Experiments 3 and 5)
+  - Tune Presidio+Philter and evaluate PII detection; integrate guardrails and safety SFT; create crisis evaluation battery and run tests.
+  - Milestone: PII F1 ≥ target; safe-handling ≥ 95% on crisis prompts with low over-refusal.
+- Month 4: Federated learning and deployment (Experiments 2 and 4)
+  - Simulate FL with OpenFedLLM; compare to centralized DP; profile llama.cpp quantization on target devices.
+  - Milestone: FL utility gap ≤ X% vs centralized; on-device PoC meeting latency and memory budgets.
+- Month 5: RAG and comprehensive evaluation (Experiment 6)
+  - Build local-only RAG; execute full evaluation suite; small pilot user study (n=10–20) with consent and risk protocols for qualitative feedback on empathy/helpfulness (no clinical outcomes).
+  - Milestone: Pilot user feedback report; updated models.
+- Month 6: Hardening and dissemination
+  - Security review (network egress tests), reproducibility pack, ablations; finalize paper, artifacts (code, configs, model cards, datasheets), and ethical risk statement.
+  - Milestone: Submission-ready paper; open-source repo with reproducible pipelines.
+
+4. Resources (compute, tools, datasets)
+- Compute:
+  - Training: 1–2 GPUs (e.g., 24–48 GB VRAM) for QLoRA + DP; DP training is costlier—budget 2–3× non-DP time [1][2].
+  - Federated simulation: Single multi-GPU or CPU cluster for >50 clients simulation [3].
+  - On-device eval: Representative laptop/desktop; optional edge GPU.
+- Open-source tools:
+  - Modeling: PyTorch + Hugging Face Transformers; QLoRA; DP training library (e.g., Opacus or custom DP-SGD per literature [1][2]).
+  - Federated: OpenFedLLM [3].
+  - PII/De-identification: Microsoft Presidio; Philter [5][6].
+  - Inference: llama.cpp for local quantized GGUF [11].
+  - Safety: Safe-RLHF datasets/code; rule-based guardrails (e.g., regex/LLM-as-judge locally) [12].
+  - Eval: BERTScore/BLEURT; toxicity classifier; scripted crisis checklists; simple membership inference scripts.
+- Datasets (open):
+  - EmpatheticDialogues (empathy) [9].
+  - Mental Health Counseling Conversations (curated; verify source quality; apply de-ID) [10].
+  - RSDD (self-reported depression on Reddit) for non-conversational analysis and robustness tests; apply strict de-ID and community license compliance [8].
+  - Add psychoeducation corpus curated from public health sources for RAG (verify licenses).
+- Governance:
+  - Model card, data card, and risk statement; logging disabled by default; local-only mode.
+
+5. Risks and mitigations
+- Privacy leakage from fine-tuning data
+  - Mitigation: DP-SGD with documented ε, canary and membership-inference auditing; limit training to de-identified text; prefer FL to avoid central raw data [1][2][3][4][5][6][7].
+- De-identification misses rare PHI
+  - Mitigation: Hybrid Presidio+Philter with domain-tuned patterns; manual audits on samples; conservative placeholders; periodic re-evaluation [5][6][7].
+- Safety failures on crisis prompts
+  - Mitigation: Crisis-focused SFT, rule-based refusals, resource referral templates; continuous red-teaming; blocklists and high-recall safety classifier gating [12][13].
+- Utility degradation from DP/FL/quantization
+  - Mitigation: LoRA/QLoRA, hyperparameter sweeps, curriculum mixing synthetic neutral content; evaluate per ε/bit-depth; balance privacy budget.
+- Dataset licensing or representativeness issues
+  - Mitigation: Use permissive datasets; document demographic coverage; avoid claims of clinical efficacy; human evaluations only for usability, not diagnosis.
+- On-device hardware constraints
+  - Mitigation: Quantize to 4–5 bits; selective RAG; fallback to smaller models; profile latency and memory [11].
+- Regulatory uncertainty (HIPAA/GDPR)
+  - Mitigation: Legal review of de-ID approach and data flows; store no PHI by default; provide offline-only mode; align with data minimization principles; consult official HHS guidance in Month 1.
+- Ethical/user harm risk in pilots
+  - Mitigation: IRB/ethics review; limit to low-risk usability studies; clear disclaimers; immediate referral guidance for crisis content.
+
+6. Stretch ideas or follow-up directions
+- Personalized on-device adapters: Per-user LoRA adapters updated locally; aggregate only DP summaries of adapter gradients.
+- Teacher–student privacy: Use a larger private teacher to generate synthetic counseling data and distill to a small on-device student under DP.
+- Private telemetry: Opt-in aggregate analytics with local ε-bounded DP to inform safety improvements without collecting raw text.
+- Secure enclaves: Explore confidential computing (e.g., TEE) for edge servers if on-device infeasible (keep open-source stack otherwise).
+- Robustness to adversarial prompts: Evaluate and harden against jailbreaks in mental-health contexts using targeted red-team sets.
+
+Limitations of current evidence
+- The combined literature tool returned mostly non-chatbot privacy works and vision domains; thus it was not used for anchoring core claims. We instead used targeted sources for DP-LLMs, FL-LLMs, de-identification, datasets, on-device inference, and mental-health safety. During Month 1, we will perform a focused literature review on mental-health-specific LLM evaluation and crisis guidelines and incorporate additional authoritative references (e.g., official HHS documents and peer-reviewed clinical evaluations).
+
+Citations
+[1] Fine-Tuning Language Models with Differential Privacy through LoRA Modules — https://aclanthology.org/2024.findings-emnlp.491.pdf
+[2] Differentially Private Fine-tuning of Language Models — https://arxiv.org/abs/2110.06500
+[3] OpenFedLLM: Training Large Language Models on Decentralized Data — https://arxiv.org/html/2402.06954v1
+[4] Federated learning for privacy-preserving depression detection with wearable data — https://pmc.ncbi.nlm.nih.gov/articles/PMC11284503/
+[5] Microsoft Presidio (PII detection) — https://github.com/microsoft/presidio
+[6] Philter (clinical text de-identification) — https://github.com/BCHSI/philter-ucsf
+[7] A certified de-identification system for all clinical text documents — https://pmc.ncbi.nlm.nih.gov/articles/PMC10320112/
+[8] RSDD: Reddit Self-reported Depression Diagnosis — https://arxiv.org/pdf/1806.07916
+[9] EmpatheticDialogues (dataset) — https://arxiv.org/pdf/1811.00207
+[10] Mental Health Counseling Conversations (HF dataset) — https://huggingface.co/datasets/Amod/mental_health_counseling_conversations
+[11] llama.cpp (on-device LLM inference) — https://github.com/ggml-org/llama.cpp
+[12] Safe-RLHF (safety alignment toolkit/datasets) — https://github.com/PKU-Alignment/safe-rlhf
+[13] Risks from Language Models for Automated Mental Healthcare — https://www.medrxiv.org/content/10.1101/2024.04.07.24305462v1.full-text
+
+Optional next step
+- Confirm your preferred base model size and target deployment device class (e.g., laptop vs. mobile). I will then instantiate Experiment 1’s training config (model, ε grid, LoRA rank, optimizer, accountant) and produce a reproducible script and evaluation harness within 5 business days.

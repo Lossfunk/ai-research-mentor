@@ -1,116 +1,130 @@
 1. Problem framing and goals
-- Problem: Design and evaluate federated learning (FL) methods that remain accurate, fair, and cost-efficient under constraints typical in low-resource countries: intermittent connectivity, very low bandwidth, limited/heterogeneous device compute and energy, and highly non-IID, unbalanced data. Communication overhead and stragglers are primary bottlenecks in cross-device FL; both worsen under poor networks [P1], [P5]. Heterogeneous data and devices degrade convergence and global model quality; personalization can help [P2], [P6].
-- Primary goals:
-  - Reduce communication and wall-clock time without sacrificing accuracy [P1], [P5].
-  - Improve fairness and tail-client performance via personalization under non-IID data [P2], [P6].
-  - Achieve robustness to dropouts/stragglers via asynchronous or deadline-aware aggregation [P4], [P5].
-  - Measure and reduce energy/monetary costs per trained model round.
-  - Maintain privacy with secure aggregation and quantify the utility cost of differential privacy [P6].
-- Application scope: Begin with public cross-device FL benchmarks that emulate heterogeneity (LEAF, FedScale) and impose realistic network/energy constraints; later, seek one small real-world pilot (e.g., health or education) if feasible. Note: Field-quality evaluations in low-resource countries are limited; most published evidence is survey-level and simulation-based [P1], [P2], [P5], [P6]. We will explicitly simulate target constraints and, if possible, add a limited pilot to collect authoritative evidence.
-- Literature anchors:
-  - Kairouz et al., Advances and Open Problems in Federated Learning — a canonical reference that frames communication, heterogeneity, privacy, and systems constraints [P6].
-  - LEAF and FedScale benchmarks for realistic cross-device FL workloads [1], [2].
+- Context: In low-resource countries, federated learning (FL) must contend with intermittent/slow connectivity, heterogeneous and low-capability devices, limited energy, and partial client participation. These factors increase communication cost, destabilize convergence, and complicate fairness across clients [P2]. Semi-asynchronous aggregation and resource-aware client selection can reduce stragglers and idle waiting in heterogeneous IoT-like networks [P4]. Communication-minimizing paradigms (e.g., single-/one-shot FL) can reduce rounds to accommodate sparse connectivity [P5][P8].
+- Primary goal: Deliver and evaluate a robust, communication- and energy-efficient FL pipeline that maintains acceptable accuracy and fairness under real-world constraints (low bandwidth, device heterogeneity, client churn).
+- Secondary goals:
+  - Quantify trade-offs between communication, energy, time-to-accuracy, and model utility under partial participation and dropouts [P2].
+  - Validate semi-asynchronous aggregation and resource-aware client selection to improve wall-clock convergence in unreliable networks [P4].
+  - Evaluate single-/one-shot FL viability for extremely constrained settings [P5][P8].
+- Anchors: Adaptive/semi-asynchronous FL for resource-constrained devices [P4]; lightweight/single-shot FL for severely limited communication [P5].
 
 2. Experiments
-All experiments run on LEAF (FEMNIST, Shakespeare) and FedScale tasks (e.g., StackOverflow, SpeechCommands) with injected constraints: bandwidth caps (64–256 kbps), 30–60% client dropouts, heterogeneous device profiles (CPU-only vs GPU), and energy budgets. We will run three statistically independent trials per condition, report mean ± 95% CI, and release code and configs.
-
 Experiment 1: Communication-efficient FL under low bandwidth
-- Hypothesis: Gradient/weight compression plus more local steps can reduce bytes transferred by ≥5× with ≤1–2% absolute accuracy loss vs standard FedAvg in low-bandwidth settings [P3], [P5].
-- Setup: Compare FedAvg, FedProx, and SCAFFOLD with communication compression (QSGD, SignSGD, Top-k sparsification) and local steps (FedAvg-L with E∈{1,5,10}). Simulate 64–256 kbps uplink/downlink and 100–400 ms RTT. Datasets: FEMNIST [1], StackOverflow [2].
-- Baselines: FedAvg FP32 (no compression), FedOpt-Adam; client sampling at 10% per round with synchronous aggregation [P6].
-- Evaluation metrics: Test accuracy; bytes communicated per round and to target accuracy; rounds and wall-clock time to reach 90% of FedAvg accuracy; client participation rate under bandwidth caps.
-- Expected outcomes: Compressed updates + modest local steps substantially reduce bytes and time to target accuracy with small accuracy loss; aggressive compression or too many local steps degrade accuracy under highly non-IID data [P3], [P5], [P6].
+- Hypothesis: Gradient/weight compression (e.g., quantization to 8/4 bits; top-k sparsification) reduces upstream bytes by ≥10× with ≤2–3% absolute accuracy drop compared to uncompressed baselines under cross-device heterogeneity. This is motivated by the centrality of communication bottlenecks in FL and the promise of fewer/leaner updates in constrained settings [P2][P8].
+- Setup:
+  - Task: Image or text classification representative of local applications (e.g., low-resolution image classification or SMS intent). Start with publicly available small-scale proxies to ensure reproducibility.
+  - Setting: Cross-device simulation with 1–5k clients, non-IID shards, participation rate 1–10%, 10–30% random dropouts, emulated uplink bandwidth 10–200 kbps.
+  - Methods: FedAvg baseline without compression; with 8-/4-bit quantization; with top-k (e.g., 1% sparsity) and error feedback; single-round “one-shot” model aggregation as an extreme variant [P8].
+- Baselines: Uncompressed FedAvg; periodic local SGD with full-precision updates; single-shot lightweight approach (e.g., k-NN voting-style single-shot from [P5]) to set a lower-communication floor.
+- Evaluation metrics:
+  - Utility: Top-1 accuracy, AUROC (if imbalanced), convergence rounds and wall-clock time.
+  - Efficiency: Upload/download bytes per client and total; number of communication rounds.
+  - Robustness/fairness: 10th-percentile client accuracy; variance across clients.
+  - Energy proxy: CPU time and radio TX/RX time per round.
+- Expected outcomes: Compression strategies should reduce communication by an order of magnitude with modest utility loss; single-/one-shot FL will minimize rounds but may yield lower peak accuracy or require stronger local models [P2][P5][P8].
 
-Experiment 2: Personalization for non-IID and fairness
-- Hypothesis: Personalized FL (Per-FedAvg, pFedMe, FedBN) improves the 10th-percentile client accuracy and calibration vs a single global model under non-IID splits [P2], [P6].
-- Setup: Non-IID splits by client (e.g., writer- or user-based partitioning). Compare global FedAvg/FedProx vs Per-FedAvg, pFedMe, and FedBN. Keep communication budget equal across methods.
-- Baselines: FedAvg global model; local-only training (no FL) as a reference upper bound for personalization.
-- Evaluation metrics: Overall accuracy; client-wise accuracy distribution (10th/50th/90th percentiles); ECE calibration; fairness gap (max-min client accuracy); bytes to target fairness.
-- Expected outcomes: Personalized methods close the tail-client gap by several percentage points with small extra computation, especially when client data distributions are skewed [P2], [P6].
+Experiment 2: Semi-asynchronous aggregation for intermittent connectivity
+- Hypothesis: Semi-asynchronous or staleness-aware aggregation improves time-to-target-accuracy by ≥20–30% over synchronous FedAvg under 20–50% client dropouts, with comparable final accuracy [P4].
+- Setup:
+  - Task: Same as Experiment 1 for comparability.
+  - Network: Introduce variable latency and sporadic outages, with clustered outages to mimic grid/power patterns.
+  - Methods: Synchronous FedAvg vs semi-asynchronous server that accepts partial sets each round, caps staleness, and re-weights stale updates; bounded-delay rules as in semi-async designs [P4].
+- Baselines: Synchronous FedAvg with straggler tolerance (timeouts); buffered aggregation without staleness control.
+- Evaluation metrics:
+  - Time-to-X% accuracy; final accuracy after fixed wall-clock budget.
+  - Effective client utilization (fraction of selected clients whose updates are accepted).
+  - Bytes/accuracy and energy/accuracy ratios.
+- Expected outcomes: Semi-async reduces idle waiting and improves wall-clock efficiency while preserving accuracy when staleness is bounded [P4].
 
-Experiment 3: Straggler/dropout robustness via asynchronous or deadline-aware FL
-- Hypothesis: Asynchronous or deadline-based partial aggregation reduces wall-clock time to target accuracy by ≥25% with ≤1% accuracy loss vs synchronous FedAvg under 40–60% dropouts [P4], [P5].
-- Setup: Implement synchronous FedAvg with (a) random client sampling and (b) deadline-based early aggregation; compare to an asynchronous server (e.g., FedAsync-style) with staleness-aware weighting. Inject intermittent connectivity and variable compute speeds.
-- Baselines: Synchronous FedAvg with fixed round timeouts.
-- Evaluation metrics: Wall-clock time and rounds to target accuracy; staleness distribution; robustness to correlated dropouts; final accuracy.
-- Expected outcomes: Deadline-aware and asynchronous variants reach target accuracy faster and tolerate higher dropout rates at small or moderate accuracy cost [P4], [P5].
+Experiment 3: Resource-aware client selection to improve throughput and fairness
+- Hypothesis: Selecting clients by a simple utility-per-time (estimated update value divided by expected completion time/energy) reduces time-to-accuracy and increases low-percentile client performance relative to random selection in heterogeneous environments [P4].
+- Setup:
+  - Client metadata: Lightweight telemetry (device class, historical completion time, last-success timestamps).
+  - Policies: Random selection; availability-first; resource-aware utility-per-time selection; inclusion quotas for underrepresented client groups to mitigate bias.
+- Baselines: Random and availability-only selection.
+- Evaluation metrics:
+  - Throughput: successful updates per wall-clock hour.
+  - Fairness: 10th-percentile client accuracy; worst-group accuracy.
+  - Robustness: Performance with diurnal availability patterns and sudden outages.
+- Expected outcomes: Resource-aware selection improves throughput and reduces straggler-induced slowdowns; quota mechanisms can mitigate neglected-client underperformance without large global utility loss [P4]. 
 
-Experiment 4: Energy- and cost-aware client selection
-- Hypothesis: Selecting clients by marginal utility per joule (or per dollar of data) reduces energy by ≥30% at comparable accuracy vs random sampling [P1], [P5].
-- Setup: Measure device energy during local training and transmission (Android Battery Historian or Monsoon Power Monitor) to build simple per-client energy models. Compare random vs energy-aware sampling (maximize expected gradient diversity per joule).
-- Baselines: Random client sampling; uniform participation.
-- Evaluation metrics: Joules and monetary data cost per round and to target accuracy; accuracy; fairness across low- vs high-end devices.
-- Expected outcomes: Energy-aware sampling cuts energy and data costs with negligible accuracy change; may slightly increase fairness gaps if not combined with fairness constraints [P1], [P5]. We will include a fairness-regularized variant.
+Experiment 4: Single-/one-shot FL feasibility in ultra-low-connectivity settings
+- Hypothesis: One-shot or very-few-shot FL can meet minimum utility thresholds (e.g., >60–70% of multi-round baseline accuracy) when multi-round communication is infeasible, especially with well-regularized local training and strong pretraining [P5][P8].
+- Setup:
+  - Methods: One-shot aggregation from locally trained models; few-shot (2–3 rounds) with large local epochs; compare to multi-round compressed FL.
+- Baselines: Multi-round compressed FedAvg; centralized training on a small proxy if permissible (for upper bound).
+- Evaluation metrics:
+  - Utility: Accuracy gap to multi-round baseline.
+  - Communication: Rounds and total bytes.
+  - Stability: Sensitivity to local epoch length and non-IID severity.
+- Expected outcomes: One-/few-shot approaches deliver dramatic comms savings at the cost of some utility; may be acceptable under extreme constraints or as a bootstrapping stage [P5][P8].
 
-Experiment 5: Privacy-utility trade-offs (DP + secure aggregation)
-- Hypothesis: With secure aggregation and user-level DP-SGD, epsilon in [3–8] yields <2–4% absolute accuracy drop vs no DP on these tasks, with additional runtime/communication overhead [P6].
-- Setup: Implement secure aggregation at the server; add user-level DP-SGD noise accounting and clipping. Sweep noise multipliers and participation rates at fixed communication budgets.
-- Baselines: No-DP secure aggregation; pure FedAvg.
-- Evaluation metrics: Utility (accuracy), privacy (ε under standard accounting), runtime, bytes; degradation across tail clients.
-- Expected outcomes: DP reduces accuracy more under highly non-IID and small client participation; secure aggregation adds modest overhead but preserves utility [P6].
+Note: Privacy/security (DP-SGD, secure aggregation) are essential in deployment, but the retrieved sources do not provide concrete, implementation-level guidance on these aspects. We will incorporate them and source canonical references (e.g., DP-SGD and secure aggregation) before pilot testing; see “Risks and mitigations” and evidence-gathering plan.
 
 3. Timeline for the next 6 months with milestones
-- Month 1: Infrastructure and baselines
-  - Stand up FL stack (Flower or FedML), implement network emulation (tc/netem) and dropout/straggler models. Reproduce FedAvg/FedProx on LEAF FEMNIST, Shakespeare, and FedScale StackOverflow [1], [2]. Instrument communication and energy logging. Draft ethics/privacy plan.
-- Month 2: Communication-efficiency (Exp 1)
-  - Implement compression (QSGD, SignSGD, Top-k) and local-step sweeps. Complete ablations: compression levels, local steps, client sampling rates. Draft section on comms results with statistical CIs.
-- Month 3: Personalization (Exp 2)
-  - Implement Per-FedAvg, pFedMe, FedBN; non-IID severity sweeps. Add fairness metrics and calibration. Prepare figures for client distribution performance.
-- Month 4: Straggler/asynchrony (Exp 3)
-  - Implement deadline-based and asynchronous aggregation. Vary dropout correlations and staleness penalties. Summarize wall-clock benefits vs accuracy.
-- Month 5: Energy/cost-aware sampling (Exp 4)
-  - Collect device energy traces; fit energy models; run sampling policies. Add fairness-regularized variant. Sensitivity to energy model errors.
-- Month 6: Privacy-utility (Exp 5) and integration
-  - Integrate secure aggregation and user-level DP. Sweep ε and participation rates. Finalize cross-experiment synthesis; prepare artifacts (code, configs, Dockerfiles) and paper draft.
+- Month 1: Requirements and simulation scaffolding
+  - Define 2–3 target tasks and success metrics with stakeholders.
+  - Build reproducible cross-device simulator with bandwidth/latency/outage models; add energy proxies.
+  - Implement baselines: synchronous FedAvg; logging for bytes, time, fairness.
+  - Milestone: Baseline runs and data pipeline ready; first accuracy vs communication curve [P2].
+- Month 2: Communication-efficiency sweep
+  - Implement quantization (8/4-bit) and sparsification with error feedback; add one-/few-shot variants.
+  - Run grid across participation rates (1–20%), dropouts (10–50%), and non-IID levels.
+  - Milestone: Report showing accuracy/bytes trade-offs; select top 2 methods for further study [P2][P8].
+- Month 3: Semi-asynchronous and staleness control
+  - Add semi-async aggregator with staleness caps and reweighting.
+  - Compare wall-clock time-to-accuracy vs synchronous baselines.
+  - Milestone: Demonstrate ≥20% wall-clock improvement in at least one regime or adjust design [P4].
+- Month 4: Client selection and fairness
+  - Implement resource-aware selection and quotas; evaluate throughput and low-percentile accuracy.
+  - Start small on-device pilot (5–20 Android devices or SBCs) to validate telemetry and energy measurements.
+  - Milestone: Evidence that resource-aware selection improves throughput without fairness regression [P4].
+- Month 5: Integrated best configuration + robustness
+  - Combine best compression + semi-async + selection; stress test with outage bursts and diurnal patterns.
+  - Sensitivity analyses: model size, local epochs, participation rate.
+  - Milestone: Integrated system surpasses predefined communication and time targets with acceptable accuracy.
+- Month 6: Privacy, documentation, and dissemination
+  - Integrate DP/secure aggregation prototypes; quantify utility cost (subject to sourcing canonical methods).
+  - Prepare paper with ablations and negative results; create open-source artifacts and reproducibility package.
+  - Milestone: Submission-ready manuscript with complete experimental appendix.
 
 4. Resources (compute, tools, datasets)
 - Compute:
-  - Server: 1–2 GPUs (e.g., A6000/A100) or CPU-only if models are small; 64–128 GB RAM. Persistent storage for checkpoints/metrics.
-  - Clients: Simulated clients (containers/threads) plus a small pool (5–20) of real low-end Android phones or Raspberry Pi 4 for validation of energy/latency effects.
+  - Server: 1–2 modest GPUs (e.g., RTX 3090/A5000) or CPU-only if models are small; 64–128 GB RAM.
+  - Clients: 10–30 low-end Android phones or Raspberry Pi-class devices for pilot; larger simulated cohorts.
 - Tools:
-  - FL frameworks: Flower or FedML for orchestration; TensorFlow Federated or PyTorch for models.
-  - Benchmarks: LEAF (FEMNIST, Shakespeare) and FedScale (e.g., StackOverflow, SpeechCommands) [1], [2].
-  - Network/energy: Linux tc/netem for bandwidth/latency; Monsoon Power Monitor or Android Battery Historian for energy; Prometheus/Grafana for telemetry.
-  - Privacy: TensorFlow Privacy or Opacus; secure aggregation via PySyft/OpenMined or framework-native support.
-- Datasets:
-  - LEAF: FEMNIST, Shakespeare (non-IID, cross-device) [1].
-  - FedScale: StackOverflow, SpeechCommands, Reddit-like workloads with realistic client traces [2].
-  - Optional: add a small, de-identified local corpus relevant to target communities (e.g., bilingual SMS-like text), with IRB approval.
+  - FL frameworks: Flower or FedML for cross-device orchestration and custom strategies (semi-async, selection).
+  - Network emulation: Linux tc/netem or Mahimahi for bandwidth/latency/outages.
+  - Telemetry: Lightweight client timers and OS battery stats; server-side logging of bytes/time.
+- Datasets/tasks:
+  - Start with small, mobile-suitable public datasets (e.g., low-res images or text classification) to keep on-device compute low; move to domain-specific data with partners as available.
+  - Note: The retrieved sources do not specify standard cross-device LMIC datasets; we will curate or adapt small public datasets as proxies and document distributional assumptions to avoid overclaiming external validity.
 
 5. Risks and mitigations table
-- Risk: Simulations may not reflect real low-resource networks; results overfit to emulator settings.
-  - Mitigation: Calibrate emulator with measurements from at least 5–10 real devices on varied networks; include a small real-device evaluation subset in each experiment; report sensitivity analyses [P4], [P5].
-- Risk: Non-IID severity is mis-specified, biasing personalization results.
-  - Mitigation: Use multiple non-IID generators and real partitions from LEAF/FedScale; report results across severities [1], [2], [P2].
-- Risk: Energy measurements noisy or device-specific.
-  - Mitigation: Repeat measurements, normalize by task, and build simple per-device energy models with uncertainty, then test robustness to model error.
-- Risk: Communication compression harms convergence on some tasks.
-  - Mitigation: Pair compression with optimizer variants (FedOpt), error-feedback, and tune local steps; early-stop on divergence [P3], [P5].
-- Risk: Asynchronous training destabilizes convergence.
-  - Mitigation: Use staleness-aware weighting and bounded delay; hybrid deadline-based partial aggregation [P4], [P5].
-- Risk: Privacy mechanisms degrade utility more than expected.
-  - Mitigation: Tune clipping/participation; adopt personalization to recover tail performance; clearly report ε-utility curves [P6].
-- Risk: Security/poisoning attacks.
-  - Mitigation: Use secure aggregation; add robust aggregation (trimmed mean, median) in ablations; monitor update anomalies [P6].
-- Risk: Reproducibility gaps.
-  - Mitigation: Release full configs, seeds, hardware specs, and Docker images; run 3+ trials with CIs.
+- Communication bottlenecks cause poor convergence — Use quantization/sparsification and few-/one-shot training; limit model size; measure bytes/accuracy trade-offs rigorously [P2][P5][P8].
+- Stragglers and outages stall synchronous rounds — Adopt semi-asynchronous aggregation with staleness bounds and reweighting [P4].
+- Heterogeneity harms fairness (some clients underperform) — Track 10th-percentile and worst-group metrics; apply quotas during client selection; allow light personalization heads; report disparities transparently [P2].
+- Energy constraints reduce participation — Shorten local epochs for low-end devices; schedule training during charging/Wi‑Fi windows; reward designs requiring fewer rounds [P2][P4].
+- Privacy and security gaps — Integrate secure aggregation and DP; quantify utility/privacy trade-offs; seek domain approvals. Limitation: current citations set lacks detailed DP/SA guidance; we will bring in canonical methods before pilot.
+- External validity (sim-to-real gap) — Run on-device micro-pilots early (Month 4) to calibrate emulator parameters and energy proxies; adjust models accordingly.
+- Limited datasets representative of LMIC contexts — Partner with local orgs; define data governance; start with proxies and document assumptions; build synthetic stress tests for non-IID and outages.
 
 6. Stretch ideas or follow-up directions
-- Hierarchical FL with community/edge micro-servers to reduce WAN hops and enable store-and-forward during outages [P4].
-- Incentive-aware client selection (e.g., airtime credits), balancing fairness and energy/cost budgets.
-- Joint model compression and personalization (knowledge distillation during personalization rounds) to cut both on-device compute and communication [P3], [P6].
-- Fairness-aware objectives (e.g., group-DRO-style losses) for underserved client groups.
-- Semi-supervised FL to leverage abundant unlabeled on-device data with minimal labels.
+- Opportunistic/one-shot FL: Use one-shot or very-few-shot FL for areas with sporadic connectivity; combine with strong pretraining and local regularization [P5][P8].
+- Semi-async + adaptive compression: Dynamically adjust quantization/sparsity based on instantaneous link quality for better QoS under volatility [P4].
+- Federated continual learning for evolving domains: Study memory/compute–performance trade-offs over time as data drifts, aligning with resource-constrained continual FL needs [P1].
+- Extremely lightweight learners: Explore non-parametric or tiny models for initial deployment (e.g., k-NN/majority-vote single-shot baselines) and distill into larger models when connectivity allows [P5].
+- Policy-aware client selection: Incorporate fairness constraints or service-level guarantees into selection objective (e.g., minimum update frequency per group) [P4].
+
+Limitations and evidence-gathering plan
+- The retrieved sources provide strong support for: (i) communication bottlenecks and the need for comm-efficient or one-/few-shot methods [P2][P5][P8]; and (ii) semi-asynchronous aggregation and resource-aware selection under heterogeneous IoT-like constraints [P4]. 
+- Gaps: Concrete, authoritative references for differential privacy in FL and secure aggregation are not present in this set. Before pilot deployment, we will add canonical citations and implementations (e.g., DP-SGD and secure aggregation) via targeted searches and established libraries, and re-run key experiments with privacy enabled.
 
 Citations
-- [P1] Exploring the Practicality of Federated Learning: A Survey Towards the Communication Perspective — https://arxiv.org/html/2405.20431v1
-- [P2] Heterogeneous Federated Learning: State-of-the-art and Research Challenges — https://export.arxiv.org/pdf/2307.10616v2.pdf
-- [P3] Communication overhead reduction in federated learning: a review — https://link.springer.com/article/10.1007/s41060-024-00691-x
-- [P4] Enabling Federated Learning across the Computing Continuum: Systems, Challenges and Future Directions — https://hal.science/hal-04659211v1/file/Enabling_FL_across_the_CC_Systems_Challenges_and_Future_Directions.pdf
-- [P5] Towards Efficient Communications in Federated Learning: A Contemporary Survey — https://export.arxiv.org/pdf/2208.01200v2.pdf
-- [P6] Advances and Open Problems in Federated Learning — https://inria.hal.science/hal-02406503v2/document
-- [1] LEAF: A Benchmark for Federated Settings — https://arxiv.org/pdf/1812.01097
-- [2] FedScale: Benchmarking Model and System Performance of Federated Learning — https://arxiv.org/pdf/2105.11367
+- [P1] Resource-Constrained Federated Continual Learning: What Does ... — https://arxiv.org/html/2501.08737v1
+- [P2] Issues in federated learning: some experiments and preliminary ... — https://www.nature.com/articles/s41598-024-81732-0
+- [P4] Adaptive federated learning for resource-constrained IoT devices ... — https://www.nature.com/articles/s41598-024-78239-z
+- [P5] Lightweight Federated Learning Approach for Resource-Constrained Internet of Things — https://pmc.ncbi.nlm.nih.gov/articles/PMC12473279/
+- [P8] Towards One-shot Federated Learning: Advances, Challenges, and Future Directions — https://arxiv.org/html/2505.02426v1
 
 Optional next step
-- Spin up the baseline stack (Flower + LEAF FEMNIST) and reproduce FedAvg/FedProx with bandwidth capped at 128 kbps, logging bytes/time/accuracy; this produces initial calibration plots for Experiment 1 within one week.
+- If you share your target application (e.g., health, agriculture, education) and the typical client device/network profile, I can instantiate the above with concrete models, datasets, and success thresholds and draft the exact ablation grid.

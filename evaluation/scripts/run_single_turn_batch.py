@@ -446,6 +446,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Optional judge spec for pairwise preference scoring (repeatable)",
     )
     parser.add_argument(
+        "--pairwise-only",
+        action="store_true",
+        help="Skip absolute scoring and run only pairwise comparisons (requires --pairwise-judge)",
+    )
+    parser.add_argument(
         "--attach-pdf",
         dest="attach_pdfs",
         action="append",
@@ -536,12 +541,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print_info("Skipping response generation (--skip-generation)")
     
     # Phase 2: Run judge scoring
-    if args.skip_judge:
+    if args.skip_judge and not args.pairwise_judges:
         print_info("Skipping judge scoring (--skip-judge)")
         return 0
 
-    print_info(f"Running judge scoring with model: {args.judge}")
-    
+    if args.pairwise_only and not args.pairwise_judges:
+        print_error("--pairwise-only requires at least one --pairwise-judge")
+        return 1
+
+    if args.skip_judge:
+        print_info("Skipping absolute scoring (--skip-judge)")
+    elif args.pairwise_only:
+        print_info("Skipping absolute scoring (--pairwise-only)")
+    else:
+        print_info(f"Running judge scoring with model: {args.judge}")
+
     # Find all meta files for the stage (including from multiple systems)
     meta_files = list(analysis_dir.glob("*_meta.json"))
 
@@ -551,29 +565,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     print_info(f"Found {len(meta_files)} meta files for scoring")
     
-    # Ensure root output directory exists
-    (analysis_dir / args.output_label).mkdir(parents=True, exist_ok=True)
+    if not (args.skip_judge or args.pairwise_only):
+        # Ensure root output directory exists
+        (analysis_dir / args.output_label).mkdir(parents=True, exist_ok=True)
 
-    # Score each system separately
-    for system in systems:
-        system_safe = system.replace("/", "_")
-        print_info(f"Scoring {system}...")
+        # Score each system separately
+        for system in systems:
+            system_safe = system.replace("/", "_")
+            print_info(f"Scoring {system}...")
 
-        try:
-            summary = run_judges(
-                stage=args.stage,
-                prompt_ids=None,
-                judge_specs=[args.judge],
-                annotator=f"batch_{system_safe}",
-                force=False,
-                output_label=f"{args.output_label}/absolute/{system_safe}",
-                system_filter=system,
-            )
-            print_success(
-                f"Completed scoring for {system} — processed {summary.get('processed', 0)} prompt(s)"
-            )
-        except Exception as exc:
-            print_error(f"Scoring failed for {system}: {exc}")
+            try:
+                summary = run_judges(
+                    stage=args.stage,
+                    prompt_ids=None,
+                    judge_specs=[args.judge],
+                    annotator=f"batch_{system_safe}",
+                    force=False,
+                    output_label=f"{args.output_label}/absolute/{system_safe}",
+                    system_filter=system,
+                )
+                print_success(
+                    f"Completed scoring for {system} — processed {summary.get('processed', 0)} prompt(s)"
+                )
+            except Exception as exc:
+                print_error(f"Scoring failed for {system}: {exc}")
     
     if args.pairwise_judges:
         meta_index = load_meta_index(analysis_dir)

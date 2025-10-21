@@ -1,0 +1,62 @@
+Short answer
+- Yes—there’s substantial prior work pretraining/self-supervised learning (SSL) on clinical notes (e.g., ClinicalBERT) and scaling to foundation models (e.g., GatorTron). These typically use masked-language modeling or related SSL objectives and show strong gains on downstream clinical NLP tasks [P1]. GatorTron scaled to >90B tokens of clinical notes to improve performance across diverse tasks.
+- Ethical risks are real: de-identification alone is imperfect, and large language models can memorize and regurgitate sensitive text; you should anticipate PHI leakage risks, membership-inference attacks, and subgroup harm if not mitigated [P2],[P3].
+
+What counts as prior work?
+- ClinicalBERT: Pretrained BERT on MIMIC-III clinical notes; improved readmission prediction and other tasks, showing clear utility of in-domain SSL on notes [P1].
+- Privacy/de-identification in clinical text: Studies emphasize that de-identification is necessary but not sufficient for safe data sharing or model release; residual re-identification risk remains [P2]. Methods for privacy-preserving text representations and de-identification pipelines have been explored in clinical NLP [P8].
+- Model memorization risk in LMs: Empirical work shows that LMs can memorize and regurgitate training data; memorization increases with scale and duplication, necessitating explicit mitigations during training and evaluation [P3].
+
+Key ethical and safety risks (and mitigations)
+- PHI leakage via memorization or extraction: Large models can output verbatim training snippets; evaluate and mitigate memorization (e.g., deduplication, DP-SGD, canary/red-team tests, prompt-injection style probes, and post-training filters) [P3].
+- De-identification limits: Even “de-identified” notes can retain residual risk; consider expert determination, strict access controls, and avoid releasing raw notes or fully open models trained on them [P2].
+- Membership inference/model inversion: Adversaries may infer whether a patient’s note was in training; conduct membership-inference audits and consider noise-based training or private aggregation if feasible [P3].
+- Bias and subgroup harm: Compare performance across demographics and clinical subgroups; document disparities and implement mitigation if observed (e.g., reweighting, tailored thresholds).
+- Governance and reporting: Obtain IRB approval/waiver, follow institutional data-use agreements, log access, and report model development and evaluation transparently (e.g., TRIPOD+AI for prediction models; CONSORT-AI/SPIRIT-AI for trials if intervening in care) (BMJ TRIPOD+AI; BMJ CONSORT-AI; BMJ SPIRIT-AI).
+
+Three concrete, falsifiable experiments you can run
+1) Utility–privacy trade-off with differential privacy in SSL
+- Hypothesis: DP-SGD during masked-language-model pretraining on shift notes reduces leakage with acceptable utility loss.
+- Variables: ε (privacy budget), noise multiplier, clipping norm vs. none (baseline).
+- Metrics: Downstream AUROC/F1 on readmission/mortality/phenotyping; exact-match regurgitation rate on held-out “canary” phrases; membership-inference AUC; perplexity.
+- Expected outcome: As ε decreases (more privacy), downstream metrics degrade modestly while leakage and membership-inference success drop substantially [P3], with viability window identified.
+
+2) De-identified vs. raw vs. synthetic notes for SSL pretraining
+- Hypothesis: SSL on expertly de-identified notes rivals raw-note pretraining utility while lowering leakage risk; synthetic notes further reduce leakage but may reduce utility.
+- Variables: Training corpus (raw, expert de-identified, high-quality synthetic), same SSL objective/compute.
+- Metrics: Downstream performance; regurgitation and membership-inference audits; qualitative red-teaming; manual PHI leakage checks on generations.
+- Expected outcome: De-identified ≈ raw on utility but lower leakage; synthetic maintains some utility but with the lowest leakage—consistent with concerns that de-identification alone is not a panacea [P2].
+
+3) Scale and duplication effects on memorization and PHI risk
+- Hypothesis: Increasing token count and duplication drives higher memorization and leakage; aggressive deduplication reduces leakage with minimal utility loss.
+- Variables: Corpus size (e.g., 10M, 50M, 200M tokens), duplication rate (with/without near-duplicate removal).
+- Metrics: Memorization benchmarks (canary extraction, verbatim n-gram regurgitation under prompts), downstream utility, calibration.
+- Expected outcome: Memorization rises with scale and duplication; deduplication reduces leakage at similar downstream performance [P3].
+
+4) Fairness audit for downstream clinical tasks (optional)
+- Hypothesis: SSL-pretrained representations can exhibit subgroup performance disparities if shift notes encode systematic differences.
+- Variables: Subgroups by age, sex, race/ethnicity, language.
+- Metrics: AUROC/AUPRC, calibration error, error-rate parity; significance via bootstrap or permutation tests.
+- Expected outcome: Identify disparities and quantify their magnitude; guides bias mitigation.
+
+Practical setup tips
+- Start with masked language modeling on de-identified shift notes where feasible; maintain secure compute and strict access controls.
+- Deduplicate aggressively and filter low-utility templates/signatures to reduce duplication-driven memorization [P3].
+- Run privacy audits: canary insertion tests, adversarial prompting for regurgitation, and membership-inference probes, recorded alongside model cards and data statements.
+- If you consider release, prefer restricted-access checkpoints, not fully open weights; accompany with evaluation artifacts and limitations (TRIPOD+AI for prediction models; CONSORT-AI/SPIRIT-AI if any interventional trial elements are involved).
+
+Literature anchors
+- ClinicalBERT: modeling clinical notes with BERT shows strong gains from in-domain SSL on notes [P1].
+- Emergent memorization: LMs memorize in predictable ways; risk increases with scale and duplication, informing your privacy audits [P3].
+
+Citations
+- [P1] ClinicalBERT: Modeling Clinical Notes and Predicting Hospital Readmission — http://arxiv.org/abs/1904.05342v3
+- [P2] De-identification is not enough: a comparison between de-identified and synthetic clinical notes — http://arxiv.org/abs/2402.00179v2
+- [P3] Emergent and Predictable Memorization in Large Language Models — http://arxiv.org/abs/2304.11158v2
+- [P8] Adversarial Learning of Privacy-Preserving Text Representations for De-Identification of Medical Records — http://arxiv.org/abs/1906.05000v1
+- GatorTron: A Large Clinical Language Model to Unlock Patient Information from Unstructured Electronic Health Records — http://arxiv.org/abs/2203.03540v3
+- TRIPOD+AI: an updated reporting guideline for clinical prediction models that use ML — https://www.bmj.com/content/385/bmj.q824
+- CONSORT-AI: reporting guidelines for clinical trials of AI interventions — https://www.bmj.com/content/370/bmj.m3164
+- SPIRIT-AI: protocol guidelines for clinical trials involving AI — https://www.bmj.com/content/370/bmj.m3210
+
+If you share a bit more context (data size, whether notes are already de-identified, and intended downstream tasks), I can tailor the SSL objective, privacy budget, and evaluation plan.
