@@ -1,64 +1,55 @@
-Short answer: Yes—you can do strong, publishable AI research without loving math by focusing on empirical, data/benchmark, safety, and human-centered work. These areas reward rigor in evaluation, documentation, and study design over heavy theory.
+Short answer: Yes—you can do impactful AI research without leaning on heavy math by focusing on empirical, data-centric, human-in-the-loop, and evaluation/benchmark work. The key is to ask crisp questions, run careful experiments, and report transparently [G5], [G20], [G10]. Prompt and agent design can also be studied empirically (e.g., systematic prompt engineering) without deep theory [P5].
 
-Good fit research tracks if you dislike heavy math
-- Data-centric AI and dataset work: auditing labels, curating splits, documenting dataset/model behavior, and analyzing failure slices. Tools like DC-Check provide step-by-step guidance for reliable, data-first ML development [P3]. Model Cards standardize transparent reporting of performance across subgroups and scenarios [P4].  
-- Benchmarking and evaluation: designing or stress-testing benchmarks, preventing leakage, and ensuring discriminative, reliable metrics; BetterBench lists 46 best practices to assess and improve benchmarks [P2]. REFORMS is a reporting checklist for rigor, reproducibility, and generalizability in ML-based science [P1].  
-- Safety evaluation and red teaming: structured risk assessments, adversarial testing procedures, and taxonomy-guided red teams to uncover failure modes in advanced models [P5].  
+Math-light research tracks you can pursue
+- Evaluation and benchmarking: Design targeted tests, failure analyses, and robust metrics; replicate and sanity-check claims [G5], [G20]. 
+- Data-centric AI: Curate, document, and audit datasets; build tools and processes (datasheets, model cards) that improve reliability and fairness [G20].
+- Prompt/agent design: Develop and evaluate prompting or tool-use patterns across tasks; focus on reproducible gains rather than ad hoc tricks [P5], [G5].
+- Human-in-the-loop: Study annotation protocols, preference data, and user studies that improve model alignment and usability [G20].
 
-How to be rigorous without heavy math
-- Use checklists and standards: DC-Check for data pipeline reliability [P3]; Model Cards for transparent model reporting [P4]; REFORMS for comprehensive reporting in ML-based science [P1].  
-- Strong evaluation design: define primary/secondary metrics in advance; create held-out and stress-test splits; control for leakage; and measure ranking stability of models across benchmark variants, per BetterBench [P2].  
-- Baselines and ablations: include simple, transparent baselines; perform ablations on data cleaning steps and prompts; and explicitly document changes and their effects [P1][P2][P3].  
-- Slice/error analysis: report subgroup and scenario performance, and analyze frequent error types to guide data improvements [P4].  
-- Reproducibility: release code, configurations, evaluation harnesses, and data documentation; follow reporting standards to improve credibility [P1][P4].
+Minimal math you’ll need
+- Descriptive stats, uncertainty estimates (mean ± CI), basic experimental design (train/test splits, multiple seeds), and preregistration of your analysis plan [G1], [G20]. You can keep this lightweight while maintaining rigor.
 
-A practical 8–10 week starter plan
-- Week 1–2: Pick a narrow task and dataset in your interest area (e.g., toxicity classification, retrieval QA, or a vision classification dataset). Draft a Model Card template you’ll fill out later [P4].  
-- Week 2–3: Build an evaluation harness with stable splits, seed control, and basic stress tests (e.g., prompt variations, typos, domain shifts). Predefine metrics and acceptance criteria; outline reporting per REFORMS [P1].  
-- Week 3–4: Run baselines and 1–2 stronger reference models. Do initial error/slice analysis; identify likely data issues (ambiguous labels, duplicates) [P3][P4].  
-- Week 4–6: Improve the dataset (clean labels, deduplicate, balance slices). Re-run models, log deltas, and ablate each change [P3].  
-- Week 6–8: Stress-test evaluation quality: check for leakage, try alternative splits, and measure whether model rankings are stable, per BetterBench [P2].  
-- Week 8–10: Document thoroughly (Model Card + methods per REFORMS), open-source the eval harness and data improvement scripts; write a short workshop-style paper [P1][P4].
+Three concrete, falsifiable experiments you can run
+1) Prompting patterns generalize or not?
+- Hypothesis: Structured prompting (e.g., role + constraints + stepwise checklist) consistently outperforms plain “do X” prompts on reasoning and extraction tasks.
+- Method: Choose 3–4 tasks (e.g., GSM8K subset for math reasoning, SQuAD subset for extraction, a small classification set). Compare 4 prompt variants: plain, chain-of-thought, role+constraints, and self-check with a verification step. Evaluate across 3 seeds/temperatures; hold model constant.
+- Metrics: Exact match/F1 for extraction, accuracy for classification, and pass@1 for reasoning; report mean ± 95% CI; preregister evaluation and stopping criteria [G20]. 
+- Expected outcome: Either structured prompts yield stable improvements across at least 3 tasks, or gains are narrow/sensitive—both are publishable with careful analysis [P5], [G5].
 
-Four concrete, falsifiable experiments you can run
-1) Data-centric improvement vs. extra fine-tuning  
-- Hypothesis: A targeted data audit and label correction yields larger gains on a held-out stress split than an equivalent compute budget spent on extra fine-tuning.  
-- Setup: Choose a public text classification dataset. Baseline: off-the-shelf model fine-tuned for N steps. Treatment A: data audit following DC-Check (deduplicate, relabel ambiguous items, balance slices) with the same model and total compute matched to baseline [P3].  
-- Metrics: Macro-F1 on in-domain; F1 and calibration (ECE) on stress split; report per-slice performance.  
-- Pass/Fail: Treatment A significantly outperforms baseline on stress split with non-overlapping bootstrap CIs; ablation shows which data fixes matter most.  
-- Rationale: Focuses on DC-Check’s data-first reliability claims [P3].
+2) Behavioral testing of an LLM and targeted fixes
+- Hypothesis: A CheckList-style battery targeting negation, quantifiers, and coreference reveals repeatable failure modes; a small synthetic augmentation addressing these cases reduces error rates on those capabilities.
+- Method: Build a minimal CheckList for 2 phenomena (e.g., negation, number agreement). Run baseline model; then augment a small training/tuning set (or a retrieval bank) with counterexamples targeting failures; re-run tests.
+- Metrics: Capability-level accuracy before/after; track unintended regressions on unrelated phenomena. Use multiple seeds and report uncertainty [G20].
+- Expected outcome: Targeted augmentation reduces specific failure rates without regressing unrelated ones—quantified and reproducible.
 
-2) Benchmark quality and ranking stability  
-- Hypothesis: Applying benchmark best practices (deduplication, prompt decontamination, harder adversarial items) increases discriminative power and reduces ranking instability across models.  
-- Setup: Start from an existing benchmark; create two versions: V0 (original) and V1 (post-BetterBench checklist improvements) [P2]. Evaluate K models on both.  
-- Metrics: Kendall’s tau between V0 and V1 rankings; Item Response Theory or simple item difficulty proxies; leakage rate via n-gram overlap to training corpora.  
-- Pass/Fail: V1 shows lower leakage and higher between-model spread; rankings stabilize (higher tau) across random seeds/splits [P2].  
-- Rationale: Directly tests BetterBench guidance [P2].
+3) Do dataset and model documentation actually improve downstream reliability?
+- Hypothesis: Creating a Datasheet for Datasets and a Model Card for a small benchmark/model reduces misuse and catches issues earlier (e.g., label noise, leakage), improving reproducibility and reviewer satisfaction on a blinded checklist.
+- Method: Pick a small public dataset (e.g., sentiment or news classification). Produce a rigorous datasheet and model card. Ask 5–10 external testers (or labmates) to run a simple baseline with and without your documentation package; record time-to-first-run, number of reproducibility issues, and errors caught.
+- Metrics: Time-to-reproduce, number of corrections made prior to submission, and rate of issues found in review. Predefine a scoring rubric [G20].
+- Expected outcome: The documented version improves reproducibility and reduces preventable errors; if no difference, document why and refine the template.
 
-3) Model Cards and stakeholder failure anticipation (user study)  
-- Hypothesis: Providing a Model Card improves practitioners’ ability to predict failure modes and choose safe deployment conditions.  
-- Setup: Between-subjects study. Group A sees only a leaderboard; Group B sees leaderboard + Model Card. Both predict performance on several out-of-scope slices and decide deployment thresholds [P4].  
-- Metrics: Brier score for failure predictions; proportion of unsafe deployment choices; time to decision.  
-- Pass/Fail: Group B has significantly better Brier scores and fewer unsafe choices.  
-- Rationale: Tests the practical value of Model Cards for transparency [P4].
+A practical 4–6 week plan
+- Week 1: Choose one track and preregister your plan: hypotheses, datasets, metrics, seed protocol, and decision criteria [G20], [G10]. 
+- Weeks 2–3: Implement baselines; build minimal evaluation harness; pilot error analysis [G5].
+- Weeks 4–5: Run the main study with multiple seeds; conduct ablations (e.g., remove one prompt component or one documentation section to test necessity) [G5], [G20].
+- Week 6: Write up results with clear claims, limitations, and a reproducibility checklist; release code/data and documentation [G10], [G20].
 
-4) Structured safety red-teaming vs. ad hoc testing  
-- Hypothesis: A taxonomy-guided red team uncovers more unique, severe failure types per hour than ad hoc probing.  
-- Setup: Two teams test an LLM: ad hoc vs. structured protocol derived from safety evaluation frameworks; standardized taxonomy and logging [P5].  
-- Metrics: Unique failure types/time; severity-weighted scores; reproducibility rate of attacks.  
-- Pass/Fail: Structured team exceeds ad hoc by predefined margins; results replicated by a hold-out team.  
-- Rationale: Aligns with practical safety evaluation methods for advanced models [P5].
+Why this works if you dislike math
+- These paths emphasize experimental design, analysis discipline, and tool-building. You’ll still use some stats, but the value comes from careful framing, measurement, and transparency—not advanced theory [G5], [G20]. Prompt and agent work is especially accessible and benefits from systematic evaluation [P5].
 
-Tips for thriving without heavy math
-- Specialize in evaluation craft: precise metrics, clean splits, robust harnesses, and transparent reporting are scarce and valuable skills [P1][P2].  
-- Partner up: collaborate with math-heavy coauthors while you lead data, eval, user study, and documentation work.  
-- Publishable artifacts: high-quality datasets, benchmark improvements, eval frameworks, and well-documented Model Cards often yield impactful, citable contributions [P2][P4].  
-
-If you share what sub-area you care about (language, vision, safety, HCI), I can help tailor a concrete project with datasets and baselines.
+Literature anchors (titles with links)
+- Beyond Accuracy: Behavioral Testing of NLP models with CheckList — http://arxiv.org/abs/2005.04118
+- Datasheets for Datasets — http://arxiv.org/abs/1803.09010
 
 Citations
-- [P1] REFORMS: Reporting Standards for Machine Learning Based Science — https://arxiv.org/abs/2308.07832  
-- [P2] BetterBench: Assessing AI Benchmarks, Uncovering Issues, and Establishing Best Practices — https://arxiv.org/html/2411.12990  
-- [P3] DC-Check: A Data-Centric AI checklist to guide the development of reliable machine learning systems — https://arxiv.org/abs/2211.05764  
-- [P4] Model Cards for Model Reporting — https://research.google/pubs/model-cards-for-model-reporting/  
-- [P5] Holistic Safety and Responsibility Evaluations of Advanced AI Models — https://arxiv.org/abs/2404.14068
+- [P5] Intro to AI Series: Introduction to LLM Prompt Engineering — https://www.youtube.com/watch?v=6ohxR_qlEdA
+- [G1] Best Practices Research: A Methodological Guide for the Perplexed — https://www.researchgate.net/publication/31052323_Best_Practices_Research_A_Methodological_Guide_for_the_Perplexed
+- [G5] Schulman, An Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G10] Manifesto for Doing Good Science — https://letters.lossfunk.com/p/manifesto-for-doing-good-science
+- [G20] On best practices/reproducibility in ML research — https://arxiv.org/abs/2304.05585
+
+Additional literature anchors
+- Model Cards for Model Reporting — http://arxiv.org/abs/1810.03993
+- Training language models to follow instructions with human feedback — http://arxiv.org/abs/2203.02155
+
+Key takeaway: You don’t need advanced math to contribute meaningfully. Anchor on well-scoped, falsifiable questions, run clean experiments with transparent reporting, and focus on evaluation, data quality, and human factors.

@@ -1,56 +1,73 @@
-Great to have you onboard. A feasible beginning is to pick a small, self-contained benchmark task with clear baselines and metrics so you can focus on good ML hygiene and spatiotemporal pitfalls. Here are three beginner-friendly paths that build core skills.
+Great to hear! Two beginner-friendly entry points where you can make real progress without huge compute are:
 
-Option A (easiest): ClimateBench model emulation
-- What: Predict climate responses (e.g., surface temperature anomalies) from forcing inputs using simple ML models on the ClimateBench benchmark. It’s specifically designed for lightweight emulators and has clear baselines and metrics [P1].
-- Why: You get a compact dataset and simple targets; you can learn xarray, evaluation with RMSE/correlation, and proper train/val/test splits without fighting huge data pipelines [P1].
-- How: Start with linear regression and tree ensembles, then a small MLP; report RMSE and correlation as in the benchmark [P1]. Add uncertainty via ensembling only after you have a solid deterministic baseline.
+- Satellite remote sensing for land-use change (e.g., deforestation). There are open, high-resolution images and clear baselines to replicate and extend. Examples include tree-cover change mapping and segmentation/classification approaches that account for rotation and viewpoint [P1][P8].
+- Probabilistic medium-range weather forecasting on established benchmarks (e.g., WeatherBench Probability), which provide standardized data and metrics to learn core time-series and uncertainty concepts without wrestling with raw meteorological pipelines.
 
-Option B (practical next): Learnable downscaling/super-resolution
-- What: Take coarse fields (e.g., low-res reanalysis patches) and super-resolve them with operator-learning ideas or CNN baselines; operator-learning has shown promise for super-resolving scientific simulations [P3].
-- Why: Downscaling is central in climate impacts; you’ll practice patching, spectral evaluation, and runtime comparisons. Begin with a tiny geographic region and a short time slice to keep it light.
-- How: Compare bicubic upsampling, a small U-Net, and a lightweight operator-learning model; evaluate RMSE and power spectra/spectral slopes; optionally test generalization across time windows [P3].
+A 4–6 week starter plan
 
-Option C (unsupervised): Spatiotemporal pattern discovery
-- What: Cluster spatiotemporal climate anomalies (e.g., 2 m temperature or geopotential height) to discover coherent regimes; deep temporal clustering provides methods to handle high-dimensional spatiotemporal data [P2].
-- Why: You’ll learn normalization, dimensionality reduction, and stability evaluation of clusters—useful across climate ML tasks.
-- How: Compare PCA+k-means vs. a simple temporal deep clustering model; evaluate with silhouette scores and spatial coherence metrics; inspect composites for physical plausibility [P2].
+1) Pick one task
+- Deforestation mapping: start with a single region and a time window with known change (e.g., Mato Grosso, Brazil) and replicate a published pipeline for tree-cover change detection before extending it [P1].
+- WeatherBench Probability: start with a single variable (e.g., 500 hPa geopotential, 2 m temperature) and a medium-range horizon; focus on deterministic vs probabilistic baselines using proper scoring rules (e.g., CRPS). See WeatherBench Probability: A benchmark dataset for probabilistic medium-range weather forecasting (2022) — http://arxiv.org/abs/2205.00865.
 
-Three concrete, falsifiable starter experiments
-1) ClimateBench baselines and generalization
-- Hypothesis: Simple regressors (ridge, random forest) can match or exceed previously reported baselines on core ClimateBench targets using official splits [P1].
-- Setup: Use ClimateBench v1.0; implement ridge, RF, and a 2-layer MLP. Control for features and normalization. Train with early stopping on validation.
-- Metrics: RMSE and Pearson correlation on the test split, as in the benchmark [P1].
-- Expected outcome: Linear/ridge provides a strong baseline; RF/MLP offer modest gains. If your MLP underperforms, diagnose leakage or overfitting rather than adding depth first [P1].
+2) Establish simple, transparent baselines
+- Always include trivial baselines: persistence/seasonal climatology (weather), or “last-period equals next” and simple thresholds on NDVI/NDWI indices (remote sensing). Then add a small CNN/UNet for segmentation or a ResNet for patch classification [P8].
+- Use proper metrics: IoU/F1 for segmentation; AUC and PR-AUC for rare-event detection; RMSE/MAE and CRPS for probabilistic forecasts. Report confidence via bootstrapping.
 
-2) Super-resolution with operator learning vs. U-Net
-- Hypothesis: A lightweight operator-learning model will better preserve multiscale structure than a same-parameter-count U-Net when super-resolving coarse fields from a scientific dataset [P3].
-- Setup: Construct paired low/high-res fields (e.g., by downsampling a small region/time of reanalysis). Train a U-Net and a compact operator-learning model with identical training budgets.
-- Metrics: RMSE; spectral error over wavenumbers; inference latency and memory (report wall time and parameters) [P3].
-- Expected outcome: Operator-learning achieves comparable or lower RMSE and improved high-wavenumber fidelity at similar compute, but performance may be data- and resolution-dependent [P3].
+3) Split data to avoid leakage and ensure reproducibility
+- Use temporally forward-held test periods and geographically disjoint tiles to avoid geospatial/temporal leakage, which can inflate results if not controlled [P3]. Fix seeds, version data, and document exact preprocessing to improve reproducibility [P4].
 
-3) Temporal clustering of circulation anomalies
-- Hypothesis: A temporal deep clustering approach yields more coherent, temporally stable regimes than PCA+k-means on 500 hPa geopotential height anomalies [P2].
-- Setup: Preprocess anomalies over a fixed domain; compare PCA(10)+k-means vs. a small deep temporal clustering model.
-- Metrics: Silhouette score; cluster persistence/transition probabilities; spatial coherence of composites; stability across random seeds [P2].
-- Expected outcome: Deep temporal clustering improves coherence and temporal stability; if not, inspect preprocessing and regularization [P2].
+4) Add uncertainty and calibration early
+- Favor ensembles or simple distributional outputs (e.g., Gaussian heads) and evaluate with calibration curves and CRPS in forecasting; for detection maps, consider MC dropout or deep ensembles and report prediction intervals.
 
-Key pitfalls to watch from day one
-- Nonstationarity and regime shifts: Climate and weather distributions drift; methods that assume stationarity can fail when the test period differs from training. If possible, evaluate across eras (e.g., 1980s vs. 2010s) to expose drift [P4].
-- Spatiotemporal leakage: Never mix neighboring grid cells or adjacent times across train/test; keep time-blocked and space-blocked splits where appropriate. This is crucial to avoid optimistic results; when in doubt, use contiguous time splits and hold-out regions.
-- Baseline-first mindset: Simple baselines often perform surprisingly well on ClimateBench-style emulation; establish them before adding complexity [P1].
+Three concrete, falsifiable experiments (with success criteria)
 
-A simple 2–4 week roadmap
-- Week 1: Reproduce ClimateBench baselines (ridge, RF, small MLP) with clean splits and reporting [P1].
-- Week 2: Add uncertainty via ensembles or quantile regression; write a one-page reproducibility note (data, preprocessing, metrics, seeds).
-- Weeks 3–4 (choose one): Downscaling experiment (Option B) with small patches and spectral evaluation [P3], or unsupervised pattern discovery (Option C) with stability checks [P2].
+1) Rotation-equivariant models for deforestation segmentation
+- Hypothesis: Rotation-equivariant CNNs improve out-of-region generalization for detecting deforestation patches.
+- Setup: Train a standard UNet vs. a rotation-equivariant variant on satellite images from Region A, test on a disjoint Region B.
+- Variables: Model architecture (UNet vs rotation-equivariant), augmentation strategy.
+- Metrics: IoU, F1, and AUROC on Region B; compute per-patch size stratification.
+- Expected outcome: Rotation-equivariant model yields higher IoU/F1 on Region B with similar or better calibration; failure to improve falsifies the hypothesis [P8], with data and task grounded in tropical deforestation mapping [P1].
 
-Minimal tooling to learn
-- xarray/zarr for data; xskillscore for metrics; PyTorch/NumPy for models; Cartopy/Matplotlib for maps.
+2) Temporal-geographic split vs random split evaluation
+- Hypothesis: Random splits overestimate performance relative to strict spatiotemporal splits in land-cover change detection.
+- Setup: Train identical models with two validation protocols: (a) random tile split; (b) temporally forward and geographically disjoint split.
+- Variables: Split protocol.
+- Metrics: IoU/F1 gap between protocols; measure leakage sensitivity as (random − strict) / strict.
+- Expected outcome: The strict split yields lower but more realistic performance, quantifying the overestimation from leakage [P3]. If no gap appears, that falsifies the hypothesis and suggests leakage was controlled.
 
-If you share your compute and time budget, I can tailor the first experiment to fit in a weekend.
+3) Probabilistic vs deterministic weather baselines
+- Hypothesis: Probabilistic models improve calibration (lower CRPS and better reliability) without necessarily improving RMSE over deterministic baselines on WeatherBench Probability.
+- Setup: Train a deterministic CNN and a probabilistic head (e.g., Gaussian/ensemble) for 2 m temperature forecasting at 3–5 day horizons.
+- Variables: Output type (point vs probabilistic), ensembling size.
+- Metrics: RMSE/MAE, CRPS, reliability diagrams (ECE).
+- Expected outcome: Probabilistic model shows lower CRPS and improved reliability with similar RMSE; if CRPS does not improve, the hypothesis is falsified. Benchmark context: WeatherBench Probability (2022) — http://arxiv.org/abs/2205.00865.
+
+4) Adding drivers to classify deforestation causes (optional stretch)
+- Hypothesis: Incorporating contextual features (roads, concessions) improves accuracy for classifying drivers of deforestation relative to imagery-only baselines.
+- Setup: Train image-only vs multimodal models that add vector layers (roads, land-use) as inputs.
+- Variables: Input modality (image vs image+context).
+- Metrics: Macro-F1 and calibration by class (driver type).
+- Expected outcome: Multimodal model improves macro-F1, especially for minority driver classes; if not, the added features may be weak or misaligned [P6].
+
+Practical tips
+- Start small: one region, one variable, one baseline. Keep a notebook with seeds, data version, and exact preprocessing to ensure runs are reproducible [P4].
+- Prioritize clean evaluation: document your split protocol and justify it (temporal-forward, spatially disjoint) to avoid hidden leakage [P3].
+- Report uncertainty: include confidence intervals on metrics, not just point estimates.
+- Keep compute light: small UNet/ResNet on 256–512 px tiles for remote sensing, or compact CNNs for WeatherBench variables at coarse grids.
+
+If you share a preference (remote sensing vs weather), I can tailor a minimal starter repo outline with data loaders, baselines, and evaluation scripts.
 
 Citations
-- [P1] Finding the Perfect Fit: Applying Regression Models to ClimateBench v1.0 — http://arxiv.org/abs/2308.11854v1
-- [P2] Deep Spatiotemporal Clustering: A Temporal Clustering Approach for Multi-dimensional Climate Data — http://arxiv.org/abs/2304.14541v2
-- [P3] An Operator Learning Framework for Spatiotemporal Super-resolution of Scientific Simulations — http://arxiv.org/abs/2311.02328v2
-- [P4] Temporally Disentangled Representation Learning under Unknown Nonstationarity — http://arxiv.org/abs/2310.18615v2
+- [P1] Mapping Tropical Forest Cover and Deforestation with Planet NICFI Satellite Images and Deep Learning in Mato Grosso State (Brazil) from 2015 to 2021 — http://arxiv.org/abs/2211.09806v1
+- [P3] Importance of methodological choices in data manipulation for validating epileptic seizure detection models — http://arxiv.org/abs/2302.10672v1
+- [P4] Reproducibility in Learning — http://arxiv.org/abs/2201.08430v2
+- [P6] Multimodal SuperCon: Classifier for Drivers of Deforestation in Indonesia — http://arxiv.org/abs/2207.14656v1
+- [P8] Rotation Equivariant Deforestation Segmentation and Driver Classification — http://arxiv.org/abs/2110.13097v2
+
+Additional anchor
+- WeatherBench Probability: A benchmark dataset for probabilistic medium-range weather forecasting (2022) — http://arxiv.org/abs/2205.00865
+
+Key takeaways
+- Start with a well-scoped, benchmarked task and replicate a paper’s baseline before extending.
+- Use spatiotemporal splits, proper metrics, and uncertainty to produce trustworthy results.
+- Three simple experiments (rotation equivariance, split protocol comparison, probabilistic vs deterministic) can teach core ML-for-climate skills while being feasible on modest hardware.

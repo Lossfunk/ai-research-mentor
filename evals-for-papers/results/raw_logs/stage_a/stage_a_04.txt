@@ -1,68 +1,59 @@
-You can make real contributions with 2 hours/week by focusing on small, high-leverage tasks: evals (measurement), red-teaming (finding failures), and light-weight agent/guardrail tests. These areas are explicitly recommended as accessible on-ramps and don’t require large compute or long uninterrupted blocks [P5][P1][P2].
+Great—you can contribute meaningfully with 2 hours/week by focusing on small, well-scoped tasks that accumulate into public artifacts (repos, short notes, or bug reports). Evidence-based guidance for low-time contributors emphasizes: start with narrow replications or evals, write down concrete questions/gaps, and share short write-ups; this keeps scope tractable and impact visible [P1]. Newcomer overviews map the technical AI safety landscape and can help you pick a lane (evals, interpretability, robustness, alignment techniques) aligned with your skills and compute budget [P4]. Practical starter lists also suggest “simple things” like replications, audits/evals, red teaming, and data curation—ideal for short weekly sessions [P6].
 
-A simple 2-hour weekly template
-- 20 minutes: Read one focused resource or skim an eval/red-team repo issue to pick a micro-task [P9].
-- 70 minutes: Run/extend one evaluation or red-team a single behavior on 1–2 models, logging results clearly [P5][P2].
-- 20 minutes: Write up results (issue/PR or short post) with exact prompts, versions, and metrics [P5][P9].
-- 10 minutes: Plan next micro-step; keep scope tiny and serial (one variable at a time) [P9].
+A 2-hour weekly template
+- 60 min: Run/extend a tiny experiment or eval (see below).
+- 30 min: Log results, plots, and decisions in a public notebook or repo (minimum viable documentation).
+- 30 min: Write a brief note (150–300 words) with what changed your mind, remaining uncertainties, and next step. Post monthly digests (EA/Alignment Forum) to get feedback [P1].
 
-Where your 2 hours can have impact
-- Model evaluations (evals): Replicate or extend a narrow eval that measures a concrete behavior (e.g., instruction refusal consistency, prompt-injection robustness, tool-use mistakes). Evals help decision-makers see risks, but measurement alone doesn’t make models safer—so pair evals with clear, reproducible reporting [P5]. Programs like MATS curate safety-relevant eval topics and examples you can build from [P10].
-- Red teaming: Systematically try to elicit harmful or policy-violating outputs. Use the OWASP ML/LLM attack patterns (e.g., prompt injection, data exfiltration) as a checklist to generate test cases [P2]. Continuous adversarial testing and safety scorecards are recommended for practical assurance pipelines [P3].
-- Agent safety basics: When testing agents, reduce action scope, add guardrails, and log everything; this makes experiments both safer and easier to interpret in short sessions [P4].
-- Light mentorship/structure: If you want gentle accountability, look for part-time mentorship programs or communities with small-scope projects (e.g., SPAR) [P6] and roadmaps that suggest beginner-friendly projects [P1].
+Choose one focus area
+- Safety Evals & Red Teaming: Small, repeatable tests of jailbreaks/refusals, policy compliance, or prompt-injection robustness [P6].
+- Replication & Auditing: Reproduce a figure/metric from a paper/blog; test on a slightly different dataset or setting [P1].
+- Lightweight Interpretability: Run and document simple probes/activation patching on small models; prioritize clarity over breadth [P4].
+- Data Curation: Build tiny “safety-relevant” evaluation sets (paraphrased harmful prompts, policy-edge cases) with careful documentation [P6].
 
-Three concrete, falsifiable experiments you can run with minimal compute
-1) Prompt-injection robustness mini-benchmark
-- Hypothesis: Adding a concise, security-oriented system prompt reduces prompt-injection success rate relative to a neutral system prompt. 
-- Design: Select 30–50 injection patterns across categories (e.g., instruction override, role hijacking, data exfiltration) informed by OWASP-style taxonomies [P2]. Evaluate on 2–3 models/APIs. 
-- Variables: System prompt (neutral vs. security-hardened); model family. 
-- Metrics: Attack success rate (% of trials where the model follows the attacker instruction), and time-to-failure. 
-- Expected outcome: Security-focused system prompts lower attack success, but not uniformly across categories; some injections remain effective, motivating layered defenses [P2][P3].
+Three concrete, falsifiable experiments (2–6 sessions each)
+1) Micro-jailbreak robustness across prompt-guards
+- Hypothesis: A deterministic “safety preface” reduces jailbreak success rates for an open small model (e.g., 1–8B) by at least 10 percentage points on a 50-prompt set.
+- Setup: Select 50 known jailbreak prompts (public lists or your curated set). Compare base prompting vs. base+concise safety preface. Fixed decoding (e.g., greedy).
+- Variables: Guard prompt presence (on/off), temperature, paraphrase level.
+- Metrics: Jailbreak success rate (binary policy violation), refusal rate on clearly disallowed prompts, helpfulness on benign controls.
+- Expected outcome: Some reduction from guard prompts but incomplete robustness; paraphrasing partially restores attacks [P6].
+- Deliverable: CSV of prompts/labels, script, 1-page note with error bars and failure examples.
 
-2) Refusal-then-help prompting for risky requests
-- Hypothesis: A “refusal + safe alternative” instruction reduces harmful outputs on risk-prone prompts while preserving task performance on benign prompts. 
-- Design: Curate 50 prompts (25 risky/ambiguous, 25 benign). Compare base prompting vs. refusal-then-help prompting (constitutional/guardrail style) [P4]. 
-- Variables: Prompting style; model. 
-- Metrics: Harmful output rate on risky set; task success/utility on benign set. 
-- Expected outcome: Harmful output rate decreases under refusal-then-help with minimal utility loss on benign set [P4][P5].
+2) Refusal generalization under paraphrase
+- Hypothesis: For a safety-tuned model, refusal consistency drops by >15% when harmful prompts are paraphrased with benign-sounding intent markers (e.g., “for research/fiction”).
+- Setup: Create 40 harmful prompts; produce 2 paraphrases each (benign veneer, obfuscated request). Include 40 benign controls.
+- Variables: Prompt variant type; model (two models if feasible).
+- Metrics: Refusal accuracy (harmful), false refusal rate (benign), calibration plot vs. paraphrase type.
+- Expected outcome: Noticeable degradation in refusal reliability under paraphrase; baseline differences across models [P6][P4].
 
-3) Agent toolscope ablation
-- Hypothesis: Narrow tool permissions and explicit validation checks reduce high-risk actions without significantly lowering task completion. 
-- Design: Simple agent with retrieval + calculator on 20 tasks. Compare Full tools vs. Narrowed tools + output validation checklist (e.g., “never open external URLs unless …”) [P4]. 
-- Variables: Toolscope; validation on/off. 
-- Metrics: Task success; number of unsafe-action attempts; time per task. 
-- Expected outcome: Narrowed tools + validation reduce unsafe attempts with modest impact on completion [P4][P3].
+3) Minimal interpretability audit: Feature steering on safety-related tokens
+- Hypothesis: For a small decoder model, steering activations associated with “disallowed-topic” tokens nudges refusals upward on edge-case prompts without degrading benign helpfulness beyond 5%.
+- Setup: Identify a small set of safety-related tokens; collect 200 prompts (100 harmful/100 benign). Use a simple feature-steering method (e.g., scaled residual edits at a single layer).
+- Variables: Steering strength; layer index.
+- Metrics: Change in refusal rate (harmful), change in helpfulness (benign), KL divergence from baseline outputs.
+- Expected outcome (conjecture): Weak positive shift in refusals with modest helpfulness cost; clear trade-off curve you can visualize [P4].
 
-Optionally, a fourth quick study
-4) Jailbreak transferability
-- Hypothesis: Jailbreaks crafted on one model transfer to others ≥30% of the time. 
-- Design: Create 20 jailbreak prompts on Model A; test on Models B and C. 
-- Metrics: Transfer success rate; qualitative categories of jailbreaks that transfer. 
-- Rationale: Helps prioritize defense strategies that address cross-model patterns [P2][P5].
+Minimum viable research hygiene (optimized for 2 h/week)
+- Timebox each micro-question to 2–4 sessions; write down your “decision to stop” criteria upfront (avoid sunk-cost drift) [P1].
+- Predefine metrics and pass/fail thresholds; keep seeds/models fixed unless you preregister a new fork (even a few bullet points suffice) [P1].
+- Release code, prompts, and an environment.txt; include a reproducibility checklist and 1-minute “how to run” section.
+- Report negatives: if something didn’t work, say why and what you’d try next. Public negative results are valuable, especially in safety [P1].
 
-How to package contributions in tiny increments
-- Replicate an existing eval with a small variant (e.g., add 10 new test prompts; add a new metric; test 1 extra model) and open a PR or write an issue with exact prompts, seeds, model versions, and code to reproduce [P5]. 
-- Write a 1–2 page short report with a table of results, failure exemplars, and a one-sentence takeaway (what changed, by how much, under what condition) [P5][P9]. 
-- Keep a changelog of your weekly micro-results; consistency matters more than scope [P9].
+Where to share and get feedback
+- Post short updates on EA/Alignment Forum; “newcomer guides” and starter packs list communities and reading groups to plug into for light-touch mentorship [P2][P4].
+- Participate in periodic community sprints (e.g., alignment jams/hackathons) to batch your limited time into one-off pushes, then maintain in 2-hour weekly increments [P5].
 
-Starter choices for your first 2–3 weeks
-- Week 1: Reproduce a small eval from a public guide and run it on one additional model [P5]. 
-- Week 2: Add a single variable (e.g., a hardened system prompt) and re-measure [P2][P3]. 
-- Week 3: Write up, open an issue/PR, or share a minimally formatted post with exact artifacts to aid reuse [P5].
+Picking your first target in one week
+- Session 1: Choose one lane and define a single binary metric (e.g., jailbreak success rate on 50 prompts). Fork a minimal eval script.
+- Session 2: Run baseline vs. one intervention (guard prompt or paraphrase); publish the smallest possible artifact (CSV + 1-page note).
+- Month-end: One polished post summarizing results and next questions. Ask for 1–2 reviews; incorporate feedback into v2 [P1].
 
-Two literature anchors to orient you
-- A starter guide for Evals — Apollo Research [link] [P5]
-- Complete AI Red Teaming Guide for Beginners in 2025 [link] [P2]
-
-If you share your preferred sub-area (evals, red-teaming, or agents), I can propose a 4–6 week micro-roadmap with concrete repos and tasks.
+If you share your background (e.g., coding/ML experience, compute access), I can tailor the experiments and tools to your constraints.
 
 Citations
-- [P1] An Outsider’s Roadmap into AI Safety Research (2025) — https://www.lesswrong.com/posts/bcuzjKmNZHWDuEwBz/an-outsider-s-roadmap-into-ai-safety-research-2025
-- [P2] Complete AI Red Teaming Guide for Beginners in 2025 — https://www.practical-devsecops.com/ai-red-teaming-beginners-guide/
-- [P3] AI Security 2025: Complete Guide to Risks, Controls & Compliance — https://www.levo.ai/resources/blogs/ai-security-the-complete-guide-for
-- [P4] Securing Agentic AI: A Beginner’s Guide — https://hiddenlayer.com/innovation-hub/securing-agentic-ai-a-beginners-guide/
-- [P5] A starter guide for Evals — Apollo Research — https://www.apolloresearch.ai/blog/a-starter-guide-for-evals
-- [P6] Mentors — Supervised Program for Alignment — https://sparai.org/mentors
-- [P9] Tips for Empirical Alignment Research — https://www.alignmentforum.org/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research
-- [P10] AI Evaluations — ML Alignment & Theory Scholars — https://www.matsprogram.org/evals
+- [P1] Getting started independently in AI Safety — https://forum.effectivealtruism.org/posts/naJ9cJfHMTJ9CACvD/getting-started-independently-in-ai-safety
+- [P2] AI safety starter pack — https://forum.effectivealtruism.org/posts/pbiGHk6AjRxdBPoD8/ai-safety-starter-pack
+- [P4] A newcomer’s guide to the technical AI safety field — https://www.alignmentforum.org/posts/5rsa37pBjo4Cf9fkE/a-newcomer-s-guide-to-the-technical-ai-safety-field
+- [P5] AI Safety Research Outside the Hubs: A Guide for … — https://www.youtube.com/watch?v=ABlf18gs7P0
+- [P6] What are some simple things I can do to contribute to AI safety? — https://aisafety.info/questions/6474/What-are-some-simple-things-I-can-do-to-contribute-to-AI-safety

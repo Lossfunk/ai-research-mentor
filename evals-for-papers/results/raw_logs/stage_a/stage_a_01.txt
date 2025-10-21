@@ -1,56 +1,70 @@
-Great—here’s a practical, low-friction way to start AI research that builds skill, confidence, and evidence you can publish.
+Great—you can get started in AI research without boiling the ocean. Here’s a pragmatic, evidence-based path with concrete experiments you can run this month.
 
-Where to start (choose one tractable niche)
-- Parameter-efficient fine-tuning (PEFT) for LLMs with LoRA: Lets you get meaningful results on a single GPU by training a small number of parameters while keeping the base model frozen [P1]. See practice-focused guidance for LoRA hyperparameters and pitfalls [P7]. 
-- Data-centric ML: Study how data quality, augmentation, and labeling choices affect performance and robustness; this is a high-leverage, under-explored space in many applied settings [P10].
-- Rigor and reproducibility as a first-class goal: Follow reporting checklists and transparent methodology from the start to produce trustworthy results, even on small projects [P3][P4]. If you work with LLMs in applied domains, see empirical study design guidance emphasizing transparency and reproducibility [P2].
+Step 1 — Build just-enough foundations (2–6 weeks)
+- Programming/math: Get comfortable with Python, NumPy/pandas, and basic statistics/linear algebra; early wins come from small projects while you learn, not after you “finish” the theory [P1][P2][P3].
+- Survey subfields: Sample beginner-friendly courses and short projects in vision (CIFAR-10), NLP (SST-2/AG News), or tabular ML (UCI datasets) to choose a lane [P4].
+- Deliverable: Pick one subfield and one public dataset you can train on a laptop or a free GPU (e.g., Colab).
 
-A simple 6-week starter plan
-- Week 1: Pick a narrow question + dataset + baseline. Set up a reproducible repo: pinned versions, config files, seeds, exact data splits, and an experiment tracker (e.g., wandb/MLflow) [P3][P4][P9].
-- Week 2: Reproduce a baseline exactly. Write down an analysis plan (metrics, statistical tests), pre-define ablations, and define pass/fail thresholds for your hypotheses [P3][P4][P9].
-- Weeks 3–4: Run controlled ablations (change one factor at a time), use multiple seeds, and log all configs and random states [P3]. For LLMs, follow domain-specific empirical guidance where available [P2].
-- Week 5: Analyze results with confidence intervals or nonparametric tests; report effect sizes and variance across seeds [P3][P9].
-- Week 6: Write a short report with a reproducibility checklist and a one-click script to reproduce main/ablations results [P4][P9].
+Step 2 — Adopt a replication-first workflow (week 3+)
+- Start by replicating a simple but standard baseline on your chosen dataset (e.g., ResNet-18 on CIFAR-10, DistilBERT on SST-2). This de-risks tooling and clarifies evaluation [P10].
+- Write a brief preregistration: hypotheses, metrics, stopping criteria, and the exact comparisons you’ll make; this helps you avoid p-hacking and keeps results interpretable [P6][P10].
+- Deliverable: A minimal, fully reproducible baseline run (seeded training, pinned package versions, saved configs).
+
+Step 3 — Be rigorous about evaluation and reporting
+- Use strong baselines, run ablations, and report uncertainty (multiple seeds or bootstrap CIs). Follow established checklists for transparency and comparability [P7][P10].
+- Track experiments, versions, and compute; keep a changelog and a short README so others can reproduce your results [P9].
+- Document data and models (data/model cards) to surface limitations and risks early [P8].
 
 Three concrete, falsifiable starter experiments
-1) LoRA hyperparameter sensitivity on a small instruction-tuning task
-- Hypothesis: Increasing LoRA rank r improves instruction-following accuracy up to a mid-range (e.g., r=16) after which gains plateau; alpha has a smaller effect when scaled with r.
-- Setup: Base model (e.g., open 1–3B parameter model), small instruction dataset (2–10k examples), LoRA with r ∈ {4, 8, 16, 32}, alpha ∈ {8, 16, 32}, single GPU, 3 seeds.
-- Metrics: Exact match on held-out instructions, BLEU/ROUGE for generation, and calibration (ECE).
-- Controls: Same tokenizer, same train/val split, same optimizer/scheduler, early stopping based on validation.
-- Expected outcome: Diminishing returns beyond moderate ranks; clear seed variability reported with CIs [P1][P7].
+Each is scoped to 1 GPU or CPU-only training, with clear hypotheses, variables, and metrics.
 
-2) Data quality vs. quantity in image classification (data-centric baseline)
-- Hypothesis: At fixed compute, improving label cleanliness (reducing injected noise) yields larger accuracy gains than adding 20% more noisy data; basic augmentation helps but cannot fully offset label noise.
-- Setup: CIFAR-10 or similar; create training sets with 0%, 10%, 20% symmetric label noise; train a small ResNet under identical training budgets; with/without a simple augmentation policy (e.g., flips/crops kept constant across trials), 5 seeds.
-- Metrics: Top-1 accuracy, calibration (ECE), and robustness to distribution shift (e.g., CIFAR-10-C corruption subset).
-- Expected outcome: Clean labels dominate modest data increases; report full factorial results with uncertainty [P10].
+1) Vision: Generalization via data augmentation on CIFAR-10
+- Hypothesis: Moderate augmentations (flip/crop/cutout) improve out-of-distribution generalization and calibration, not just in-distribution accuracy.
+- Setup: CIFAR-10; model: ResNet-18; optimizer: SGD with momentum.
+- Variables: Augmentations: none vs. RandomCrop+Flip vs. +Cutout. Control regularization (weight decay) across conditions.
+- Metrics: Test accuracy; Expected Calibration Error (ECE); confidence-accuracy calibration curve. 3–5 seeds with mean ± 95% CI.
+- Expected outcome: Augmentation improves accuracy and reduces ECE relative to no augmentation; cutout may yield diminishing returns if weight decay is strong [P10].
+- Notes: Pre-register the primary metric (accuracy) and secondary (ECE) and stop criteria [P6][P10].
 
-3) Reproducibility stress test for a basic supervised baseline
-- Hypothesis: Reported single-number gains of ≤1 percentage point vanish when evaluated across seeds and stratified splits; the variance across seeds is comparable to or larger than the claimed improvement.
-- Setup: Choose a published baseline (e.g., small vision or text classifier); replicate it exactly; run 10 seeds; evaluate on multiple, pre-registered data folds.
-- Metrics: Mean ± 95% CI for accuracy/F1; paired tests across seeds/folds; effect size (Cohen’s d).
-- Expected outcome: If the improvement is real, it remains significant after accounting for variance; if not, you’ll quantify instability and provide stronger reporting per REFORMS [P3][P4].
+2) NLP: Parameter-efficient tuning vs. full fine-tuning on SST-2
+- Hypothesis: LoRA adapters achieve statistically indistinguishable accuracy to full fine-tuning of DistilBERT on SST-2 with fewer trainable parameters.
+- Setup: DistilBERT; dataset: SST-2; training budget ≤ 1 hour on a single T4.
+- Variables: Adapter config (LoRA rank 8 vs. 32) vs. full fine-tune; same epochs, batch size, and learning rate sweep grid applied uniformly.
+- Metrics: Dev/test accuracy; training time; number of trainable parameters; 3–5 seeds with mean ± CI.
+- Expected outcome: LoRA r=8 within ~1–2% absolute accuracy of full fine-tune; lower wall-clock and trainable params [P10].
+- Reporting: Include a small reproducibility checklist (seed control, exact tokenizer/model versions, data splits) [P7][P9].
 
-Working style and checklists
-- Make your repo reproducible from day one: environment.yml/requirements.txt, pinned versions, scripts for data download/splitting, and a run.sh that reproduces the main table [P4][P9].
-- Predefine ablations and controls; change one factor at a time; log all configs; use multiple seeds; report uncertainty and effect sizes [P3][P9].
-- If working with LLMs in applied studies (e.g., code, SE tasks), follow domain-specific empirical guidance to avoid common pitfalls and ensure transparent reporting [P2].
-- Document ethical and responsible model development choices (data provenance, known limitations, appropriate use) [P6].
+3) Tabular: Do gradient-boosted trees beat shallow neural nets on UCI Adult?
+- Hypothesis: XGBoost or LightGBM outperforms a shallow MLP on AUROC with less tuning on structured tabular data.
+- Setup: UCI Adult; strong categorical handling for trees; simple MLP baseline with batch norm and dropout.
+- Variables: Model class (GBDT vs. MLP); hyperparameter sweep matched by budget (e.g., 30 trials each).
+- Metrics: AUROC (primary), AUPRC; calibration (Brier score); fairness diagnostics (demographic parity difference) on sensitive attribute if available.
+- Expected outcome: GBDT > MLP on AUROC; MLP may calibrate worse without temperature scaling [P10].
+- Reporting: Show confidence intervals and exact split strategy; document data preprocessing in a data card [P8][P9].
 
-What to read next (short list)
-- Survey and practice for LoRA/PEFT to pick sensible hyperparameters and tasks [P1][P7].
-- REFORMS reporting standards and the open-repro handbook to structure your workflow and paper from the start [P3][P4][P9].
-- Data-centric ML overview to inspire impactful, compute-efficient projects focused on data rather than model scale [P10].
+How to choose your subfield and first paper
+- If you enjoy code+math: start with vision or classical ML; if you enjoy language and evaluation design, start with NLP; if you like applied science/industry data, start with tabular ML. Sample small projects in each, then commit to one for 4–6 weeks [P1][P2][P4].
+- Anchor your first project on a known benchmark and a reputable, reproducible baseline; use a checklist like REFORMS to ensure fair comparisons and clear reporting [P7][P10].
 
-If you share your background (e.g., vision/NLP, access to GPUs, coding comfort), I can help tailor one of the experiments above into a concrete project plan with dataset, baseline code, and an evaluation table template.
+Minimal habits that compound quickly
+- Always define hypotheses, primary/secondary metrics, and stopping rules before running long jobs [P6][P10].
+- Compare against strong, public baselines; include ablations that isolate your contribution [P7][P10].
+- Make your repo runnable end-to-end with one command; pin versions and log seeds [P9].
+- Add short data/model cards noting assumptions and limitations [P8].
+
+If you share a bit about your interests (vision, NLP, LLMs, RL, or applied ML), I’ll tailor the first replication target and dataset to your constraints.
 
 Citations
-- [P1] Parameter-efficient fine-tuning in large language models: a survey of methodologies — https://link.springer.com/article/10.1007/s10462-025-11236-4?error=cookies_not_supported&code=24f52ad3-5ff0-4cca-b8c3-296a4b7355a6
-- [P2] Guidelines for Empirical Studies in Software Engineering involving Large Language Models — https://arxiv.org/html/2508.15503v2
-- [P3] REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://reforms.cs.princeton.edu/
-- [P4] REFORMS: Reporting Standards for Machine Learning Based Science — https://arxiv.org/abs/2308.07832
-- [P6] The Responsible Foundation Model Development Cheatsheet: A Review of Tools & Resources — https://arxiv.org/abs/2406.16746
-- [P7] Practical Tips for Finetuning LLMs Using LoRA (Low-Rank Adaptation) — https://magazine.sebastianraschka.com/p/practical-tips-for-finetuning-llms
+- [P1] armankhondker/awesome-ai-ml-resources — https://github.com/armankhondker/awesome-ai-ml-resources
+- [P2] AI/ML Roadmap for beginners in 2025 — https://www.aimlengineer.io/p/breaking-into-aiml-in-2025-a-step
+- [P3] How to Learn AI From Scratch in 2025 — https://www.datacamp.com/blog/how-to-learn-ai
+- [P4] Roadmap to get started as a beginner — https://community.deeplearning.ai/t/roadmap-to-get-started-as-a-beginner/689522
+- [P6] Experimentology — https://experimentology.io/Experimentology.pdf
+- [P7] REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://reforms.cs.princeton.edu/
+- [P8] The Responsible Foundation Model Development Cheatsheet — https://arxiv.org/abs/2406.16746
 - [P9] Open, rigorous and reproducible research: A practitioner’s handbook — https://stanforddatascience.github.io/best-practices/
-- [P10] DMLR: Data-centric Machine Learning Research -- Past, Present and Future — https://arxiv.org/abs/2311.13028
+- [P10] How to avoid machine learning pitfalls: a guide for academic researchers — https://arxiv.org/html/2108.02497v4
+
+Literature anchors
+- How to avoid machine learning pitfalls: a guide for academic researchers — https://arxiv.org/html/2108.02497v4 [P10]
+- REFORMS: Consensus-based Recommendations for Machine-learning-based Science — https://reforms.cs.princeton.edu/ [P7]
