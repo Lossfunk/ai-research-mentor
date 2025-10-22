@@ -1,117 +1,72 @@
-Below is a concrete ablation plan focused on FC3 (Task Verification) in multi-agent LLM systems, with a suitable system/benchmark, minimal modifications to isolate the verifier’s contribution, the FC3-aligned failure modes to tag, and the metrics to track.
+Summary of FC3 (Task Verification) in MST
+- The MST taxonomy isolates “Task (Quality Control) Verification” as a distinct failure category (FC3) with three submodes: FM‑3.1 Premature Termination, FM‑3.2 No or Incomplete Verification, and FM‑3.3 Incorrect Verification [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5]. These reflect, respectively: ending the process before any verification occurs; conducting partial or missing checks; and conducting checks but drawing the wrong conclusion. An example in the paper illustrates missing corrective feedback (e.g., not telling the agent what to fix after an “Invalid credentials” message), which aligns with verification/feedback gaps [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
 
-Recommended system and benchmark
-- System: ChatDev (lightweight, open-source “software company” multi-agent pipeline; easy to add/remove a Verifier role) or MetaGPT (more modular, role-based pipelines). Use whichever you already have integrated; both allow inserting a Verifier between Implementer and Merger/Reviewer with minimal code.
-- Benchmark:
-  - Primary: SWE-bench Lite or SWE-bench (if infra allows) to exploit ground-truth unit tests for an objective oracle of “task completed.” This directly supports measuring verification false accepts/rejects. [SWE-bench: Can Language Models Resolve Real-World GitHub Issues?, 2023]
-  - Secondary: HumanEval/MBPP variants for smaller-scale checks; use embedded unit tests as the oracle.
+Recommended benchmark and system
+- Benchmark: SWE-bench Lite (or SWE-bench if resources allow) for software bug-fixing tasks with ground-truth unit tests. It provides an automated oracle, makes verification explicit (tests/logs), and is a good fit for multi-agent development pipelines where a verifier can run tests, linting, and static checks.
+- System: ChatDev (or MetaGPT). ChatDev has clear roles (e.g., Developer/Reviewer/Tester) so the “verifier” can be mapped to Reviewer/Tester; MetaGPT similarly has QA/review hooks. Both are easy to toggle to ablate an explicit verifier with minimal changes. Recent work emphasizes explicit verification in multi-agent systems and frameworks that make verification a first-class component, which you can leverage or emulate in these systems [P1][P2].
 
-Why these choices: They let the Verifier agent check concrete acceptance criteria (unit tests/issue reproduction), making FC3 failures observable and quantifiable. The MST paper emphasizes that multi-agent systems often underperform expectations and require principled failure analysis and evaluation beyond headline success rates [P1].
+Minimal ablations to isolate the verifier
+Implement the following toggles as minimally invasive diffs. Keep the same generator model, temperature, tool budget, and planner across conditions; only change the verifier’s capabilities/authority.
 
-Minimal modifications for verifier ablation
-Implement these as toggles in the same pipeline to keep all other factors fixed (same prompts, same tools, same seeds/temperatures, identical Implementer/Reviewer roles):
+- A0 (Baseline, No-Verifier): Remove the explicit verifier agent and any “review/test” step. In ChatDev, skip the Reviewer/Tester roles or gate them behind a flag so they don’t run or emit vetoes.
+- A1 (Advisory-Only Verifier): Keep the verifier but remove veto/repair authority. The verifier can comment but cannot trigger a rework loop; downstream agents ignore “fail” signals and proceed to finalization.
+- A2 (Blindfolded Verifier): Keep the verifier but remove tool access to oracles (unit tests, execution, linters). The verifier must decide based on static artifacts only (e.g., code diff, reasoning). This cleanly stresses FM‑3.2 and FM‑3.3.
+- A3 (Budget-Capped Verifier): Keep authority and tools, but cap verifier compute (# tool calls, # turns). This probes whether “no/incomplete verification” arises from budget constraints rather than capability.
 
-A. Baseline (Explicit Verifier)
-- Verifier has access to: task spec, diffs, logs, and test runner; it can request revisions and decide acceptance/termination.
+In ChatDev specifically:
+- Comment out or flag the Tester/Reviewer invocation in the pipeline (e.g., TESTER_ENABLED=False).
+- For A1, strip the branch that triggers a “revise-and-rerun” loop when tests fail.
+- For A2, intercept the verifier’s tool calls (exec, test runner, linter) with no-ops or return masked outputs; keep the same prompts and role.
+- For A3, set a small per-verifier tool-call budget and max_turns.
 
-B. No-Verifier (Removal)
-- Remove the Verifier role; Implementer hands off directly to Reviewer/Merger who must accept/terminate. All prompts, tools, and temperatures unchanged.
+Failure modes to track and how to operationalize them
+Align your logging/labels to MST’s FC3 to enable direct mapping.
 
-C. Tool-blinded Verifier (Access ablation)
-- Keep Verifier but revoke tool access (no tests/commands). It must verify from text/spec only. This isolates the value of external tools in verification.
+- FM‑3.1 Premature Termination: The pipeline ends without a verifier step or ends before any checks complete. Detection: no verifier turn/logs; or verifier invited but exits before any check; or conversation ends before planned verification. Metric: premature-termination rate (%) [file:5].
+- FM‑3.2 No or Incomplete Verification: The verifier runs fewer than K planned checks (e.g., runs 0 tests or a strict subset), or coverage < threshold (e.g., <90% of available failing tests addressed). Metric: verification coverage = tests_run / tests_available; check-count per task; coverage shortfall rate (%) [file:5].
+- FM‑3.3 Incorrect Verification: The verifier’s final judgment disagrees with the ground-truth oracle (e.g., it accepts solutions that fail tests or rejects solutions that pass). Metrics: false-accept rate (FAR; incorrect but accepted), false-reject rate (FRR; correct but rejected), and overall verifier accuracy [file:5].
 
-D. Silent Verifier (Decision ablation)
-- Verifier can comment but cannot gate acceptance; Reviewer/Merger must ignore its accept/reject signal. Tests whether mere critique (without authority) changes outcomes.
+Primary outcome metrics
+- Task success: fraction of tasks fully passing the benchmark oracle (unit-test pass rate).
+- Verifier FAR/FRR/Accuracy: computed against the oracle on each task/version.
+- Verification coverage: tests run / available; number and diversity of checks (unit tests, static analysis, runtime probes).
+- Rework productivity: number of verifier-triggered iterations; success-after-rework rate.
+- Cost/time overhead: additional tokens/tool calls/time attributable to the verifier.
+- Premature termination rate (FM‑3.1).
+- Calibration: correlation between verifier confidence (if logged) and correctness (ECE/Brier score).
 
-E. Self-check Instead of Verifier (Role conflation ablation)
-- Replace Verifier with Implementer self-critique (one extra self-review turn) at fixed budget. Tests separation-of-duties benefit versus single-agent self-check.
+Secondary diagnostics
+- Root-cause labeling: proportion of failures attributed to FM‑3.2 vs FM‑3.3 (manual spot-checking of logs).
+- Tool-use quality: fraction of verifier tool calls that produce actionable signals (e.g., failing test logs referenced correctly).
+- Iteration quality: acceptance after N cycles and diminishing returns.
 
-Keep: fixed number of iterations, identical routing, identical tool set for non-ablated roles, same temperature and max tokens, same seeds, same test-time budget.
+Three concrete, falsifiable experiments
+- E1 (Verifier On vs Off, paired): Hypothesis: An explicit verifier reduces FAR and increases overall task success at the cost of time/cost. Design: Run ChatDev on N SWE-bench Lite tasks with fixed seed, temperature, and tool budget under A0 (No-Verifier) vs baseline with full verifier. Metrics: task success, FAR/FRR, tokens/tool calls/time. Expected: ↓FAR, ↑success, ↑overhead with verifier [file:5].
+- E2 (Blindfolded Verifier): Hypothesis: Removing tool access (A2) increases FM‑3.2 and FM‑3.3 (more incomplete and incorrect verification) relative to full verifier. Design: Baseline vs A2 on the same tasks. Metrics: coverage, FAR/FRR, success, premature termination. Expected: ↓coverage, ↑FAR/FRR, ↓success with A2 [file:5].
+- E3 (Authority Ablation): Hypothesis: Removing veto authority (A1) raises FAR (incorrect acceptances) but reduces cost/time. Design: Baseline vs A1. Metrics: FAR/FRR, rework rate, success, cost/time. Expected: ↑FAR, ↓rework, mixed effect on success depending on generator quality [file:5].
 
-FC3 failure modes to tag during runs
-Define operational tags aligned to FC3; if you are mapping to MST labels, use your paper’s exact FM-3.x names/IDs in your logging schema:
+Experimental controls and analysis
+- Use identical prompts, planner, generator model, seeds/temperatures, and per-agent budgets; vary only verifier toggles.
+- Paired design on the same task set; use McNemar’s test on per-task correctness (pass/fail) and bootstrap CIs for FAR/FRR differences.
+- Sample size: at least 100 tasks on SWE-bench Lite (or a power analysis using pilot effect sizes).
+- Log granular verifier events (tests invoked, outputs parsed, judgments and confidences) to enable precise FM labeling.
 
-- FM-3.1 Mis-specified acceptance criteria: Verifier applies criteria misaligned with the task or benchmark oracle (e.g., treating style warnings as blocking).
-- FM-3.2 False acceptance (false positive verification): Verifier accepts when the oracle (unit tests/issue status) is failing.
-- FM-3.3 False rejection (false negative verification): Verifier rejects when the oracle is passing.
-- FM-3.4 Non-actionable verification feedback: Verifier requests changes without concrete, test-linked guidance; leads to churn.
-- FM-3.5 Inconsistent criteria across turns: Verifier applies inconsistent standards between iterations.
-- FM-3.6 Tool-misuse in verification: Verifier fails to run tests, misreads logs, or misinterprets pass/fail signals.
-
-Note: If the MST paper provides precise names for FM-3.2/FM-3.3, align the above “false acceptance/rejection” to those exact definitions; confirm the mapping in the paper’s failure taxonomy table [P1].
-
-Primary performance metrics
-Task-level outcomes
-- Success rate (pass@1) on oracle tests.
-- Time-to-success (iterations to first passing solution).
-- Token/compute cost to success.
-
-Verifier-centric metrics (use the oracle as ground truth)
-- Verification precision = accepted solutions that truly pass / all accepted.
-- Verification recall = truly passing solutions that get accepted / all truly passing.
-- False acceptance rate (FAR) = FM-3.2 frequency.
-- False rejection rate (FRR) = FM-3.3 frequency.
-- Calibration: Expected Calibration Error (ECE) between verifier confidence and correctness; reliability curve.
-
-Collaboration/process metrics
-- Number of rework cycles triggered by Verifier.
-- Share of non-actionable feedback (FM-3.4).
-- Tool-use success for verification (rate of correctly executed tests vs tool errors; FM-3.6).
-- Stopping-condition accuracy: fraction of episodes where “termination” coincides with oracle success.
-
-Ablation experiments
-Run all experiments on the same task set with paired evaluation (per-task comparisons) to enable stronger statistics.
-
-1) With vs Without Verifier (effect of explicit verification)
-- Conditions: Baseline vs No-Verifier.
-- Hypothesis: The explicit Verifier reduces FAR (FM-3.2) and increases success rate on SWE-bench(-Lite); effect size depends on test access and critique quality. Conjecture, to be tested [P1].
-- Metrics: Success rate, FAR/FRR, verification precision/recall, time-to-success, token cost.
-- Analysis: Paired McNemar test for success differences; bootstrap CIs for FAR/FRR deltas.
-
-2) Tool Access Ablation (value of external tools in verification)
-- Conditions: Baseline vs Tool-blinded Verifier.
-- Hypothesis: Removing test access increases FAR/FRR and reduces verification precision; more non-actionable feedback (FM-3.4) as the Verifier guesses from text. Conjecture.
-- Metrics: Verification precision/recall, FAR/FRR, tool-misuse (should drop to zero by design), success rate.
-- Analysis: Compare precision/recall; report delta success rate and churn (rework cycles).
-
-3) Authority vs Advice (does gating power matter?)
-- Conditions: Baseline vs Silent Verifier vs Self-check Instead of Verifier.
-- Hypothesis: A Verifier with accept/reject authority outperforms an advisory-only Verifier, and both outperform a self-check Implementer on false acceptance control (FM-3.2). Conjecture consistent with the need for principled verification in MAS [P1].
-- Metrics: FAR/FRR, success rate, rework cycles, stopping-condition accuracy.
-- Analysis: Trade-off plots of FAR vs success; measure whether authority reduces premature termination on failing outputs.
-
-Optional extensions (if budget allows)
-- Strictness sweep: vary Verifier temperature and “strictness” prompt; trace ROC-like curve between FRR and FAR to identify an operating point.
-- Replace Verifier model: same prompt/tools with a stronger/weaker LLM to isolate model quality effects on verification.
-- Reviewer-Only vs Verifier-Only: to separate code-quality review from acceptance verification.
-
-Methodological controls
-- Use the same seeds, temperatures, and tool versions; log every tool call and test result.
-- Pre-register stopping criteria and iteration budget.
-- Use paired evaluation and report CIs; test for significance (e.g., McNemar for paired binary success; bootstrap for rate differences).
-- Release a failure-mode–tagged trace log to allow external auditing of FC3 labels [P1].
-
-Practical notes
-- Prefer SWE-bench Lite initially to keep infra manageable; scale up once instrumentation is stable.
-- Add one thin “Verification API” boundary in the codebase so you can flip between Baseline/ablations without touching other roles.
-- Implement automatic FM tagging where possible:
-  - FM-3.2/3.3 are automatable via oracle vs Verifier decision.
-  - FM-3.6 from tool stderr/exit codes.
-  - FM-3.4 via a simple rubric classifier; validate with spot human checks.
-
-Anchors and context
-- MST context: Multi-agent systems often deliver modest gains over single-agent baselines and benefit from failure-mode–aware evaluation; FC3-style verification is a key locus of error to diagnose [P1].
-- Domain-specific auditing work similarly argues for moving beyond final-answer accuracy to diagnose collaborative failure modes, including verification steps [P2].
-
-Citations
-- [P1] Why Do Multi-Agent LLM Systems Fail? — http://arxiv.org/abs/2503.13657v2
-- [P2] MedAgentAudit: Diagnosing and Quantifying Collaborative Failure Modes in Medical Multi-Agent Systems — http://arxiv.org/abs/2510.10185v1
-- MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework — http://arxiv.org/abs/2308.00352v7
-- SWE-bench: Can Language Models Resolve Real-World GitHub Issues? — http://arxiv.org/abs/2310.06770v3
-- ChatDev (repository) — https://github.com/OpenBMB/ChatDev
+Why this setup
+- SWE-bench’s executable oracles make FC3 verifiable: verification is observable through unit tests, and incorrect/no verification is measurable (coverage, FAR/FRR). Multi-agent frameworks like ChatDev/MetaGPT make it straightforward to create an explicit “verifier” role you can ablate with minimal code changes. Recent research underscores the value of treating verification as a first-class process in multi-agent systems and provides design patterns you can mirror (e.g., verification-aware planning and integrated verification agents) [P1][P2].
 
 Key takeaways
-- Use a role-based system (ChatDev/MetaGPT) plus SWE-bench(-Lite) to make verification observable via unit-test oracles.
-- Ablate the Verifier’s presence, tool access, and authority to isolate its function.
-- Track FAR/FRR (FM-3.2/FM-3.3), verification precision/recall, stopping-condition accuracy, and process costs.
-- Use paired designs and CIs; publish labeled traces so others can inspect FC3 failures.
+- Use SWE-bench Lite + ChatDev (or MetaGPT) with toggles for verifier presence, authority, tools, and budget.
+- Map outcomes to MST’s FC3: FM‑3.1, FM‑3.2, FM‑3.3 [file:5].
+- Track task success, FAR/FRR, coverage, rework, cost/time, and premature termination.
+- Run paired ablations (On vs Off; Blindfolded; No-Veto) and analyze FAR/FRR and success differences.
+
+Citations
+- [file:5] Why Do Multi-Agent LLM Systems Fail? — FC3 “Task Verification” with FM‑3.1 Premature Termination, FM‑3.2 No or Incomplete Verification, FM‑3.3 Incorrect Verification — Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5
+- [file:9] Why Do Multi-Agent LLM Systems Fail? — Example showing missing feedback on a credential failure, illustrating verification/feedback gaps — Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9
+- [P1] Verification-Aware Planning for Multi-Agent Systems — http://arxiv.org/abs/2510.17109v1
+- [P2] MAG-V: A Multi-Agent Framework for Synthetic Data Generation and Verification — http://arxiv.org/abs/2412.04494v2
+
+Sources
+- Why Do Multi-Agent LLM Systems Fail? (MST/MAST taxonomy) [file:5,9]
+- [P1] Verification-Aware Planning for Multi-Agent Systems
+- [P2] MAG-V: A Multi-Agent Framework for Synthetic Data Generation and Verification

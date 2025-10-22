@@ -1,77 +1,103 @@
-I read the attached PDF and scanned for ethics/compliance topics. Below are concrete risks I see plus specific fixes you can add to the paper.
+Below is an ethics/compliance risk review of your manuscript based on the provided excerpts, followed by concrete fixes you can add to the paper. I cite your text with [file:page] markers.
 
-What I found in your paper
-- Risk of demographic/institutional bias acknowledged but not operationalized: You note that cohort demographics, prevalence, equipment, and single-institution sourcing (e.g., all cases from one hospital) can induce bias and disparities, and you include an impact statement calling for transparency and equity [Do Multiple Instance Learning Models Transfer_.pdf:10]. However, I don’t see subgroup evaluations or mitigation steps tied to these risks.
-- Dataset usage spans multiple sources; licenses/permissions not stated: Your experiments use multiple datasets (e.g., BRACS, EBRAINS, PC-108; also cross-dataset transfer learning) [Do Multiple Instance Learning Models Transfer_.pdf:20; 17]. I don’t see a per-dataset license, terms-of-use, or redistribution statement, nor a declaration of whether test sets with restrictive terms were used only for evaluation and whether any rehosting or redistribution occurs.
-- Deviations from “official” splits: You note issues around official splits when transferring between datasets [Do Multiple Instance Learning Models Transfer_.pdf:17]. This raises two compliance risks: (a) potential test-set protocol or ToS violations if official test partitions have restrictions, and (b) risk of leakage if the new splits aren’t patient-level or follow dataset guidance.
-- Human subjects/IRB/consent: The work appears to involve patient-derived histopathology images. I don’t see IRB protocol IDs or exemption determinations, consent/de-identification statements, or a statement of compliance with HIPAA/GDPR (as applicable). Given the single-institution data mention [Do Multiple Instance Learning Models Transfer_.pdf:10], it’s important to state whether your local IRB approved or exempted this research and whether all data were de-identified prior to access/use.
-- Compute disclosures: You provide some training details (optimizer, LR, scheduler, mixed precision, epochs) [Do Multiple Instance Learning Models Transfer_.pdf:16], but I don’t see compute disclosure (hardware model/count, GPU-hours or FLOPs), or energy/carbon estimates. Many venues now expect resource and environmental impact reporting.
-- Reproducibility/Model and Data Cards: You provide several training hyperparameters [Do Multiple Instance Learning Models Transfer_.pdf:16], but a consolidated Model Card/Data Card describing intended use, limitations, subgroup behavior, training data provenance, and licensing is not referenced.
-- Clinical use and dual-use: Given the medical setting, the paper should explicitly state that the model is for research only, not for clinical decision-making, and outline foreseeable harms and mitigations.
+Key risks and recommended fixes
 
-High-priority fixes to add to the paper
-- Per-dataset license and terms table
-  - For each dataset used (e.g., PC-108, BRACS, EBRAINS), list: source URL, license/ToS name and link, allowed uses (commercial/non-commercial), redistribution rights, required attributions, restrictions on derivative works, and whether you are redistributing any images/patches/embeddings or only code and trained weights. If any dataset prohibits redistribution, state that you do not host or redistribute it and provide instructions for readers to obtain it directly.
-  - Add an explicit statement that official test sets were used only for evaluation, without training or hyperparameter tuning where required, and that you complied with each dataset’s evaluation policies [Do Multiple Instance Learning Models Transfer_.pdf:17; 20].
-- IRB/ethics and privacy
-  - Add an “Ethics/IRB” paragraph stating: IRB protocol number(s) or exemption; whether data were de-identified before researchers accessed them; whether consent was obtained or waiver of consent was granted; compliance frameworks (e.g., HIPAA, GDPR) if applicable; and data-use agreements for any nonpublic datasets. If only public de-identified datasets were used, state that and cite their data-use terms. Tie this to the single-institution risk already noted [Do Multiple Instance Learning Models Transfer_.pdf:10].
-- Subgroup bias evaluation and mitigation
-  - Add subgroup performance breakdowns by institution/source, scanner/vendor if available, and demographics if available (e.g., age group, sex), including CIs and significance tests. Discuss disparities and mitigations (domain generalization, calibration, threshold adjustments). This concretely operationalizes your impact statement [Do Multiple Instance Learning Models Transfer_.pdf:10].
-- Data splits and leakage safeguards
-  - Document how you ensured patient-level separation across train/val/test and across datasets in transfer experiments, and whether you deviated from or replicated official splits when they exist. If you deviated, justify and disclose precisely [Do Multiple Instance Learning Models Transfer_.pdf:17].
-- Compute, energy, and carbon disclosures
-  - Add hardware specs (GPU model, count), total GPU-hours per experiment, peak memory, and either FLOPs or an estimate. Provide energy and CO2e estimates using a tool like CodeCarbon and report assumptions (datacenter PUE and grid carbon intensity). You already list core training hyperparameters [Do Multiple Instance Learning Models Transfer_.pdf:16]; augment with resource/impact reporting.
-- Model and Data Cards
-  - Include a short Model Card covering intended use, out-of-scope use (not for clinical decisions), training data sources, limitations, subgroup performance, and ethical considerations. Include a Data Card (or datasheet) for any dataset you collect or substantially curate, and link to original dataset licenses for external sources.
-- Clinical and dual-use disclaimers
-  - Add a sentence in Abstract or Ethics section: “This model is intended for research use only and is not cleared or approved for clinical use. Clinical deployment requires regulatory evaluation and prospective validation.” Summarize foreseeable harms and how you mitigate them (e.g., human-in-the-loop, calibration, conservative thresholds).
-- Data availability and access
-  - State precisely what you share: code license, model weight license, and where to obtain datasets (original sources, not rehosted, unless license permits). If any dataset is restricted, provide access instructions rather than direct distribution.
-- Acknowledgments and conflicts
-  - Acknowledge dataset creators as required by their licenses, and include a funding/conflicts statement.
+1) Dataset licensing and terms of use
+- Risk: Multiple clinical/histopathology datasets are used (e.g., NSCLC, BRCA/BCNB, PANDA, GBMLGG, EBRAINS-F) but the snippets do not state dataset licenses or permitted uses (e.g., non-commercial, redistribution) [Do Multiple Instance Learning Models Transfer_.pdf:7]. Without an explicit licensing table, you risk inadvertent license violations and downstream reuse barriers.
+- Fixes:
+  - Add a “Data licensing and access” table listing: dataset name; curator/host; license or terms (with link); any restrictions (non-commercial, no-redistribution); and what you redistribute (splits, features, models).
+  - For any datasets with restricted or proprietary access, state the data-use agreement (DUA) conditions and that you do not redistribute raw data.
+  - For derived artifacts (WSI features, slide tiles, checkpoints), confirm licenses allow redistribution; otherwise, publish only scripts to reproduce from source.
 
-Concrete, falsifiable experiments to strengthen ethics/compliance evidence
-- Subgroup fairness test across institutions
-  - Hypothesis: AUC does not differ by data source institution by more than Δ=0.03 after calibration.
-  - Variables: Independent—source institution; Dependent—AUC, sensitivity at fixed specificity.
-  - Metrics: ΔAUC and 95% CIs per subgroup; DeLong test for differences; error bars in a forest plot.
-  - Expected outcome: Some measurable disparity attributable to single-institution training that you can mitigate by domain adaptation or reweighting [Do Multiple Instance Learning Models Transfer_.pdf:10].
-- Data leakage audit
-  - Hypothesis: No patient-level overlap exists between train/val/test or across datasets used in transfer experiments.
-  - Method: Hash patient identifiers if available or use slide-level proxies; check duplicates across splits. If official splits were modified, verify they still enforce patient-level separation.
-  - Metrics: Count of duplicate patients or near-duplicate slides; leakage rate target = 0.
-  - Expected outcome: Zero duplicates; if any are found, report and re-run affected results [Do Multiple Instance Learning Models Transfer_.pdf:17].
-- Energy/carbon measurement study
-  - Hypothesis: Training the best-performing configuration emits ≤ X kgCO2e on your reported hardware.
-  - Method: Log wall-clock time, GPU power draw, and use CodeCarbon (or equivalent) to compute CO2e; report PUE and regional grid assumptions.
-  - Metrics: GPU-hours, kWh, kgCO2e per run and per successful model; emissions per percentage point of AUC.
-  - Expected outcome: Transparent compute/impact reporting that enables comparison across methods; may motivate lighter-weight baselines [Do Multiple Instance Learning Models Transfer_.pdf:16].
-- Cross-dataset license-compliant evaluation
-  - Hypothesis: Results are unchanged when strictly adhering to each dataset’s official evaluation protocol and ToS.
-  - Method: Re-run evaluation using required official test splits and prohibited actions (if any) removed; document any deviations and their effects.
-  - Metrics: Change in AUC/ACC vs. prior numbers.
-  - Expected outcome: Minimal changes; if large, revise claims and document protocol compliance [Do Multiple Instance Learning Models Transfer_.pdf:17].
+2) Human data, consent, and IRB/ethics
+- Risk: The work uses human pathology whole-slide images (WSI) across multiple disease cohorts [Do Multiple Instance Learning Models Transfer_.pdf:7], including a single-institution pretraining set (PC-108 from Brigham and Women’s Hospital) [Do Multiple Instance Learning Models Transfer_.pdf:10]. The snippets do not include IRB/ethics approvals, consent/waiver, de-identification statements, or privacy safeguards.
+- Fixes:
+  - Add an “Ethics approval and consent” statement per dataset: IRB board(s), protocol numbers or waivers, and whether WSIs were fully de-identified prior to release/analysis; confirm compliance with applicable frameworks (e.g., HIPAA/GDPR) and no PHI exposure.
+  - If using only public datasets, cite each dataset’s ethics statement and note that all analyses were conducted on de-identified data under the dataset’s approved use.
 
-Language you can add (templates)
-- IRB statement: “This study was approved by the [Institution] IRB (Protocol #[ID]) with a waiver of informed consent for retrospective, de-identified data. All data were de-identified prior to analysis in compliance with HIPAA. For public datasets, we complied with their data-use terms and did not redistribute restricted data.”
-- Dataset license table: “We used PC-108, BRACS, EBRAINS, … For each dataset, Table X lists license/ToS, allowed uses, redistribution terms, and required attributions. We do not redistribute any datasets with restrictive licenses; readers should obtain them from the original sources.”
-- Compute disclosure: “Experiments ran on [N]×[GPU model] (total Y GPU-hours per configuration). Energy use was Z kWh and CO2e was Q kg, estimated with CodeCarbon (PUE=…, grid intensity=…).”
-- Clinical use disclaimer: “This work is for research only, not for clinical decision-making. Deployment would require regulatory review and prospective validation.”
+3) Algorithmic bias and equity
+- Risk: You note that PC-108 originates from a single hospital and may cause biased performance across underrepresented groups or clinical contexts; you recommend audits and monitoring [Do Multiple Instance Learning Models Transfer_.pdf:10]. This is an acknowledged risk and should be addressed with concrete analyses and documentation.
+- Fixes:
+  - Add subgroup performance analyses where metadata permit (site/scanner, staining protocol, slide vendor; demographics if available), report disparities (e.g., AUROC gaps, calibration error), and discuss mitigations.
+  - Include a Model Card-style Intended Use, Limitations, and Fairness section summarizing known failure modes and out-of-scope use.
 
-Literature anchors
-- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
-- Gebru et al., 2021. Datasheets for Datasets — https://arxiv.org/abs/1803.09010
-- Lacoste et al., 2019. Quantifying the Carbon Emissions of Machine Learning — https://arxiv.org/abs/1910.09700
+4) Data leakage and train/test contamination
+- Risk: You discovered overlapping samples in official splits (NSCLC, BRCA, BCNB) and created multi-label stratified splits to avoid leakage for certain experiments [Do Multiple Instance Learning Models Transfer_.pdf:17]. This risk needs to be ruled out for all reported results.
+- Fixes:
+  - State explicitly which experiments use your leakage-free splits vs. official splits; for the latter, confirm non-overlap or re-run with your clean splits and update results.
+  - Release split manifests (hashed slide IDs) and a script to reproduce splits; reference the public GitHub location (already mentioned) [Do Multiple Instance Learning Models Transfer_.pdf:17].
 
-If you share the exact Ethics/IRB, Data Availability, and Methods subsections, I can mark specific sentences to add and draft a per-dataset license table.
+5) Compute, resources, and environmental disclosures
+- Risk: The excerpts do not report compute resources, FLOPs/GPU-hours, training time, or carbon/energy estimates. Many venues now expect these disclosures.
+- Fixes:
+  - Add a “Compute and environmental impact” subsection: hardware (GPU/TPU model counts), peak memory, total train/inference GPU-hours per experiment, approximate FLOPs/epoch, software versions, mixed precision, batch sizes, wall-clock times, and region/energy mix for cloud.
+  - Provide carbon estimates (e.g., via CodeCarbon) with method and assumptions, and clarify any efficiency choices (checkpointing, smaller encoders).
+
+6) Third-party model and weight licenses
+- Risk: You use pretrained encoders (ResNet-50 on ImageNet, CTransPath, GigaPath ViT, UNIv2-h, CONCHv1.5) [Do Multiple Instance Learning Models Transfer_.pdf:7] but the snippets do not list their licenses or training data terms; some foundation encoders have dataset-specific restrictions.
+- Fixes:
+  - Add a “Third-party models” table: model, source repo, license (e.g., MIT, Apache-2.0), pretraining data sources/terms, and attribution requirements; confirm license compatibility with your code/data release plans.
+
+7) Privacy and PHI safeguards
+- Risk: WSI can contain slide labels/barcodes or embedded metadata; you describe standardized preprocessing [Do Multiple Instance Learning Models Transfer_.pdf:3] but do not state PHI scrubbing steps.
+- Fixes:
+  - Document PHI mitigation: cropped tiles exclude labels; all SVS/OME-TIFF metadata inspected/stripped of PHI; show a script that zeroes label regions and removes EXIF fields; confirm no patient identifiers are included in released manifests or file names.
+
+8) Reproducibility and availability
+- Strength: You provide custom leakage-free splits on GitHub [Do Multiple Instance Learning Models Transfer_.pdf:17].
+- Fixes:
+  - Add a persistent repository link with commit hash, environment file, and exact commands; publish model checkpoints if licenses allow; include a Data Availability statement referencing dataset access URLs and conditions.
+
+Concrete, falsifiable experiments to address the above
+
+1) Cross-site and subgroup fairness audit
+- Hypothesis: Models pretrained on PC-108 do not exhibit clinically meaningful performance disparities across sites/scanners or staining protocols on downstream tasks [Do Multiple Instance Learning Models Transfer_.pdf:10].
+- Variables: Group by institution/scanner (if available), staining batch, and any available demographics; compare PC-108-pretrained vs. baseline-initialized models.
+- Metrics: AUROC/AUPRC per subgroup; worst-group performance; calibration error; disparity (max-min AUROC). Statistical tests with bootstrap CIs.
+- Expected outcome: If bias is limited, disparity remains below a pre-specified threshold; otherwise, identify subgroups needing mitigation.
+
+2) Leakage-free replication
+- Hypothesis: Results using official splits do not materially degrade when re-evaluated on multi-label stratified, non-overlapping splits [Do Multiple Instance Learning Models Transfer_.pdf:17].
+- Variables: Split method (official vs. leakage-free); architecture constant.
+- Metrics: Delta in AUROC/accuracy/kappa; re-run all benchmarks with fixed seeds; release manifests.
+- Expected outcome: Small, explainable performance differences; large drops would indicate prior inflation due to leakage.
+
+3) Compute–performance tradeoff and environmental impact
+- Hypothesis: Higher-compute encoders (e.g., GigaPath ViT, UNIv2-h) provide diminishing returns relative to mid-size encoders (e.g., CTransPath, ResNet-50) for target tasks, enabling lower-carbon configurations [Do Multiple Instance Learning Models Transfer_.pdf:7].
+- Variables: Encoder type/size; precision (fp32 vs. mixed precision); batch size.
+- Metrics: AUROC vs. GPU-hours and estimated kgCO2e; FLOPs-normalized performance; energy per correct classification.
+- Expected outcome: A Pareto frontier demonstrating competitive performance at substantially lower compute/CO2.
+
+4) PHI/metadata leakage check
+- Hypothesis: Preprocessing removes all potential patient-identifiable regions and metadata from WSIs and tiles [Do Multiple Instance Learning Models Transfer_.pdf:3].
+- Variables: With vs. without PHI-scrubbing pipeline.
+- Metrics: Automated scans for barcodes/text in tile borders; metadata dumps confirming absence of patient identifiers; independent audit script results.
+- Expected outcome: No detected PHI in images or metadata post-scrubbing.
+
+What to add to the manuscript
+
+- Ethics/IRB statement: “All datasets comprised de-identified human pathology images. Institutional review boards approved the use or granted waivers for secondary analysis; protocol IDs: … (per dataset).”
+- Data licensing table: For each dataset, license name, URL, restrictions, and what you redistribute.
+- Model and weights licenses: Explicit licenses and attributions for ResNet-50 (ImageNet), CTransPath, GigaPath ViT, UNIv2-h, CONCHv1.5.
+- Compute disclosure: Hardware, GPU-hours, FLOPs, training/inference times, software, mixed precision, seed settings, and carbon estimates.
+- Fairness and safety: Subgroup analyses, intended use, limitations, and out-of-scope claims; a short Model Card.
+- Reproducibility: Split manifests (hashes), exact seeds, environment, commit hash, and link to the GitHub repo with your leakage-free splits [Do Multiple Instance Learning Models Transfer_.pdf:17].
+
+If you share the exact datasets and model sources you used (with links), I can draft the licensing and ethics statements tailored to each one.
+
+Literature anchors (for your Related Work/Reporting sections)
+- Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
+- Energy and Policy Considerations for Deep Learning in NLP — https://arxiv.org/abs/1906.02243
 
 Citations
+- [Do Multiple Instance Learning Models Transfer_.pdf:3]
+- [Do Multiple Instance Learning Models Transfer_.pdf:7]
 - [Do Multiple Instance Learning Models Transfer_.pdf:10]
-- [Do Multiple Instance Learning Models Transfer_.pdf:16]
 - [Do Multiple Instance Learning Models Transfer_.pdf:17]
-- [Do Multiple Instance Learning Models Transfer_.pdf:20]
+- Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
+- Energy and Policy Considerations for Deep Learning in NLP — https://arxiv.org/abs/1906.02243
 
-Sources
-- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
-- Gebru et al., 2021. Datasheets for Datasets — https://arxiv.org/abs/1803.09010
-- Lacoste et al., 2019. Quantifying the Carbon Emissions of Machine Learning — https://arxiv.org/abs/1910.09700
+Key takeaways
+- Add explicit licensing, IRB/consent, compute/carbon, and fairness disclosures.
+- Re-run all results on leakage-free splits and publish reproducible manifests.
+- Provide model/weights licenses and PHI-scrubbing details to reduce legal/privacy risk.

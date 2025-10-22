@@ -1,1 +1,669 @@
-<bound method BaseMessage.text of AIMessage(content='', additional_kwargs={'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 30, 'prompt_tokens': 11281, 'total_tokens': 11311, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'anthropic/claude-sonnet-4.5', 'system_fingerprint': None, 'id': 'gen-1760627598-vFej2ezSDZb3T4FtRvs7', 'service_tier': None, 'finish_reason': 'stop', 'logprobs': None}, id='run--e81229be-7802-4fb6-9e3b-b0de801136ff-0', usage_metadata={'input_tokens': 11281, 'output_tokens': 30, 'total_tokens': 11311, 'input_token_details': {}, 'output_token_details': {}})>
+Based on the PeerRead dataset methodology and common issues in peer review data collection, I'll identify critical threats to validity and propose specific preemptive analyses.
+
+## Critical Threats to Validity in PeerRead Data Collection
+
+### **Threat 1: Selection Bias in Venue Choice**
+
+**The Problem:**
+PeerRead includes data from specific venues (NIPS, ICLR, arXiv in certain domains). These venues have:
+- Different review processes (single-blind vs. double-blind)
+- Different acceptance rates (NIPS ~20-25%, ICLR ~30-40%)
+- Different community norms and standards
+- Different author demographics and institutional representation
+
+**Why it matters:**
+Models trained on these venues may not generalize to other conferences, journals, or disciplines. The dataset may over-represent well-resourced research communities.
+
+**Preemptive Analyses:**
+
+**Analysis 1.1: Venue Characteristic Comparison**
+```python
+# Compare key statistics across venues
+Metrics to report:
+- Acceptance rate distribution
+- Paper length distribution (mean, std, range)
+- Author count distribution
+- Institutional diversity (% from top-10 institutions)
+- Geographic diversity (country distribution)
+- Topic distribution (via LDA or keyword analysis)
+```
+
+**Present as table:**
+| Venue | Accept Rate | Avg Length | Avg Authors | Top-10 Inst % | Countries | Topics |
+|-------|-------------|------------|-------------|---------------|-----------|--------|
+| NIPS  | X%          | Y pages    | Z           | A%            | B         | ...    |
+| ICLR  | X%          | Y pages    | Z           | A%            | B         | ...    |
+
+**Interpretation:** "Our dataset represents [characteristics]. Findings may not generalize to venues with [different characteristics]."
+
+**Analysis 1.2: Cross-Venue Generalization Test**
+- Train on Venue A, test on Venue B
+- Report performance drop to quantify generalization gap
+- **Expected finding:** "Models trained on NIPS achieve X% performance on NIPS but Y% on ICLR, suggesting venue-specific biases"
+
+**Analysis 1.3: Acceptance Rate Sensitivity**
+- Subsample accepted papers to simulate different acceptance rates
+- Test if model performance degrades with different class imbalance
+- **Report:** "Our model maintains performance across acceptance rates from X% to Y%"
+
+---
+
+### **Threat 2: Temporal Confounding and Dataset Drift**
+
+**The Problem:**
+PeerRead spans multiple years (typically 2013-2017). During this period:
+- Research trends evolved (e.g., rise of deep learning)
+- Review standards may have changed
+- Author writing styles evolved
+- Venue policies changed (e.g., ICLR moved to OpenReview)
+
+**Why it matters:**
+Models may learn temporal artifacts rather than quality signals. Performance may degrade on future submissions.
+
+**Preemptive Analyses:**
+
+**Analysis 2.1: Temporal Stratification**
+```python
+# Split data by year, analyze trends
+For each year:
+- Acceptance rate
+- Average review scores
+- Topic distribution (top keywords/topics)
+- Average paper length
+- Vocabulary diversity
+```
+
+**Visualization:** Line plots showing trends over time with interpretation
+
+**Analysis 2.2: Temporal Generalization Test**
+- Train on years 2013-2015, test on 2016-2017
+- Compare to random train/test split
+- **Report:** "Temporal split reduces performance by X%, indicating [mild/moderate/severe] dataset drift"
+
+**Analysis 2.3: Vocabulary Shift Analysis**
+- Measure vocabulary overlap between early and late years
+- Identify emerging terms (high frequency in late years, low in early)
+- **Report:** "Vocabulary overlap is X%, with emerging terms including [examples], suggesting evolving research focus"
+
+---
+
+### **Threat 3: Reviewer Assignment Bias**
+
+**The Problem:**
+Reviewers are not randomly assigned. Assignment depends on:
+- Reviewer expertise and preferences
+- Reviewer availability and workload
+- Area chair decisions
+- Potential conflicts of interest
+
+**Why it matters:**
+Papers may receive systematically different treatment based on reviewer assignment, introducing confounding between paper quality and reviewer characteristics.
+
+**Preemptive Analyses:**
+
+**Analysis 3.1: Reviewer Consistency Analysis**
+For venues with reviewer IDs:
+```python
+# Measure reviewer-level statistics
+- Average score given by each reviewer (identify harsh/lenient reviewers)
+- Score variance (identify consistent/inconsistent reviewers)
+- Acceptance rate of papers reviewed
+- Intra-class correlation (ICC) to quantify reviewer effect
+```
+
+**Report:** "Reviewer identity explains X% of score variance (ICC = Y), indicating [low/moderate/high] reviewer-level effects"
+
+**Analysis 3.2: Reviewer Expertise Matching**
+If reviewer expertise is available:
+- Measure correlation between paper topic and reviewer expertise
+- Test if expertise match predicts scores
+- **Report:** "Papers matched to expert reviewers receive scores averaging X points higher, suggesting expertise-dependent evaluation"
+
+**Analysis 3.3: Review Load Analysis**
+- Correlate number of papers reviewed with average scores given
+- Test if overloaded reviewers give different scores
+- **Report:** "Reviewers with >X papers show Y% higher/lower scores, suggesting workload effects"
+
+---
+
+### **Threat 4: Incomplete or Missing Data**
+
+**The Problem:**
+Not all papers have complete information:
+- Some reviews may be missing aspect scores
+- Some papers lack metadata (author info, citations)
+- Some reviews are shorter or less detailed
+- ArXiv papers may lack review data entirely
+
+**Why it matters:**
+Missing data may not be random (MNAR - Missing Not At Random), introducing bias.
+
+**Preemptive Analyses:**
+
+**Analysis 4.1: Missingness Pattern Analysis**
+```python
+# Characterize missing data
+For each field (aspect scores, metadata, etc.):
+- % missing overall
+- % missing by venue
+- % missing by acceptance decision
+- Correlation between missingness indicators
+```
+
+**Visualization:** Heatmap showing missingness patterns
+
+**Analysis 4.2: Missing Data Mechanism Test**
+- Compare characteristics of papers with complete vs. incomplete data
+- Test if missingness correlates with acceptance
+- **Report:** "Papers with missing aspect scores are X% more/less likely to be accepted, suggesting [MCAR/MAR/MNAR]"
+
+**Analysis 4.3: Sensitivity Analysis**
+- Compare model performance on complete-case analysis vs. imputation
+- Try multiple imputation methods
+- **Report:** "Results are robust to missing data handling: complete-case F1 = X, imputed F1 = Y"
+
+---
+
+### **Threat 5: ArXiv as Negative Class (Revisited with Specific Tests)**
+
+**The Problem:**
+Using arXiv papers as "probably rejected" introduces:
+- Label noise (some are actually accepted)
+- Distribution shift (different writing styles, earlier drafts)
+- Selection bias (different author populations)
+
+**Preemptive Analyses:**
+
+**Analysis 5.1: ArXiv Publication Rate Audit**
+```python
+# Sample arXiv papers and check publication status
+Sample size: 200-500 papers
+For each paper:
+- Search Google Scholar for published version
+- Check DBLP for conference/journal publication
+- Record time to publication if found
+```
+
+**Report:** "Of X sampled arXiv papers, Y% were later published at peer-reviewed venues (Z% at top-tier venues), indicating label noise of approximately Y%"
+
+**Analysis 5.2: ArXiv vs. Rejected Paper Comparison**
+If you have any true rejected papers:
+```python
+# Compare distributions
+Features to compare:
+- Text length and complexity
+- Citation count at time of posting
+- Author h-index
+- Institutional prestige
+- Topic distribution
+```
+
+**Statistical test:** Two-sample Kolmogorov-Smirnov test for distribution differences
+
+**Report:** "ArXiv papers differ from true rejected papers in [dimensions], suggesting they may not be representative negatives"
+
+**Analysis 5.3: ArXiv Posting Timing Analysis**
+```python
+# Analyze when papers were posted relative to conference deadlines
+For each arXiv paper:
+- Identify nearest major conference deadline
+- Calculate days before/after deadline
+- Categorize: pre-submission, during review, post-decision
+```
+
+**Report:** "X% of arXiv papers were posted within Y days of conference deadlines, suggesting they may be concurrent submissions rather than rejected papers"
+
+**Analysis 5.4: Version History Analysis**
+```python
+# For arXiv papers with multiple versions
+Analyze:
+- Number of versions
+- Time between versions
+- Changes between versions (text diff)
+- Whether later versions acknowledge acceptance
+```
+
+**Report:** "ArXiv papers with multiple versions are X% more likely to be published, suggesting version count is a signal of eventual acceptance"
+
+---
+
+### **Threat 6: Review Quality and Reliability**
+
+**The Problem:**
+Not all reviews are equally informative or reliable:
+- Some reviews are very short or generic
+- Some reviewers may not have read carefully
+- Some reviews may be biased or unprofessional
+- Review quality may vary by venue and year
+
+**Why it matters:**
+Training on low-quality reviews may teach models to mimic poor reviewing practices.
+
+**Preemptive Analyses:**
+
+**Analysis 6.1: Review Quality Metrics**
+```python
+# Quantify review characteristics
+For each review:
+- Length (word count)
+- Specificity (ratio of paper-specific terms to generic terms)
+- Sentiment polarity and subjectivity
+- Presence of constructive feedback
+- Alignment with final decision
+```
+
+**Report distribution statistics and correlations with outcomes**
+
+**Analysis 6.2: Review-Decision Alignment**
+```python
+# Measure consistency
+For each paper:
+- Calculate variance in reviewer scores
+- Identify papers with high disagreement
+- Test if disagreement correlates with borderline decisions
+```
+
+**Report:** "X% of papers have reviewer score variance >Y, indicating substantial disagreement. High-disagreement papers are Z% more likely to be borderline accepts/rejects"
+
+**Analysis 6.3: Review Text Quality Filter**
+```python
+# Identify potentially low-quality reviews
+Criteria:
+- Length < 100 words
+- Generic phrases (>50% overlap with template)
+- No specific paper references
+- Extreme sentiment without justification
+```
+
+**Report:** "X% of reviews meet low-quality criteria. Excluding these reviews improves model performance by Y%, suggesting quality filtering is beneficial"
+
+---
+
+### **Threat 7: Annotation and Extraction Errors**
+
+**The Problem:**
+PeerRead data was collected via:
+- Web scraping (potential parsing errors)
+- PDF extraction (formatting issues)
+- Manual annotation (human errors)
+- Automated alignment (matching errors)
+
+**Why it matters:**
+Systematic extraction errors can introduce noise or bias.
+
+**Preemptive Analyses:**
+
+**Analysis 7.1: Data Quality Audit**
+```python
+# Manual verification sample
+Sample: 100-200 papers
+For each:
+- Verify paper-review alignment is correct
+- Check aspect scores match original reviews
+- Verify acceptance labels are correct
+- Check for OCR/parsing errors in text
+```
+
+**Report:** "Manual audit of X papers found Y% with minor errors and Z% with major errors. Error rate is [acceptable/concerning]"
+
+**Analysis 7.2: Automated Quality Checks**
+```python
+# Sanity checks on full dataset
+Tests:
+- Papers with impossible metadata (e.g., negative page counts)
+- Reviews longer than papers
+- Duplicate papers or reviews
+- Aspect scores outside valid range
+- Inconsistent acceptance labels
+```
+
+**Report:** "Automated checks identified X anomalies (Y% of dataset), which were [corrected/removed/flagged]"
+
+**Analysis 7.3: Inter-Annotator Agreement (if applicable)**
+If any manual annotation was done:
+```python
+# Calculate agreement metrics
+For each annotation task:
+- Cohen's kappa or Krippendorff's alpha
+- Confusion matrix for disagreements
+- Adjudication process description
+```
+
+**Report:** "Inter-annotator agreement is κ = X, indicating [poor/moderate/good/excellent] reliability"
+
+---
+
+### **Threat 8: Ethical and Privacy Concerns**
+
+**The Problem:**
+PeerRead contains potentially sensitive information:
+- Reviewer identities (if not properly anonymized)
+- Author identities (for rejected papers)
+- Confidential review content
+- Potentially identifying information in paper text
+
+**Why it matters:**
+Ethical violations can lead to paper rejection and harm to individuals.
+
+**Preemptive Analyses:**
+
+**Analysis 8.1: Anonymization Verification**
+```python
+# Check for identifying information
+Scan for:
+- Reviewer names or emails
+- Author names in rejected papers (if supposed to be anonymous)
+- Institutional affiliations
+- Acknowledgments with grant numbers
+- URLs to personal websites
+```
+
+**Report:** "We verified that all reviewer identities are anonymized and obtained appropriate permissions for data release"
+
+**Analysis 8.2: Ethical Review Documentation**
+```
+Document:
+- IRB approval or exemption determination
+- Data use agreements with venues
+- Author consent for rejected papers (if applicable)
+- Compliance with venue policies
+```
+
+**Include in paper:** "This research was approved by [IRB] under protocol [number]. All data was collected with appropriate permissions and anonymized to protect participant privacy"
+
+---
+
+## Comprehensive Preemptive Analysis Plan
+
+### **Priority 1: Must-Do Analyses (Will Face Immediate Rejection Without)**
+
+1. **ArXiv Publication Rate Audit** (Threat 5.1)
+   - Sample 200 arXiv papers, manually verify publication status
+   - Report false negative rate for "rejected" label
+   - **Time:** 10-15 hours
+   - **Impact:** Critical for validity
+
+2. **Cross-Venue Generalization** (Threat 1.2)
+   - Train on one venue, test on another
+   - Quantify generalization gap
+   - **Time:** 2-3 hours (computational)
+   - **Impact:** Shows robustness or identifies limitations
+
+3. **Temporal Generalization** (Threat 2.2)
+   - Train on early years, test on late years
+   - Compare to random split
+   - **Time:** 2-3 hours (computational)
+   - **Impact:** Shows temporal stability
+
+4. **Missing Data Analysis** (Threat 4.1-4.2)
+   - Characterize missingness patterns
+   - Test if missing data correlates with outcomes
+   - **Time:** 3-4 hours
+   - **Impact:** Addresses data quality concerns
+
+5. **Ethical Documentation** (Threat 8.2)
+   - Verify IRB status
+   - Document permissions
+   - **Time:** 1-2 hours
+   - **Impact:** Prevents ethical rejection
+
+### **Priority 2: Strongly Recommended (Significantly Strengthens Paper)**
+
+6. **Reviewer Consistency Analysis** (Threat 3.1)
+   - Calculate ICC for reviewer effects
+   - Identify harsh/lenient reviewers
+   - **Time:** 4-5 hours
+   - **Impact:** Contextualizes prediction difficulty
+
+7. **Venue Characteristic Comparison** (Threat 1.1)
+   - Compare acceptance rates, topics, demographics
+   - **Time:** 5-6 hours
+   - **Impact:** Clarifies generalizability scope
+
+8. **Review Quality Metrics** (Threat 6.1)
+   - Quantify review length, specificity, consistency
+   - **Time:** 4-5 hours
+   - **Impact:** Identifies data quality issues
+
+9. **ArXiv Timing Analysis** (Threat 5.3)
+   - Analyze posting times relative to deadlines
+   - **Time:** 3-4 hours
+   - **Impact:** Refines understanding of negative class
+
+10. **Data Quality Audit** (Threat 7.1)
+    - Manual verification of 100-200 samples
+    - **Time:** 8-10 hours
+    - **Impact:** Establishes data reliability
+
+### **Priority 3: Nice-to-Have (Demonstrates Thoroughness)**
+
+11. **Temporal Vocabulary Shift** (Threat 2.3)
+12. **Review-Decision Alignment** (Threat 6.2)
+13. **ArXiv Version History** (Threat 5.4)
+14. **Reviewer Expertise Matching** (Threat 3.2)
+15. **Sensitivity to Missing Data** (Threat 4.3)
+
+---
+
+## Recommended Results Section Structure
+
+```markdown
+## 3. Dataset Analysis and Validation
+
+### 3.1 Dataset Characteristics
+
+[Table comparing venues on key dimensions - Analysis 1.1]
+
+Our dataset comprises X papers from Y venues spanning Z years. Acceptance 
+rates range from A% (NIPS) to B% (ICLR), representing selective peer review 
+processes. Papers average C pages and D authors, with E% from top-10 
+institutions, indicating [interpretation of representativeness].
+
+### 3.2 Label Validity
+
+**ArXiv as Negative Class.** To validate our use of arXiv papers as 
+"probably rejected" examples, we manually verified the publication status 
+of 200 randomly sampled arXiv papers [Analysis 5.1]. We found that X% were 
+later published at peer-reviewed venues (Y% at top-tier conferences), 
+indicating a false negative rate of approximately X%. This label noise 
+likely attenuates our model performance but does not invalidate the approach.
+
+**Temporal Analysis.** We analyzed posting times relative to major conference 
+deadlines [Analysis 5.3]. X% of arXiv papers were posted within Y days of 
+deadlines, suggesting they may represent concurrent submissions. Papers 
+posted >6 months after deadlines (Z% of sample) are more likely to be true 
+negatives.
+
+### 3.3 Reviewer Reliability
+
+**Inter-Reviewer Agreement.** We calculated intra-class correlation (ICC) 
+for reviewer scores [Analysis 3.1]. ICC = X indicates that Y% of score 
+variance is attributable to reviewer identity rather than paper quality. 
+This establishes a performance ceiling for automated prediction: perfect 
+agreement with individual reviewers is neither possible nor desirable.
+
+**Review Quality.** Reviews average X words (SD = Y) with Z% containing 
+specific paper references [Analysis 6.1]. Review length correlates with 
+score variance (r = A, p < B), suggesting more detailed reviews reflect 
+greater engagement.
+
+### 3.4 Temporal Stability
+
+We tested temporal generalization by training on 2013-2015 data and testing 
+on 2016-2017 [Analysis 2.2]. Performance decreased by X% compared to random 
+splits, indicating [mild/moderate] dataset drift. Vocabulary overlap between 
+early and late periods is Y%, with emerging terms including [examples].
+
+### 3.5 Cross-Venue Generalization
+
+Models trained on NIPS achieve F1 = X on NIPS test data but F1 = Y on ICLR 
+[Analysis 1.2], indicating venue-specific patterns. However, performance 
+remains above baseline (F1 = Z), suggesting some quality signals generalize 
+across venues.
+
+### 3.6 Missing Data
+
+X% of papers have complete aspect scores, Y% have partial scores, and Z% 
+have only overall recommendations [Analysis 4.1]. Missingness does not 
+correlate with acceptance (χ² = A, p = B), suggesting data is missing at 
+random (MAR). We use [imputation strategy] for incomplete cases.
+
+### 3.7 Data Quality Assurance
+
+Manual audit of 200 papers found X% with minor extraction errors (e.g., 
+formatting) and Y% with major errors (e.g., misaligned reviews) [Analysis 7.1]. 
+We corrected identified errors and implemented automated quality checks 
+[Analysis 7.2] to flag anomalies in the full dataset.
+```
+
+---
+
+## Recommended Discussion Section Additions
+
+```markdown
+### Threats to Validity
+
+**Selection Bias.** Our dataset represents selective ML/NLP venues with 
+specific review cultures. Findings may not generalize to other disciplines, 
+journals, or less selective conferences. Cross-venue experiments [Section 3.5] 
+suggest moderate generalization within ML/AI but unknown generalization beyond.
+
+**Temporal Validity.** Dataset spans 2013-2017; review standards and research 
+trends have evolved since. Temporal experiments [Section 3.4] show modest 
+drift, suggesting models may require periodic retraining for production use.
+
+**Label Noise.** ArXiv papers include ~X% false negatives (later published), 
+introducing label noise. This likely attenuates model performance but enables 
+large-scale training. Future work should validate on datasets with true 
+rejection labels.
+
+**Reviewer Variability.** Reviewer identity explains Y% of score variance, 
+indicating substantial subjectivity. Our models predict average reviewer 
+behavior, not individual reviewer preferences. This is appropriate for 
+decision support but not for replacing human judgment.
+
+**Ethical Considerations.** We obtained appropriate permissions and anonymized 
+all reviewer identities. However, rejected paper content may still be sensitive. 
+We recommend users of our dataset respect author privacy and use data only for 
+research purposes.
+```
+
+---
+
+## Additional Concrete Experiments
+
+### **Experiment 1: Stratified Performance Analysis**
+```python
+# Report performance separately for:
+- High vs. low acceptance rate venues
+- Early vs. late years
+- Papers with high vs. low reviewer agreement
+- Different paper lengths
+- Different research areas
+```
+
+**Why:** Shows where your model works well and where it struggles
+
+### **Experiment 2: Calibration Analysis**
+```python
+# For probabilistic predictions:
+- Plot calibration curves
+- Calculate expected calibration error (ECE)
+- Test if confidence scores are meaningful
+```
+
+**Why:** Shows if your model knows when it's uncertain
+
+### **Experiment 3: Adversarial Validation**
+```python
+# Train classifier to distinguish:
+- Accepted vs. arXiv papers (should be easy)
+- Train vs. test papers (should be hard)
+- Venue A vs. Venue B papers
+```
+
+**Why:** Identifies distribution shifts and potential shortcuts
+
+### **Experiment 4: Feature Importance Analysis**
+```python
+# Identify which features drive predictions:
+- SHAP values for individual predictions
+- Permutation importance for global patterns
+- Attention weights for neural models
+```
+
+**Why:** Shows if model relies on meaningful quality signals vs. artifacts
+
+### **Experiment 5: Subgroup Fairness Analysis**
+```python
+# Test for disparate performance across:
+- Author institution prestige
+- Author seniority (first-time vs. repeat authors)
+- Paper topic
+- Geographic region (if inferable)
+```
+
+**Why:** Identifies potential biases in model predictions
+
+---
+
+## Checklist for Preempting Reviewer Critiques
+
+### **Data Collection Validity**
+- [ ] Documented data sources and collection process
+- [ ] Verified data quality through manual audit
+- [ ] Characterized and addressed missing data
+- [ ] Tested for systematic extraction errors
+- [ ] Obtained ethical approval and permissions
+
+### **Label Validity**
+- [ ] Quantified label noise in arXiv negatives
+- [ ] Analyzed arXiv posting patterns
+- [ ] Compared arXiv to true rejected papers (if available)
+- [ ] Discussed implications of label noise
+
+### **Generalization**
+- [ ] Tested cross-venue generalization
+- [ ] Tested temporal generalization
+- [ ] Characterized venue differences
+- [ ] Identified distribution shifts
+
+### **Reviewer Effects**
+- [ ] Quantified inter-reviewer agreement
+- [ ] Analyzed reviewer consistency
+- [ ] Discussed implications for prediction ceiling
+- [ ] Tested review quality effects
+
+### **Transparency**
+- [ ] Reported all relevant dataset statistics
+- [ ] Disclosed limitations prominently
+- [ ] Provided code and data (if possible)
+- [ ] Documented preprocessing decisions
+
+---
+
+## Key Takeaways
+
+1. **The most critical threat** is arXiv label validity—you MUST quantify the false negative rate through manual verification
+
+2. **Generalization tests** (cross-venue, temporal) are essential to show your model isn't overfitting to specific venue/time artifacts
+
+3. **Reviewer variability analysis** helps contextualize modest performance and establishes a theoretical ceiling
+
+4. **Missing data** must be characterized and shown to be MAR (missing at random) or handled appropriately
+
+5. **Ethical documentation** is non-negotiable—verify IRB status and permissions before submission
+
+6. **Be proactive**: Address validity threats in your paper before reviewers raise them. Transparency builds trust.
+
+7. **Quantify everything**: Don't just acknowledge limitations—measure them and show they don't invalidate your findings
+
+8. **Provide contingencies**: If a threat is severe, show that your conclusions hold even under conservative assumptions
+
+The goal is to demonstrate that you've thought carefully about validity, measured potential threats, and can defend your conclusions despite limitations. Reviewers will be much more forgiving if you've done this work upfront.
+
+## Sources
+
+Based on standard practices in dataset paper evaluation and common critiques of peer review datasets. For specific PeerRead methodology details, consult:
+
+- [A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications](https://aclanthology.org/N18-1149/) - Original paper by Kang et al., NAACL 2018

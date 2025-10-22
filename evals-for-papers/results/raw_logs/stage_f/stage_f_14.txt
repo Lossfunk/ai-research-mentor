@@ -1,0 +1,92 @@
+Below is a concise, reviewer-oriented risk map for climate-AI papers, followed by a practical mitigation checklist you can run before submission. I include three concrete, falsifiable experiments to de-risk claims, and key literature anchors.
+
+Major reviewer-facing risks
+- Data leakage via spatiotemporal autocorrelation: Random K-fold splits can inflate scores when nearby locations/times leak into train/test; reviewers will ask for spatial/temporal blocking and to quantify autocorrelation in inputs and residuals [P1][P2][P3]. See also Roberts et al. (2017) and blockCV (Valavi et al., 2019).
+- Weak or unfair baselines/ablations: Missing “climatology/persistence,” simple linear models, or physics-based references (e.g., WeatherBench) undermines novelty and effect-size credibility.
+- Uncertainty and calibration gaps: Reporting only point metrics (RMSE/R^2) without proper scoring rules (CRPS/Brier) and calibration checks (reliability diagrams, temperature scaling) will draw criticism (Gneiting & Raftery, 2007).
+- Physical inconsistency: Outputs that violate conservation/monotonicity/unit bounds, or lack physics-informed tests, are red flags in scientific ML (Karpatne et al., 2017).
+- Distribution shift and extremes: Performance only in in-distribution, average conditions—without stress tests across regions/years or for extremes—limits trust for climate settings where nonstationarity matters (e.g., climate-invariant ML).
+- Reproducibility/transparency: Absent code, data versioning, environment capture, seeds, and workflow description; insufficient detail to reproduce stochastic runs [P6][P8][P1].
+- Dataset/model documentation: No Datasheet (dataset provenance, splits, licenses) or Model Card (intended use, limitations, biases) invites pushback.
+- Energy/carbon and compute-reporting: Omitted training/inference energy/carbon accounting and hardware budget raises “Green AI” concerns (Strubell et al., 2019; Schwartz, 2020).
+- Statistical validity: No accounting for reduced effective sample size under autocorrelation; repeated tuning on the test set; no nested CV or held-out regions/years [P1][P2].
+- Overclaiming impact: Claims of replacing physics or generalizing under climate change without targeted evidence (OOD tests, extremes) will be challenged.
+
+Mitigation checklist for the final submission package
+Data, splits, and leakage
+- Use spatial and/or temporal block cross-validation; justify block size; report independence diagnostics (e.g., Moran’s I for features/residuals) [P1][P2][P3]. Cite your split policy. Provide code to reproduce folds (e.g., blockCV).
+- Include a truly held-out test set with no tuning, ideally out-of-region and/or out-of-period (pre/post-year split).
+
+Baselines and ablations
+- Add baselines: persistence, climatology, simple linear/GLM, random forest, and relevant physics/hybrid references (e.g., WeatherBench baselines).
+- Provide ablations: data modality removal, architecture components, loss terms, resolution, and input history length.
+
+Metrics, uncertainty, and calibration
+- Report point and probabilistic metrics: RMSE/MAE; CRPS/Brier/log score; reliability diagrams; sharpness vs. calibration tradeoffs (Gneiting & Raftery, 2007).
+- Calibrate predictive distributions (e.g., temperature scaling, isotonic) and quantify the delta in proper scores pre/post calibration.
+
+Physical validity checks
+- Enforce or test conservation and bounds (non-negativity; mass/energy budgets); quantify violations and add penalties or post-processing (Karpatne et al., 2017).
+- Report units, scaling, and conversions in Methods and figure captions.
+
+Generalization and extremes
+- OOD tests across regions and years; report skill degradation and uncertainty on shifted distributions; include simple domain-adaptation baselines.
+- Evaluate extremes (e.g., top 1–5% events): hit rate, false alarm, ECE in the tail; quantile loss for high quantiles.
+
+Reproducibility and transparency
+- Release code, configs, and scripts; pin deps (requirements/conda), provide container (Docker) or environment file; specify seeds; upload a minimal runnable example [P8][P6].
+- Archive data versions and preprocessing; include a “Run Book” describing the full workflow and data lineage [P8].
+
+Documentation
+- Include a Datasheet for the dataset(s): provenance, licenses, known biases, split rationale (Gebru et al., 2021).
+- Include a Model Card: intended use, performance by region/season/extremes, known limitations, and failure modes (Mitchell et al., 2019).
+
+Compute and carbon reporting
+- Report hardware, training/inference FLOPs or hours, grid region, energy usage, and estimated CO2e; include a short justification of compute budget (Strubell et al., 2019; Henderson et al., 2020; Schwartz, 2020).
+
+Statistical rigor
+- Address autocorrelation’s impact on effective sample size and uncertainty; use appropriate CI/SE estimation; avoid test-set peeking; use nested CV for hyperparameter selection [P1][P2].
+
+Positioning and claims
+- Calibrate claims; make limitations explicit; state where the model underperforms (e.g., extremes, polar regions). Avoid unfounded claims of physical replacement; emphasize complementarity.
+
+Three concrete, falsifiable experiments to include before submission
+1) Blocked vs. random splits stress test
+- Hypothesis: Spatial/temporal block CV yields lower but more reliable skill than random CV due to reduced leakage.
+- Method: Compare metrics (RMSE, CRPS) under random K-fold vs. spatial blocks (vary block size) and temporal blocks (train pre-year T, test post-T).
+- Expected outcome: Significant drop under blocked CV if leakage existed; report effect size and variance [P1][P2][P3]; Roberts et al. (2017), Valavi et al. (2019).
+
+2) Calibration intervention and proper scoring improvement
+- Hypothesis: Post-hoc calibration (temperature scaling or isotonic) improves CRPS/Brier and reliability without large loss in sharpness.
+- Method: Fit calibration on validation folds; evaluate on held-out regions/years. Report CRPS/Brier delta, reliability diagrams, and sharpness metrics.
+- Expected outcome: Improved proper scores and better-calibrated tail probabilities (Gneiting & Raftery, 2007).
+
+3) Physical-consistency audit with targeted constraint
+- Hypothesis: Adding a simple physics-informed penalty (e.g., non-negativity or mass-balance residual) reduces physical violations with minimal RMSE cost.
+- Method: Baseline vs. constrained model; quantify rate/magnitude of violations, RMSE/CRPS changes, and extremes performance.
+- Expected outcome: ≥50% reduction in violation rate with <5% change in RMSE; discuss tradeoffs (Karpatne et al., 2017).
+
+Optional fourth experiment (distribution shift)
+- Train on Region/Years A and test on withheld Region/Years B; quantify skill degradation and uncertainty; compare to persistence/climatology and WeatherBench baselines. Hypothesis: Model retains positive skill vs. baselines but with measurable degradation under shift.
+
+Two anchor references you can cite in the paper
+- Roberts et al. 2017. Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure — https://www.wsl.ch/lud/biodiversity_events/papers/Roberts_et_al-2017-Ecography.pdf
+- Gneiting & Raftery 2007. Strictly Proper Scoring Rules, Prediction, and Estimation — https://eecs.harvard.edu/cs286r/courses/fall12/papers/Gneiting07.pdf
+
+Citations
+- [P1] GeoAI Reproducibility and Replicability: a computational and spatial perspective — http://arxiv.org/abs/2404.10108v2
+- [P2] Covariate influence in spatially autocorrelated occupancy and abundance data — http://arxiv.org/abs/1501.06530v2
+- [P3] Fast Spatial Autocorrelation — http://arxiv.org/abs/2010.08676v1
+- [P6] EFECT: A Method to Quantify the Reproducibility of Stochastic Simulations — http://arxiv.org/abs/2406.16820v2
+- [P8] Formal Definition and Implementation of Reproducibility Tenets for Computational Workflows — http://arxiv.org/abs/2406.01146v2
+- Strubell et al. 2019. Energy and Policy Considerations for Deep Learning in NLP — https://arxiv.org/abs/1906.02243
+- Schwartz et al. 2020. Green AI — https://cacm.acm.org/research/green-ai/
+- Henderson et al. 2020. Towards the Systematic Reporting of the Energy and Carbon Footprints of Machine Learning — https://jmlr.org/papers/volume21/20-312/20-312.pdf
+- Roberts et al. 2017. Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure — https://www.wsl.ch/lud/biodiversity_events/papers/Roberts_et_al-2017-Ecography.pdf
+- Valavi et al. 2019. blockCV: spatial/temporal CV for species distribution models — https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.13107
+- Gneiting & Raftery 2007. Strictly Proper Scoring Rules, Prediction, and Estimation — https://eecs.harvard.edu/cs286r/courses/fall12/papers/Gneiting07.pdf
+- Karpatne et al. 2017. Theory-Guided Data Science — https://dl.acm.org/doi/10.1109/TKDE.2017.2720168
+- Rasp et al. 2020. WeatherBench: A benchmark dataset for data-driven weather forecasting — https://arxiv.org/abs/2002.00469
+- Mitchell et al. 2019. Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
+- Gebru et al. 2021. Datasheets for Datasets — https://dl.acm.org/doi/10.1145/3458723
+- Climate-invariant machine learning (overview) — https://pmc.ncbi.nlm.nih.gov/articles/PMC10849594/

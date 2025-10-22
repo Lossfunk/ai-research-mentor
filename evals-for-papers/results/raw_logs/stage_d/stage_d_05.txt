@@ -1,0 +1,70 @@
+Below is a compact plan you can lift into a preregistration.
+
+Two-phase replication design (FC3 Task Verification category)
+- Phase 1: Baseline MST re-implementation
+  - Reproduce the baseline MST pipeline exactly (same prompts, decoding, tool use, timeouts, and FC3 task verifier; same item split). Freeze all parameters. Define the primary endpoint as item-level task success under the FC3 verifier (binary per item).
+  - Log stagewise outcomes and artifacts for each item (inputs, solver outputs, verifier judgment, FC3 harness result, errors/timeouts).
+- Phase 2: Verifier-agent augmentation (minimal-change)
+  - Add a verifier agent that only produces an accept/reject/abstain judgment on the solver’s proposed answer; do not change solver prompts, sampling, or tools.
+  - Two common minimal-change options:
+    1) Gate-and-retry: If the verifier rejects, request one additional solver attempt (same prompt/params), then stop. This is a single extra step that keeps the rest unchanged and can improve end success if the first sample was wrong. Self-consistency–style resampling is a known lever for improvement [P5].
+    2) Gate-only: If the verifier rejects, treat as failure (no retries). This tests the verifier’s ability to prevent accepting wrong answers without introducing new sampling effects (useful for isolating verifier classification quality; but it will not increase pass rate).
+  - Keep the FC3 harness unchanged as the ground-truth arbiter of success. Treat the verifier as a pre-check (classification) layer; do not re-weight or alter the harness.
+
+Primary statistical analysis and power
+- Design: Paired, within-item comparison of pipelines (baseline MST vs MST+verifier) on the same items. Define Y0i, Y1i ∈ {0,1} as FC3-verified success for item i under baseline and verifier-augmented pipelines, respectively.
+- Hypothesis: H0: P(Y1=1)=P(Y0=1) vs H1: P(Y1=1)≠P(Y0=1). Use McNemar’s test on paired binary outcomes, which is the standard for paired accuracy comparisons.
+- Power analysis (paired binary / McNemar): Power is driven by the discordant-pair rates p01 = P(Y0=0,Y1=1) and p10 = P(Y0=1,Y1=0). Let q = p01 + p10 and d = p01 − p10 (the net improvement). An approximate required sample size is:
+  N ≈ ((z_{1−α/2} + z_{1−β})^2 × q) / d^2
+  - Pilot to estimate p01 and p10 (e.g., on 100–200 items), then size your main run from these estimates.
+  - Example (illustrative): Suppose a small pilot suggests q ≈ 0.20 (20% of items change outcome between pipelines) and net improvement d ≈ 0.05. For α=0.05 (two-sided) and 1−β=0.80, N ≈ ((1.96+0.84)^2 × 0.20)/0.05^2 ≈ 628 items.
+  - If you stratify across FC3 subcategories or templates, block randomize and maintain paired comparisons within blocks; for CIs, use a block bootstrap to respect within-template correlation. Report exact or mid-p McNemar if discordant counts are small.
+- Secondary endpoints and error analysis:
+  - Verifier operating characteristic (if it scores): ROC/AUROC, calibration (ECE/Brier), false accept (solver wrong but verifier accepts) and false reject (solver right but verifier rejects) rates. If you do threshold tuning, split dev/test to avoid optimistic bias.
+  - Multiple comparisons: Pre-specify one primary endpoint (end-to-end success) and one primary test (McNemar). Treat others as exploratory, or control false discovery (e.g., BH/FDR) if you intend confirmatory claims across multiple FC3 subtasks.
+
+Avoiding double counting failure modes
+- Make failure attribution mutually exclusive at the pipeline level:
+  - Define a stage-ordered taxonomy and assign exactly one primary cause per failed item using precedence rules:
+    1) Input/format/tooling failure (IO/timeouts)
+    2) Solver content error (incorrect or non-compiling answer)
+    3) Verifier misclassification (false accept or false reject)
+    4) External harness mismatch (rare; e.g., harness bug or spec ambiguity)
+  - Attribute a failure to the earliest stage that made the outcome inevitably incorrect. For example, if the solver is wrong and the verifier also misses it, the primary cause is “solver error” or “verifier false accept”? Choose and preregister one convention. To isolate verifier effects, many studies attribute primary cause to “verifier false accept” when the solver was wrong but would have been caught by the verifier under the intended design; keep the convention consistent across all items and phases.
+- Separate counts by stage; don’t sum across stages:
+  - Report per-stage confusion matrices (solver vs ground truth; verifier vs ground truth). Aggregate rates by stage, not by summing labels across stages, to avoid double counting the same item.
+  - For multi-label annotations (e.g., an item has both “reasoning error” and “formatting error”), report one primary label for rates and retain secondary tags only for qualitative analysis. You can provide a 100%-summing decomposition either by a precedence rule or by proportional attribution (e.g., Shapley-style) but use only one scheme for quantitative claims.
+- Instance-level unit of analysis:
+  - Each item counts at most once toward failure rates and once toward success rates. If your pipeline produces multiple candidate attempts, bind all attempts for an item into a single item-level decision (success if any accepted and correct under the FC3 harness; failure otherwise) to avoid inflating denominators.
+- Changes in failure-mode composition:
+  - If you compare distributions of mutually exclusive failure categories between phases, use a paired multinomial test (e.g., Stuart–Maxwell) on items whose outcomes remain failures, without re-counting multiple tags on the same item.
+
+Three concrete, falsifiable experiments
+1) Paired end-to-end efficacy test (primary)
+  - Hypothesis: Adding a verifier with one gate-and-retry improves end-to-end FC3 success rate by at least Δ ≥ 3 percentage points versus baseline.
+  - Design: Paired evaluation on the same N items. Compute McNemar’s test and 95% CI for the net gain. Log discordant pairs to estimate p01 and p10. Pre-register Δ and α.
+  - Expected outcome: Statistically significant improvement if the verifier filters enough wrong first attempts and the single retry recovers a nontrivial share of them [P5].
+2) Verifier operating curve and calibration
+  - Hypothesis: The verifier’s score is calibrated (ECE ≤ 0.05 on dev) and achieves AUROC ≥ 0.80 at discriminating correct vs incorrect solver outputs.
+  - Design: Hold out a dev split for threshold selection and calibration (e.g., temperature scaling). Evaluate AUROC, AUPRC, ECE, Brier score on test. Report false-accept/false-reject at the preregistered operating point.
+  - Expected outcome: Reasonable discriminative ability; caution that LLM-as-judge style verifiers can be vulnerable to persuasive but wrong rationales, potentially inflating false accepts [P3], and that rationalized judgments can improve consistency/calibration [P6].
+3) Robustness to adversarially phrased but wrong answers
+  - Hypothesis: The verifier’s false-accept rate increases under adversarially persuasive rationales relative to neutral wrong answers.
+  - Design: For a fixed set of items known to be solvable, craft matched wrong outputs with and without persuasive rationales; measure Δ in false-accept rate. Use McNemar within-item where each item yields both variants assessed blindly and in randomized order.
+  - Expected outcome: Elevated false-accepts on persuasive variants, consistent with known vulnerabilities of LLM judges [P3]; quantify the gap and include it in risk reporting.
+
+Reporting checklist
+- Pre-register: primary endpoint, α, power target, minimal detectable effect, and the failure-mode taxonomy + precedence rules.
+- Use paired analyses (McNemar) for the primary endpoint with CIs; stratify or block by FC3 subcategory if applicable, with block bootstrap for CIs.
+- Control multiplicity for confirmatory secondary claims or declare them exploratory.
+- Publish per-stage confusion matrices and the mutually exclusive failure-mode distribution; avoid summing multi-label counts.
+
+Literature anchors
+- Reasoning-aware self-consistency and sampling as a lever for error reduction and verification [P5].
+- Vulnerability of LLM-as-judge/verifier to persuasive but wrong content; motivates adversarial robustness checks [P3].
+- Using rationales to improve fine-grained judging consistency/calibration (relevant to verifier design) [P6].
+
+Citations
+- [P3] Can You Trick the Grader? Adversarial Persuasion of LLM Judges — http://arxiv.org/abs/2508.07805v1
+- [P5] Reasoning Aware Self-Consistency: Leveraging Reasoning Paths for Efficient LLM Sampling — http://arxiv.org/abs/2408.17017v3
+- [P6] Self-rationalization improves LLM as a fine-grained judge — http://arxiv.org/abs/2410.05495v1

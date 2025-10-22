@@ -1,68 +1,78 @@
-Below is a concise way to frame the limitations of aspect score prediction in PeerRead and a concrete contingency plan that anticipates modest gains and sets decision points.
+Here’s a crisp way to frame the limitations you observed, plus a concrete contingency plan with experiments to de-risk next steps.
 
-How to frame the limitations
-- Subjective, noisy labels cap the ceiling. Aspect scores (e.g., originality, clarity, impact) are subjective and reviewer-specific; inter-rater variability likely limits the maximum achievable performance from text alone. Explicitly position model gains against a noise ceiling estimated from reviewer disagreement and repeated reviews per paper when available [P2].  
-- Signal–target mismatch. Some aspects depend on unobserved context (e.g., novelty vs. the broader literature, impact vs. community needs), which is not fully present in a single manuscript’s text. This structurally constrains predictability, even for strong models [P2].  
-- Dataset size, heterogeneity, and shift. PeerRead spans venues and years and contains variable numbers of reviews/papers, which can induce distribution shifts and reviewer-style confounds that depress generalization [P2].  
-- Metrics and problem formulation. Treating ordinal aspect scores as regression with point estimates ignores ordinal structure and uncertainty; small “modest” gains may partly reflect metric insensitivity (e.g., MSE vs. rank or calibration metrics) [P2].  
-- Predictive models as surrogates for human judgments. Predictive systems may fail to capture latent goals and evaluation heuristics of human reviewers; even well-fit models can underperform on tasks requiring judgment under context mismatch [P1].
+Limitations to foreground (with evidence)
+- Coarse, subjective, and ordinal labels: Aspect scores are 1–5 with rubric text describing high-level criteria (e.g., “Surprising,” “Creative,” etc.), which induces subjectivity and label noise and makes fine-grained prediction hard [PeerRead.pdf:12–14]. The coarseness also limits headroom for small architectural gains to register on rank-based metrics.
+- Reviewer confidence varies and is recorded: Confidence is rated 1–5, signaling heterogeneity in label reliability across examples [PeerRead.pdf:15]. Treating all labels equally can wash out signal and cap performance.
+- Possible ceiling effects: If inter-reviewer disagreement is substantial on these 1–5 scales (which the confidence scale implicitly acknowledges [PeerRead.pdf:15]), model performance may be bounded by human agreement, leading to modest gains even for strong models.
+- Metric-task mismatch: Using nominal classification for ordinal outcomes can under-reward near-miss predictions; lack of calibration checks obscures whether models learn well-calibrated uncertainty on subjective targets [PeerRead.pdf:12–14].
+- Heterogeneity across rubrics and criteria: Different aspect rubrics (e.g., meaning of “Meaningful Comparison,” “Software Usability”) are semantically distinct and may vary in annotator consistency [PeerRead.pdf:13–14], making “one-size-fits-all” modeling brittle.
 
-Contingency plan (phased, with go/no-go criteria)
-Phase 0 — Measurement and ceilings (2–3 weeks)
-- Reproduce PeerRead baselines and your current models on identical splits.  
-- Estimate label noise and a ceiling: inter-reviewer agreement per aspect; bootstrap split-half reliability; reviewer-normalized z-scores; and an “oracle” ensemble using multiple reviews per paper (when available) [P2].  
-- Go/no-go: If current performance is within 10–20% of the estimated ceiling, deprioritize model complexity and pivot to task reframing or label aggregation.
+Contingency plan and decision gates
+Goal: Either (A) demonstrate clear, reproducible improvement using problem-appropriate objectives and uncertainty handling, or (B) pivot to tasks with stronger signal-to-noise or to data-centric improvements if gains remain marginal.
 
-Phase 1 — Robust problem formulation and evaluation (3–5 weeks)
-- Switch to ordinal/quantile modeling and report calibration: ordinal logistic or isotonic regression heads; evaluate Spearman/Kendall, ECE, Brier score, and correctness within ±1 bin.  
-- Model reviewer/venue effects: mixed-effects or hierarchical heads; reviewer- or venue-normalized targets and leave-reviewer-out validation.  
-- Robust splits: year- and venue-held-out splits; report in-domain vs. out-of-domain gaps [P2].  
-- Go/no-go: If ordinal + calibration + hierarchical modeling yields <5–10% relative improvement vs. Phase 0, proceed to reframing.
+Track A — Evaluation and upper bounds (2–3 weeks)
+- Establish human upper bound: Sample N papers with multiple independent raters re-scoring 2–3 aspects using the rubric text; compute Kendall τ/Spearman ρ and Quadratic Weighted Kappa (QWK). If human agreement is low (e.g., QWK <0.4), lower expectations and focus on uncertainty-aware outputs rather than point accuracy [PeerRead.pdf:12–15].
+- Adopt ordinal and calibration metrics: Report QWK, Kendall τ, Spearman ρ, Brier score, and ECE alongside accuracy. Decision gate: If ordinal/correlation metrics show <1–2 point improvements under stronger models, deprioritize architecture changes.
 
-Phase 2 — Reframing for utility and signal (4–8 weeks)
-- Pairwise/ranking tasks: predict which of two papers scores higher on a given aspect; report pairwise accuracy and Kendall tau.  
-- Coarser bins and triage: map scores to low/medium/high to reduce label noise and support practical triage; evaluate macro-F1 and calibration.  
-- Retrieval-augmented context for subjective aspects: incorporate literature-aware features (citation overlap/novelty proxies) or retrieval-augmented encoders for originality/impact, with strict ablations to avoid leakage.  
-- Go/no-go: If ranking or coarse-bin tasks show stronger and consistent improvements with better calibration, pivot project scope to triage/ranking as the primary contribution.
+Track B — Modeling uncertainty and ordinality (3–4 weeks)
+- Replace cross-entropy with ordinal objectives (e.g., CORAL/CORN) and heteroscedastic loss that conditions aleatoric uncertainty on inputs; weight losses by reviewer confidence [PeerRead.pdf:15]. Decision gate: If QWK or τ improves by ≥2–3 points with better calibration (ΔECE ≤ −0.02), continue; otherwise pivot to Track C.
 
-Phase 3 — Data and label quality (parallel/ongoing)
-- Label aggregation: apply probabilistic label aggregation (e.g., per-reviewer reliability weighting) and compare to raw labels; quantify ceiling shifts.  
-- Active curation: collect small, higher-consensus subsets (multiple annotators, adjudication) for a clean benchmark; show gap between noisy vs. clean supervision to justify future investment.  
-- Error analyses: stratify by aspect, venue, paper length, section ablations to identify where signal lives (e.g., methods vs. intro).
+Track C — Data-centric improvements (4–6 weeks)
+- Curate higher-confidence subsets (confidence ≥4–5) [PeerRead.pdf:15]; augment with rubric-aligned weak labels or consistency checks derived from review text (if available). Decision gate: If high-confidence subset yields materially higher agreement and model gains, invest in targeted data expansion; otherwise proceed to Track D.
 
-Risk management and reporting
-- Pre-register evaluation and negative results; report ceilings and calibration alongside accuracy to contextualize “modest” gains [P2].  
-- Ethical and leakage controls: if using metadata (authors, citations), document and ablate; keep a “paper-text-only” track for fair comparability.  
-- Resource gating: stop escalating model complexity once you are within the measured ceiling, and redirect to reframing or label quality.
+Track D — Robustness to distribution shift (parallel)
+- Evaluate leave-venue/year-out splits if your subset spans them (or simulate via stratified splits by paper domain). If performance drops materially, consider domain adaptation or feature regularization. Decision gate: If shift sensitivity dominates, refocus contributions on robustness and generalization rather than raw accuracy.
 
-Three falsifiable experiments
-1) Noise ceiling and ordinal reformulation  
-- Hypothesis: Ordinal objectives with calibration-aware evaluation yield significantly better rank consistency and calibration than MSE regression, even if raw RMSE improves modestly.  
-- Variables: Loss (MSE vs. ordinal logistic), evaluation metrics (RMSE, Spearman, ECE), aspect type.  
-- Metrics: ΔSpearman ≥ +0.05 and ΔECE ≤ −0.03 averaged across aspects; statistical tests via bootstrap CIs.  
-- Expected outcome: Ordinal models improve rank consistency and calibration for subjective aspects (originality/impact) more than for clarity [P2].
+Track E — Responsible use and scope
+- Position models as decision support (rank-and-triage, assisting meta-reviewers) with calibrated uncertainty, not as automated scoring systems, given subjectivity and confidence variability [PeerRead.pdf:12–15]. Include disclaimers and uncertainty visualizations.
 
-2) Reviewer/venue normalization and generalization  
-- Hypothesis: Reviewer- and venue-normalized targets with hierarchical modeling reduce out-of-domain degradation on venue-held-out splits.  
-- Variables: Target normalization (none vs. z-score per reviewer/venue), head type (standard vs. hierarchical), split (random vs. venue-held-out).  
-- Metrics: Relative drop from in-domain to held-out in Spearman/Kendall; calibration (ECE).  
-- Expected outcome: Normalization + hierarchical heads reduce OOD drop by ≥20% relative compared to unnormalized baselines [P2].
+Falsifiable experiments
+1) Ordinal vs nominal objectives
+- Hypothesis: Ordinal methods reduce penalty for near-misses and improve correlation/QWK relative to cross-entropy classification.
+- Setup: Same encoder; compare cross-entropy (5-class) vs ordinal regression (e.g., CORAL/CORN) and mean-squared-error regression. Inputs: paper text and/or review text. Outcomes: QWK (primary), Kendall τ, Spearman ρ; calibration (ECE, Brier).
+- Controls/ablations: Match parameter counts, training steps; vary class imbalance handling. 
+- Expected outcome: Ordinal objectives yield +2–3 QWK over cross-entropy on aspects with clearer rubrics (e.g., “Meaningful Comparison” [PeerRead.pdf:13]) and better calibration for adjacent-class confusions [PeerRead.pdf:12–14].
 
-3) Retrieval-augmented originality prediction  
-- Hypothesis: Adding literature-aware features (e.g., retrieval of nearest related works and overlap-based novelty proxies) improves originality prediction more than clarity prediction, indicating task–signal alignment.  
-- Variables: Context (paper-only vs. paper+retrieval snippets), aspect (originality vs. clarity), model (frozen vs. fine-tuned encoder).  
-- Metrics: ΔSpearman and ΔBrier for originality vs. clarity; ablations to ensure gains are not due to leakage.  
-- Expected outcome: Significant gains for originality (ΔSpearman ≥ +0.05) but not clarity, supporting the signal–target mismatch claim [P2].
+2) Confidence-aware training and uncertainty estimation
+- Hypothesis: Using reviewer confidence improves calibration and robustness by down-weighting noisier labels; heteroscedastic models align predicted uncertainty with reviewer confidence.
+- Setup: Train three variants: (a) baseline; (b) loss weighted by confidence (1–5) [PeerRead.pdf:15]; (c) heteroscedastic ordinal regression (predicts mean + variance). 
+- Metrics: QWK/τ/ρ; calibration (ECE/Brier); correlation between predicted uncertainty and reviewer confidence.
+- Expected outcome: (b) and (c) improve ECE/Brier and yield stronger alignment between model uncertainty and reviewer confidence; modest QWK gains concentrated in low-confidence strata [PeerRead.pdf:15].
 
-How to write this up
-- Emphasize measured ceilings and uncertainty to contextualize modest improvements (not a failure of modeling, but a property of the task and labels) [P2].  
-- Position contributions around (i) principled evaluation and calibration, (ii) reframed tasks with clearer utility (ranking/triage), and (iii) data quality evidence.  
-- Include negative results where improvements are within the noise ceiling, and redirect to practical use-cases where models add value despite modest absolute gains [P1][P2].
+3) Label-noise modeling and multi-annotator effects
+- Hypothesis: Explicit noise models (e.g., label transition matrices, EM/Dawid–Skene-style latent “true” scores) improve performance when multiple reviews per paper exist; when not, synthetic noise modeling clarifies ceilings.
+- Setup: If multiple reviews are available, fit a hierarchical model with reviewer-specific bias/variance; otherwise simulate label noise consistent with observed confidence distribution [PeerRead.pdf:15] and compare robust losses (Bootstrap, GCE). 
+- Metrics: QWK/τ on held-out; negative log-likelihood; calibration.
+- Expected outcome: Gains where annotator variance is high; otherwise, evidence of noise ceilings that justify focusing on calibrated predictions over raw accuracy [PeerRead.pdf:12–15].
 
-Citations
-- [P1] Limitations of Agents Simulated by Predictive Models — http://arxiv.org/abs/2402.05829v1
-- [P2] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — http://arxiv.org/abs/1804.09635v1
+4) Multi-task learning with rubric guidance
+- Hypothesis: Joint prediction across aspects with shared encoders improves data efficiency and regularizes learning where rubrics overlap (e.g., soundness vs meaningful comparison) [PeerRead.pdf:12–13].
+- Setup: Multi-task head predicting all available aspects; compare to single-task heads; add auxiliary acceptance prediction as a weak regularizer. 
+- Metrics: Average ΔQWK across aspects; per-aspect ablations.
+- Expected outcome: Small but consistent gains on data-scarce aspects; if gains are negligible, prefer per-aspect specialized heads.
+
+5) Text-source ablation: paper vs review vs combined
+- Hypothesis: Review text (if available) provides rubric-aligned evidence and should predict aspect scores more accurately than paper-only; combining both offers the best trade-off.
+- Setup: Three input conditions: (a) paper text only; (b) review text only; (c) both concatenated or with cross-attention. 
+- Metrics: QWK/τ; calibration; feature attribution alignment with rubric terms [PeerRead.pdf:12–14].
+- Expected outcome: (b) ≥ (c) > (a). If (a) lags significantly, position paper-only scoring as low-confidence triage rather than definitive scoring.
+
+Risk controls and reporting
+- Always report CIs via bootstrap; stratify results by reviewer confidence [PeerRead.pdf:15].
+- Pre-register primary metrics (QWK, τ) and secondary (ECE/Brier).
+- Perform per-aspect error analyses against rubric descriptors to identify systematic mismatches (e.g., over-penalizing near misses) [PeerRead.pdf:12–14].
+- Ethical note: Provide calibrated scores and abstention options; avoid automation claims given subjectivity.
+
+Kill or pivot criteria
+- If after Tracks A–C, ΔQWK <1.5 points and calibration does not improve (ΔECE > −0.02) across ≥2 aspects, pivot to:
+  - Data-centric labeling (higher-confidence relabeling or rubric clarifications), or
+  - Downstream, less subjective tasks (e.g., assistance tools for meta-review drafting) with human-in-the-loop evaluation.
+
+Literature anchors (for positioning and baselines)
+- A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Modularized and Attention-Based Recurrent Convolutional Neural Network for Automatic Academic Paper Aspect Scoring — https://link.springer.com/chapter/10.1007/978-3-030-02934-0_7
 
 Sources
-- Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications (PeerRead) [P2]
-- Shah et al., 2024. Limitations of Agents Simulated by Predictive Models [P1]
+- Peer review rubrics, aspect scale definitions, and reviewer confidence scales [PeerRead.pdf:12–15].
+- PeerRead paper (ACL Anthology): https://aclanthology.org/N18-1149.pdf
+- Aspect scoring follow-up (Springer chapter): https://link.springer.com/chapter/10.1007/978-3-030-02934-0_7

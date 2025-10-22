@@ -1,0 +1,99 @@
+Below is a “fairness/ethics overlay” protocol that augments the MST taxonomy’s correctness-focused evaluation without editing or influencing its original labels. It treats fairness/ethics as a parallel, blinded layer on the same items and model outputs.
+
+Principle
+- Separation of concerns: keep the MST failure taxonomy and detection pipeline intact; add a separate, versioned overlay of fairness/ethics labels keyed by example IDs, never modifying the original labels or dataset content [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+- Blinding and immutability: fairness raters do not see correctness labels; correctness raters remain unaware of fairness labels. Original labels are read-only and checksummed.
+
+Data and schema
+- IDs: Reuse the MST example_id and response_id keys. Release a separate fairness_overlay.jsonl file with one record per (example_id, response_id).
+- Versioning: schema_version_fairness separate from MST schema_version.
+- Suggested fields (overlay):
+  - sensitive_context.present: boolean; sensitive_context.categories: list (e.g., race, gender, religion, nationality, age, disability, sexual orientation; “implicit” vs “explicit” flag).
+  - representational_harm: ordinal 0–2 (none, borderline, clear), with tags (stereotype, slur/hate, erasure/othering).
+  - allocational_outcome: categorical (helpful, unhelpful, refusal, misdirection), plus justification.
+  - disparity_risk_flag: boolean; disparity_notes: free-text rationale tied to rubric clauses.
+  - privacy_risk: ordinal 0–2 (none, possible PII, clear PII); pii_type tags.
+  - deception/manipulation_risk: ordinal 0–2.
+  - counterfactual_handles: list of identity tokens detected (e.g., “he/she,” “American/Nigerian,” role labels).
+  - annotator_id (pseudonymous), timestamp, task_url, evidence_spans: character offsets.
+  - iaa_group_id: for tracking which annotators labeled the same item.
+  - provenance.hash_original_labels: hash of MST labels snapshot to confirm no edits.
+
+Annotation workflow (adaptations to avoid contamination)
+- Freeze-and-fork: freeze the MST dataset and labels; fork only the response texts and metadata into an annotation UI where original labels are not shown and are technically read-only [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+- Dual-track teams:
+  - Correctness team (unchanged from MST).
+  - Fairness/ethics team with a dedicated rubric and training; no access to correctness labels or adjudication threads.
+- Blinded UI:
+  - Hide correctness labels and model identity; show only prompt/context and the model output being evaluated.
+  - Prevent any write access to MST labels at the permission level.
+- Calibration and QA:
+  - Pilot 100–200 examples; compute IAA (Cohen’s κ or Krippendorff’s α) per dimension; refine rubric until κ ≥ 0.6 for core harms.
+  - Use seeded gold/honeypots to monitor drift.
+  - Majority-vote primary labels; escalate disagreements to a separate adjudicator who remains blinded to correctness labels.
+- Counterfactual audit preparation:
+  - During annotation, raters mark identity tokens that enable group-swap tests (counterfactual_handles).
+  - Automatically generate candidate counterfactual pairs for downstream audits; store pair_ids in overlay (still no edits to MST).
+- Governance:
+  - Ethics triage for high-risk outputs (e.g., clear PII, threats).
+  - Documentation: add a fairness section to the model card and dataset card describing metrics, coverage, and known limitations.
+
+Metrics and analyses (computed from overlay + original labels, joined on IDs)
+- Disaggregated accuracy and error: subgroup-wise correctness using the original MST labels (no label changes), reported alongside fairness indicators.
+- Allocation/refusal gap: difference in refusal vs helpfulness rates across protected groups; report absolute and relative gaps.
+- Representational harm prevalence: rate of stereotype/hate/other harms when sensitive_context.present = true.
+- Privacy risk rate: prevalence of PII flags.
+- Counterfactual disparity: for generated group-swap pairs, measure change in outcome (refusal/score/toxicity) and textual sentiment polarity; report mean absolute disparity and rate of sign flips.
+- Equalized error measures: e.g., equalized odds/equality of opportunity on tasks with ground truth decisions.
+
+Rubric sketch (concise, operational)
+- Sensitive context detection: explicit vs implicit mention; stakeholder role.
+- Representational harms: stereotypes (group trait claims), slur/hate/incitement, erasure/othering; each with concrete examples and boundary cases.
+- Allocational harms: refusal/unhelpfulness/overcompliance when requests are equivalent across groups; requires matched or counterfactual prompts.
+- Privacy: PII taxonomy (names with contact info, addresses, financial IDs, health).
+- Deception/manipulation: misleading claims about groups or instructions encouraging unethical actions.
+
+Release format
+- Publish fairness_overlay.jsonl (and a data card) as a separate artifact with:
+  - Schema, definitions, decision rules, and examples.
+  - Annotation guidelines, IAA statistics, and rater demographics (aggregate).
+  - Model Card section reporting disaggregated metrics and counterfactual audits.
+
+Three+ concrete, falsifiable experiments
+1) Counterfactual identity-swap audit
+- Hypothesis: Swapping protected-attribute tokens in matched prompts does not materially change model outcomes (|Δ refusal rate| ≤ 2 percentage points; |Δ toxicity| ≤ 0.05 on a calibrated scale).
+- Design: Use counterfactual_handles to generate paired prompts and re-run model outputs. Compute outcome and harm differences per pair.
+- Variables: Independent—group identity tokens; Dependent—refusal/helpfulness, toxicity, sentiment, task correctness (from MST).
+- Metrics: Mean absolute disparity; proportion of pairs exceeding threshold; bootstrap CIs; Holm-Bonferroni correction across categories.
+
+2) Subgroup equality-of-opportunity test
+- Hypothesis: Conditional on ground-truth correctness (MST labels), error rates are similar across subgroups (difference in false negative rates ≤ 2 pp).
+- Design: Stratify by sensitive_context categories; compare disaggregated error rates on the same task types.
+- Metrics: Equality-of-opportunity gap; standardized effect size (Cohen’s h); permutation tests; report by task family.
+
+3) Representational harm prevalence vs. task family
+- Hypothesis: The rate of representational harms differs by MST failure category (e.g., certain failure types co-occur with higher harm incidence).
+- Design: Join fairness_overlay with MST failure taxonomy; model harm incidence with a logistic regression including task family and failure type as predictors.
+- Metrics: Odds ratios with CIs; likelihood-ratio tests; FDR-controlled multiple comparisons.
+
+4) Blinding effectiveness and non-contamination check (RCT)
+- Hypothesis: Visibility of correctness labels changes fairness judgments and/or IAA; strict blinding preserves independence.
+- Design: Randomize a small annotator subset into two conditions—blinded vs. (temporarily) unblinded pilot environment. Compare label distributions and κ.
+- Metrics: Difference in κ; distributional shift tests (e.g., Kolmogorov–Smirnov) on harm scores; confirm original MST labels remained bit-identical via hash checks.
+
+Why this preserves MST integrity
+- All fairness/ethics labels live in a separate overlay keyed by IDs; original labels remain read-only with hash verification. Blinded, permissioned annotation prevents accidental edits or leakage across streams [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+
+Literature anchors (for reporting and metrics)
+- Model Cards provide a structured way to report the new disaggregated and counterfactual fairness results alongside the original correctness metrics (supporting the overlay + reporting design).
+- Equality-of-opportunity/equalized odds formalize subgroup error parity targets for supervised tasks with ground truth.
+
+Citations
+- [PDF] Why Do Multi-Agent LLM Systems Fail? — Development of Failure Taxonomy and Detection (used to justify strict separation and non-editing of the original failure taxonomy and labels) — https://arxiv.org/abs/2503.13657 [file:5]
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
+- Hardt, Price, Srebro, 2016. Equality of Opportunity in Supervised Learning — https://proceedings.neurips.cc/paper_files/paper/2016/hash/9d2682367c3935defcb1f9e247a97c0d-Abstract.html
+
+Notes and limitations
+- If MST includes tasks with minimal or no sensitive context, ensure coverage by constructing matched counterfactual prompts or by sampling items where sensitive_context.present = true before drawing subgroup conclusions.
+- For open-ended outputs, calibrate toxicity/sentiment tools to the domain or rely on human ratings with demonstrated IAA.
+- Pre-register analysis thresholds and metrics to avoid researcher degrees of freedom.

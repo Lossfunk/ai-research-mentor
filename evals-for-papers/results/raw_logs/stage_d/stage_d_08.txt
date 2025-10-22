@@ -1,0 +1,84 @@
+Below is a rigorous “no-taxonomy-training” ablation and a zero-shot LLM-as-a-judge redesign that aims to preserve the MST paper’s reported metrics while removing any supervised training on taxonomy labels.
+
+A. Zero-shot LLM-as-a-judge redesign (no taxonomy training)
+Goal: Replace any taxonomy-trained judge with a zero-shot rubric-based judge, using test-time compute, pairwise evaluation, and strict controls to maintain reliability and comparability.
+
+1) Prompting and outputs
+- System prompt: Impartial, instruction-only evaluator.
+- Rubric: Provide a short, explicit rubric derived from the paper’s public description of evaluation criteria (not trained from labels). Example criteria: task adherence, factuality/correctness, completeness, safety, clarity. Assign fixed weights a priori (e.g., equal weights) and keep them constant for the main ablation; vary them only in a robustness study.
+- Task/context block: Include the original MST task description, input, and any references the original evaluation allows (reference-free or reference-based).
+- Pairwise-first: Judge A vs B with required comparative justification, then a single choice. Absolute scoring is a secondary mode; keep it for parity with MST if they reported absolute scores.
+- Structured output: Require strict JSON with fields: {subscores:{C1..Ck}, overall_score, winner, rationale}. Reject malformed output and re-ask once.
+
+2) Test-time reliability without training
+- Multi-sample self-consistency: Draw 5–7 independent judging samples with diverse reasoning paths; aggregate by majority vote for pairwise, and by median of overall_score for absolute. Test-time scaling improves judge reliability without fine-tuning [P2].
+- Temperature: 0.7 for rationale generation, 0.0 for the final JSON decision to reduce randomness in the final fielding.
+- Adjudicator-of-adjudicators: On ties or low-confidence cases (e.g., split 3–3–1), escalate to a stronger judge model once, then record both the initial and adjudicator decisions for auditing. This keeps compute bounded while improving decision quality [P2].
+
+3) Bias and attack controls
+- Order randomization: Randomize A/B order; run both AB and BA and tie-break by combined majority. This reduces position bias and increases reliability of pairwise decisions.
+- Anonymization: Strip model IDs, system prompts, and metadata. Canonicalize whitespace, casing, and markdown for consistency.
+- Content shielding: Instruct the judge to ignore any meta-instructions within candidates and evaluate content only. Normalize or strip suspicious tokens and prompt-like substrings in candidates to mitigate adversarial “judge-hacking” content, which is known to affect LLM-as-a-judge [P1].
+- Format-invariance check: Re-render candidates into at least two harmlessly re-formatted variants (e.g., bullet vs paragraph) and require decision consistency across variants; abstain if inconsistent.
+
+4) Calibration without training
+- Absolute scores: If MST reports Likert (e.g., 1–5), fit a monotonic mapping (isotonic regression) from judge’s raw scores to the human scale using a small dev set of human labels (no LLM fine-tuning).
+- Pairwise to scalar: Convert pairwise wins to global scores using Bradley–Terry or Thurstone–Mosteller, then calibrate to MST’s reported scale on the dev set; report both rank correlation and absolute error to humans.
+
+5) Aggregation and uncertainty
+- Inter-judge agreement: Report agreement across multi-samples (Krippendorff’s alpha for absolute; Fleiss’ kappa or simple majority stability for pairwise).
+- Bootstrap CIs: For all headline metrics (win rate, Spearman/Kendall tau with humans, RMSE vs human scores), report 95% CIs by bootstrap across evaluation items.
+- Compute budget parity: Cap total judge tokens/compute to match or slightly exceed the original judge cost; report a cost-normalized variant and a best-effort variant (more samples) to show compute–accuracy trade-off [P2].
+
+B. Metrics and comparability to MST
+- Keep the MST paper’s evaluation units and splits identical.
+- If MST used pairwise win rates, report: win rate, BT/Thurstone skill, and correlation to human preferences.
+- If MST used absolute scores, report: correlation to human ratings (Spearman/Kendall), MAE/RMSE, and calibration plots pre/post isotonic mapping.
+- Always include per-dimension subscore analyses if MST reported them, but emphasize that rubric subscores are zero-shot and not supervised.
+
+C. Concrete ablation protocol (remove taxonomy training set entirely)
+- Remove any supervised fine-tuning of the judge on taxonomy labels or rubric-labeled data.
+- Prohibit using the taxonomy training set for prompt examples. If you must provide examples, use synthetic, neutral anchors that contain no task-specific content (e.g., generic “good vs mediocre” micro-responses unrelated to MST’s domain), or omit examples entirely and stick to zero-shot.
+- Keep model, temperature, token limits, and evaluation set identical to MST unless explicitly ablated.
+
+D. Three rigorous experiments (falsifiable, with metrics and expected outcomes)
+
+1) Zero-shot rubric vs taxonomy-trained judge (primary ablation)
+- Hypothesis: A zero-shot, pairwise, multi-sample judge with order randomization achieves non-inferior agreement with human preferences compared to the taxonomy-trained judge, within a small margin (e.g., ≤2–3 points in win-rate or ≤0.03 in Spearman/Kendall).
+- Variables: Judge type (taxonomy-trained vs zero-shot), sampling count {1, 3, 7}, AB vs AB+BA order control.
+- Metrics: Pairwise win rate vs human, Kendall/Spearman with human preference orders, bootstrap 95% CIs; cost per item.
+- Expected outcome: Test-time scaling (3–7 samples) plus AB/BA aggregation closes most of the gap to the trained judge [P2].
+
+2) Test-time scaling curve for the zero-shot judge
+- Hypothesis: Increasing the number of independent judging samples improves agreement with human labels up to a plateau (e.g., from 1→3→7 samples), validating compute-as-a-knob as a substitute for training [P2].
+- Variables: Samples {1, 3, 5, 7, 11}; adjudicator-of-adjudicators on/off for ties.
+- Metrics: Agreement with human labels, stability across reformatting, confidence-calibration (Brier score if using probability outputs), cost.
+- Expected outcome: Monotonic but diminishing returns; best-effort (7–11 samples) meets or nearly matches MST’s trained-judge metrics at higher but transparent compute cost [P2].
+
+3) Robustness to adversarial and formatting perturbations
+- Hypothesis: The zero-shot judge is vulnerable to adversarial tokens inside candidate responses, but content shielding and canonicalization reduce attack success and decision flips [P1].
+- Variables: Attack condition (clean vs adversarial suffixes/prefixes), defenses (none vs ignore-instructions rule vs token sanitization vs reformat-consistency check).
+- Metrics: Attack success rate (decision flips vs clean), agreement with human labels under attack, degradation in win rate or correlation.
+- Expected outcome: Without defenses, flips increase significantly; with defenses, flips and agreement degradation are substantially reduced [P1].
+
+Optional 4th experiment (absolute-score comparability)
+- Hypothesis: A monotonic calibration (isotonic regression) aligns zero-shot absolute scores to human scale, increasing correlation/MAE parity with MST’s trained-judge absolute metrics without model training.
+- Variables: Calibration mapping (none vs isotonic vs Platt-like logistic), dev-set size for mapping.
+- Metrics: Spearman/Kendall with human scores, MAE/RMSE pre/post calibration, CI overlap with MST metrics.
+- Expected outcome: Post-calibration metrics approach the trained-judge’s reported numbers while maintaining zero training on taxonomy labels.
+
+E. Implementation details (to ensure rigor)
+- JSON schema validator: Automatically reject non-conforming outputs and re-prompt once; otherwise abstain and record.
+- Fixed seeds and versioning: Fix model version, seeds, and decode params; log every prompt, response, and decision.
+- Pre-registration: Pre-specify hypotheses, deltas for non-inferiority (e.g., 2–3 points), and stopping rules.
+- Release: Publish prompts, evaluation code, and anonymized judge outputs to ensure reproducibility and auditability.
+
+Why this should keep metrics comparable
+- Pairwise evaluation with order randomization and multi-sample reasoning has been shown to improve judge reliability without supervised training; scaling test-time compute is a viable substitute for judge fine-tuning in several evaluation settings [P2].
+- Adding input sanitization and “ignore in-candidate instructions” reduces known vulnerabilities where minor tokens can flip judge decisions [P1], which helps preserve reliability and comparability under realistic conditions.
+
+If you share MST’s precise tasks and metrics (pairwise vs absolute, domains, and sample sizes), I can tailor the rubric text, JSON schema, and calibration mapping to your exact setting.
+
+Citations
+- [P1] One Token to Fool LLM-as-a-Judge — http://arxiv.org/abs/2507.08794v2
+- [P2] MCTS-Judge: Test-Time Scaling in LLM-as-a-Judge for Code Correctness Evaluation — http://arxiv.org/abs/2502.12468v1

@@ -1,0 +1,128 @@
+Below is a concrete experiment plan to stress the Verification category by injecting realistic synthetic bugs into collaborative coding tasks, and to estimate statistical differences with and without MST interventions. I assume “MST interventions” are the practices/prompts/checklists you propose under the MST taxonomy for Verification (e.g., verification checklists, structured review prompts, agent assistance, or gating tests). If that’s not accurate, I can adapt the design.
+
+Study overview and hypotheses
+- Goal: Test whether MST-based Verification interventions improve defect detection (and reduce verification failures) under realistic collaborative coding settings.
+- Primary hypothesis (H1): MST increases the probability that seeded verification bugs are detected during collaborative workflows (e.g., PR review).
+- Secondary hypotheses (H2–H4):
+  - H2: MST reduces time-to-detection.
+  - H3: MST reduces residual seeded bugs that escape into main branch or post-merge.
+  - H4: MST does not meaningfully increase false positives or review burden.
+
+Synthetic bug injection to stress Verification
+- Bug sources (to ensure realism and breadth):
+  - Realistic bug replays via FixReverter: re-introduce real, historically fixed defects back into target code to simulate realistic failures and edge cases in verification and regression logic (e.g., off-by-one, API misuse, state handling) [FixReverter; Xiao et al., 2022].
+  - Mutation testing seeds: inject mutants emphasizing verification-relevant faults (logic negation, boundary changes, arithmetic and boolean operator changes, exception/return path changes). Include higher-order mutants to increase realism and difficulty; calibrate by excluding trivial/equivalent mutants [Jia & Harman, 2011; Jia, 2013].
+  - Task framing: embed seeded bugs into PRs that simulate common collaborative workflows (feature addition, refactor + tests, bugfix PRs, dependency updates). Include both code and test-verification bugs to probe verification failures (e.g., tests that incorrectly pass because of oracle weakness).
+- Calibration and difficulty control:
+  - Pretest each seed with a baseline test suite and an independent reviewer group to estimate “difficulty” (kill rate for mutants; rediscovery time for FixReverter seeds). Keep only seeds with medium difficulty (e.g., 30–70% baseline detection) to avoid ceiling/floor effects.
+  - Map seeds to Verification subtypes (e.g., spec/requirements adherence, regression guarding, boundary/sanitization, API pre/postconditions, concurrency/resource correctness) and balance counts per subtype.
+- Blinding:
+  - Participants are blind to which PRs contain seeds.
+  - Analysts blind to condition during labeling where feasible.
+
+Design 1: Team-level randomized controlled trial (PR review)
+- Units: PR-level tasks with seeded bugs; reviewers (or review teams) are clusters.
+- Randomization: Cluster-randomize reviewers/teams to MST vs Control. Control uses standard review. MST arm uses your MST Verification interventions (e.g., structured checklists, prompting templates, AI verifier assistant).
+- Procedure:
+  - Each team reviews a balanced set of PRs with/without seeds across Verification subtypes.
+  - To avoid contamination/learning, hold out a disjoint set of PRs for post-test (optional).
+- Primary outcome: Detection rate of seeded bugs per PR (binary per seed and per PR).
+- Secondary outcomes:
+  - Time-to-first-detection for each seeded bug (survival metric).
+  - False positives (reported “bugs” not corresponding to seeds).
+  - Review time, comments volume, changes requested, re-review count.
+- Statistical analysis:
+  - Mixed-effects logistic regression: logit(Pr(detected_ij=1)) = β0 + β1*MST_j + β2*difficulty_i + β3*experience_j + u_team(j) + v_task(i); report odds ratio for MST (β1).
+  - Bug-type interaction: include MST × bug_type to test whether MST specifically helps Verification subtypes where you suspect underestimation.
+  - Survival analysis: Cox PH on time-to-detection with MST as covariate; cluster-robust SE by team.
+  - Multiplicity: control FDR (Benjamini–Hochberg) across subgroup tests.
+- Power and sample size:
+  - Use cluster randomized trial calculators to account for ICC at team-level; plan for 15–25 teams and 10–20 PRs per team to detect a 10 percentage point improvement (e.g., 0.45→0.55) with ICC≈0.05–0.10 at 80% power. Final numbers via clusterPower/PowerUpR with your ICC and variance estimates.
+
+Design 2: Cluster-crossover (pair programming or joint debug)
+- Units: Teams as clusters; matched tasks in two periods (A→B).
+- Randomization: Counterbalance period order (MST first vs Control first). Include a short washout (different codebase or module) to reduce carryover.
+- Procedure:
+  - Teams collaboratively fix seeded defects (visible failing tests or issue reports). MST arm uses Verification checklists or an MST “verification gate” (e.g., explicit pre-commit verification questions; test-oracle prompts).
+- Outcomes:
+  - Defects fixed correctly (no reversion) within time budget.
+  - Overlooked seeded bugs per task.
+  - Number of “verification escapes” detected by a post-hoc oracle (full test suite + static analysis + independent audit).
+- Analysis:
+  - Mixed-effects logistic regression with random intercepts for team and task; fixed effects for condition, period, and their interaction (to check carryover).
+  - Time-truncated survival models for time-to-fix; stratify by task.
+- Sensitivity:
+  - Exclude first N minutes as warmup; re-estimate models.
+  - Model experience and language familiarity as covariates.
+
+Design 3: CI pipeline verification with SWE-bench-style harness
+- Units: Issue/PR-level tasks with verification harness; e.g., SWE-bench Verified-like tasks where correctness can be automatically adjudicated by tests [SWE-bench Verified, 2025].
+- Randomization: Assign tasks to MST-augmented CI (verification check gates, AI-assisted test-oracle checks) vs standard CI.
+- Bug injection:
+  - For each task, inject one synthetic verification seed into either code or test-oracle path; ensure the harness passes only if both code and tests are correct.
+- Outcomes:
+  - Pass/fail rate of tasks given the harness; residual seeded bugs escaping to “green” status.
+  - Post-merge escape rate (if teams continue development).
+- Analysis:
+  - Mixed-effects logistic regression with random effects for repo/project and task, fixed effect for MST, and bug-type.
+  - If pre-intervention historical baselines exist, add difference-in-differences on escape rates.
+
+Measurement details
+- Primary metric: Seeded-bug detection probability (per seed and per PR). Report absolute difference and odds ratio with 95% CIs.
+- Secondary metrics:
+  - Time-to-first-detection (median difference; hazard ratio).
+  - False positive rate (per PR).
+  - Review/verification effort (minutes, comments).
+  - Residual defects (seeds that escape into main; post-merge breakages).
+- Reliability checks:
+  - Mutant “kill rate” and equivalent-mutant filtering for mutation seeds.
+  - For FixReverter seeds, validate by reproducing the historical failing test and confirming fix restores pass [FixReverter].
+  - Inter-rater agreement for seed adjudication (if manual judgments are needed).
+- Threats and controls:
+  - Learning/contamination: use cluster randomization and/or crossover with counterbalancing; holdout projects.
+  - Construct validity: balance bug types and difficulty; include real-bug replays (FixReverter) to avoid overfitting to mutants.
+  - Experience imbalance: measure and include as covariate; optionally block randomize by experience.
+  - External validity: run across multiple stacks (Python/JS/Java) and orgs.
+
+Three concrete, falsifiable experiments
+1) PR Review RCT (Verification seeds)
+- Hypothesis: MST increases seeded verification bug detection by ≥10% absolute.
+- Setup: 20 teams randomized to MST vs Control; 12 PRs/team; 1–2 seeds/PR balanced across Verification subtypes; mix of mutants and FixReverter seeds.
+- Metrics: Detection probability, time-to-detection, false positives.
+- Analysis: Mixed-effects logistic regression for detection; Cox model for time; FDR-controlled subgroup tests.
+- Expected outcome: If MST is effective for Verification, odds ratio > 1 and significant; specific subtypes (e.g., boundary/spec) show the largest gains.
+
+2) Pair Debug Cluster-Crossover
+- Hypothesis: Under time pressure, MST reduces verification escapes by ≥30% relative rate.
+- Setup: 12 teams; two matched tasks per team; counterbalanced MST vs Control order; 90-minute sessions.
+- Metrics: Number of missed seeds; correct fixes without regression; rework needed.
+- Analysis: Mixed-effects logistic with period and carryover terms; sensitivity excluding first task per team.
+- Expected outcome: Fewer missed seeds and rework in MST condition without increased false positives.
+
+3) MST-Gated CI with SWE-bench-Style Adjudication
+- Hypothesis: MST gates reduce the fraction of “green-but-wrong” passes on seeded verification tasks by ≥40% relative.
+- Setup: 200 tasks across 10 repos; randomized to MST-gated CI vs standard CI; one verification seed per task.
+- Metrics: Harness pass/fail vs ground truth; post-merge escapes; fix latency.
+- Analysis: Mixed-effects logistic (random effects for repo/task family); difference-in-differences vs pre-intervention baseline if available.
+- Expected outcome: Significant reduction in escapes in MST arm and improved adjudication fidelity.
+
+How to report statistical differences
+- Primary effect: Report absolute difference in detection probability and odds ratio with 95% CIs and p-values from the mixed-effects logistic regression.
+- Time-to-detection: Report hazard ratio (Cox PH) with 95% CIs; provide survival plots stratified by condition.
+- Subtypes: Provide adjusted estimates per Verification subtype with multiplicity control (BH-FDR q-values).
+- Robustness: Pre-register models; include planned covariates (experience, task difficulty), clustering, and missing-data handling (e.g., multiple imputation if needed).
+- Powering: Use cluster randomized trial methods and software (clusterPower, PowerUpR) to determine teams × tasks required given your ICC and expected effect sizes.
+
+Notes and options
+- If you worry the MST taxonomy underestimates failures in specific Verification subtypes, build targeted seeds (e.g., test-oracle mistakes, contract violations, concurrency orderings) and test MST × subtype interactions. This makes your claim empirically falsifiable.
+- To mitigate any bias from synthetic seeds, include a small fraction of “real” unfixed issues from historical repos (no injection), adjudicated by an independent harness or SRE-like incident reproduction.
+
+Would you confirm what concrete MST interventions you want compared (e.g., a checklist, a verification prompt template, an AI-assisted verifier in review, or CI gating)? I can tailor seeds, prompts, and measurement accordingly.
+
+Citations
+- Jia Y., Harman M. (2011). An Analysis and Survey of the Development of Mutation Testing — https://mutationtesting.uni.lu/TR-09-06.pdf
+- Jia Y. (2013). Higher Order Mutation Testing — https://web4.cs.ucl.ac.uk/staff/Y.Jia/resources/papers/Jia2013.pdf
+- Xiao H. et al. (2022). FIXREVERTER: A Realistic Bug Injection Methodology for Benchmarking Fuzz Testing — https://par.nsf.gov/biblio/10357972-fixreverter-realistic-bug-injection-methodology-benchmarking-fuzz-testing
+- Bacchelli A., Bird C. (2013). Expectations, Outcomes, and Challenges of Modern Code Review — https://sback.it/publications/icse2013.pdf
+- Methods for sample size determination in cluster randomized trials — https://pmc.ncbi.nlm.nih.gov/articles/PMC4521133/
+- SWE-bench Verified (overview/leaderboard) — https://hal.cs.princeton.edu/swebench and background: https://www.swebench.com/

@@ -1,119 +1,117 @@
-Based on my knowledge of the PeerRead dataset and common concerns in peer review research, here are the key reviewer concerns you should anticipate and mitigations to address them:
+Based on my knowledge of the PeerRead dataset, I can help you anticipate key reviewer concerns and propose mitigations. The PeerRead dataset uses arXiv papers as a proxy for "probably-rejected" submissions, which introduces several validity concerns that reviewers are likely to raise.
 
 ## Anticipated Reviewer Concerns
 
-### 1. **Label Validity: Assumption that arXiv = Rejected**
+### 1. **Label Noise and Misclassification**
+**Concern:** ArXiv papers are not necessarily rejected papers. Many authors post to arXiv before, during, or after peer review, regardless of acceptance status.
 
-**Concern:** The fundamental assumption that papers appearing only on arXiv were rejected from conferences is unverifiable and potentially flawed. Authors may post to arXiv for many reasons unrelated to rejection:
-- Preprints never submitted to the target venue
-- Work-in-progress shared for feedback
-- Papers submitted to different venues not tracked in the dataset
-- Authors who prefer open access without formal publication
+**Evidence of the problem:**
+- Authors may post accepted papers to arXiv for visibility
+- Some papers are posted to arXiv and never submitted to conferences
+- Papers may be posted after minor revisions following acceptance
+- Different communities have different arXiv posting norms
 
-**Mitigations:**
-- **Acknowledge the limitation explicitly**: State that "probably-rejected" is a noisy proxy label with unknown false positive rate
-- **Temporal filtering**: Describe any temporal constraints used (e.g., only including arXiv papers posted within X months before the conference deadline)
-- **Validation subset**: If possible, manually verify a random sample of "probably-rejected" papers by checking author publication records or contacting authors
-- **Sensitivity analysis**: Report how your findings change under different assumptions about label noise (e.g., 10%, 20%, 30% mislabeling rates)
-- **Conservative interpretation**: Frame findings as lower bounds or trends rather than definitive conclusions
+**Proposed mitigations:**
+- **Acknowledge the limitation explicitly**: State that the "probably-rejected" label is a noisy proxy, not ground truth
+- **Quantify the noise**: If possible, sample a subset of arXiv papers and manually verify their publication status through Google Scholar or DBLP. Report the false positive rate (e.g., "We found that X% of our arXiv sample were later published at peer-reviewed venues")
+- **Sensitivity analysis**: Conduct experiments with different filtering strategies (e.g., excluding arXiv papers published within 6 months of a major conference deadline, or papers with acknowledgments suggesting acceptance)
+- **Temporal filtering**: Only include arXiv papers posted >2 years ago without subsequent venue publication as more reliable negatives
 
-### 2. **Selection Bias in arXiv Posting**
+### 2. **Selection Bias**
+**Concern:** Authors who post to arXiv may differ systematically from those who don't, creating a biased sample.
 
-**Concern:** Authors who post rejected papers to arXiv may differ systematically from those who don't, creating selection bias.
+**Evidence of the problem:**
+- Computer science and physics communities use arXiv heavily; other fields don't
+- Senior researchers and well-funded labs may be more likely to post preprints
+- Authors confident in their work may be more likely to share publicly
 
-**Mitigations:**
-- **Characterize the bias**: Discuss which author populations are more/less likely to use arXiv (e.g., field-specific norms, institutional culture, career stage)
-- **Subgroup analysis**: If metadata permits, analyze whether patterns hold across different author demographics or institutions
-- **Comparison with known rejected papers**: If you have access to any ground-truth rejected papers (from venues that release them), compare characteristics to validate the proxy
+**Proposed mitigations:**
+- **Control for confounds**: Match arXiv papers to accepted papers on observable features (author h-index, institution prestige, paper length, citation count at time of posting)
+- **Subgroup analysis**: Report performance separately for different research areas or time periods to show robustness
+- **Discuss generalizability**: Explicitly state that findings may not generalize to venues or fields with different preprint cultures
 
-### 3. **Confounding by Paper Quality**
+### 3. **Temporal Confounding**
+**Concern:** ArXiv papers may represent earlier drafts, while accepted papers are polished final versions, confounding quality with revision stage.
 
-**Concern:** Papers on arXiv might be systematically lower quality than those never submitted, making comparisons with accepted papers unfair.
+**Proposed mitigations:**
+- **Version control**: When possible, use the latest arXiv version before a submission deadline
+- **Acknowledge the confound**: Discuss that your model may be learning to distinguish draft quality from acceptance-worthy quality
+- **Reframe the task**: Position your work as predicting "publication-readiness" rather than "acceptance," which is actually more useful for authors
 
-**Mitigations:**
-- **Quality controls**: Describe any filtering for obvious spam, non-English papers, or formatting issues
-- **Matched sampling**: Use propensity score matching or similar techniques to compare accepted vs. probably-rejected papers with similar characteristics (length, author count, citation count at time of submission)
-- **Multiple baselines**: Compare against both accepted papers and other negative classes if available
+### 4. **Lack of Ground Truth Validation**
+**Concern:** Without true rejection labels, you cannot validate your approach or measure true performance.
 
-### 4. **Venue-Specific Differences**
+**Proposed mitigations:**
+- **Supplementary validation**: Use a small dataset with true rejection labels (e.g., from workshops that release rejected papers, or from PeerRead's other datasets with ground truth) to validate that your model generalizes
+- **Human evaluation**: Have domain experts rate a sample of high-confidence "probably-rejected" and accepted papers to verify the label quality
+- **Consistency checks**: Show that your model's predictions correlate with other quality indicators (citation counts, author reputation, venue tier)
 
-**Concern:** ArXiv usage varies dramatically across venues and fields, making cross-venue comparisons problematic.
+### 5. **Circular Reasoning in Evaluation**
+**Concern:** If you train and evaluate on noisy labels, high accuracy might just mean you're learning the noise, not true quality.
 
-**Mitigations:**
-- **Stratified analysis**: Report results separately for each venue or venue type
-- **ArXiv penetration rates**: Document the proportion of submissions that appear on arXiv for each venue
-- **Field norms**: Discuss how arXiv culture differs (e.g., CS theory vs. NLP vs. ML)
+**Proposed mitigations:**
+- **Cross-dataset validation**: Test your model on PeerRead's other datasets (NIPS, ICLR) where true labels exist
+- **Qualitative analysis**: Provide case studies showing that your model's predictions align with expert judgment
+- **Feature analysis**: Show that your model relies on features known to correlate with quality (clarity, novelty, rigor) rather than spurious correlations (formatting, arXiv-specific patterns)
 
-### 5. **Temporal Dynamics**
-
-**Concern:** ArXiv posting behavior has changed over time, and papers may be revised or eventually accepted elsewhere.
-
-**Mitigations:**
-- **Snapshot timing**: Clearly specify when arXiv data was collected relative to conference decisions
-- **Version control**: Note whether you used the first arXiv version or a specific version
-- **Longitudinal tracking**: If feasible, check whether "probably-rejected" papers were later accepted elsewhere (using DBLP, Google Scholar, or Semantic Scholar)
-
-### 6. **Ground Truth Availability**
-
-**Concern:** Why use noisy proxy labels when some venues provide actual rejection data?
-
-**Mitigations:**
-- **Justify the trade-off**: Explain that arXiv-based labels enable larger-scale analysis across venues that don't release rejection data
-- **Hybrid approach**: Use ground-truth rejected papers where available to validate your proxy, then extend to other venues
-- **Transparency**: Provide statistics on how many papers fall into each category and confidence levels
-
-## Proposed Discussion Section Structure
+## Recommended Discussion Section Structure
 
 ```markdown
-### Limitations and Validity of Probably-Rejected Labels
+### Limitations and Validity Concerns
 
-**Label Noise.** Our "probably-rejected" labels are based on the heuristic 
-that papers appearing only on arXiv (and not in conference proceedings) were 
-likely rejected. This is necessarily a noisy proxy with several sources of 
-error: (1) authors may post preprints without submitting to the target venue, 
-(2) papers may have been submitted to different venues, and (3) posting 
-behavior varies by field and author demographics. We estimate the false 
-positive rate at [X%] based on [manual validation/temporal filtering/author 
-surveys]. Our findings should be interpreted as trends rather than definitive 
-statements about individual papers.
+**Label Noise.** Our use of arXiv papers as "probably-rejected" examples 
+introduces label noise, as some arXiv papers are later published at 
+peer-reviewed venues. [Report your measured false positive rate if available]. 
+This noise likely attenuates our model's performance and may introduce 
+spurious correlations. However, [describe your mitigation, e.g., temporal 
+filtering, manual validation].
 
-**Selection Bias.** Authors who post rejected work to arXiv may differ 
-systematically from those who do not. In our dataset, [X%] of submissions 
-appear on arXiv, with higher rates in [subfield/institution type]. To 
-mitigate this, we [stratify by venue/use matched sampling/report subgroup 
-analyses].
+**Selection Bias.** Authors who post to arXiv may differ systematically from 
+those who do not, potentially limiting generalizability. We partially address 
+this by [matching strategy or subgroup analysis], but acknowledge that our 
+findings are most applicable to research communities with strong preprint cultures.
 
-**Validation.** We validated our labeling approach by [manual inspection of 
-N papers/comparison with ground-truth rejected papers from venue X/longitudinal 
-tracking showing Y% were never published]. [Report agreement statistics or 
-validation results].
+**Draft vs. Final Quality.** ArXiv papers may represent earlier drafts while 
+accepted papers are polished versions. Our model may therefore learn to 
+distinguish draft quality from publication-readiness rather than inherent 
+scientific merit. We view this as a feature rather than a bug, as predicting 
+publication-readiness is valuable for authors seeking feedback.
 
-**Generalizability.** Our findings are most applicable to venues and fields 
-with high arXiv adoption rates (>X%). Results may not generalize to fields 
-where preprint culture is less established.
+**Validation Strategy.** To partially validate our approach despite noisy 
+labels, we [describe validation: cross-dataset testing, human evaluation, 
+consistency checks]. These analyses suggest that our model captures meaningful 
+quality signals beyond label noise.
 
-**Future Work.** More reliable labels could be obtained through [venue 
-partnerships/author surveys/multi-venue tracking]. We release our labeling 
-code and encourage community validation.
+**Future Work.** Stronger validation would require datasets with true rejection 
+labels. We encourage venues to release anonymized rejected submissions to enable 
+more rigorous research on peer review.
 ```
 
-## Concrete Validation Experiments
+## Additional Concrete Experiments to Strengthen Your Paper
 
-1. **Manual validation study**: Sample 100-200 "probably-rejected" papers and verify through author publication records, Google Scholar, or direct author contact. Report precision.
+1. **Label noise quantification**: Manually check publication status for 200 randomly sampled arXiv papers from your dataset. Report precision of the "probably-rejected" label.
 
-2. **Temporal consistency check**: For papers posted to arXiv before conference deadlines, track whether they appear in proceedings within 6-12 months. Papers that never appear strengthen the rejection hypothesis.
+2. **Cross-dataset transfer**: Train on arXiv data, test on NIPS/ICLR rejected papers from PeerRead. If performance is above chance, it validates that your model learns transferable quality signals.
 
-3. **Cross-venue validation**: For authors with multiple submissions, check if "probably-rejected" papers from venue A were later accepted at venue B, providing indirect validation.
+3. **Temporal robustness**: Compare model performance on arXiv papers from different time periods (e.g., 2015-2017 vs. 2018-2020) to show stability.
 
 ## Key Takeaways
 
-- **Be proactive**: Address label validity upfront rather than waiting for reviewers to raise it
-- **Quantify uncertainty**: Provide concrete estimates of label noise and sensitivity analyses
-- **Validate where possible**: Even small-scale manual validation adds credibility
-- **Frame appropriately**: Position findings as exploratory or trend-based rather than definitive
-- **Provide value despite noise**: Argue that even noisy labels at scale can reveal useful patterns unavailable from small ground-truth datasets
+- **Be proactive**: Address validity concerns directly in your discussion rather than waiting for reviewers to raise them
+- **Quantify uncertainty**: Provide empirical estimates of label noise where possible
+- **Reframe limitations as opportunities**: Position noisy labels as a realistic setting for semi-supervised learning or weak supervision
+- **Validate creatively**: Use multiple indirect validation strategies to build confidence despite lack of ground truth
+- **Be honest about scope**: Clearly state the generalizability limits of your findings
+
+The strongest defense is transparency combined with empirical validation. Reviewers will be more forgiving of noisy labels if you demonstrate awareness of the issues and show that your model still captures meaningful signals.
 
 ## Sources
 
-1. Kang, D., Ammar, W., Dalvi, B., van Zuylen, M., Kohlmeier, S., Hovy, E., & Schwartz, R. (2018). A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications. *NAACL-HLT 2018*. https://aclanthology.org/N18-1149.pdf
-2. PeerRead Dataset Repository. https://github.com/allenai/PeerRead
+While web search was unavailable, this analysis draws on:
+- Standard concerns about weak supervision and noisy labels in machine learning
+- Known characteristics of the PeerRead dataset (Kang et al., 2018, "A Dataset of Peer Reviews (PeerRead)")
+- Common reviewer critiques of papers using proxy labels for peer review outcomes
+
+For the most current information about PeerRead dataset methodology and known limitations, I recommend consulting:
+- The original PeerRead paper: https://arxiv.org/abs/1804.09635
+- Papers citing PeerRead that discuss label validity concerns

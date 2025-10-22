@@ -1,109 +1,78 @@
-Below is a focused checklist of targeted ablations and error analyses that reviewers typically expect for “paper acceptance” prediction on PeerRead, with special attention to hand-engineered features. Where possible, I tie suggestions to established concerns in this literature so you can proactively address likely reviewer questions [1][2].
+Below is a concise checklist of targeted ablations and error analyses that reviewers typically expect for PeerRead-style acceptance prediction, with special attention to hand-engineered (surface/structural) features. I anchor recommendations to PeerRead’s own setup and to closely related work that analyzes predictors of peer‑review outcomes.
 
-A. Targeted ablations reviewers will expect
-- Feature-group drop ablations
-  - Remove each coherent group and report Δ in AUC/F1:
-    - Length/size: pages, words, sentence count, figure/table/equation counts.
-    - Reference/citation proxies: number of references, citation markers.
-    - Readability/style: FK/Kincaid, avg sentence length, type–token ratio, POS/grammar proxies.
-    - Structural/format cues: section headers, presence/length of abstract, presence of “acknowledgments,” appendix flags.
-    - Topic/content representations: bag-of-words/TF–IDF vs. neural.
-  - Purpose: quantify how much “surface” vs. “content” drives accuracy and show incremental benefit over text-only baselines [1].
+Targeted ablations reviewers will expect (hand-engineered features)
+- Feature-group ablations (remove-one-group-at-a-time):
+  - Length/verbosity features (tokens per section, number of sections/pages) [1].
+  - Structural counts (figures, tables, equations) [1].
+  - Bibliography-related features (number of references, self-citation proxies if any) [1].
+  - Readability/lexical statistics (e.g., Flesch, POS ratios) if used [4].
+  - Topic/section features (e.g., LDA/section presence) if used [1].
+- Within-group leave-one-out:
+  - For structure: remove only figures vs only tables vs only equations to isolate which drives signal [1].
+  - For length: ablate total length vs section-specific lengths (abstract-only length, intro-only length) [1].
+- Normalization ablations:
+  - Raw counts vs length-normalized (per 1k tokens) to test whether observed gains are simply proxies for length [1][4].
+  - Log-scaling vs z-scoring to check sensitivity to distributional skew of counts [1].
+- Section-scope ablations:
+  - Title+abstract only vs body-only vs full paper to localize where hand-engineered features matter most (especially abstract length/readability) [1][3][4].
+- Content vs surface disentanglement:
+  - Remove all n-gram/embedding features and evaluate hand-engineered-only; then the reverse (no hand-engineered) to quantify incremental value [1][3].
+- Venue/year/corpus ablations:
+  - Train on one venue-year and test on another (e.g., ICLR→ACL, year-to-year) to ensure the hand-engineered signals are not venue-style artifacts [1].
+- Confound controls:
+  - Stratified evaluation by length deciles; also re-train after regressing out length from all other features to test whether structure counts still help beyond length [4].
+  - Domain controls (e.g., arXiv subject area or venue track) because figure/equation density varies by field, which can spuriously track acceptance [1][4].
 
-- Incremental stacking curve
-  - Add feature sets cumulatively (text → +length → +references → +readability → +structure) to show marginal gains at each step. This is clearer than a single “all vs. none” comparison and helps isolate which hand-crafted groups matter most.
+Leakage and robustness checks (often requested)
+- PDF parsing/metadata leakage: verify that hand-engineered features are not inadvertently capturing acceptance cues (e.g., camera-ready artifacts, “accepted at …” footers, acknowledgments) [1].
+- Style-template cues: explicitly test whether presence of specific style tokens (e.g., “ICLR 2017 template”) influences predictions; ablate such tokens if any [1].
+- Duplicate/near-duplicate papers: deduplicate to avoid memorization; re-run ablations on deduped splits [1].
+- Calibration: reliability diagrams and ECE after removing hand-engineered features to assess whether these features mainly improve calibration vs raw accuracy [1].
 
-- Randomization and permutation controls
-  - Shuffle a feature group across papers while holding others fixed (permutation importance) to test reliance on that group.
-  - Add noise-augmented versions of features (e.g., jitter page/word counts within realistic bounds) to test stability of effects.
-
-- “Leakage-prone” feature ablations
-  - Proactively remove cues that might correlate with camera-ready vs. submission formatting or post-acceptance edits (e.g., acknowledgments, appendix markers, certain LaTeX artifacts) and re-evaluate. Many acceptance classifiers pick up formatting cues rather than scientific merit; reviewers will expect you to rule this out [1].
-
-- Residualization controls
-  - Regress acceptance on obviously predictive surface features (e.g., length/readability/reference count), compute residuals, and train your model to predict residuals. If performance collapses, you’re likely capitalizing on superficial cues.
-
-- Cross-representation consistency
-  - Compare a text-only model (e.g., bag-of-words logistic regression) against: (i) hand-engineered only, (ii) hand-engineered + text, and (iii) neural text encoders. Show whether hand-crafted features still add signal beyond strong text baselines [1].
-
-- Cross-venue and temporal generalization
-  - Train on one venue/year and test on another (e.g., ICLR→ACL; 2017→2018) to quantify domain shift. Hand-engineered features that encode venue-specific formatting or limits (e.g., page caps) should degrade under such shifts [1].
-
-B. Error analyses that surface confounds
-- Slice-based performance
-  - Break down metrics by:
-    - Length and reference-count quantiles.
-    - Topic clusters (LDA or embedding clusters).
-    - Venue and year.
-    - Number of authors.
-  - Look for large TPR/FPR gaps indicating spurious reliance on particular slices (e.g., “long papers that are still rejected” as systematic FPs).
-
-- Calibrated risk and confusion trends
-  - Reliability diagrams and ECE; examine whether the model is overconfident on easy-to-cheat slices (long/reference-heavy papers).
-
-- Matched-pairs analysis
-  - Construct pairs matched on topic and length (or other surface stats), but with different labels. Examine whether the model still separates them; manually inspect top discordant pairs for qualitative failure modes.
-
-- Qualitative probes for style cues
-  - Inspect high-confidence FP/FN examples for stylistic markers (e.g., “we propose…,” rhetorical structure) that are known to correlate with ratings/acceptance in prior studies [2]. This helps argue you’re not purely picking up stylistic artifacts.
-
-- Feature-attribution agreement checks
-  - Use permutation/shapley to list top features on a held-out set; verify they align with plausible editorial criteria rather than dataset quirks (e.g., “presence of Acknowledgments” dominating importance is a red flag).
-
-C. Pitfall checks reviewers often ask about
-- Submission vs. camera-ready signals
-  - Many datasets inadvertently mix versions; strip or ablate features that reflect post-acceptance edits (acknowledgments, supplemental section markers). Re-run with those removed to show robustness [1].
-
-- Topic bias vs. merit
-  - Control for topic by adding topic fixed effects or training within-topic folds; show the model is not simply preferring popular subfields.
-
-- Label noise and borderline cases
-  - If rating information is available, separate “borderline” from “clear accept/reject” and analyze performance stratified by confidence bands; acceptance is inherently noisy.
-
-- Data leakage
-  - Ensure no review text, meta-review, decision text, or submission IDs leak into features. Explicitly document filtering rules.
+Error analyses reviewers will expect
+- Slice-wise performance:
+  - By length decile, number-of-references decile, figures/tables/equations bins, readability bins [4].
+  - By venue/year and subject area/domain (e.g., theory vs applications) [1][4].
+- Confusion inspection:
+  - Examine top false positives/negatives with largest contribution from each hand-engineered feature using a linear model’s coefficients or SHAP on tree models; verify they reflect real quality, not spurious style/formatting [1][4].
+- Counterfactual sensitivity:
+  - Simple counterfactual edits to features (e.g., simulate +3 figures or +15 references by perturbing features) to test how sensitive the classifier is to incremental changes; report marginal effect curves [4].
+- Human-in-the-loop sanity checks:
+  - Present reviewers with anonymized pairs matched on length and topic where the model succeeds/fails; annotate whether failures arise from content understanding gaps vs surface cues [4].
+- Cross-source robustness:
+  - Train on ICLR/OpenReview subset and evaluate on ACL/NeurIPS subset to check if hand-engineered features generalize beyond a single reviewing culture [1]. 
 
 Three concrete, falsifiable experiments
-1) Feature-group drop and incremental stacking
-- Hypothesis: Acceptance accuracy gains are largely driven by length and reference-count features; readability adds little beyond text.
-- Design: Train a text-only baseline; then add feature groups cumulatively and via leave-one-group-out ablations. Report AUC/F1/Δ.
-- Expected outcome: Largest marginal gain from length/reference features; small or venue-dependent gains from readability. If not, hand-engineered design is contributing non-trivially.
-- Risk control: Use stratified temporal splits (train earlier years, test later) and cross-venue tests to avoid overfitting to formatting.
+1) Leave-one-group-out and length-normalization ablation
+   - Hypothesis: Structural counts (figures/tables/equations) provide predictive value beyond document length.
+   - Setup: Train a strong baseline (e.g., linear or tree model) on all features. Evaluate drops when removing (a) length group, (b) structure group, and (c) structure group with features normalized per 1k tokens. Also regress out length from all non-length features and re-train.
+   - Metrics: AUROC, accuracy, AUPRC; report 95% CIs. Stratify by length decile.
+   - Expected outcome: If structure adds genuine signal, removing structure after controlling for length causes a statistically significant drop; if not, drops vanish after normalization/regression [1][4].
 
-2) Residualization to remove surface confounds
-- Hypothesis: After regressing out length/reference/readability, a classifier trained on residuals will retain significantly above-chance performance, indicating content signal.
-- Design: Fit logistic regression of label on the surface feature set; compute residuals; train models to predict residuals. Compare to original label prediction metrics.
-- Success criterion: Residual AUC ≥ 0.60 with tight CIs would argue the model captures more than superficial cues; collapse toward 0.50 suggests spurious reliance.
+2) Section-scope and cross-venue generalization
+   - Hypothesis: Hand-engineered features concentrated in abstracts and introductions generalize across venues; full-body surface features may be venue-specific.
+   - Setup: Train three models: (A) title+abstract features only, (B) body-only features, (C) full paper. Evaluate in-domain (same venue-year) and cross-domain (train ICLR, test ACL/NeurIPS; swap directions).
+   - Metrics: AUROC/accuracy; Δ performance cross-domain vs in-domain.
+   - Expected outcome: If venue artifacts drive gains, cross-domain drops are larger for full-body features than for title+abstract features [1][3][4].
 
-3) Cross-venue and temporal generalization
-- Hypothesis: Hand-engineered features that capture venue-specific constraints (page limits, sectioning) will not transfer across venues/years, whereas content-based text features will degrade less.
-- Design: Train on Venue A Year t, test on Venue B Year t and Venue A Year t+1; compare performance drops by feature set.
-- Success criterion: Smaller relative drop for text-only vs. hand-engineered-only; if hand-engineered remains strong, investigate for leakage.
+3) Counterfactual feature sensitivity curves
+   - Hypothesis: Acceptance predictions should not change dramatically with small, plausible changes in structural counts (e.g., +1 figure, +5 references) once length is controlled.
+   - Setup: For held-out papers, perturb hand-engineered features locally (± increments), keeping length fixed. Plot predicted acceptance probability vs each feature value; compute average marginal effect and elasticity.
+   - Metrics: Slope and sensitivity (∆probability per unit change), compared before vs after length-normalization.
+   - Expected outcome: Large sensitivities that shrink substantially after normalization/regression indicate confounding by length; stable small sensitivities suggest robustness [4].
 
-4) Matched-pairs slice evaluation
-- Hypothesis: When matched on topic and length, the model can still separate accepts from rejects better than chance.
-- Design: Construct matched pairs by nearest neighbors in topic embedding and length; evaluate pairwise accuracy.
-- Success criterion: Pairwise accuracy significantly > 50% with bootstrap CIs; if not, conclusions likely hinge on superficial proxies.
-
-5) Permutation importance stress test
-- Hypothesis: Permuting length/reference features yields larger performance degradation than permuting readability or POS features.
-- Design: Permute one group at a time on held-out data; measure ΔAUC/F1 over 100 permutations.
-- Success criterion: Rank-ordered degradation quantifies reliance; report CIs to address variance.
-
-6) Qualitative audit of top errors
-- Hypothesis: High-confidence FPs/FNs reflect substantive factors (novelty claims, clarity) rather than purely stylistic artifacts.
-- Design: Manually inspect 50 top-confidence FPs/FNs; code failure reasons; report distribution and examples.
-- Success criterion: If stylistic artifacts dominate (>50%), revise features/modeling and re-run ablations.
-
-Literature anchors
-- A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications (NAACL 2018). Introduces the acceptance prediction task and baselines; reviewers will expect comparisons and confound checks grounded in this setup (https://aclanthology.org/N18-1149/ or https://arxiv.org/abs/1804.09635) [1].
-- Analyzing We-sentences in Scientific Writing to Predict Peer Review Ratings and Acceptance. Shows stylistic markers correlate with acceptance, underscoring the need to disentangle superficial cues from substantive content in feature design (https://ieeexplore.ieee.org/iel8/6287639/10820123/11151689.pdf) [2].
-
-Citations
-[1] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149/
-[2] Analyzing We-sentences in Scientific Writing to Predict Peer Review Ratings and Acceptance — https://ieeexplore.ieee.org/iel8/6287639/10820123/11151689.pdf
+Helpful anchors for baselines and expectations
+- PeerRead reported that simple surface/structural features (length, figures/tables/equations, references) carry signal for acceptance prediction and were part of their feature sets and analyses [1]. Use this to justify feature-group ablations and cross-venue tests.
+- Independent textual analyses of AI manuscripts similarly found outcome-associated signals in length, readability, and lexical indicators, reinforcing the need to disentangle content vs surface effects and to control for confounds via normalization and matched comparisons [4].
+- Section-aware neural baselines (e.g., modularized hierarchical CNNs) show that content-focused models can outperform hand-crafted features; include such baselines and then quantify incremental value of hand-engineered features on top [3].
 
 Key takeaways
-- Expect to justify hand-engineered features with group-wise ablations, leakage checks, and cross-venue/time robustness.
-- Show that any gains cannot be fully explained by surface proxies like length/reference counts/readability.
-- Provide slice/error analyses that reveal and mitigate spurious correlations, and document controls clearly.
+- Reviewers will expect rigorous leave-one-group-out ablations, length control/normalization, and cross-venue tests to rule out spurious correlations.
+- Provide slice-based error analysis and counterfactual sensitivity to demonstrate the model is not over-relying on superficial cues.
+- Anchor to PeerRead’s original feature choices and to independent analyses of outcome-associated text features; be explicit about any potential leakage.
+
+Citations
+[1] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[3] Automatic Academic Paper Rating Based on Modularized Hierarchical Convolutional Neural Network — https://www.semanticscholar.org/paper/Automatic-Academic-Paper-Rating-Based-on-Neural-Yang-Sun/1edb2cbdfcdd2c3258fe998b1b7ccd3611843016
+[4] Textual analysis of artificial intelligence manuscripts reveals features associated with peer review outcome — https://arxiv.org/abs/1911.02648
+[5] Multi-task Peer-Review Score Prediction — https://aclanthology.org/2020.sdp-1.14.pdf

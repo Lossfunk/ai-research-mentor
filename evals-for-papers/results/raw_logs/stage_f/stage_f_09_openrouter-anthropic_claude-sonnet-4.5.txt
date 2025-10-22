@@ -1,0 +1,2746 @@
+I'll create a comprehensive 2-week camera-ready sprint plan for your graph foundation models paper. To provide **specific, actionable tasks based on your actual content**, please upload your accepted paper PDF and reviewer comments.
+
+In the meantime, here's a complete camera-ready preparation framework:
+
+---
+
+## 📋 2-WEEK CAMERA-READY SPRINT PLAN: Graph Foundation Models Paper
+
+### ⚠️ CRITICAL: Camera-Ready Has Strict Deadlines
+
+Camera-ready submissions typically have:
+- **Hard deadline**: 2-3 weeks after acceptance notification
+- **No extensions**: Missing deadline = paper withdrawn from proceedings
+- **New requirements**: De-anonymization, copyright forms, artifact badges
+- **Quality bar**: This is the published version (永久记录)
+
+---
+
+## 🎯 OVERVIEW: 14-DAY SPRINT STRUCTURE
+
+```
+Week 1: Content Polish & De-anonymization
+├── Days 1-2:   Incorporate reviewer feedback
+├── Days 3-4:   De-anonymization & metadata
+├── Days 5-6:   Writing polish & proofreading
+└── Day 7:      Internal review checkpoint
+
+Week 2: Artifact Packaging & Release
+├── Days 8-9:   Code repository finalization
+├── Days 10-11: Documentation & licensing
+├── Days 12-13: Release notes & artifact badges
+└── Day 14:     Final submission & release
+```
+
+---
+
+## 📅 WEEK 1: CONTENT POLISH & DE-ANONYMIZATION
+
+### DAY 1 (Monday): Reviewer Feedback Integration
+
+**Morning (3 hours): Categorize Feedback**
+
+Create a feedback tracking spreadsheet:
+
+```
+| Reviewer | Type | Priority | Feedback | Action | Status | Page |
+|----------|------|----------|----------|--------|--------|------|
+| R1 | Experiment | High | Add ablation on edge features | Run exp | TODO | 6 |
+| R2 | Writing | Medium | Clarify notation in Eq. 3 | Rewrite | TODO | 4 |
+| R3 | Figure | Low | Increase font size in Fig. 2 | Remake | TODO | 5 |
+| Meta | Limitation | High | Discuss scalability limits | Add text | TODO | 8 |
+```
+
+**Priority levels:**
+- **High**: Required changes (meta-reviewer or multiple reviewers)
+- **Medium**: Strongly suggested (single reviewer, good point)
+- **Low**: Nice-to-have (minor improvements)
+
+**Afternoon (4 hours): High-Priority Changes**
+
+**Task 1: Required experiments** (if any)
+```bash
+# Example: Reviewer requested ablation on edge features
+python experiments/ablation_edge_features.py \
+    --datasets ogbn-arxiv ogbn-products \
+    --models GNN-Transformer \
+    --seeds 5
+
+# Generate updated table
+python analysis/generate_table3_updated.py
+```
+
+**Task 2: Clarifications and corrections**
+- [ ] Fix any errors pointed out by reviewers
+- [ ] Clarify ambiguous statements
+- [ ] Add missing citations
+- [ ] Correct notation inconsistencies
+
+**Evening (2 hours): Medium-Priority Changes**
+
+- [ ] Improve figure quality (higher DPI, larger fonts)
+- [ ] Enhance captions for clarity
+- [ ] Add requested visualizations
+- [ ] Expand related work (if requested)
+
+**Deliverable**: Updated draft with all high-priority changes
+
+---
+
+### DAY 2 (Tuesday): Complete Feedback Integration
+
+**Morning (3 hours): Low-Priority Polish**
+
+- [ ] Minor writing improvements
+- [ ] Additional references
+- [ ] Formatting tweaks
+- [ ] Supplementary material updates
+
+**Afternoon (4 hours): New Content (if required)**
+
+**Common additions for graph foundation models:**
+
+**1. Scalability analysis** (if reviewers asked)
+```latex
+\subsection{Scalability Analysis}
+
+We analyze the computational complexity and memory requirements 
+of our graph foundation model:
+
+\textbf{Time complexity:}
+\begin{itemize}
+\item \textbf{Message passing}: $O(|E| \cdot d)$ where $|E|$ is 
+  number of edges, $d$ is hidden dimension
+\item \textbf{Attention}: $O(|V|^2 \cdot d)$ for full graph, 
+  $O(|V| \cdot k \cdot d)$ with $k$-hop neighborhoods
+\item \textbf{Total per layer}: $O(|E| \cdot d + |V| \cdot k \cdot d)$
+\end{itemize}
+
+\textbf{Memory complexity:}
+\begin{itemize}
+\item \textbf{Node embeddings}: $O(|V| \cdot d)$
+\item \textbf{Edge features}: $O(|E| \cdot d_e)$
+\item \textbf{Attention weights}: $O(|V| \cdot k)$ (sparse storage)
+\end{itemize}
+
+\textbf{Empirical scaling:} We evaluate on graphs of varying sizes:
+
+\begin{table}[h]
+\centering
+\caption{Scaling behavior on synthetic graphs}
+\begin{tabular}{lrrr}
+\toprule
+Graph Size & Training Time & Memory (GB) & Throughput \\
+\midrule
+$10^4$ nodes & 2.3 min & 1.2 & 4.3k nodes/s \\
+$10^5$ nodes & 18.7 min & 8.4 & 5.3k nodes/s \\
+$10^6$ nodes & 3.2 hours & 42.1 & 4.8k nodes/s \\
+$10^7$ nodes & OOM & - & - \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Our model scales to graphs with millions of nodes on a single 
+A100 GPU. For larger graphs, we recommend mini-batch training 
+with neighborhood sampling (see Appendix C for details).
+```
+
+**2. Failure mode analysis** (if reviewers asked)
+```latex
+\subsection{Failure Mode Analysis}
+
+We identify scenarios where our model underperforms:
+
+\textbf{1. Extremely sparse graphs} ($|E| < |V|$):
+- Performance degrades when average degree < 2
+- Message passing has insufficient information flow
+- Mitigation: Add virtual edges or use positional encodings
+
+\textbf{2. Highly heterophilic graphs}:
+- Accuracy drops 8-12\% on graphs where connected nodes 
+  have different labels (e.g., Wikipedia networks)
+- Our model assumes homophily (similar nodes connect)
+- Mitigation: Use higher-order neighborhoods or heterophilic GNN layers
+
+\textbf{3. Dynamic graphs with rapid changes}:
+- Model trained on static snapshots
+- Performance degrades when >20\% of edges change between snapshots
+- Mitigation: Continual learning or temporal graph models
+
+See Appendix D for detailed analysis and examples.
+```
+
+**3. Broader impacts** (if required by venue)
+```latex
+\section*{Broader Impacts}
+
+\textbf{Positive impacts:}
+\begin{itemize}
+\item Enables graph-based applications in drug discovery, 
+  social network analysis, and recommendation systems
+\item Pre-trained models reduce computational costs for 
+  downstream tasks (democratizes access)
+\item Open-source release promotes reproducibility and 
+  further research
+\end{itemize}
+
+\textbf{Potential negative impacts:}
+\begin{itemize}
+\item \textbf{Privacy}: Graph models can leak sensitive 
+  information through link prediction or node embeddings
+  - Mitigation: We provide differential privacy training 
+    option (see Appendix E)
+\item \textbf{Bias}: Pre-training on biased graphs (e.g., 
+  social networks) can amplify existing biases
+  - Mitigation: We evaluate fairness metrics and provide 
+    debiasing techniques
+\item \textbf{Misuse}: Models could be used for surveillance 
+  or manipulation in social networks
+  - Mitigation: We include ethical guidelines in documentation
+\item \textbf{Environmental cost}: Large-scale pre-training 
+  consumes significant energy
+  - Mitigation: We report carbon footprint and provide 
+    smaller model variants
+\end{itemize}
+
+\textbf{Recommendations for practitioners:}
+\begin{itemize}
+\item Evaluate fairness on your specific downstream task
+\item Consider privacy implications before deploying on 
+  sensitive graphs
+\item Use smaller models when possible to reduce environmental impact
+\item Follow ethical guidelines in our documentation
+\end{itemize}
+```
+
+**Evening (2 hours): Verify All Changes**
+
+- [ ] Cross-check all reviewer comments addressed
+- [ ] Update response letter (if required)
+- [ ] Mark all items as "Done" in tracking spreadsheet
+
+**Deliverable**: Complete draft with all reviewer feedback incorporated
+
+---
+
+### DAY 3 (Wednesday): De-anonymization
+
+**Morning (3 hours): Author Information**
+
+**Task 1: Add author names and affiliations**
+
+```latex
+% Remove anonymous placeholder
+% \author{Anonymous Submission}
+
+% Add real authors
+\author{
+  Jane Smith\thanks{Equal contribution} \\
+  Stanford University \\
+  \texttt{jsmith@stanford.edu} \\
+  \And
+  John Doe\footnotemark[1] \\
+  MIT \\
+  \texttt{jdoe@mit.edu} \\
+  \And
+  Alice Johnson \\
+  Google Research \\
+  \texttt{alicejohnson@google.com}
+}
+
+% For some templates (e.g., NeurIPS):
+\author{%
+  \textbf{Jane Smith}$^{1,*}$ \quad
+  \textbf{John Doe}$^{2,*}$ \quad
+  \textbf{Alice Johnson}$^{3}$ \\
+  $^1$Stanford University \quad
+  $^2$MIT \quad
+  $^3$Google Research \\
+  \texttt{\{jsmith, jdoe, alicejohnson\}@\{stanford, mit, google\}.edu} \\
+  $^*$Equal contribution
+}
+```
+
+**Task 2: Add acknowledgments**
+
+```latex
+\section*{Acknowledgments}
+
+We thank [collaborators] for helpful discussions and feedback. 
+We thank [reviewers] for their constructive comments that 
+improved this work. 
+
+This work was supported by [funding sources]:
+\begin{itemize}
+\item NSF Grant \#1234567 (J.S.)
+\item Google PhD Fellowship (J.D.)
+\item MIT-IBM Watson AI Lab (A.J.)
+\end{itemize}
+
+Computational resources were provided by [institution/cloud provider]. 
+We thank [technical staff] for infrastructure support.
+
+We acknowledge the use of the following datasets: [list datasets 
+and cite original papers]. We thank the creators for making these 
+resources publicly available.
+
+[Optional: Acknowledge specific individuals who helped but are 
+not co-authors, e.g., "We thank Bob Lee for assistance with 
+baseline implementations."]
+```
+
+**Task 3: Restore self-citations**
+
+```latex
+% During review (anonymized):
+% Prior work [5] showed that graph transformers...
+
+% Camera-ready (de-anonymized):
+In our previous work \citep{smith2023graph}, we showed that 
+graph transformers can effectively capture long-range dependencies.
+
+% Or if you prefer third person:
+Smith et al. \citep{smith2023graph} showed that graph transformers 
+can effectively capture long-range dependencies.
+```
+
+**Afternoon (3 hours): Metadata and Links**
+
+**Task 4: Add project page and code links**
+
+```latex
+% In abstract or introduction:
+\begin{abstract}
+[Your abstract text...]
+
+Code and pre-trained models are available at 
+\url{https://github.com/yourlab/graph-foundation-models}.
+Project page: \url{https://yourlab.github.io/graph-fm}.
+\end{abstract}
+
+% Or as footnote on first page:
+\thanks{Code: \url{https://github.com/yourlab/graph-foundation-models}}
+```
+
+**Task 5: Update references**
+
+```latex
+% Add any papers that were "under review" during submission
+% and are now published/accepted
+
+% Before (during review):
+% \bibitem{concurrent}
+% Anonymous. Concurrent work on graph transformers. 
+% Under review, 2024.
+
+% After (camera-ready):
+\bibitem{concurrent}
+Bob Lee and Carol White.
+Graph Transformers with Positional Encodings.
+\emph{ICML}, 2024.
+```
+
+**Task 6: Add copyright notice** (venue-specific)
+
+```latex
+% For ACM venues (e.g., KDD, WWW):
+\copyrightyear{2025}
+\acmYear{2025}
+\setcopyright{acmlicensed}
+\acmConference[KDD '25]{ACM SIGKDD Conference on Knowledge 
+Discovery and Data Mining}{August 3--7, 2025}{Toronto, Canada}
+\acmBooktitle{Proceedings of KDD '25}
+\acmPrice{15.00}
+\acmDOI{10.1145/1234567.1234567}
+\acmISBN{978-1-4503-XXXX-X/25/08}
+
+% For IEEE venues (e.g., ICDM):
+\IEEEoverridecommandlockouts
+\IEEEpubid{\makebox[\columnwidth]{978-1-6654-XXXX-X/25/\$31.00 
+~\copyright~2025 IEEE \hfill} \hspace{\columnsep}\makebox[\columnwidth]{ }}
+
+% For NeurIPS/ICML/ICLR:
+% No copyright notice needed (handled by proceedings)
+```
+
+**Evening (2 hours): Verify De-anonymization**
+
+**Checklist:**
+- [ ] All author names added
+- [ ] All affiliations correct
+- [ ] Email addresses included
+- [ ] Equal contribution noted (if applicable)
+- [ ] Acknowledgments added
+- [ ] Funding sources listed
+- [ ] Self-citations restored
+- [ ] Code/project links added
+- [ ] Copyright notice added (if required)
+- [ ] No remaining "Anonymous" text
+- [ ] No remaining "[REDACTED]" or "[INSTITUTION]" placeholders
+
+**Search for common anonymization artifacts:**
+```bash
+# Search PDF for anonymization remnants
+pdftotext paper.pdf - | grep -i "anonymous"
+pdftotext paper.pdf - | grep -i "redacted"
+pdftotext paper.pdf - | grep -i "institution"
+pdftotext paper.pdf - | grep -i "under review"
+```
+
+**Deliverable**: Fully de-anonymized camera-ready draft
+
+---
+
+### DAY 4 (Thursday): Metadata and Formatting
+
+**Morning (3 hours): Venue-Specific Formatting**
+
+**Task 1: Apply camera-ready template** (if different from review)
+
+```bash
+# Download camera-ready template
+wget https://venue-website.com/camera-ready-template.zip
+unzip camera-ready-template.zip
+
+# Copy your content to new template
+# (Usually same as review template, but verify)
+```
+
+**Task 2: Update metadata**
+
+```latex
+% Title (verify exact capitalization)
+\title{Graph Foundation Models: Pre-training and Transfer Learning 
+for Molecular Property Prediction}
+
+% Or with line breaks for long titles:
+\title{Graph Foundation Models: \\
+Pre-training and Transfer Learning for \\
+Molecular Property Prediction}
+
+% Keywords (venue-specific)
+\keywords{Graph Neural Networks, Foundation Models, Transfer 
+Learning, Molecular Property Prediction, Pre-training}
+
+% Subject areas (for some venues)
+\begin{IEEEkeywords}
+Graph neural networks, transfer learning, molecular graphs
+\end{IEEEkeywords}
+```
+
+**Task 3: Page limit verification**
+
+```latex
+% Check page count
+% Camera-ready often allows +1 page vs. review version
+
+% NeurIPS: 9 pages → 9 pages (same)
+% ICML: 8 pages → 8 pages (same)
+% KDD: 9 pages → 10 pages (+1 for camera-ready)
+% ICLR: ~8-10 pages → same (no strict limit)
+
+% If over limit, move content to appendix:
+% - Detailed proofs → Appendix A
+% - Additional experiments → Appendix B
+% - Hyperparameter tables → Appendix C
+% - Extended related work → Appendix D
+```
+
+**Afternoon (3 hours): Figure and Table Polish**
+
+**Task 4: High-resolution figures**
+
+```python
+# Regenerate all figures at 300+ DPI
+import matplotlib.pyplot as plt
+
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 300
+plt.rcParams['font.size'] = 10
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Times New Roman']
+
+# Example: Regenerate Figure 2
+fig, ax = plt.subplots(figsize=(6, 4))
+# [Your plotting code...]
+plt.savefig('figures/figure2.pdf', dpi=300, bbox_inches='tight')
+plt.savefig('figures/figure2.png', dpi=300, bbox_inches='tight')
+```
+
+**Task 5: Consistent styling**
+
+```latex
+% Use vector graphics (PDF) for plots
+\includegraphics[width=0.48\textwidth]{figures/figure2.pdf}
+
+% Use PNG only for photos/screenshots (at 300+ DPI)
+\includegraphics[width=0.48\textwidth]{figures/architecture.png}
+
+% Ensure all figures have:
+% - Readable fonts (10pt minimum)
+% - Clear legends
+% - Axis labels
+% - Consistent color scheme
+% - Grayscale-friendly colors (for printing)
+```
+
+**Task 6: Table formatting**
+
+```latex
+% Use booktabs for professional tables
+\usepackage{booktabs}
+
+\begin{table}[t]
+\centering
+\caption{Performance comparison on molecular property prediction}
+\label{tab:main_results}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Method} & \textbf{BBBP} & \textbf{Tox21} & \textbf{HIV} & \textbf{Avg.} \\
+\midrule
+GCN & 68.2 $\pm$ 1.3 & 75.4 $\pm$ 0.8 & 76.1 $\pm$ 1.1 & 73.2 \\
+GAT & 70.1 $\pm$ 1.0 & 76.8 $\pm$ 0.9 & 77.3 $\pm$ 0.7 & 74.7 \\
+GraphSAINT & 71.5 $\pm$ 0.9 & 77.2 $\pm$ 0.6 & 78.0 $\pm$ 0.8 & 75.6 \\
+\midrule
+\textbf{GraphFM (Ours)} & \textbf{74.3 $\pm$ 0.7} & \textbf{79.1 $\pm$ 0.5} & \textbf{80.2 $\pm$ 0.6} & \textbf{77.9} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Formatting guidelines:
+% - Bold best results
+% - Use $\pm$ for standard deviation
+% - Align numbers on decimal point
+% - Use \midrule to separate sections
+% - Caption above table (not below)
+```
+
+**Evening (2 hours): Reference Formatting**
+
+**Task 7: Clean up bibliography**
+
+```bibtex
+% Ensure consistent formatting:
+% - All author names (First Last or Last, First)
+% - All titles (sentence case or title case, consistent)
+% - All venues (full name or abbreviation, consistent)
+% - All years
+% - All page numbers (if applicable)
+
+% Example:
+@inproceedings{kipf2017semi,
+  title={Semi-Supervised Classification with Graph Convolutional Networks},
+  author={Kipf, Thomas N and Welling, Max},
+  booktitle={International Conference on Learning Representations (ICLR)},
+  year={2017}
+}
+
+% Use DOI or URL for online resources:
+@article{hu2020open,
+  title={Open Graph Benchmark: Datasets for Machine Learning on Graphs},
+  author={Hu, Weihua and Fey, Matthias and Zitnik, Marinka and others},
+  journal={Advances in Neural Information Processing Systems (NeurIPS)},
+  volume={33},
+  pages={22118--22133},
+  year={2020},
+  url={https://arxiv.org/abs/2005.00687}
+}
+```
+
+**Task 8: Verify all citations**
+
+```bash
+# Check for missing citations
+grep "?" paper.pdf  # Look for [?] in PDF
+
+# Check for duplicate citations
+# (Some BibTeX entries may be duplicated with different keys)
+
+# Verify all URLs are accessible
+# Extract URLs from .bib file and test
+```
+
+**Deliverable**: Polished, properly formatted camera-ready draft
+
+---
+
+### DAY 5 (Friday): Writing Polish
+
+**Morning (4 hours): Proofreading Pass 1**
+
+**Task 1: Automated checks**
+
+```bash
+# Spell check
+aspell -c paper.tex
+
+# Grammar check (using LanguageTool)
+languagetool paper.tex > grammar_issues.txt
+
+# Or use online tools:
+# - Grammarly (paste text)
+# - Hemingway Editor (readability)
+# - ProWritingAid
+```
+
+**Task 2: Common issues for graph ML papers**
+
+**Notation consistency:**
+```latex
+% Define notation clearly and use consistently
+
+% In introduction or preliminaries:
+\textbf{Notation:} We denote a graph as $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ 
+where $\mathcal{V}$ is the set of nodes and $\mathcal{E}$ is the set of edges. 
+Node features are denoted as $\mathbf{X} \in \mathbb{R}^{|\mathcal{V}| \times d}$ 
+where $d$ is the feature dimension. We use $\mathbf{h}_v^{(l)}$ to denote the 
+hidden representation of node $v$ at layer $l$.
+
+% Then use consistently throughout:
+% ✓ Good: $\mathbf{h}_v^{(l+1)} = \sigma(\mathbf{W}^{(l)} \mathbf{h}_v^{(l)})$
+% ✗ Bad:  $h_{v,l+1} = \sigma(W_l h_{v,l})$ (inconsistent notation)
+```
+
+**Terminology consistency:**
+```latex
+% Choose one term and stick with it:
+% - "Graph neural network" or "GNN" (not both interchangeably)
+% - "Pre-training" or "pretraining" (not both)
+% - "Fine-tuning" or "finetuning" (not both)
+% - "Node" or "vertex" (not both)
+% - "Edge" or "link" (not both)
+
+% Create a terminology table:
+% Preferred term | Avoid
+% Graph neural network (GNN) | Graph convolutional network (unless specific)
+% Pre-training | Pretraining
+% Fine-tuning | Finetuning
+% Node | Vertex
+% Edge | Link
+% Molecular graph | Molecule (when referring to graph representation)
+```
+
+**Afternoon (3 hours): Proofreading Pass 2**
+
+**Task 3: Read aloud**
+
+- [ ] Read entire paper aloud (or use text-to-speech)
+- [ ] Mark awkward sentences
+- [ ] Note unclear transitions
+- [ ] Identify repetitive phrases
+
+**Task 4: Check for common writing issues**
+
+```latex
+% ✗ Avoid passive voice (when possible):
+% Bad:  "The model was trained on 10 datasets."
+% Good: "We trained the model on 10 datasets."
+
+% ✗ Avoid vague quantifiers:
+% Bad:  "Our model performs significantly better."
+% Good: "Our model achieves 5.2% higher accuracy (p < 0.001)."
+
+% ✗ Avoid overclaiming:
+% Bad:  "Our model clearly outperforms all baselines."
+% Good: "Our model outperforms all baselines on 7 out of 8 datasets."
+
+% ✗ Avoid unnecessary jargon:
+% Bad:  "We leverage a novel paradigm for graph representation learning."
+% Good: "We propose a new method for learning graph representations."
+
+% ✓ Use parallel structure:
+% Bad:  "Our contributions are: (1) a new model, (2) we evaluate on 
+%        8 datasets, (3) releasing code."
+% Good: "Our contributions are: (1) a new model, (2) evaluation on 
+%        8 datasets, (3) open-source code release."
+```
+
+**Evening (2 hours): Abstract and Introduction Polish**
+
+**Task 5: Strengthen abstract**
+
+```latex
+\begin{abstract}
+% Structure: Problem → Gap → Solution → Results → Impact
+
+% ✗ Weak abstract:
+% "Graph neural networks are important. We propose a new model. 
+%  It works well on several datasets."
+
+% ✓ Strong abstract:
+Graph foundation models have emerged as a powerful paradigm for 
+learning transferable representations across diverse graph-structured 
+data. However, existing approaches are limited by (1) reliance on 
+task-specific architectures and (2) lack of large-scale pre-training 
+strategies tailored to graph data.
+
+We propose \textbf{GraphFM}, a graph foundation model that combines 
+self-supervised pre-training on 100M+ graphs with a flexible 
+architecture that adapts to downstream tasks via prompt tuning. 
+Our key innovations include: (1) a graph-aware masking strategy 
+that preserves structural information, (2) a hierarchical attention 
+mechanism that captures multi-scale patterns, and (3) a unified 
+framework for node, edge, and graph-level tasks.
+
+We evaluate GraphFM on 15 benchmarks spanning molecular property 
+prediction, social network analysis, and knowledge graph reasoning. 
+GraphFM achieves state-of-the-art results on 12/15 tasks, with 
+an average improvement of 7.3\% over previous best methods. 
+Notably, GraphFM requires 10× less labeled data to match the 
+performance of task-specific models.
+
+Code and pre-trained models: \url{https://github.com/yourlab/graphfm}
+\end{abstract}
+```
+
+**Task 6: Strengthen introduction**
+
+```latex
+% Introduction structure:
+% 1. Motivation (why is this problem important?)
+% 2. Gap (what's missing in existing work?)
+% 3. Solution (what do we propose?)
+% 4. Contributions (what are the key innovations?)
+% 5. Results preview (what did we achieve?)
+% 6. Paper organization (optional)
+
+% ✓ Strong opening paragraph:
+Graph-structured data is ubiquitous, from molecular graphs in drug 
+discovery \citep{stokes2020deep} to social networks in recommendation 
+systems \citep{ying2018graph} to knowledge graphs in question 
+answering \citep{yasunaga2021qa}. Graph neural networks (GNNs) have 
+emerged as the dominant approach for learning on graphs, achieving 
+state-of-the-art results across diverse applications 
+\citep{kipf2017semi, veličković2018graph, xu2019how}. However, 
+training GNNs from scratch requires large amounts of labeled data, 
+which is expensive to obtain in many domains (e.g., molecular 
+property prediction requires costly wet-lab experiments).
+
+% ✓ Clear gap statement:
+Recent work has explored pre-training GNNs on unlabeled graphs to 
+learn transferable representations \citep{hu2020strategies, you2020graph}. 
+However, existing approaches face two key limitations: (1) they rely 
+on task-specific architectures that do not generalize across node, 
+edge, and graph-level tasks, and (2) they use pre-training objectives 
+(e.g., node attribute masking) that do not fully leverage the rich 
+structural information in graphs.
+
+% ✓ Clear solution statement:
+In this work, we propose \textbf{GraphFM}, a graph foundation model 
+that addresses these limitations through...
+```
+
+**Deliverable**: Polished, proofread camera-ready draft
+
+---
+
+### DAY 6 (Saturday): Final Content Review
+
+**Morning (3 hours): Co-author Review**
+
+**Task 1: Send to all co-authors**
+
+```
+Subject: [ACTION REQUIRED] Camera-ready review - Due Monday
+
+Hi all,
+
+Please review the attached camera-ready draft by Monday 9am.
+
+Key changes since acceptance:
+- Incorporated all reviewer feedback (see response letter)
+- Added scalability analysis (Section 5.3)
+- Improved Figure 2 clarity
+- De-anonymized and added acknowledgments
+
+Please check:
+1. Your name and affiliation are correct
+2. Acknowledgments are appropriate
+3. No errors or typos
+4. All claims are accurate
+
+Camera-ready deadline is [DATE]. Please send feedback ASAP.
+
+Thanks,
+[Your name]
+```
+
+**Task 2: Create review checklist for co-authors**
+
+```markdown
+## Camera-Ready Review Checklist
+
+### Metadata
+- [ ] All author names spelled correctly
+- [ ] All affiliations correct
+- [ ] Email addresses correct
+- [ ] Equal contribution noted (if applicable)
+
+### Content
+- [ ] Abstract accurately summarizes paper
+- [ ] Introduction clearly states contributions
+- [ ] All claims are supported by experiments
+- [ ] No overclaiming or unsupported statements
+- [ ] Limitations discussed appropriately
+
+### Figures and Tables
+- [ ] All figures are clear and readable
+- [ ] All captions are accurate
+- [ ] All tables are formatted consistently
+- [ ] All results match the text
+
+### References
+- [ ] All citations are accurate
+- [ ] No missing references
+- [ ] All URLs are accessible
+
+### Acknowledgments
+- [ ] All funding sources listed
+- [ ] All collaborators acknowledged
+- [ ] No one inappropriately acknowledged
+
+### Code and Data
+- [ ] Code repository link is correct
+- [ ] Project page link is correct
+- [ ] License is appropriate
+
+### Other
+- [ ] No typos or grammatical errors
+- [ ] Notation is consistent
+- [ ] Terminology is consistent
+```
+
+**Afternoon (3 hours): External Review (Optional)**
+
+**Task 3: Send to trusted colleague**
+
+- [ ] Choose someone familiar with graph ML but not a co-author
+- [ ] Ask for high-level feedback (clarity, impact, errors)
+- [ ] Set deadline (24-48 hours)
+
+**Evening (2 hours): Address Feedback**
+
+- [ ] Compile all co-author feedback
+- [ ] Prioritize changes (critical → nice-to-have)
+- [ ] Make critical changes immediately
+- [ ] Defer nice-to-have changes if time-constrained
+
+**Deliverable**: Final camera-ready draft approved by all co-authors
+
+---
+
+### DAY 7 (Sunday): Internal Review Checkpoint
+
+**Morning (2 hours): Final Checks**
+
+**Checklist:**
+
+**Content:**
+- [ ] All reviewer feedback incorporated
+- [ ] All co-author feedback addressed
+- [ ] Abstract is compelling and accurate
+- [ ] Introduction clearly states contributions
+- [ ] Related work is comprehensive and fair
+- [ ] Methodology is clear and reproducible
+- [ ] Experiments are thorough and well-analyzed
+- [ ] Limitations are discussed honestly
+- [ ] Conclusion summarizes key takeaways
+
+**Formatting:**
+- [ ] Page limit satisfied (or +1 if allowed)
+- [ ] All figures high resolution (300+ DPI)
+- [ ] All tables formatted consistently
+- [ ] All captions are clear and self-contained
+- [ ] All references formatted correctly
+- [ ] Copyright notice added (if required)
+
+**De-anonymization:**
+- [ ] All author names and affiliations added
+- [ ] Acknowledgments added
+- [ ] Self-citations restored
+- [ ] Code/project links added
+- [ ] No remaining "Anonymous" text
+
+**Metadata:**
+- [ ] Title is correct
+- [ ] Keywords are appropriate
+- [ ] Subject areas are correct (if applicable)
+
+**Afternoon (2 hours): Generate Final PDF**
+
+```bash
+# Clean build
+rm -f paper.aux paper.bbl paper.blg paper.log paper.out
+pdflatex paper.tex
+bibtex paper
+pdflatex paper.tex
+pdflatex paper.tex
+
+# Verify PDF
+pdfinfo paper.pdf
+# Check: page count, file size, fonts embedded
+
+# Create backup
+cp paper.pdf paper_camera_ready_v1.pdf
+```
+
+**Evening (1 hour): Celebrate Week 1 Completion! 🎉**
+
+- [ ] Paper content is finalized
+- [ ] Ready to focus on artifacts in Week 2
+
+---
+
+## 📅 WEEK 2: ARTIFACT PACKAGING & RELEASE
+
+### DAY 8 (Monday): Code Repository Finalization
+
+**Morning (4 hours): Code Cleanup**
+
+**Task 1: Repository structure**
+
+```
+graph-foundation-models/
+├── README.md                    # Main documentation
+├── LICENSE                      # License file (see Day 11)
+├── CITATION.cff                 # Citation metadata
+├── requirements.txt             # Python dependencies
+├── environment.yml              # Conda environment
+├── setup.py                     # Package installation
+├── .gitignore                   # Git ignore rules
+├── configs/
+│   ├── pretraining.yaml        # Pre-training config
+│   ├── finetuning.yaml         # Fine-tuning config
+│   └── datasets.yaml           # Dataset configurations
+├── graphfm/
+│   ├── __init__.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── graphfm.py          # Main model
+│   │   ├── encoder.py          # Graph encoder
+│   │   ├── attention.py        # Attention mechanisms
+│   │   └── decoder.py          # Task-specific decoders
+│   ├── data/
+│   │   ├── __init__.py
+│   │   ├── datasets.py         # Dataset loaders
+│   │   ├── transforms.py       # Data augmentation
+│   │   └── samplers.py         # Graph sampling
+│   ├── training/
+│   │   ├── __init__.py
+│   │   ├── pretrain.py         # Pre-training loop
+│   │   ├── finetune.py         # Fine-tuning loop
+│   │   └── utils.py            # Training utilities
+│   └── utils/
+│       ├── __init__.py
+│       ├── metrics.py          # Evaluation metrics
+│       ├── visualization.py    # Plotting functions
+│       └── logging.py          # Logging utilities
+├── scripts/
+│   ├── pretrain.py             # Pre-training script
+│   ├── finetune.py             # Fine-tuning script
+│   ├── evaluate.py             # Evaluation script
+│   └── download_data.py        # Data download script
+├── experiments/
+│   ├── reproduce_table1.sh     # Reproduce main results
+│   ├── reproduce_table2.sh     # Reproduce ablations
+│   └── reproduce_figures.sh    # Reproduce figures
+├── notebooks/
+│   ├── quickstart.ipynb        # Quick start tutorial
+│   ├── pretrain_demo.ipynb     # Pre-training demo
+│   └── finetune_demo.ipynb     # Fine-tuning demo
+├── tests/
+│   ├── test_models.py          # Model unit tests
+│   ├── test_data.py            # Data loading tests
+│   └── test_training.py        # Training tests
+├── docs/
+│   ├── index.md                # Documentation home
+│   ├── installation.md         # Installation guide
+│   ├── quickstart.md           # Quick start guide
+│   ├── api.md                  # API reference
+│   └── faq.md                  # FAQ
+├── checkpoints/
+│   ├── graphfm_pretrained.pt   # Pre-trained model
+│   ├── graphfm_bbbp.pt         # Fine-tuned on BBBP
+│   └── README.md               # Checkpoint descriptions
+└── data/
+    ├── README.md               # Data documentation
+    └── [datasets will be downloaded here]
+```
+
+**Task 2: Code quality checks**
+
+```bash
+# Format code
+black graphfm/ scripts/ tests/
+isort graphfm/ scripts/ tests/
+
+# Lint code
+pylint graphfm/ --disable=C0103,R0913
+flake8 graphfm/ --max-line-length=100
+
+# Type checking (optional but recommended)
+mypy graphfm/ --ignore-missing-imports
+
+# Run tests
+pytest tests/ -v --cov=graphfm
+```
+
+**Task 3: Add docstrings**
+
+```python
+# Example: graphfm/models/graphfm.py
+
+class GraphFM(nn.Module):
+    """Graph Foundation Model for pre-training and transfer learning.
+    
+    This model combines graph neural networks with transformer-style
+    attention to learn transferable representations from large-scale
+    graph data. It supports both pre-training (self-supervised) and
+    fine-tuning (supervised) on downstream tasks.
+    
+    Args:
+        num_layers (int): Number of GNN layers. Default: 12.
+        hidden_dim (int): Hidden dimension size. Default: 768.
+        num_heads (int): Number of attention heads. Default: 12.
+        dropout (float): Dropout probability. Default: 0.1.
+        activation (str): Activation function ('relu', 'gelu'). Default: 'gelu'.
+        norm (str): Normalization type ('batch', 'layer'). Default: 'layer'.
+        
+    Example:
+        >>> model = GraphFM(num_layers=12, hidden_dim=768)
+        >>> output = model(graph)
+        >>> print(output.shape)  # (num_nodes, hidden_dim)
+        
+    Reference:
+        Smith et al. "Graph Foundation Models: Pre-training and Transfer
+        Learning for Molecular Property Prediction." NeurIPS 2024.
+    """
+    
+    def __init__(
+        self,
+        num_layers: int = 12,
+        hidden_dim: int = 768,
+        num_heads: int = 12,
+        dropout: float = 0.1,
+        activation: str = 'gelu',
+        norm: str = 'layer',
+    ):
+        super().__init__()
+        # [Implementation...]
+        
+    def forward(self, graph):
+        """Forward pass through the model.
+        
+        Args:
+            graph: PyTorch Geometric Data object with attributes:
+                - x (Tensor): Node features, shape (num_nodes, num_features)
+                - edge_index (LongTensor): Edge indices, shape (2, num_edges)
+                - edge_attr (Tensor, optional): Edge features
+                - batch (LongTensor, optional): Batch assignment
+                
+        Returns:
+            Tensor: Node embeddings, shape (num_nodes, hidden_dim)
+            
+        Raises:
+            ValueError: If graph is missing required attributes.
+        """
+        # [Implementation...]
+```
+
+**Afternoon (4 hours): Reproducibility Scripts**
+
+**Task 4: Create reproduction scripts**
+
+```bash
+# scripts/reproduce_table1.sh
+
+#!/bin/bash
+# Reproduce Table 1: Main results on molecular property prediction
+
+set -e  # Exit on error
+
+echo "Reproducing Table 1: Main results"
+echo "This will take approximately 8 hours on a single A100 GPU"
+echo ""
+
+# Download datasets
+echo "Downloading datasets..."
+python scripts/download_data.py --datasets BBBP Tox21 HIV BACE ClinTox SIDER
+
+# Download pre-trained model
+echo "Downloading pre-trained model..."
+wget https://huggingface.co/yourlab/graphfm/resolve/main/graphfm_pretrained.pt \
+    -O checkpoints/graphfm_pretrained.pt
+
+# Fine-tune on each dataset
+for dataset in BBBP Tox21 HIV BACE ClinTox SIDER; do
+    echo "Fine-tuning on $dataset..."
+    python scripts/finetune.py \
+        --dataset $dataset \
+        --pretrained checkpoints/graphfm_pretrained.pt \
+        --config configs/finetuning.yaml \
+        --output results/${dataset} \
+        --seeds 0 1 2 3 4  # 5 seeds for statistical significance
+done
+
+# Evaluate and generate table
+echo "Generating Table 1..."
+python scripts/evaluate.py \
+    --results_dir results/ \
+    --output tables/table1.tex
+
+echo "Done! Results saved to tables/table1.tex"
+```
+
+**Task 5: Create quickstart notebook**
+
+```python
+# notebooks/quickstart.ipynb
+
+"""
+# GraphFM Quickstart
+
+This notebook demonstrates how to use GraphFM for molecular property prediction.
+
+## Installation
+
+```bash
+pip install graph-foundation-models
+```
+
+## Load Pre-trained Model
+"""
+
+import torch
+from graphfm import GraphFM
+from graphfm.data import MoleculeDataset
+
+# Load pre-trained model
+model = GraphFM.from_pretrained('yourlab/graphfm-base')
+model.eval()
+
+"""
+## Load Dataset
+"""
+
+# Load BBBP dataset (blood-brain barrier penetration)
+dataset = MoleculeDataset(name='BBBP', root='data/')
+print(f"Dataset: {len(dataset)} molecules")
+
+# Get a sample molecule
+graph = dataset[0]
+print(f"Molecule: {graph.num_nodes} atoms, {graph.num_edges} bonds")
+
+"""
+## Generate Embeddings
+"""
+
+with torch.no_grad():
+    embeddings = model(graph)
+    print(f"Embeddings shape: {embeddings.shape}")
+
+"""
+## Fine-tune on Downstream Task
+"""
+
+from graphfm.training import Trainer
+
+# Create trainer
+trainer = Trainer(
+    model=model,
+    dataset=dataset,
+    task='classification',
+    num_epochs=50,
+    learning_rate=1e-4,
+)
+
+# Fine-tune
+trainer.train()
+
+# Evaluate
+results = trainer.evaluate()
+print(f"Test accuracy: {results['accuracy']:.2%}")
+
+"""
+## Next Steps
+
+- See `pretrain_demo.ipynb` for pre-training from scratch
+- See `finetune_demo.ipynb` for advanced fine-tuning options
+- See documentation at https://yourlab.github.io/graphfm
+"""
+```
+
+**Evening (2 hours): Testing**
+
+```bash
+# Test installation from scratch
+conda create -n graphfm-test python=3.9
+conda activate graphfm-test
+
+# Install from repository
+pip install -e .
+
+# Run tests
+pytest tests/ -v
+
+# Run quickstart
+jupyter nbconvert --to notebook --execute notebooks/quickstart.ipynb
+
+# Test reproduction script (dry run)
+bash experiments/reproduce_table1.sh --dry-run
+```
+
+**Deliverable**: Clean, tested code repository
+
+---
+
+### DAY 9 (Tuesday): Documentation
+
+**Morning (4 hours): README.md**
+
+```markdown
+# GraphFM: Graph Foundation Models
+
+[![Paper](https://img.shields.io/badge/Paper-NeurIPS%202024-blue)](https://arxiv.org/abs/XXXX.XXXXX)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/graph-foundation-models)](https://pypi.org/project/graph-foundation-models/)
+[![Documentation](https://img.shields.io/badge/Docs-Latest-orange)](https://yourlab.github.io/graphfm)
+
+Official implementation of **"Graph Foundation Models: Pre-training and 
+Transfer Learning for Molecular Property Prediction"** (NeurIPS 2024).
+
+[**Paper**](https://arxiv.org/abs/XXXX.XXXXX) | 
+[**Documentation**](https://yourlab.github.io/graphfm) | 
+[**Colab Demo**](https://colab.research.google.com/...) | 
+[**Hugging Face**](https://huggingface.co/yourlab/graphfm)
+
+## Overview
+
+GraphFM is a graph foundation model that learns transferable representations 
+from large-scale graph data. Key features:
+
+- 🚀 **State-of-the-art performance**: Outperforms previous methods on 12/15 benchmarks
+- 📊 **Data efficiency**: Requires 10× less labeled data than task-specific models
+- 🔧 **Flexible architecture**: Supports node, edge, and graph-level tasks
+- 🎯 **Easy to use**: Pre-trained models available, fine-tune in 3 lines of code
+
+## Installation
+
+### From PyPI (recommended)
+
+```bash
+pip install graph-foundation-models
+```
+
+### From source
+
+```bash
+git clone https://github.com/yourlab/graph-foundation-models.git
+cd graph-foundation-models
+pip install -e .
+```
+
+### Requirements
+
+- Python 3.8+
+- PyTorch 1.12+
+- PyTorch Geometric 2.0+
+- See `requirements.txt` for full list
+
+## Quick Start
+
+### Load Pre-trained Model
+
+```python
+from graphfm import GraphFM
+
+# Load pre-trained model
+model = GraphFM.from_pretrained('yourlab/graphfm-base')
+
+# Or load from local checkpoint
+model = GraphFM.from_pretrained('checkpoints/graphfm_pretrained.pt')
+```
+
+### Fine-tune on Your Dataset
+
+```python
+from graphfm.data import MoleculeDataset
+from graphfm.training import Trainer
+
+# Load dataset
+dataset = MoleculeDataset(name='BBBP', root='data/')
+
+# Create trainer
+trainer = Trainer(
+    model=model,
+    dataset=dataset,
+    task='classification',
+    num_epochs=50,
+)
+
+# Fine-tune
+trainer.train()
+
+# Evaluate
+results = trainer.evaluate()
+print(f"Test accuracy: {results['accuracy']:.2%}")
+```
+
+### Command-Line Interface
+
+```bash
+# Fine-tune on BBBP dataset
+python scripts/finetune.py \
+    --dataset BBBP \
+    --pretrained checkpoints/graphfm_pretrained.pt \
+    --output results/bbbp
+
+# Evaluate
+python scripts/evaluate.py \
+    --checkpoint results/bbbp/best_model.pt \
+    --dataset BBBP
+```
+
+## Pre-trained Models
+
+We provide pre-trained models on Hugging Face:
+
+| Model | Parameters | Pre-training Data | Download |
+|-------|------------|-------------------|----------|
+| GraphFM-Small | 50M | 10M graphs | [Link](https://huggingface.co/yourlab/graphfm-small) |
+| GraphFM-Base | 200M | 100M graphs | [Link](https://huggingface.co/yourlab/graphfm-base) |
+| GraphFM-Large | 500M | 100M graphs | [Link](https://huggingface.co/yourlab/graphfm-large) |
+
+## Reproducing Paper Results
+
+### Main Results (Table 1)
+
+```bash
+bash experiments/reproduce_table1.sh
+```
+
+Expected output:
+```
+Dataset  | GraphFM | GCN   | GAT   | GraphSAINT
+---------|---------|-------|-------|------------
+BBBP     | 74.3    | 68.2  | 70.1  | 71.5
+Tox21    | 79.1    | 75.4  | 76.8  | 77.2
+HIV      | 80.2    | 76.1  | 77.3  | 78.0
+...
+```
+
+### Ablation Studies (Table 2)
+
+```bash
+bash experiments/reproduce_table2.sh
+```
+
+### Figures
+
+```bash
+# Figure 2: Pre-training loss curves
+python scripts/plot_pretraining.py --output figures/figure2.pdf
+
+# Figure 3: Transfer learning performance
+python scripts/plot_transfer.py --output figures/figure3.pdf
+```
+
+## Documentation
+
+Full documentation available at [https://yourlab.github.io/graphfm](https://yourlab.github.io/graphfm)
+
+- [Installation Guide](docs/installation.md)
+- [Quick Start Tutorial](docs/quickstart.md)
+- [API Reference](docs/api.md)
+- [FAQ](docs/faq.md)
+
+## Citation
+
+If you use GraphFM in your research, please cite our paper:
+
+```bibtex
+@inproceedings{smith2024graphfm,
+  title={Graph Foundation Models: Pre-training and Transfer Learning for Molecular Property Prediction},
+  author={Smith, Jane and Doe, John and Johnson, Alice},
+  booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+  year={2024}
+}
+```
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Contact
+
+- **Authors**: Jane Smith (jsmith@stanford.edu), John Doe (jdoe@mit.edu)
+- **Issues**: [GitHub Issues](https://github.com/yourlab/graph-foundation-models/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourlab/graph-foundation-models/discussions)
+
+## Acknowledgments
+
+This work was supported by NSF Grant #1234567 and Google PhD Fellowship. 
+We thank the creators of [OGB](https://ogb.stanford.edu/) and 
+[MoleculeNet](http://moleculenet.org/) for providing datasets.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yourlab/graph-foundation-models&type=Date)](https://star-history.com/#yourlab/graph-foundation-models&Date)
+```
+
+**Afternoon (4 hours): Additional Documentation**
+
+**File: `docs/installation.md`**
+
+```markdown
+# Installation Guide
+
+## Prerequisites
+
+- Python 3.8 or higher
+- CUDA 11.3+ (for GPU support)
+- 16GB+ RAM recommended
+
+## Option 1: Install from PyPI
+
+```bash
+pip install graph-foundation-models
+```
+
+## Option 2: Install from Source
+
+### Clone Repository
+
+```bash
+git clone https://github.com/yourlab/graph-foundation-models.git
+cd graph-foundation-models
+```
+
+### Create Environment
+
+#### Using Conda (Recommended)
+
+```bash
+conda env create -f environment.yml
+conda activate graphfm
+```
+
+#### Using venv
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Install Package
+
+```bash
+pip install -e .
+```
+
+## Verify Installation
+
+```python
+import graphfm
+print(graphfm.__version__)  # Should print version number
+
+# Test model loading
+from graphfm import GraphFM
+model = GraphFM(num_layers=12, hidden_dim=768)
+print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+```
+
+## GPU Support
+
+### Check CUDA Availability
+
+```python
+import torch
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"CUDA version: {torch.version.cuda}")
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+```
+
+### Install PyTorch with CUDA
+
+If CUDA is not available, install PyTorch with CUDA support:
+
+```bash
+# For CUDA 11.8
+pip install torch==2.0.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html
+
+# For CUDA 12.1
+pip install torch==2.0.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
+## Troubleshooting
+
+### Issue: ImportError: No module named 'torch_geometric'
+
+**Solution:**
+```bash
+pip install torch-geometric torch-scatter torch-sparse
+```
+
+### Issue: CUDA out of memory
+
+**Solution:**
+- Reduce batch size in config file
+- Use gradient accumulation
+- Use smaller model variant (GraphFM-Small)
+
+### Issue: Slow data loading
+
+**Solution:**
+- Increase number of workers: `num_workers=4` in DataLoader
+- Use SSD for data storage
+- Pre-process and cache graphs
+
+For more issues, see [FAQ](faq.md) or [open an issue](https://github.com/yourlab/graph-foundation-models/issues).
+```
+
+**File: `CITATION.cff`** (for GitHub citation)
+
+```yaml
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Smith"
+    given-names: "Jane"
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+    affiliation: "Stanford University"
+  - family-names: "Doe"
+    given-names: "John"
+    orcid: "https://orcid.org/0000-0000-0000-0001"
+    affiliation: "MIT"
+  - family-names: "Johnson"
+    given-names: "Alice"
+    affiliation: "Google Research"
+title: "GraphFM: Graph Foundation Models"
+version: 1.0.0
+date-released: 2024-12-01
+url: "https://github.com/yourlab/graph-foundation-models"
+repository-code: "https://github.com/yourlab/graph-foundation-models"
+license: MIT
+preferred-citation:
+  type: conference-paper
+  authors:
+    - family-names: "Smith"
+      given-names: "Jane"
+    - family-names: "Doe"
+      given-names: "John"
+    - family-names: "Johnson"
+      given-names: "Alice"
+  title: "Graph Foundation Models: Pre-training and Transfer Learning for Molecular Property Prediction"
+  conference:
+    name: "Advances in Neural Information Processing Systems"
+  year: 2024
+  url: "https://arxiv.org/abs/XXXX.XXXXX"
+```
+
+**Evening (2 hours): API Documentation**
+
+Generate API docs using Sphinx:
+
+```bash
+# Install Sphinx
+pip install sphinx sphinx-rtd-theme
+
+# Initialize docs
+cd docs/
+sphinx-quickstart
+
+# Configure conf.py
+# Add autodoc extension
+# Set theme to 'sphinx_rtd_theme'
+
+# Generate API docs
+sphinx-apidoc -o source/ ../graphfm/
+
+# Build HTML docs
+make html
+
+# View docs
+open _build/html/index.html
+```
+
+**Deliverable**: Comprehensive documentation
+
+---
+
+### DAY 10 (Wednesday): Licensing and Legal
+
+**Morning (3 hours): Choose License**
+
+**Recommended licenses for academic code:**
+
+**1. MIT License** (most permissive, recommended)
+```
+MIT License
+
+Copyright (c) 2024 Jane Smith, John Doe, Alice Johnson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+**2. Apache 2.0** (includes patent grant)
+- Use if you want explicit patent protection
+- More verbose than MIT
+- Good for industry collaboration
+
+**3. BSD 3-Clause** (similar to MIT)
+- Prohibits use of author names for endorsement
+- Good if you want to prevent misrepresentation
+
+**For graph ML research, MIT is recommended** (most widely used, simple, permissive)
+
+**File: `LICENSE`**
+
+```
+MIT License
+
+Copyright (c) 2024 Jane Smith (Stanford University), John Doe (MIT), 
+Alice Johnson (Google Research)
+
+[Full MIT license text as above]
+```
+
+**Afternoon (3 hours): Data and Model Licenses**
+
+**File: `checkpoints/README.md`**
+
+```markdown
+# Pre-trained Model Checkpoints
+
+## Available Models
+
+| Model | Parameters | Pre-training Data | License | Download |
+|-------|------------|-------------------|---------|----------|
+| GraphFM-Small | 50M | ZINC15 (10M) | CC-BY-4.0 | [HF](https://huggingface.co/yourlab/graphfm-small) |
+| GraphFM-Base | 200M | ZINC15 (100M) | CC-BY-4.0 | [HF](https://huggingface.co/yourlab/graphfm-base) |
+| GraphFM-Large | 500M | ZINC15 (100M) | CC-BY-4.0 | [HF](https://huggingface.co/yourlab/graphfm-large) |
+
+## License
+
+Pre-trained models are released under **Creative Commons Attribution 4.0 
+International (CC-BY-4.0)**.
+
+You are free to:
+- **Share**: Copy and redistribute the models
+- **Adapt**: Remix, transform, and build upon the models
+
+Under the following terms:
+- **Attribution**: You must give appropriate credit, provide a link to 
+  the license, and indicate if changes were made
+
+See [LICENSE-MODELS](LICENSE-MODELS) for full text.
+
+## Citation
+
+If you use these models, please cite our paper:
+
+```bibtex
+@inproceedings{smith2024graphfm,
+  title={Graph Foundation Models: Pre-training and Transfer Learning for Molecular Property Prediction},
+  author={Smith, Jane and Doe, John and Johnson, Alice},
+  booktitle={NeurIPS},
+  year={2024}
+}
+```
+
+## Model Cards
+
+### GraphFM-Base
+
+**Model Description:**
+- Architecture: 12-layer graph transformer
+- Hidden dimension: 768
+- Attention heads: 12
+- Parameters: 200M
+
+**Pre-training:**
+- Dataset: ZINC15 (100M molecules)
+- Objective: Masked graph modeling + contrastive learning
+- Training time: 7 days on 8× A100 GPUs
+- Carbon footprint: ~150 kg CO₂
+
+**Intended Use:**
+- Molecular property prediction
+- Drug discovery
+- Chemical informatics
+
+**Limitations:**
+- Trained on small molecules (<50 atoms)
+- May not generalize to proteins or large molecules
+- Performance degrades on out-of-distribution molecules
+
+**Ethical Considerations:**
+- Models may be used for drug discovery (positive)
+- Models could be misused for designing harmful compounds (negative)
+- Users should follow ethical guidelines and regulations
+
+**Contact:**
+- Jane Smith: jsmith@stanford.edu
+```
+
+**File: `data/README.md`**
+
+```markdown
+# Datasets
+
+## Included Datasets
+
+We use the following publicly available datasets:
+
+| Dataset | Task | Molecules | License | Source |
+|---------|------|-----------|---------|--------|
+| BBBP | Classification | 2,039 | Public domain | [MoleculeNet](http://moleculenet.org/) |
+| Tox21 | Classification | 7,831 | Public domain | [MoleculeNet](http://moleculenet.org/) |
+| HIV | Classification | 41,127 | Public domain | [MoleculeNet](http://moleculenet.org/) |
+| BACE | Classification | 1,513 | Public domain | [MoleculeNet](http://moleculenet.org/) |
+| ZINC15 | Pre-training | 100M | CC-BY-4.0 | [ZINC](https://zinc.docking.org/) |
+
+## Data Usage
+
+All datasets are used in accordance with their original licenses. 
+Please cite the original papers when using these datasets:
+
+**MoleculeNet:**
+```bibtex
+@article{wu2018moleculenet,
+  title={MoleculeNet: a benchmark for molecular machine learning},
+  author={Wu, Zhenqin and Ramsundar, Bharath and Feinberg, Evan N and others},
+  journal={Chemical Science},
+  volume={9},
+  number={2},
+  pages={513--530},
+  year={2018}
+}
+```
+
+**ZINC:**
+```bibtex
+@article{irwin2020zinc20,
+  title={ZINC20—a free ultralarge-scale chemical database for ligand discovery},
+  author={Irwin, John J and Tang, Khanh G and Young, Jennifer and others},
+  journal={Journal of Chemical Information and Modeling},
+  volume={60},
+  number={12},
+  pages={6065--6073},
+  year={2020}
+}
+```
+
+## Download
+
+Datasets will be automatically downloaded when running experiments:
+
+```bash
+python scripts/download_data.py --datasets BBBP Tox21 HIV
+```
+
+Or manually download from [MoleculeNet](http://moleculenet.org/).
+
+## Data Format
+
+Datasets are stored in CSV format with SMILES strings:
+
+```
+smiles,label
+CC(C)Cc1ccc(cc1)C(C)C(O)=O,1
+CC(C)C(=O)O,0
+...
+```
+
+Processed graphs are cached in `data/processed/` for faster loading.
+```
+
+**Evening (2 hours): Contributor Guidelines**
+
+**File: `CONTRIBUTING.md`**
+
+```markdown
+# Contributing to GraphFM
+
+We welcome contributions! This document provides guidelines for contributing.
+
+## Code of Conduct
+
+Be respectful and inclusive. Harassment will not be tolerated.
+
+## How to Contribute
+
+### Reporting Bugs
+
+Open an issue with:
+- Clear title and description
+- Steps to reproduce
+- Expected vs. actual behavior
+- Environment (OS, Python version, PyTorch version)
+
+### Suggesting Features
+
+Open an issue with:
+- Clear description of feature
+- Use case and motivation
+- Proposed implementation (if any)
+
+### Pull Requests
+
+1. Fork the repository
+2. Create a branch (`git checkout -b feature/my-feature`)
+3. Make changes
+4. Add tests
+5. Run tests (`pytest tests/`)
+6. Format code (`black graphfm/`, `isort graphfm/`)
+7. Commit (`git commit -m "Add my feature"`)
+8. Push (`git push origin feature/my-feature`)
+9. Open pull request
+
+### Code Style
+
+- Follow PEP 8
+- Use type hints
+- Add docstrings (Google style)
+- Maximum line length: 100 characters
+
+### Testing
+
+- Add unit tests for new features
+- Ensure all tests pass (`pytest tests/`)
+- Aim for >80% code coverage
+
+## Development Setup
+
+```bash
+# Clone repository
+git clone https://github.com/yourlab/graph-foundation-models.git
+cd graph-foundation-models
+
+# Install in development mode
+pip install -e ".[dev]"
+
+# Install pre-commit hooks
+pre-commit install
+```
+
+## Questions?
+
+Open a [GitHub Discussion](https://github.com/yourlab/graph-foundation-models/discussions) 
+or email jsmith@stanford.edu.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under 
+the MIT License.
+```
+
+**Deliverable**: Complete licensing and legal documentation
+
+---
+
+### DAY 11 (Thursday): Release Notes and Changelog
+
+**Morning (3 hours): Release Notes**
+
+**File: `RELEASE_NOTES.md`**
+
+```markdown
+# Release Notes
+
+## Version 1.0.0 (2024-12-01)
+
+Initial release accompanying NeurIPS 2024 paper.
+
+### Features
+
+- **Pre-trained models**: GraphFM-Small, GraphFM-Base, GraphFM-Large
+- **Datasets**: Support for MoleculeNet benchmarks (BBBP, Tox21, HIV, etc.)
+- **Training**: Pre-training and fine-tuning scripts
+- **Evaluation**: Comprehensive evaluation metrics
+- **Documentation**: Full API documentation and tutorials
+
+### Pre-trained Models
+
+| Model | Parameters | Download |
+|-------|------------|----------|
+| GraphFM-Small | 50M | [HuggingFace](https://huggingface.co/yourlab/graphfm-small) |
+| GraphFM-Base | 200M | [HuggingFace](https://huggingface.co/yourlab/graphfm-base) |
+| GraphFM-Large | 500M | [HuggingFace](https://huggingface.co/yourlab/graphfm-large) |
+
+### Benchmarks
+
+Performance on MoleculeNet (test set, 5 seeds):
+
+| Dataset | GraphFM-Base | Previous SOTA |
+|---------|--------------|---------------|
+| BBBP | 74.3 ± 0.7 | 71.5 ± 0.9 |
+| Tox21 | 79.1 ± 0.5 | 77.2 ± 0.6 |
+| HIV | 80.2 ± 0.6 | 78.0 ± 0.8 |
+
+See paper for full results.
+
+### Installation
+
+```bash
+pip install graph-foundation-models
+```
+
+### Quick Start
+
+```python
+from graphfm import GraphFM
+from graphfm.data import MoleculeDataset
+from graphfm.training import Trainer
+
+# Load pre-trained model
+model = GraphFM.from_pretrained('yourlab/graphfm-base')
+
+# Load dataset
+dataset = MoleculeDataset(name='BBBP')
+
+# Fine-tune
+trainer = Trainer(model=model, dataset=dataset)
+trainer.train()
+```
+
+### Documentation
+
+- [Installation Guide](docs/installation.md)
+- [Quick Start](docs/quickstart.md)
+- [API Reference](docs/api.md)
+- [FAQ](docs/faq.md)
+
+### Citation
+
+```bibtex
+@inproceedings{smith2024graphfm,
+  title={Graph Foundation Models: Pre-training and Transfer Learning for Molecular Property Prediction},
+  author={Smith, Jane and Doe, John and Johnson, Alice},
+  booktitle={NeurIPS},
+  year={2024}
+}
+```
+
+### Known Issues
+
+- Large models (GraphFM-Large) require >40GB GPU memory
+- Data loading can be slow for large datasets (use `num_workers>1`)
+- Windows support is experimental
+
+### Future Plans
+
+- Support for more graph types (knowledge graphs, social networks)
+- Distributed training
+- Model compression (quantization, pruning)
+- Web demo
+
+### Contributors
+
+- Jane Smith (Stanford University)
+- John Doe (MIT)
+- Alice Johnson (Google Research)
+
+### Acknowledgments
+
+This work was supported by NSF Grant #1234567 and Google PhD Fellowship.
+
+### License
+
+MIT License - see [LICENSE](LICENSE) for details.
+```
+
+**File: `CHANGELOG.md`**
+
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2024-12-01
+
+### Added
+- Initial release
+- Pre-trained models (Small, Base, Large)
+- Support for MoleculeNet datasets
+- Pre-training and fine-tuning scripts
+- Comprehensive documentation
+- Unit tests
+- Example notebooks
+
+### Changed
+- N/A (initial release)
+
+### Deprecated
+- N/A (initial release)
+
+### Removed
+- N/A (initial release)
+
+### Fixed
+- N/A (initial release)
+
+### Security
+- N/A (initial release)
+
+---
+
+## [Unreleased]
+
+### Planned
+- Support for knowledge graphs
+- Distributed training
+- Model compression
+- Web demo
+
+---
+
+[1.0.0]: https://github.com/yourlab/graph-foundation-models/releases/tag/v1.0.0
+[Unreleased]: https://github.com/yourlab/graph-foundation-models/compare/v1.0.0...HEAD
+```
+
+**Afternoon (3 hours): Artifact Badges**
+
+Many venues (ACM, IEEE) offer artifact badges for reproducibility. Apply for badges if applicable.
+
+**Common badges:**
+- **Artifacts Available**: Code/data publicly available
+- **Artifacts Evaluated - Functional**: Artifacts work as described
+- **Artifacts Evaluated - Reusable**: Well-documented, easy to reuse
+- **Results Reproduced**: Independent verification of results
+
+**Application process (venue-specific):**
+
+1. **Submit artifact** (usually via separate system)
+2. **Provide documentation**:
+   - README with setup instructions
+   - Expected runtime and hardware requirements
+   - Step-by-step reproduction guide
+3. **Reviewers evaluate** (usually 2-4 weeks)
+4. **Receive badge** (displayed on paper)
+
+**File: `ARTIFACT_EVALUATION.md`** (for reviewers)
+
+```markdown
+# Artifact Evaluation Guide
+
+This document helps artifact evaluators reproduce our results.
+
+## Hardware Requirements
+
+- **GPU**: NVIDIA A100 (40GB) or equivalent
+- **RAM**: 64GB minimum
+- **Storage**: 500GB for datasets and checkpoints
+- **OS**: Ubuntu 20.04 or later
+
+## Time Estimates
+
+- **Setup**: 30 minutes
+- **Download data and models**: 2 hours
+- **Reproduce Table 1** (main results): 8 hours
+- **Reproduce Table 2** (ablations): 4 hours
+- **Reproduce figures**: 1 hour
+- **Total**: ~15 hours
+
+## Step-by-Step Instructions
+
+### 1. Setup Environment (30 min)
+
+```bash
+# Clone repository
+git clone https://github.com/yourlab/graph-foundation-models.git
+cd graph-foundation-models
+
+# Create environment
+conda env create -f environment.yml
+conda activate graphfm
+
+# Install package
+pip install -e .
+
+# Verify installation
+python -c "import graphfm; print(graphfm.__version__)"
+```
+
+### 2. Download Data and Models (2 hours)
+
+```bash
+# Download datasets (~ 10GB)
+python scripts/download_data.py --datasets BBBP Tox21 HIV BACE ClinTox SIDER
+
+# Download pre-trained models (~5GB)
+python scripts/download_models.py --models graphfm-base
+```
+
+### 3. Reproduce Table 1 (8 hours)
+
+```bash
+# Run all experiments for Table 1
+bash experiments/reproduce_table1.sh
+
+# Expected output: tables/table1.tex
+# Compare with paper Table 1 (should match within ±1% due to randomness)
+```
+
+### 4. Reproduce Table 2 (4 hours)
+
+```bash
+# Run ablation studies
+bash experiments/reproduce_table2.sh
+
+# Expected output: tables/table2.tex
+```
+
+### 5. Reproduce Figures (1 hour)
+
+```bash
+# Generate all figures
+bash experiments/reproduce_figures.sh
+
+# Expected output: figures/*.pdf
+```
+
+## Expected Results
+
+### Table 1: Main Results
+
+| Dataset | GraphFM (Paper) | GraphFM (Reproduced) | Match? |
+|---------|-----------------|----------------------|--------|
+| BBBP | 74.3 ± 0.7 | 74.1 ± 0.8 | ✓ |
+| Tox21 | 79.1 ± 0.5 | 79.3 ± 0.6 | ✓ |
+| HIV | 80.2 ± 0.6 | 80.0 ± 0.7 | ✓ |
+
+Results should match within ±1% due to randomness (different seeds).
+
+## Troubleshooting
+
+**Issue: CUDA out of memory**
+- Solution: Reduce batch size in `configs/finetuning.yaml`
+- Change `batch_size: 32` to `batch_size: 16`
+
+**Issue: Slow data loading**
+- Solution: Increase `num_workers` in config
+- Change `num_workers: 0` to `num_workers: 4`
+
+**Issue: Results don't match**
+- Check random seeds are set correctly
+- Verify PyTorch and CUDA versions match ours
+- Contact authors: jsmith@stanford.edu
+
+## Contact
+
+For questions, contact:
+- Jane Smith: jsmith@stanford.edu
+- GitHub Issues: https://github.com/yourlab/graph-foundation-models/issues
+```
+
+**Evening (2 hours): Create GitHub Release**
+
+```bash
+# Tag release
+git tag -a v1.0.0 -m "Version 1.0.0 - Initial release"
+git push origin v1.0.0
+
+# Create release on GitHub:
+# 1. Go to https://github.com/yourlab/graph-foundation-models/releases
+# 2. Click "Draft a new release"
+# 3. Choose tag: v1.0.0
+# 4. Release title: "GraphFM v1.0.0 - Initial Release"
+# 5. Description: Copy from RELEASE_NOTES.md
+# 6. Attach files:
+#    - Source code (auto-generated)
+#    - Pre-trained models (if <2GB, otherwise link to HuggingFace)
+# 7. Publish release
+```
+
+**Deliverable**: Release notes, changelog, artifact evaluation guide
+
+---
+
+### DAY 12 (Friday): Hugging Face and PyPI Release
+
+**Morning (4 hours): Hugging Face Model Hub**
+
+**Task 1: Create Hugging Face account and organization**
+
+1. Sign up at https://huggingface.co/
+2. Create organization: `yourlab`
+3. Create model repository: `yourlab/graphfm-base`
+
+**Task 2: Upload models**
+
+```python
+# scripts/upload_to_huggingface.py
+
+from huggingface_hub import HfApi, create_repo
+
+# Initialize API
+api = HfApi()
+
+# Create repository
+repo_id = "yourlab/graphfm-base"
+create_repo(repo_id, repo_type="model", exist_ok=True)
+
+# Upload model
+api.upload_file(
+    path_or_fileobj="checkpoints/graphfm_pretrained.pt",
+    path_in_repo="pytorch_model.bin",
+    repo_id=repo_id,
+)
+
+# Upload config
+api.upload_file(
+    path_or_fileobj="configs/model_config.json",
+    path_in_repo="config.json",
+    repo_id=repo_id,
+)
+
+# Upload README (model card)
+api.upload_file(
+    path_or_fileobj="MODEL_CARD.md",
+    path_in_repo="README.md",
+    repo_id=repo_id,
+)
+
+print(f"Model uploaded to https://huggingface.co/{repo_id}")
+```
+
+**Task 3: Create model card**
+
+**File: `MODEL_CARD.md`**
+
+```markdown
+---
+language: en
+license: cc-by-4.0
+tags:
+- graph-neural-networks
+- molecular-property-prediction
+- transfer-learning
+- foundation-models
+datasets:
+- ZINC15
+- MoleculeNet
+metrics:
+- accuracy
+- roc-auc
+---
+
+# GraphFM-Base
+
+GraphFM-Base is a graph foundation model pre-trained on 100M molecules 
+from ZINC15. It achieves state-of-the-art performance on molecular 
+property prediction tasks.
+
+## Model Description
+
+- **Developed by**: Jane Smith (Stanford), John Doe (MIT), Alice Johnson (Google)
+- **Model type**: Graph Transformer
+- **Language(s)**: N/A (graph-structured data)
+- **License**: CC-BY-4.0
+- **Paper**: [Graph Foundation Models (NeurIPS 2024)](https://arxiv.org/abs/XXXX.XXXXX)
+- **Code**: [GitHub](https://github.com/yourlab/graph-foundation-models)
+
+## Intended Uses
+
+### Direct Use
+
+Fine-tune on downstream molecular property prediction tasks:
+- Drug discovery
+- Toxicity prediction
+- Solubility prediction
+- Bioactivity prediction
+
+### Out-of-Scope Use
+
+- Protein structure prediction (model trained on small molecules only)
+- Large molecules (>50 atoms)
+- Non-molecular graphs (social networks, knowledge graphs)
+
+## How to Use
+
+```python
+from graphfm import GraphFM
+
+# Load model
+model = GraphFM.from_pretrained('yourlab/graphfm-base')
+
+# Use for inference
+embeddings = model(graph)
+```
+
+See [documentation](https://yourlab.github.io/graphfm) for more examples.
+
+## Training Data
+
+- **Dataset**: ZINC15 (100M molecules)
+- **Preprocessing**: Molecules with 5-50 atoms, standard SMILES
+- **Augmentation**: Random masking, edge dropping
+
+## Training Procedure
+
+### Pre-training
+
+- **Objective**: Masked graph modeling + contrastive learning
+- **Batch size**: 256
+- **Learning rate**: 1e-4 (cosine decay)
+- **Optimizer**: AdamW
+- **Epochs**: 100
+- **Hardware**: 8× NVIDIA A100 (40GB)
+- **Training time**: 7 days
+- **Carbon footprint**: ~150 kg CO₂ (estimated)
+
+### Fine-tuning
+
+See [fine-tuning guide](https://yourlab.github.io/graphfm/finetuning) 
+for recommended hyperparameters.
+
+## Evaluation
+
+### Benchmarks
+
+Performance on MoleculeNet (test set, 5 seeds):
+
+| Dataset | GraphFM-Base | Previous SOTA |
+|---------|--------------|---------------|
+| BBBP | 74.3 ± 0.7 | 71.5 ± 0.9 |
+| Tox21 | 79.1 ± 0.5 | 77.2 ± 0.6 |
+| HIV | 80.2 ± 0.6 | 78.0 ± 0.8 |
+| BACE | 85.1 ± 1.2 | 82.3 ± 1.5 |
+
+See paper for full results.
+
+## Limitations
+
+- **Domain**: Trained on small organic molecules; may not generalize 
+  to proteins, inorganic compounds, or large molecules
+- **Data bias**: ZINC15 is biased toward drug-like molecules
+- **Computational cost**: Requires GPU for inference (CPU is slow)
+- **Interpretability**: Limited interpretability of learned representations
+
+## Ethical Considerations
+
+### Positive Impacts
+
+- Accelerates drug discovery
+- Reduces need for animal testing
+- Democratizes access to molecular ML (pre-trained models)
+
+### Negative Impacts
+
+- Could be misused to design harmful compounds (toxins, drugs of abuse)
+- May perpetuate biases in training data (e.g., focus on Western diseases)
+- Environmental cost of training (150 kg CO₂)
+
+### Recommendations
+
+- Use responsibly and follow ethical guidelines
+- Evaluate on your specific use case before deployment
+- Consider fairness and bias implications
+- Report misuse to authors
+
+## Citation
+
+```bibtex
+@inproceedings{smith2024graphfm,
+  title={Graph Foundation Models: Pre-training and Transfer Learning for Molecular Property Prediction},
+  author={Smith, Jane and Doe, John and Johnson, Alice},
+  booktitle={NeurIPS},
+  year={2024}
+}
+```
+
+## Contact
+
+- Jane Smith: jsmith@stanford.edu
+- GitHub: https://github.com/yourlab/graph-foundation-models
+- Issues: https://github.com/yourlab/graph-foundation-models/issues
+```
+
+**Afternoon (4 hours): PyPI Release**
+
+**Task 4: Prepare package for PyPI**
+
+**File: `setup.py`**
+
+```python
+from setuptools import setup, find_packages
+
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
+with open("requirements.txt", "r", encoding="utf-8") as fh:
+    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+
+setup(
+    name="graph-foundation-models",
+    version="1.0.0",
+    author="Jane Smith, John Doe, Alice Johnson",
+    author_email="jsmith@stanford.edu",
+    description="Graph Foundation Models for molecular property prediction",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/yourlab/graph-foundation-models",
+    project_urls={
+        "Bug Tracker": "https://github.com/yourlab/graph-foundation-models/issues",
+        "Documentation": "https://yourlab.github.io/graphfm",
+        "Paper": "https://arxiv.org/abs/XXXX.XXXXX",
+    },
+    packages=find_packages(exclude=["tests", "experiments", "notebooks"]),
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Science/Research",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ],
+    python_requires=">=3.8",
+    install_requires=requirements,
+    extras_require={
+        "dev": [
+            "pytest>=7.0",
+            "pytest-cov>=3.0",
+            "black>=22.0",
+            "isort>=5.0",
+            "flake8>=4.0",
+            "mypy>=0.950",
+            "sphinx>=4.0",
+            "sphinx-rtd-theme>=1.0",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "graphfm-train=graphfm.cli:train",
+            "graphfm-eval=graphfm.cli:evaluate",
+        ],
+    },
+    include_package_data=True,
+    package_data={
+        "graphfm": ["configs/*.yaml"],
+    },
+)
+```
+
+**Task 5: Build and upload to PyPI**
+
+```bash
+# Install build tools
+pip install build twine
+
+# Build package
+python -m build
+
+# Check package
+twine check dist/*
+
+# Upload to TestPyPI (test first!)
+twine upload --repository testpypi dist/*
+
+# Test installation from TestPyPI
+pip install --index-url https://test.pypi.org/simple/ graph-foundation-models
+
+# If successful, upload to PyPI
+twine upload dist/*
+
+# Verify
+pip install graph-foundation-models
+python -c "import graphfm; print(graphfm.__version__)"
+```
+
+**Deliverable**: Models on Hugging Face, package on PyPI
+
+---
+
+### DAY 13 (Saturday): Final Testing and Polish
+
+**Morning (4 hours): End-to-End Testing**
+
+**Task 1: Fresh installation test**
+
+```bash
+# Create clean environment
+conda create -n test-graphfm python=3.9
+conda activate test-graphfm
+
+# Install from PyPI
+pip install graph-foundation-models
+
+# Test quickstart
+python -c "
+from graphfm import GraphFM
+model = GraphFM.from_pretrained('yourlab/graphfm-base')
+print('Success!')
+"
+
+# Test reproduction
+git clone https://github.com/yourlab/graph-foundation-models.git
+cd graph-foundation-models
+bash experiments/reproduce_table1.sh --quick-test  # Run on small subset
+```
+
+**Task 2: Cross-platform testing**
+
+Test on:
+- [ ] Linux (Ubuntu 20.04, 22.04)
+- [ ] macOS (Intel, Apple Silicon)
+- [ ] Windows (if supported)
+
+**Task 3: Documentation review**
+
+- [ ] All links work
+- [ ] All code examples run
+- [ ] All figures render correctly
+- [ ] No typos
+
+**Afternoon (3 hours): Community Engagement Prep**
+
+**Task 4: Create project website** (optional but recommended)
+
+Use GitHub Pages:
+
+```bash
+# Create gh-pages branch
+git checkout --orphan gh-pages
+
+# Add website content
+# (Use Jekyll, Hugo, or static HTML)
+
+# Push to GitHub
+git push origin gh-pages
+
+# Enable GitHub Pages in repository settings
+# Site will be at: https://yourlab.github.io/graph-foundation-models
+```
+
+**Task 5: Prepare social media announcements**
+
+**Twitter/X thread:**
+```
+🚀 Excited to share GraphFM, our graph foundation model for molecular 
+property prediction! 
+
+📄 Paper: [link]
+💻 Code: [link]
+🤗 Models: [link]
+
+Key results: 7.3% improvement over SOTA, 10× less labeled data needed
+
+Thread 🧵👇
+
+1/5 Problem: Training GNNs from scratch requires lots of labeled data, 
+which is expensive in domains like drug discovery.
+
+2/5 Solution: GraphFM pre-trains on 100M unlabeled molecules, then 
+fine-tunes on downstream tasks with minimal labels.
+
+3/5 Results: SOTA on 12/15 benchmarks. On BBBP, we achieve 74.3% 
+accuracy (vs. 71.5% previous best).
+
+4/5 We're releasing:
+✅ Pre-trained models (Small, Base, Large)
+✅ Code and data
+✅ Tutorials and docs
+
+All open-source (MIT license)!
+
+5/5 Try it yourself:
+pip install graph-foundation-models
+
+Huge thanks to my co-authors @JohnDoe @AliceJohnson and our reviewers!
+
+#MachineLearning #GraphNeuralNetworks #DrugDiscovery #NeurIPS2024
+```
+
+**Evening (2 hours): Final Checklist**
+
+**Camera-ready submission:**
+- [ ] PDF generated and verified
+- [ ] All figures high resolution
+- [ ] All references correct
+- [ ] Copyright form signed
+- [ ] Supplementary material prepared
+- [ ] Submitted to venue system
+
+**Code release:**
+- [ ] GitHub repository public
+- [ ] README complete
+- [ ] Documentation published
+- [ ] License added
+- [ ] Tests passing
+- [ ] CI/CD setup (optional)
+
+**Model release:**
+- [ ] Models uploaded to Hugging Face
+- [ ] Model cards complete
+- [ ] Download links work
+
+**Package release:**
+- [ ] PyPI package published
+- [ ] Installation tested
+- [ ] Version tagged
+
+**Community:**
+- [ ] Project website live (optional)
+- [ ] Social media posts drafted
+- [ ] Email to mailing lists drafted (optional)
+
+**Deliverable**: Everything tested and ready for Day 14 launch
+
+---
+
+### DAY 14 (Sunday): Final Submission and Public Release
+
+**Morning (2 hours): Camera-Ready Submission**
+
+**Task 1: Final PDF generation**
+
+```bash
+# Clean build
+rm -f paper.aux paper.bbl paper.blg paper.log
+pdflatex paper.tex
+bibtex paper
+pdflatex paper.tex
+pdflatex paper.tex
+
+# Verify
+pdfinfo paper.pdf
+# Check: fonts embedded, correct page count, file size
+
+# Rename
+mv paper.pdf smith2024graphfm_camera_ready.pdf
+```
+
+**Task 2: Submit to venue**
+
+- [ ] Log in to submission system
+- [ ] Upload camera-ready PDF
+- [ ] Upload supplementary material (if required)
+- [ ] Fill out copyright form
+- [ ] Provide source files (if required)
+- [ ] Verify submission
+- [ ] Download confirmation
+
+**Afternoon (3 hours): Public Release**
+
+**Task 3: Make repository public**
+
+```bash
+# On GitHub:
+# Settings → Danger Zone → Change visibility → Make public
+```
+
+**Task 4: Announce release**
+
+**Twitter/X:**
+- Post thread (prepared on Day 13)
+- Tag co-authors and relevant accounts
+- Use hashtags: #NeurIPS2024 #GraphML #MachineLearning
+
+**Reddit:**
+- Post to r/MachineLearning
+- Title: "[R] GraphFM: Graph Foundation Models for Molecular Property Prediction (NeurIPS 2024)"
+- Include: paper link, code link, key results
+
+**Mailing lists:**
+- ML News
+- Graph ML mailing list
+- Domain-specific lists (e.g., computational chemistry)
+
+**LinkedIn:**
+- Professional announcement
+- Tag institution and co-authors
+
+**Task 5: Monitor and respond**
+
+- [ ] Watch GitHub issues
+- [ ] Respond to questions on social media
+- [ ] Update documentation based on feedback
+
+**Evening (2 hours): Celebrate! 🎉**
+
+You've successfully:
+- ✅ Polished camera-ready paper
+- ✅ Released high-quality code
+- ✅ Published pre-trained models
+- ✅ Created comprehensive documentation
+- ✅ Shared with the community
+
+**Post-release tasks (ongoing):**
+- Monitor GitHub issues and PRs
+- Update documentation based on user feedback
+- Fix bugs as reported
+- Consider follow-up work (blog post, tutorial video, etc.)
+
+---
+
+## 📤 NEXT STEPS
+
+**To get a personalized 2-week sprint plan based on YOUR paper:**
+
+**Upload your accepted paper PDF and reviewer comments**, and I will provide:
+
+1. **Specific feedback integration plan**
+   - Line-by-line changes needed
+   - Experiments to add
+   - Writing improvements
+
+2. **Customized artifact checklist**
+   - What code to release
+   - What models to release
+   - What data to release
+   - Documentation needs
+
+3. **Venue-specific requirements**
+   - Copyright forms
+   - Formatting requirements
+   - Supplementary material guidelines
+   - Artifact badge application
+
+4. **Timeline optimization**
+   - Adjusted for your deadline
+   - Prioritized by importance
+   - Realistic daily tasks
+
+5. **Release strategy**
+   - Best platforms for your work
+   - Community engagement plan
+   - Impact maximization
+
+**What I need from you:**
+- Accepted paper PDF
+- Reviewer comments (if available)
+- Venue name (NeurIPS, ICML, KDD, etc.)
+- Camera-ready deadline
+- Current code status (ready/needs work/not started)
+- Model release plan (yes/no/unsure)
+
+**Turnaround time**: 15-20 minutes for comprehensive plan
+
+**What venue was your paper accepted to?** (This will help me tailor the plan to specific requirements)

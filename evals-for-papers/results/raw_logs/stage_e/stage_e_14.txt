@@ -1,0 +1,56 @@
+Below is a concise discussion-section addendum you can drop in to pre-empt reviewer concerns about socioeconomic bias in PeerRead, followed by concrete mitigation steps planned for the camera-ready version and testable experiments.
+
+Discussion addendum: Socioeconomic bias in PeerRead
+- Scope and potential sources of bias. PeerRead is drawn from a small number of venues and years in ML/NLP, which can lead to overrepresentation of specific research communities and norms, limiting external validity to other fields and regions [A Dataset of Peer Reviews (PeerRead), 2018 — link below]. In such settings, models may inadvertently learn proxies for institutional prestige or geography (e.g., organization or location mentions, topic scope typical of dominant venues), rather than quality per se. Related literature documents institution- and country-level disparities in scholarly attention, indicating that affiliation and location are correlated with downstream impact signals in academia [P1]. These dynamics raise the risk that acceptance- or score-prediction models trained on PeerRead may encode socioeconomic correlates.
+- Implications for our results. Our reported aggregate metrics could mask performance discrepancies across affiliation tiers or regions. If the training distribution is skewed, models may perform better on papers resembling overrepresented groups and worse on underrepresented ones. We therefore interpret acceptance-prediction accuracy cautiously and treat it as conditional on venue/time composition rather than as a universal estimate of review outcomes.
+- Limitations of available metadata. PeerRead’s public releases provide paper text and reviews; affiliation signals may be partially observable (e.g., through named entities in titles/abstracts/acknowledgments, or metadata where available) but do not include individual-level socioeconomic attributes. Accordingly, we rely on coarse, document-level proxies (e.g., institution name or country mentions) and report the constraints of using such proxies.
+
+Planned mitigation and transparency steps for the camera-ready version
+- Dataset documentation and audit
+  - Provide a datasheet/data card with distributions by venue, year, document length, and proxies for institution and region (e.g., named entities mapped to institution/country; country binned by World Bank income groups; institution approximated by public rankings where available). Include missingness and ambiguity rates. We will publish summary tables/plots and an audit appendix.
+- Masked (“delexicalized”) release and ablations
+  - Release a masked version of inputs where organization, person, and location entities are replaced with placeholders. Use this version for our main models and report side-by-side results to quantify reliance on socioeconomic proxies.
+- Balanced training and evaluation
+  - Reweight training examples to reduce overrepresentation by venue, year, inferred institution tier, and country income group (inverse-probability weights or propensity scores estimated from observed covariates). Report both overall metrics and stratified metrics by these bins, including TPR/FPR gaps and calibration error across strata.
+- Robustness and external validity checks
+  - Add cross-venue/time-slice generalization tests (train on early-year/major-venue-heavy slices; test on later-year or less represented venues). Where feasible, evaluate on a small, out-of-sample set from adjacent venues to test portability.
+- Model-level mitigation
+  - Add adversarial debiasing to reduce institution/country signal in representations and early-fusion feature dropping of entity-type features. Verify by training a probe to predict institution/country from frozen representations; target near-chance probe performance.
+- Reproducibility and transparency
+  - Release code, preprocessing/NER/masking scripts, weighting recipes, and evaluation checklists; fix seeds; document hyperparameters. Include a limitations section clarifying that proxies do not measure individual socioeconomic status and may be noisy.
+
+Three concrete, falsifiable experiments (to include in the camera-ready)
+1) Masking and subgroup performance
+  - Hypothesis: If models rely on socioeconomic proxies, masking named entities (ORG/LOC/PERSON) will reduce performance more on papers inferred to be from top-tier institutions/upper-income countries than on others, narrowing subgroup gaps.
+  - Design: Train identical models on unmasked vs masked inputs. Stratify the test set by institution tier and country income group inferred from named entities (where available).
+  - Metrics: AUC/accuracy overall; subgroup TPR/FPR; worst-group accuracy; change in inter-group TPR gap (ΔTPR).
+  - Expected outcome: Small overall accuracy change, with reduced ΔTPR across tiers/regions if proxy reliance is attenuated. If not observed, either proxy reliance is weak or masking is insufficient.
+2) Reweighting and calibration
+  - Hypothesis: Inverse-probability reweighting by venue, year, and inferred institution/region will reduce performance disparities without materially degrading overall accuracy.
+  - Design: Estimate sample weights from a multinomial model predicting stratum membership. Train weighted vs unweighted models.
+  - Metrics: Overall AUC; subgroup AUC; ΔTPR, ΔFPR, ECE per subgroup; average- vs worst-group metrics; significance via paired bootstrap.
+  - Expected outcome: Reduced subgroup gaps and improved worst-group metrics with ≤1–2% relative drop in overall AUC. Larger drops would suggest a strong utility–fairness tradeoff requiring alternate methods.
+3) Adversarial removal of affiliation signal
+  - Hypothesis: Minimizing a discriminator’s ability to predict institution/region from intermediate representations will reduce subgroup disparities in acceptance prediction.
+  - Design: Add a gradient-reversal head to predict institution tier/region from encoder representations; sweep adversary strength. Train a linear probe on frozen representations post hoc to quantify residual signal.
+  - Metrics: Probe accuracy vs chance; main-task AUC; subgroup ΔTPR/ΔFPR; MI estimate between representation and subgroup label (via k-NN or variational bounds).
+  - Expected outcome: Probe accuracy approaches chance and ΔTPR decreases, with minimal main-task degradation; if performance collapses, the subgroup signal may be entangled with core semantics, requiring more surgical featurization.
+4) Cross-venue/time generalization (optional but recommended)
+  - Hypothesis: Models trained on major-venue-heavy slices overfit venue-specific norms; training on balanced slices improves out-of-domain generalization.
+  - Design: Compare models trained on (i) original distribution vs (ii) balanced by venue/year. Test on a held-out venue or later years.
+  - Metrics: OOD AUC; relative performance drop from in-distribution to OOD; subgroup gaps in OOD.
+  - Expected outcome: Balanced training reduces OOD degradation and narrows subgroup disparities.
+
+What this adds to the paper
+- A transparent account of PeerRead’s composition and limitations, explicit fairness metrics, and ablations that make proxy reliance visible.
+- A versioned masked dataset and open pipeline others can reuse.
+- Clear limitations: we use document-level proxies (institution/country) available in or inferable from text/metadata; we cannot infer individual socioeconomic status, and mappings may be noisy. Results should be interpreted at the aggregate proxy level, not as person-level attributes.
+
+Literature touchpoints
+- PeerRead provides the empirical foundation for our dataset discussion and the limits of representativeness for ML/NLP venues [A Dataset of Peer Reviews (PeerRead), 2018 — link below].
+- Evidence of institution/country-level disparities in scholarly attention underscores the plausibility that models can pick up such proxies if present in the data [P1].
+
+Citations
+- [P1] How Does Author Affiliation Affect Preprint Citation Count? Analyzing Citation Bias at the Institution and Country Level — http://arxiv.org/abs/2205.02033v1
+- A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Datasheets for Datasets — https://dl.acm.org/doi/10.1145/3458723 (used for the documentation/datasheet step)

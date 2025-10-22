@@ -1,0 +1,40 @@
+Rebuttal (succinct)
+We agree that acceptance and aspect-score models can exploit spurious lexical shortcuts (e.g., venue strings, acknowledgments, citation patterns) rather than review-worthy content. To address this, we will evaluate under strict anti-leakage masking and counterfactual stress tests, report attribution and evidence-overlap diagnostics, and prioritize out-of-domain (cross-venue/year) retention where brittle shortcuts typically fail. Our plan follows behavioral testing best practices for NLP and will make any remaining shortcut reliance visible and quantifiable [Kang et al., 2018; Ribeiro et al., 2020].
+
+Targeted diagnostics and post-hoc analyses reviewers can audit
+- Anti-leakage masking: Remove venue names, arXiv IDs/comments, “Accepted at …,” acknowledgments, and reference sections; re-train and re-evaluate. Compare in-domain and OOD deltas.
+- N-gram erasure and permutation importance: Iteratively mask top-k predictive n-grams/lexical features; quantify performance drop and redistribute importance to content-bearing features (methods, results).
+- Counterfactual behavioral tests: Replace topical keywords with neutral synonyms; swap citation density while holding content fixed; ensure predictions are stable to these edits (CheckList-style tests) [Ribeiro et al., 2020].
+- Section sensitivity: Train/evaluate on title+abstract+intro only at a fixed token budget; if full-paper gains vanish under this constraint, they likely stem from non-content sections.
+- Rationale alignment: Extract evidence sentences from reviews that reference aspects (e.g., novelty/clarity) and measure overlap with model saliency/rationales (token/sentence F1). Low overlap flags shortcut use.
+- Topic/length matched-pair evaluation: Within venue-year, compare predictions on pairs matched by topic embedding and length to control for superficial correlates.
+- Influence analysis: Use influence functions or nearest-neighbor retrieval in embedding space to see whether high-impact training examples contain the flagged lexical cues.
+
+Concrete, falsifiable experiments
+1) Leakage-masking ablation
+- Design: Train strongest models on masked vs. unmasked inputs (mask venue/ack/reference/citation markers; earliest submission-like versions only).
+- Metrics: In-domain AUC/tau and OOD retained-performance ratio (RPR = OOD/ID) with 95% CIs.
+- Criteria: If masking reduces OOD tau or AUC by >0.01 (CI excludes 0), we will adopt masked inputs as the primary setting and qualify prior results as partially cue-driven.
+
+2) Counterfactual lexical substitution (behavioral tests)
+- Design: For a stratified test set, replace top-k topic words with neutral synonyms and normalize citation density (placeholders). Keep length/structure constant.
+- Metrics: Flip rate (percentage of predictions changing), Δtau/ΔAUC; calibration drift (ΔECE).
+- Criteria: Accept model as content-reliant if flip rate ≤5% and Δtau ≤0.01; otherwise, revise feature set/modeling to reduce lexical shortcuts (e.g., section restriction, regularization).
+
+3) Rationale-evidence alignment
+- Design: Mine evidence sentences from reviews that explicitly argue for/against acceptance; compute overlap between model saliency/rationales and these evidence spans.
+- Metrics: Token/sentence F1 overlap; compare overlap for correct vs. incorrect predictions.
+- Criteria: Require evidence-overlap ≥0.3 and a ≥0.1 gap between correct and incorrect predictions; if unmet, investigate and remove feature families whose removal increases overlap without harming OOD RPR.
+
+4) Topic/length matched-pairs test
+- Design: Form matched pairs by topic embedding and length within venue-year; predict which paper has higher aspect/acceptance; evaluate pairwise accuracy.
+- Metrics: Pairwise accuracy and sign test across pairs.
+- Criteria: If accuracy ≤55% or CI overlaps 50%, treat prior gains as confounded; retrain with constraints (section-limited inputs, feature family removal) until accuracy exceeds threshold.
+
+Literature anchors
+- A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://arxiv.org/abs/2005.04118
+
+Sources
+- Kang, D., Ammar, W., Schwartz, R., & Cohen, W. W. (2018). A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Ribeiro, M. T., et al. (2020). Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://arxiv.org/abs/2005.04118

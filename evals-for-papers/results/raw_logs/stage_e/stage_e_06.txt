@@ -1,0 +1,55 @@
+Short answer you can say in the paper
+- Why it matters: If newer venues in PeerRead have sparser or noisier labels (e.g., fewer labeled papers per venue/year or labels derived by weaker proxies), then estimated accuracy and feature importances can be biased toward artifacts of the labeling process rather than venue-invariant signals. This undermines external validity: models may look strong on PeerRead but fail when evaluated on properly labeled data from those newer venues because label source and venue are confounded. Similar cross-dataset/label-source confounds are known to degrade transfer performance in NLP, even when architectures are strong [P3]. More generally, robust generalization is best assessed with leave-domain-out designs that hold out entire types or sources (here: venues/years/labeling regimes) [P4].
+- Practical implication: Reported in-venue gains are upper bounds; without a gold-labeled slice of newer venues and cross-venue holdout, we cannot conclude the method generalizes beyond the (underpowered) labeling regime.
+
+Concrete follow-up experiments to reassure reviewers
+1) Gold-slice validation on newer venues (label-audit + effect on metrics)
+- Hypothesis: A small, high-quality, gold-labeled sample from newer venues will reveal non-trivial label noise and adjust performance estimates; models trained with corrected labels will show improved calibration and more stable cross-venue performance.
+- Design:
+  - Stratify newer venues by year, subfield, and decision class. Randomly sample N≈300–500 papers (power for ±5–7% error bars on accuracy).
+  - Obtain gold accept/reject from authoritative sources (conference proceedings) and re-annotate any auxiliary labels you use (e.g., aspect tags) with two annotators; report κ.
+  - Compare: (a) evaluation on original labels vs (b) evaluation on gold labels; and retrain on (c) original vs (d) corrected labels.
+- Metrics: Accuracy/F1, ROC-AUC, Expected Calibration Error (ECE), Brier score; 95% CIs via bootstrap.
+- Expected outcome: If underpowered labeling is the issue, (b) will differ from (a), and models trained on (d) will reduce ECE on the gold slice relative to (c).
+
+2) Leave-one-venue-year-out generalization, with and without noise-robust training
+- Hypothesis: Holding out entire newer venues/years will expose generalization gaps that shrink when using noise-robust training, indicating label-quality—not just data quantity—limits transfer.
+- Design:
+  - Partition by venue-year. Train on all but one target venue-year; test on the held-out (strict domain holdout).
+  - Compare standard cross-entropy vs noise-robust objectives (e.g., bootstrapping/label smoothing or loss correction using an estimated noise matrix from the gold slice).
+  - Include a domain-invariant baseline (e.g., group DRO or IRM-style penalty) to test robustness to venue shift.
+- Metrics: Macro-F1/ROC-AUC on the held-out, ECE, and threshold stability across domains.
+- Expected outcome: Noise-robust and domain-robust variants close part of the gap to in-domain performance, consistent with label-source/venue confounds seen in cross-dataset robustness studies [P3], and aligned with best-practice leave-domain-out evaluations [P4].
+
+3) Label-source ablation with matched sample size
+- Hypothesis: With the number of training examples held constant, using only high-confidence labels yields better cross-venue performance than including underpowered labels, isolating label quality as the causal factor.
+- Design:
+  - Build three training sets of equal size: (i) only high-confidence (older-venue) labels; (ii) mix including underpowered newer-venue labels; (iii) only newer-venue underpowered labels.
+  - Control for size via downsampling; repeat with multiple random seeds.
+  - Evaluate on the gold newer-venue slice from Experiment 1.
+- Metrics: Mean and variance of F1/ROC-AUC; paired tests across seeds.
+- Expected outcome: (i) > (ii) ≥ (iii) on the gold newer-venue test. A superiority of (i) over (ii) despite equal N implicates label quality as the limiting factor.
+
+Optionally add
+- Temporal calibration check: Compare probability calibration curves by venue-year; drift in ECE suggests temporal and labeling shifts.
+- Sensitivity-to-noise analysis: Inject synthetic label noise into high-confidence venues at the rate estimated from the gold slice; measure degradation to match newer-venue behavior.
+
+How to present this succinctly
+- Acknowledge the limitation and the confound (label source ≈ venue). Cite prior work showing cross-dataset generalization breaks when label sources differ [P3] and that leave-domain-out evaluation is a standard way to assess external validity [P4].
+- Include the gold-slice audit and LOVO results in the main text (with CIs), and the ablation/sensitivity in the appendix.
+- If results are stable under these tests, you can credibly claim generalizability beyond the original PeerRead labeling regime.
+
+Literature anchors you can cite inline
+- PeerRead introduction and collection details: A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Cross-dataset transfer degrades when label sources differ (analogy to label-source confounds): Generalizable Sarcasm Detection Is Just Around The Corner, Of Course! [P3]
+- Leave-domain-out as a standard robustness check for external validity: GENEVA: Benchmarking Generalizability for Event Argument Extraction [P4]
+
+Citations
+- [P3] Generalizable Sarcasm Detection Is Just Around The Corner, Of Course! — http://arxiv.org/abs/2404.06357v2
+- [P4] GENEVA: Benchmarking Generalizability for Event Argument Extraction with Hundreds of Event Types and Argument Roles — http://arxiv.org/abs/2205.12505v5
+- A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+
+Key takeaways
+- Underpowered labeling for newer venues threatens external validity by confounding venue with label source and inflating/deflating performance.
+- A small gold-slice audit + leave-one-venue-year-out + label-source ablation directly addresses the concern and provides quantitative reassurance.
+- Report uncertainty (CIs), calibration, and sensitivity-to-noise to make the case rigorous.

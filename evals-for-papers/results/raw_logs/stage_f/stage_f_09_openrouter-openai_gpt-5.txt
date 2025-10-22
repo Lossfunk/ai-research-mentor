@@ -1,0 +1,163 @@
+Below is a focused two-week sprint plan to take your graph foundation models paper to camera-ready, with concrete daily deliverables, artifact packaging, licensing, and release notes. It assumes you already have rebuttal-incorporated results and need to finalize paper, code, models, and documentation. Adjust dates to your deadline; keep at least a 48-hour submission buffer.
+
+Sprint goals and success criteria
+- Goals by end of Week 2:
+  - Camera-ready PDF and supplement compiled, template-compliant, and link-checked.
+  - Public, versioned artifact release (code, configs, models, dataset scripts) with a permanent DOI and clear licenses.
+  - Release notes v1.0.0 describing what’s included, changelog since submission, metrics, limitations, and responsible-use guidance.
+- Success criteria:
+  - One-command reproduction of 2 core results (e.g., node classification, link prediction) within stated confidence intervals on a fresh machine.
+  - All licenses and third-party attributions present; no restricted data redistributed; anonymization replaced with proper credits.
+  - External dry-run reproducer matches expected results; checksums and CI smoke tests pass.
+
+Week 1 (Days 1–5): Freeze content and build artifact spine
+
+Day 1: Camera-ready diff and compliance freeze
+- Paper: Apply all post-rebuttal changes; fix figure/table references; finalize titles, author order, funding/COI text.
+- Template compliance: page limits, fonts, captions, citation formats, ethical/repro checklists, data/code availability statement.
+- Claims lock: Ensure all claims are supported by results you can reproduce; move any borderline content to supplement.
+- Deliverables: Camera-ready branch created; compliance checklist filled; “What to reproduce” box drafted (2 commands and expected metrics).
+
+Day 2: Repository structure and environment pinning
+- Repo structure:
+  - src/, configs/, scripts/, notebooks/, data_scripts/, models/, eval/, docs/, licenses/.
+  - configs/ includes exact YAMLs used for the camera-ready numbers; map config→table/figure IDs in docs/mapping.md.
+- Repro environments:
+  - environment.yml and requirements.txt with pinned versions; Dockerfile (CUDA base), makefile task run targets.
+  - Determinism flags: seeds, PyTorch/cuDNN determinism, graph dataloader shuffling controls.
+- CI smoke test:
+  - GitHub Actions or similar to run a 5-minute “toy” job: imports, dataset fetch stubs, and a fast eval on a tiny graph.
+- Deliverables: Repo skeleton merged; CI passes; deterministic settings documented.
+
+Day 3: Models and datasets packaging
+- Pretrained checkpoints:
+  - Compress model weights (base/large variants) and compute SHA256 checksums.
+  - Export formats: native (PyG/DGL) and optional ONNX/TorchScript for inference; verify load and forward pass.
+- Dataset ledger:
+  - For each dataset (e.g., OGB), record name, version/date, URL/DOI, license, any modifications, and redistribution policy. Provide scripts to fetch/prepare; do not mirror restricted data.
+  - Include graph preprocessing notes: self-loop handling, normalization, feature standardization, edge directionality.
+- Deliverables: models/ populated; checksums.txt; data_scripts/ fetchers and preprocessing; dataset_ledger.md.
+
+Day 4: Reproducibility runs and expected-vs-obtained
+- One-command runs:
+  - scripts/run_repro.sh for two core tasks: node classification and link prediction. Use the exact configs from the paper; log seed, commit hash, CUDA, and metrics.
+  - Expected vs obtained table (docs/expected_vs_obtained.md) with 95% CIs; store logs under logs/.
+- Performance notes:
+  - GPU/CPU and memory footprints for inference/training on representative graph sizes; note OOM mitigation (micro-batching, neighbor sampling).
+- Deliverables: Repro commands validated on a clean machine; expected_vs_obtained.md complete.
+
+Day 5: Licensing, attributions, and legal hygiene
+- Choose licenses:
+  - Code: MIT or Apache-2.0.
+  - Model weights: pick a model license (e.g., Apache-2.0, CC-BY-4.0, or a responsible AI license if you impose usage constraints).
+  - Data: No redistribution; include LICENSE/NOTICE referencing third-party dataset licenses.
+- Third-party inventory:
+  - licenses/third_party_licenses.txt with all direct dependencies and their licenses; include PyTorch, PyG/DGL, Transformers, etc.
+  - Add NOTICE file if using Apache-2.0 components; include copyright statements where required.
+- Security and secrets:
+  - Run secret scanners (e.g., gitleaks) and license scanners; remove keys/tokens; strip proprietary paths.
+- Deliverables: LICENSE (code), MODEL_LICENSE, NOTICE, third_party_licenses.txt; scanner reports archived in docs/.
+
+Week 2 (Days 6–10): Documentation, ethics, external validation, and release
+
+Day 6: Documentation and model/data cards
+- Model cards:
+  - For each checkpoint: pretraining corpora summary, downstream tasks, evaluation metrics, graph types supported, size/params, training cost and hardware, known limits (e.g., scaling on dense graphs), responsible-use and out-of-scope.
+- Dataset cards or brief factsheets:
+  - Provenance, licenses, graph construction, splits, known biases.
+- API docs:
+  - Minimal docs for loading models, converting between frameworks (PyG↔DGL), and running inference on arbitrary graphs (sparse adjacency, heterogeneous graphs if supported).
+- Deliverables: docs/model_card_*.md, docs/dataset_card_*.md, docs/usage.md.
+
+Day 7: Ethical review and responsible AI statements
+- Paper ethics section:
+  - Data licensing and compliance; privacy and de-identification (if any user/interaction graphs); known societal risks (e.g., misuse in deanonymization), mitigations, and opt-outs if applicable.
+- Repo policies:
+  - SECURITY.md (contact and vulnerability disclosure), RESPONSIBLE-USE.md (intended uses, prohibited uses if applicable), CODE_OF_CONDUCT.md.
+- Deliverables: Ethics text finalized in paper and mirrored in docs/; policies added to repo.
+
+Day 8: Supplemental and notebooks
+- Supplement:
+  - Extended ablations (e.g., scaling with nodes/edges; masking ratios; negative sampling strategies), failure cases, per-dataset results tables, hyperparameter grids.
+  - Figures: high-resolution, readable captions, cross-referenced to main paper.
+- Demo notebooks:
+  - Minimal inference notebook on a small toy graph; training/eval notebook for one dataset; ensure executes within 10 minutes on CPU/GPU.
+- Deliverables: supplement.pdf or appendix materials; notebooks with outputs stripped and tested.
+
+Day 9: External dry-run and bug bash
+- Invite a colleague to clone repo and run the two one-command reproductions:
+  - Record wall-clock, metrics, and issues.
+  - Fix nondeterminism and missing system deps; improve error messages.
+- Create a “Known issues” section in release notes for any non-blockers.
+- Deliverables: Dry-run report; patches merged; updated expected_vs_obtained.md.
+
+Day 10: Versioning, DOI, and release notes
+- Versioning:
+  - Tag v1.0.0-rc1; create a GitHub Release draft; archive on Zenodo to mint a DOI (link the release to Zenodo).
+  - Upload checkpoints to an artifact host (e.g., Hugging Face Hub) with identical tags; include SHA256 checksums in README.
+- Release notes (see template below):
+  - What’s new since submission; artifacts included; metrics; compat matrix (PyTorch, CUDA, PyG/DGL versions); breaking changes; known issues; security/privacy notes; how to cite; checksums; mirrors and DOIs.
+- Deliverables: Draft release notes; Zenodo sandbox record; HF model cards uploaded (private until camera-ready).
+
+Final 2 days before submission (buffer)
+- Day 11: Link and metadata freeze
+  - Replace anonymized links in the paper with public ones (if allowed at camera-ready); verify all URLs; run a link checker.
+  - Final pass on figures, references, and acknowledgements; regenerate PDF with embedded fonts; validate supplementary file sizes.
+- Day 12: Submit and publish
+  - Submit camera-ready and supplementary per venue instructions.
+  - Flip artifacts to public, publish GitHub release v1.0.0, publish Zenodo DOI, publish HF models; announce in release notes.
+  - Add CITATION.cff to repo; verify badges (DOI, license, CI).
+
+Artifact packaging checklist (graph foundation models)
+- Code:
+  - Training and evaluation scripts; data loaders for supported graph formats (PyG/DGL); conversion utilities; inference API.
+  - Configs matching paper tables; seeds; deterministic flags; logging to JSON/CSV.
+- Models:
+  - Pretrained checkpoints (base/large); optional distilled or quantized variants; ONNX/TorchScript export; SHA256 checksums; model index mapping to tasks.
+- Data:
+  - Fetch/prepare scripts; no raw mirrors; dataset_ledger.md; notes on graph preprocessing (self-loops, normalization).
+- Reproducibility:
+  - One-command runs for 2 results; CI smoke test; expected_vs_obtained.md with CIs; environment.yml, requirements.txt, Dockerfile; hardware requirements.
+- Docs:
+  - README with quickstart; model/data cards; API usage; limitations; responsible-use; security policy; changelog/release notes; mapping from configs to paper tables.
+- Operational:
+  - Git LFS for large files; mirrors (HF Hub + cloud bucket); storage quotas checked; integrity verification script for weights.
+
+Licensing checklist
+- Code license selected (MIT or Apache-2.0) and added as LICENSE.
+- Model license selected and added as MODEL_LICENSE with usage constraints if any.
+- Dataset licenses documented; redistribution restricted; NOTICE includes third-party attributions where required.
+- third_party_licenses.txt generated; verify compatibility matrix (e.g., Apache-2.0 with MIT/BSD).
+- Trademark/patent statements if applicable; export control statement if relevant.
+- Headers or SPDX tags added to key source files.
+
+Release notes template (copy and adapt)
+- Title and version: GraphFM v1.0.0 — camera-ready release
+- Summary:
+  - First public release of pretrained graph foundation models (Base, Large) and evaluation suite. Matches results in Paper Section X/Tables Y–Z.
+- What’s included:
+  - Code (training/eval), configs, two pretrained checkpoints, dataset fetchers, one-command repro for node classification and link prediction, demo notebooks.
+- Changelog since submission:
+  - Bug fixes in neighbor sampling; updated configs; added ONNX export; improved determinism; expanded dataset ledger.
+- Metrics:
+  - Expected metrics for two core tasks with 95% CIs and seeds; link to expected_vs_obtained.md and logs.
+- Compatibility:
+  - Tested on PyTorch X.Y, CUDA Z, PyG A.B/C D.E; OS versions. Known incompatibilities noted.
+- Known issues:
+  - Non-deterministic behavior on GPU model X unless setting env flags; memory spikes on dense graphs >N edges; workarounds provided.
+- Security and privacy:
+  - No PII in training corpora to the best of our knowledge; datasets open-source under listed licenses; responsible-use guidance and prohibited uses.
+- Licenses:
+  - Code under MIT/Apache-2.0; models under [license]; datasets under respective third-party licenses; see LICENSE, MODEL_LICENSE, NOTICE.
+- Checksums and downloads:
+  - SHA256 for each weight file; mirrors (HF Hub) and Zenodo DOI; versioned tags.
+- How to cite:
+  - BibTeX for paper and software (CITATION.cff present).
+
+Risk register and mitigations (common last-mile pitfalls)
+- Non-determinism across GPUs: lock seeds, cudnn flags, neighbor sampling seeds; document residual variance and acceptable CI bands.
+- License conflicts: remove/replace incompatible assets; ensure NOTICE completeness; avoid redistributing third-party datasets.
+- Link rot and size limits: host mirrors (HF Hub + Zenodo), compress weights, use LFS; validate links via script.
+- Inference memory issues on large graphs: provide chunked inference and neighbor sampling; document OOM thresholds and flags.
+
+If you share your target venue, I can align file size limits, acceptable supplementary formats, and ethics/repro checklist fields exactly and map the artifact links to the camera-ready PDF.

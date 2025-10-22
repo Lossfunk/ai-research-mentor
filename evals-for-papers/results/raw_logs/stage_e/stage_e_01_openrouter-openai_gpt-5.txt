@@ -1,83 +1,55 @@
-Key reviewer concerns and concrete mitigations
+Below are likely reviewer concerns about the validity of the “probably-rejected” arXiv labels in PeerRead, along with concrete mitigations you can commit to in the discussion. Where possible, we separate claims supported by the attached PeerRead paper from those grounded in the public description of the dataset.
 
-1) Heuristic nature and potential mislabeling of “probably-rejected”
-- Concern: The “probably-rejected” tag is constructed heuristically from arXiv and venue-matching signals rather than ground-truth decisions; papers that were never submitted, desk-rejected, or later accepted elsewhere can be mislabeled as “rejected.” [1][2]
-- Mitigations:
-  - Reframe the label as “unconfirmed-for-target-venues at snapshot time,” and clearly document the construction procedure with a timeline of when labels were derived relative to each paper’s arXiv version history. [1][2]
-  - Build a time-stamped audit: cross-link arXiv entries to DBLP/venue proceedings and exclude any paper that is later verified as accepted to a target venue within a defined horizon (e.g., 12–24 months). Report the estimated noise rate with confidence intervals.
-  - Treat the task as positive–unlabeled (PU) rather than positive–negative: accepted = observed positives; “probably-rejected” = unlabeled mixture, and use PU-learning estimators and evaluation that do not assume clean negatives. [3]
+What reviewers may question
+- Construct validity of “rejection” on arXiv: A paper not found in target venue databases may have never been submitted, may still be under review, or may have been accepted later or in a different venue. The arXiv label is therefore a heuristic proxy rather than an observed decision [1]. Mitigation below.
+- Time-lag bias: If the matching window is short, papers later accepted can be mislabeled as “rejected.” Many arXiv preprints get accepted months to years later [1].
+- Entity-resolution/matching errors: Imperfect title/author matching to bibliographic sources (e.g., DBLP, proceedings) can create false negatives that inflate “probably-rejected” counts [1].
+- Coverage/venue bias: “Probably-rejected” is often defined with respect to a limited set of focal venues; acceptance in journals, workshops, or adjacent conferences can be missed [1].
+- Subfield/practice heterogeneity: arXiv posting and eventual publication rates vary by area and year; this can systematically bias the label.
+- Downstream modeling bias: Treating noisy “probably-rejected” as true negatives can distort classifier training; models may overfit to arXiv-specific artifacts instead of review-relevant signals.
+- Ethical/interpretive risk: The label name suggests a definitive outcome when it is, in fact, a weak/noisy inference; this can be misinterpreted by readers.
 
-2) Selection and domain shift in the arXiv subset
-- Concern: arXiv postings are a non-random sample of submissions and may differ systematically from the population of actually reviewed conference submissions (topic mix, seniority, geographic distribution, writing stage).
-- Mitigations:
-  - Report distributions (topics, subfields, institution regions, time) for arXiv vs. in-venue papers; stratify analyses by subfield/time to assess and disclose divergence.
-  - Perform sensitivity analyses with alternative inclusion criteria (e.g., restricting to arXiv categories closest to target venues or to papers with clear “submitted to X” comments) and show robustness of conclusions across strata.
+Commitments and mitigations to include
+- Use arXiv labels only as weak supervision; prefer gold decisions for evaluation. We will restrict primary evaluations to conference subsets with observed accept/reject decisions (e.g., ACL 2016, ICLR 2017, which PeerRead explicitly includes) [PeerRead.pdf:2; PeerRead.pdf:15]. We will treat arXiv “probably-rejected” only for auxiliary training or analysis, never as ground truth for headline results.
+- Reframe as PU learning instead of hard negatives. We will treat arXiv “probably-rejected” as unlabeled rather than negative and apply positive–unlabeled learning, which is designed for settings with known positives and ambiguous unlabeled data [3]. We will report performance vs. standard supervised baselines.
+- Calibrate the label with multi-source matching and a longer window. We will re-implement and extend the original matching with DOIs, fuzzy title/author matching, and multiple bibliographic sources (DBLP, Crossref, OpenAlex), using a ≥24–36 month window from arXiv posting to reduce late-acceptance false negatives [1].
+- Provide label-confidence scores, not binary flags. Each arXiv item will receive a probability of “unpublished in target venues by T months,” based on concordant matches across sources and text signals (e.g., “Accepted at …” in PDF or arXiv comments).
+- Exclude ambiguous cases. We will remove arXiv papers that self-report “under review,” or that show any later acceptance indicator, from the “probably-rejected” pool.
+- Sensitivity analyses. All key findings will be re-run (a) without arXiv data, (b) with arXiv included as weakly labeled (PU), and (c) with arXiv included as down-weighted negatives (e.g., 0.3–0.5 sample weights). We will explicitly quantify any changes.
+- Manual audit to estimate noise. We will hand-verify a stratified random sample of “probably-rejected” papers to estimate precision and characterize common failure modes (late acceptance, venue coverage gaps, matching errors). We will report this as an error bar on any analysis using these labels.
+- Transparent naming and documentation. In the paper, we will rename the label to “unmatched-to-target-venue-within-T-months (heuristic)” and clearly document construction, confidence, and limitations to avoid over-interpretation.
 
-3) Label leakage from arXiv metadata
-- Concern: Fields like comments/journal-ref can reveal acceptance outcomes (“to appear in…”) and leak target labels into features, inflating performance.
-- Mitigations:
-  - Define a strict “no-leakage” feature set that excludes comments, journal-ref, and version-after-acceptance text; report both leakage-prone and leakage-free results and prefer the latter for conclusions.
+Three concrete, falsifiable experiments
+1) Label audit and precision estimate
+- Sample: 200 arXiv items labeled “probably-rejected” across years and subfields.
+- Procedure: Search DBLP, Crossref, OpenAlex, Google Scholar, and paper PDFs/comments for later acceptances up to 36 months post arXiv posting; record match provenance and time-to-acceptance.
+- Outcome: Estimate the false-negative rate of the matching (i.e., fraction actually accepted somewhere) with 95% CIs; report by year and venue-type.
+- Falsifiable criterion: If precision <80%, we will not use these labels as negatives; we switch to PU-only analyses.
 
-4) Temporal confounding
-- Concern: Model performance and label construction may be confounded by timing (e.g., including later arXiv versions updated post decision).
-- Mitigations:
-  - Freeze each paper at the earliest arXiv version prior to any public acceptance indicators; document the snapshot date policy and enforce consistent time cuts across train/validation/test.
+2) Robustness to label usage
+- Train the same acceptance-prediction model under three conditions: (A) gold conference labels only (train and test on ACL/ICLR subsets) [PeerRead.pdf:2; PeerRead.pdf:15], (B) add arXiv as hard negatives, (C) add arXiv as PU (no negatives; PU risk estimator).
+- Outcome: Compare AUC/F1 on a gold-labeled held-out test set. Pre-register a non-inferiority margin (e.g., ΔAUC ≤ 0.01 vs. A). 
+- Falsifiable criterion: If (B) underperforms (A) by >0.01 AUC while (C) matches (A), we conclude hard-negative use is harmful and adopt PU.
 
-5) Instance-dependent label noise
-- Concern: Mislabel probability likely depends on paper characteristics (topic, seniority, writing quality), making the noise non-uniform and instance-dependent. This challenges standard ERM and biases metrics. [5]
-- Mitigations:
-  - Use robust training strategies (co-teaching/co-regularization, early-loss filtering, noise-robust losses such as generalized cross-entropy) and compare against standard cross-entropy. [4][5]
-  - Calibrate and report noise-aware metrics (e.g., corrected accuracy/precision under estimated noise rates) and learning curves that show stability to increasing presumed noise.
+3) Extended matching and impact analysis
+- Implement extended matching (DOI+fuzzy title/author; DBLP+Crossref+OpenAlex) and a 36-month window.
+- Outcome: Measure the fraction of “probably-rejected” reclassified as matched/accepted compared to the baseline heuristic; quantify the change in model results when using the updated labels.
+- Falsifiable criterion: If ≥10% of “probably-rejected” become matched, we will revise all analyses and report the delta; otherwise, we justify the original heuristic as sufficiently precise for augmentation.
 
-6) Ambiguity of the construct “rejected”
-- Concern: “Not accepted at the specified venues” is not equivalent to “rejected for quality”; it conflates non-submission, desk reject, and redirection to journals/workshops.
-- Mitigations:
-  - Explicitly position the label as a proxy for “not observed as accepted at the target venues under the defined time window,” and limit claims to correlational findings about linguistic/style/content signals under this proxy.
+Optional fourth experiment (ablation)
+- Down-weighting study: Vary sample weights on arXiv negatives from 0.1 to 1.0; plot performance on gold-labeled test. Pre-specify the weight chosen by validation performance stability.
 
-7) Data leakage and duplicates across splits
-- Concern: Multiple arXiv versions or derivatives can create cross-split leakage.
-- Mitigations:
-  - Deduplicate by title+hash of early text and author sets; ensure all versions of a work reside in a single split and report the deduplication procedure.
-
-Concrete, falsifiable experiments to include
-
-1) Label audit and noise-rate estimation
-- Method: Randomly sample N=300 “probably-rejected” papers, query DBLP/Google Scholar/venue proceedings for 24 months after the arXiv v1 date, and record whether they were accepted at any target venue. Compute an empirical false-negative rate with Wilson 95% CI.
-- Falsifiable outcome: If the upper CI > 20%, we will classify the setting as PU and avoid treating these as true negatives; otherwise, we report noise-aware results under the estimated rate.
-
-2) Leakage ablation
-- Method: Train identical models on (a) full metadata, (b) metadata without comments/journal-ref, and (c) text-only from v1. Compare AUC/accuracy across splits.
-- Falsifiable outcome: If removing comments/journal-ref reduces performance by >5 points, we will standardize on leakage-free features and flag any results using (a) as overestimates.
-
-3) PU vs. PN training comparison
-- Method: Train (i) standard ERM with cross-entropy on positive vs “probably-rejected” labels and (ii) a PU-learning baseline (e.g., nnPU or unbiased risk estimators). Evaluate with a held-out set filtered to minimize noise (papers with strong independent evidence of acceptance/rejection).
-- Falsifiable outcome: PU methods yield equal or better generalization and lower variance across seeds; if not, we justify continued use of PN while reporting the noise analysis. [3]
-
-4) Robust-to-noise training test
-- Method: Compare cross-entropy vs. noise-robust approaches (co-teaching and generalized cross-entropy loss) under controlled label corruption where we synthetically flip 10–30% of labels in the training set.
-- Falsifiable outcome: Robust methods retain higher accuracy under increasing corruption; if not observed, we avoid claiming robustness and restrict conclusions accordingly. [4][5]
-
-5) Time-slice sensitivity
-- Method: Construct datasets freezing papers at v1 and at v1+90 days; retrain/evaluate.
-- Falsifiable outcome: If metrics shift >3 points across time slices, we report time sensitivity and standardize on the earlier slice for conservative estimates.
-
-6) Subfield stratification
-- Method: Estimate noise rates and model performance across arXiv categories (e.g., cs.CL, cs.LG, cs.IR); run interaction tests.
-- Falsifiable outcome: Significant differences imply reporting per-subfield results and avoiding pooled claims.
-
-What we will state in the discussion
-- The arXiv “probably-rejected” labels are heuristic proxies, not ground-truth rejections; we quantify their noise and treat them as unlabeled where appropriate. [1][2][3]
-- We adopt leakage-free features and time-consistent snapshots; we report sensitivity analyses and noise-aware metrics.
-- We include a manual audit, PU-learning baselines, and robust-to-noise training comparisons to bound how label noise might affect our conclusions. [3][4][5]
-- We limit claims to correlational findings under these constraints and provide our audit lists, code, and preprocessing pipelines for reproducibility.
-
-Literature anchors
-- A Dataset of Peer Reviews (PeerRead): describes dataset construction and the heuristic nature of acceptance/rejection proxies for arXiv papers. [1]
-- Learning from positive and unlabeled data (survey) and Co-teaching (robust training under label noise): methodological foundations for PU framing and noise-robust training. [3][4][5]
+How we will report this in the discussion
+- We will explicitly state that arXiv “probably-rejected” are heuristic, not observed decisions, and present their estimated noise via the manual audit. Primary claims will rely on gold conference decisions (ACL/ICLR subsets) already present in PeerRead [PeerRead.pdf:2; PeerRead.pdf:15]. We will include sensitivity analyses demonstrating that conclusions are robust to excluding or reweighting the arXiv subset, and we will release our matching code, audit annotations, and label-confidence scores for transparency.
 
 Citations
-[1] Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://arxiv.org/pdf/1804.09635.pdf
-[2] PeerRead Dataset on Hugging Face — https://huggingface.co/datasets/allenai/peer_read/blob/main/README.md
-[3] Bekker & Davis, 2020. Learning from positive and unlabeled data: a survey — https://link.springer.com/article/10.1007/s10994-020-05877-5
-[4] Han et al., 2018. Co-teaching: Robust training of deep neural networks with extremely noisy labels — https://proceedings.neurips.cc/paper/2018/file/a19744e268754fb0148b017647355b7b-Paper.pdf
-[5] Song et al., 2020. Learning from Noisy Labels with Deep Neural Networks — https://arxiv.org/pdf/2007.08199.pdf
+- [PeerRead.pdf:2] The dataset includes official conference-reviewed subsets (e.g., ACL 2016, ICLR 2017), which we use for gold-labeled evaluation.
+- [PeerRead.pdf:15] The review form includes an explicit accept/reject recommendation, grounding our use of conference decisions as gold labels.
+- [1] Kang, D., Ammar, W., Schwartz, R., & Cohen, W. W. (2018). A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- [2] allenai/PeerRead (dataset and construction details, including arXiv subset) — https://github.com/allenai/PeerRead
+- [3] Elkan, C., & Noto, K. (2008). Learning classifiers from only positive and unlabeled data — https://dl.acm.org/doi/10.1145/1401890.1401920
+
+Sources
+[1] A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[2] allenai/PeerRead: Data and code — https://github.com/allenai/PeerRead
+[3] Elkan & Noto (2008), Learning from Positive and Unlabeled Data — https://dl.acm.org/doi/10.1145/1401890.1401920
