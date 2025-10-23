@@ -1,91 +1,90 @@
-Below is a concrete experiment plan to evaluate a third intervention class—standardized communication protocol (SCP)—targeting Inter-Agent Misalignment, along with baselines to include and appropriate statistical tests for comparing failure distributions.
+Below is a targeted intervention to replace hierarchical pooling with flat mean pooling, plus baselines, datasets, metrics, and statistical tests designed for a clean comparison. I ground the evaluation setup (benchmarks and primary metrics) in the attached paper and mark unspecified implementation details as Conjecture with defensible defaults.
 
-Goal
-- Test whether enforcing a standardized communication protocol reduces Inter-Agent Misalignment relative to the paper’s prompt-based and topological interventions, using the same taxonomy and LLM-as-a-Judge evaluation procedure as in the paper’s methodology (Section 3.4) [1]. Appendix F reports that topological changes outperform prompt-only interventions; these should be used as baselines [1][2].
+Intervention: flat mean pooling in place of hierarchical pooling
+- Objective: Remove level-wise (hierarchical) pooled summaries and instead compute a single global summary embedding from all retained tokens at a step.
+- Where it plugs in:
+  - Any place the current model aggregates level-specific token groups into pooled summaries used by the controller, memory/summary tokens, or downstream planning modules. The paper emphasizes hierarchical masking and multi-level structure; this intervention specifically tests whether a simple, flat aggregation suffices. Conjecture.
+- Proposed change (minimal-diff implementation):
+  - Let E_t ∈ R^{N_t × d} be the embeddings of all retained tokens at step t after the current Transformer layer.
+  - Replace per-level pooled vectors {s_t^(l)} with a single s_t = mean_i E_t[i].
+  - Replace any per-level controller inputs with the concatenation [s_t, time_embed(t), optional aux], keeping dimensionality matched via linear layers. Conjecture.
+  - If a memory/summary token attends to level-wise summaries, instead have it attend to s_t (or seed a single “summary token” whose initial value is s_t per step). Conjecture.
+  - Maintain the same retained-token budget and rollout depth as the original model to ensure apples-to-apples compute comparisons [heirarchical-transformer.pdf:3].
+  - Parameter parity: if the hierarchical pooling path removes parameters (e.g., per-level projection heads), reallocate a small MLP on s_t to keep total parameter count within ±1%. Conjecture.
 
-Intervention: Standardized Communication Protocol (SCP)
-- Core idea: Agents must use a typed, machine-checkable message schema and finite-state dialogue moves (speech acts) to communicate intent, responsibilities, and agreements. This draws on established agent communication principles (e.g., FIPA ACL) [3].
-- Message schema fields:
-  - header: sender_id, receiver_id, role, timestamp
-  - intent: one of {inform, request, propose, agree, commit, decline, query, confirm, retract, terminate}
-  - goal_id: globally shared UUID for current goal/subgoal
-  - constraints: structured key-value constraints (e.g., budget ≤ X, latency ≤ Y)
-  - plan_hash: hash of the current shared plan or subplan text
-  - belief_version: monotonic counter for shared context
-  - commitment_id and deadline: for trackable commitments
-  - confidence: 0–1 self-reported confidence for transparency
-- Protocol mechanics:
-  - Handshake/consensus: Every new or revised plan must traverse propose → agree → commit, with an automatic consensus check on goal_id and plan_hash; a mismatch triggers a required clarify → confirm loop.
-  - Compliance enforcement: A parser validates schema and allowed transitions (finite-state machine). Nonconforming messages are rejected with an automatic request to rephrase using the schema.
-  - Traceability: All messages and state transitions are logged to compute compliance rate and to support post-hoc auditing of misalignment traces.
+Baselines and variants
+- Original model (Hierarchical pooling): The unmodified hierarchical aggregation path (control). This directly targets the paper’s ablation interest in hierarchical masking/structure [heirarchical-transformer.pdf:3].
+- Flat mean pooling (intervention): As above.
+- Optional robustness baselines (recommended if budget allows):
+  - Flat attention pooling: replace hierarchical pooling with attention pooling over all retained tokens to produce a single summary (global attention-weighted mean).
+  - No pooling: rely solely on a learnable memory token without any pooled summary (tests necessity of explicit aggregation).
+  - Flat token dropout baseline: the paper positions hierarchical structure against flat sparsification; include a flat sparsification variant with identical token-budget and depth for context [heirarchical-transformer.pdf:3]. Conjecture.
 
-Experimental design
-- Tasks and data: Use the same task suite and evaluation taxonomy as the paper; freeze taxonomy, prompts, and judge configuration before running the experiment, per Section 3.4 [1]. Keep all evaluation examples disjoint from any development used to design the SCP.
-- Systems/conditions:
-  1) Baseline A: Original system (no intervention), as in the paper [1].
-  2) Baseline B: Prompt-based intervention from Appendix F [1][2].
-  3) Baseline C: Topological intervention from Appendix F (e.g., role/topology changes) [1][2].
-  4) Treatment: SCP enforced (protocol + parser + handshake).
-  5) Optional: SCP + Topological intervention to test additivity.
-- Execution:
-  - For each task, run each condition with k seeds (e.g., k=5–10) to quantify variance, following the paper’s multi-run practice [1].
-  - Keep decoding and judge parameters fixed across conditions.
-  - Blind model identities and randomize task order to limit judge/system bias.
-- Outcomes:
-  - Primary: Proportion of Inter-Agent Misalignment failures as judged by the LLM-as-a-Judge taxonomy [1].
-  - Secondary: Full failure-mode distribution across categories; protocol compliance rate; task success rate and latency/turns.
+Datasets and evaluation protocol
+- Benchmarks: Atari 100k and Crafter, as specified in the attached paper [heirarchical-transformer.pdf:3].
+- Splits and seeds:
+  - Use identical train/validation/test seeds across all variants; do not tune on test seeds. Conjecture.
+  - Run ≥5 seeds per game (Atari) and per difficulty (Crafter) to estimate variance. Conjecture.
+- Preprocessing and rollout settings:
+  - Keep observation preprocessing, tokenization, frame stacking, action repeat, rollout horizon, context length, and retained-token budget identical across variants to isolate the pooling change [heirarchical-transformer.pdf:3]. Conjecture.
 
-Concrete, falsifiable experiments
-1) SCP effectiveness on misalignment
-- Design: Compare Inter-Agent Misalignment rate across Baselines A–C vs SCP (and optionally SCP+Topo) on the held-out evaluation set.
-- Falsifiable outcome: Pre-register a minimal detectable effect (e.g., ≥30% relative reduction vs Baseline A). If the observed reduction is below this with 95% CI overlapping zero, conclude SCP does not materially reduce misalignment under current settings.
+Primary metrics (as in paper) and how to compute them
+- Rollout compute cost: per-step FLOPs and wall-clock time for imagination/planning at a fixed retained-token budget and rollout depth [heirarchical-transformer.pdf:3]. Report both training-time and evaluation-time compute if they differ.
+- Rollout error: token-level and image-level prediction error at horizons H (e.g., H ∈ {25, 50, 100}) on held-out trajectories; summarize by area under the error-vs-horizon curve (AUC) [heirarchical-transformer.pdf:3]. Conjecture on AUC summary.
+- Final RL performance: median human-normalized score on Atari 100k and Crafter; report mean ± 95% CI over seeds per game and aggregate across games as median with IQR, following standard reporting [heirarchical-transformer.pdf:3]. Conjecture on exact aggregation details.
 
-2) Protocol ablation study
-- Design: Compare three variants: schema-only (no enforcement), schema+parser (rejects malformed messages), full SCP (parser + handshake consensus). Everything else is held constant.
-- Falsifiable outcome: If schema-only ≈ baseline but full SCP shows a significant reduction, infer enforcement and consensus checks—not just templated messages—drive the effect.
+Secondary metrics (stability and behavior diagnostics)
+- Stability: across-seed variance in rollout error and RL score; failure rate (divergent training runs).
+- Token budget adherence: average retained-token fraction and its variance per step; mask entropy.
+- Calibration: uncertainty calibration error on rollouts if uncertainty signals are used downstream (expected calibration error).
+- Memory/summary usage: attention mass on summary/memory tokens; representational drift across horizon (cosine distance between s_t and s_{t+k}). Conjecture.
 
-3) Speech-act importance test
-- Design: Replace typed intents with free-form messages while keeping schema fields, or swap intent labels with randomized synonyms (control for superficial prompt effects).
-- Falsifiable outcome: If misalignment increases or reverts toward baseline without typed intents, conclude speech-act typing contributes causally to mitigation.
+Statistical tests and reporting
+- Across games (Atari, Crafter):
+  - Use paired Wilcoxon signed-rank tests comparing per-game median scores between hierarchical pooling (control) and flat mean pooling (intervention). Report effect size (Cliff’s delta) and adjusted p-values (Benjamini–Hochberg FDR across multiple variants). Conjecture.
+- Across seeds (within each game/dataset):
+  - Two-sided paired t-test on seed-wise means if normality holds (Shapiro–Wilk); otherwise Wilcoxon signed-rank.
+  - Additionally report 10k bootstrap CIs for mean differences of primary metrics.
+- Rollout error curves:
+  - Compare AUCs via paired bootstrap (by sequence) with BCa 95% CIs; visualize mean ± 95% CI across seeds/horizons.
+- Equivalence testing (recommended if differences are small):
+  - Two one-sided tests (TOST) with pre-registered equivalence margins, e.g., ±1% for compute FLOPs and ±2% relative for rollout error, to support “no meaningful difference” conclusions. Conjecture.
+- Pareto analysis:
+  - For compute vs error trade-offs under varying token budgets, compute dominated hypervolume; compare via bootstrap. Conjecture.
 
-4) Robustness and generalization
-- Design: Evaluate SCP on held-out, more coordination-heavy tasks (or higher agent counts) without additional tuning.
-- Falsifiable outcome: If reductions persist within a pre-registered margin (e.g., within 20% of base effect size), claim preliminary generalization; otherwise, the effect is task-specific.
+Three concrete, falsifiable experiments
+1) Direct substitution test: hierarchical vs flat mean pooling
+- Setup: Train both variants with identical hyperparameters, token budgets, rollout depths, and training steps. Evaluate on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Hypotheses:
+  - H1: Flat mean pooling does not significantly degrade final RL performance vs hierarchical pooling (non-inferiority within Δ = 2% relative). Conjecture.
+  - H2: Flat mean pooling reduces pooling overhead, yielding equal or lower per-step compute (FLOPs). Conjecture.
+- Pass/fail:
+  - Non-inferiority via TOST (Δ = 2%) on RL score; paired Wilcoxon p < 0.05 after FDR correction if superiority is claimed.
+  - Compute reduction significant via paired tests across seeds.
 
-Recommended baselines from the paper
-- No-intervention baseline (original multi-agent configuration) [1].
-- Prompt-based intervention baseline(s) from Appendix F (e.g., enhanced role prompts or coordination prompts used by the authors) [1][2].
-- Topological intervention baseline(s) from Appendix F (e.g., supervisor or coordinator topologies) [1][2].
-- Use the same judge rubric and categorization pipeline (Section 3.4) to ensure comparability across conditions [1].
+2) Long-horizon stability under fixed compute
+- Setup: Fix retained-token budget and rollout depth; compare rollout error AUC over horizons H ∈ {25, 50, 100}.
+- Hypothesis: Hierarchical pooling yields lower long-horizon error AUC due to level-structure, while flat mean pooling may blur level-specific signals [heirarchical-transformer.pdf:3]. Conjecture.
+- Pass/fail: Significant AUC difference via paired bootstrap with 95% CI not crossing 0; or TOST for equivalence within a pre-registered margin (e.g., ±2% relative AUC).
 
-Statistical analysis for failure-mode distributions
-- Unit of analysis: Individual task-runs (task × seed × condition). Cluster by task if tasks repeat.
-- Primary test on Inter-Agent Misalignment (binary per run):
-  - If independent runs: two-proportion z-test or logistic regression with condition as a fixed effect; report risk difference/ratio with 95% CIs.
-  - If paired design (same tasks evaluated across conditions with matched seeds): McNemar’s test per category; report odds ratio and CI.
-  - Prefer mixed-effects logistic regression: misalignment ~ condition + (1|task) + (1|seed) with cluster-robust or bootstrap CIs, to account for task heterogeneity.
-- Full distribution across categories:
-  - Chi-square test of homogeneity on multinomial counts across conditions.
-  - If paired: Bowker’s test of symmetry on the paired contingency table, or a permutation test on label vectors within tasks.
-  - As an alternative, fit a Dirichlet-multinomial regression with condition as a predictor and compare via likelihood-ratio test; report category-specific marginal effects with bootstrapped CIs.
-- Multiple comparisons:
-  - When testing multiple categories or ablations, control FDR with Benjamini–Hochberg; for a small number of planned tests, Holm–Bonferroni is acceptable.
-- Uncertainty and power:
-  - Report Wilson CIs for proportions; bootstrap CIs clustered by task for robustness.
-  - Pre-compute power for the primary endpoint given expected baseline misalignment rates; adjust k (seeds) or N (tasks) accordingly.
-- Sensitivity checks:
-  - Re-score a subset with human annotators to confirm judge stability and estimate judge–human agreement before applying conclusions [1].
-  - Repeat analyses with a second judge family to assess judge-family bias; conclusions should not change qualitatively if the effect is real.
+3) Budget sweep and Pareto efficiency
+- Setup: Sweep retained-token budgets (e.g., 10%, 20%, 40%) at constant rollout depth; train light fine-tunes to keep capacity matched. Measure compute vs rollout error and compute vs RL score.
+- Hypothesis: If hierarchical pooling is beneficial, its Pareto front should dominate flat mean pooling in at least one regime (low budgets), consistent with the paper’s efficiency/stability hypothesis [heirarchical-transformer.pdf:3].
+- Pass/fail: Dominated hypervolume of hierarchical front significantly larger via bootstrap; or flat mean pooling achieves statistical parity (equivalence) across the sweep.
 
-Practical tips to avoid leakage or bias
-- Freeze taxonomy, prompts, judge, and SCP spec before touching the evaluation set; restrict all iteration to a separate development split [1].
-- Do not derive SCP message examples from evaluation traces; use synthetic or development-set traces instead.
-- Keep judge prompts free of evaluation examples; report version hashes for judge and SCP configs for reproducibility.
+Practical notes for comparability
+- Keep tokenization, masking policy, controller inputs (other than pooling), optimizer, schedule, and stopping criteria identical across variants [heirarchical-transformer.pdf:3]. Conjecture.
+- Report all three primary metrics specified by the paper—rollout compute cost, rollout error, and final RL performance—on Atari 100k and Crafter to align with the paper’s evaluation [heirarchical-transformer.pdf:3].
+
+Literature anchors (for implementation choices)
+- Learning to play Atari in a world of tokens (DART): useful for tokenized Atari pipelines and memory/summary token patterns. https://arxiv.org/abs/2406.01361
+- Transformers are sample-efficient world models: background on token-based visual world models and evaluation practices. https://arxiv.org/abs/2209.00588
+
+Citations
+- [heirarchical-transformer.pdf:3] We hypothesize that applying Sparse Hierarchical Imagination (SHI) will improve both computational efficiency and rollout stability; report rollout compute cost, rollout error, and final RL performance; benchmarks include Atari 100k and Crafter.
+- Micheli et al., 2023. Transformers are sample-efficient world models — https://arxiv.org/abs/2209.00588
+- Agarwal et al., 2024. Learning to play atari in a world of tokens (DART) — https://arxiv.org/abs/2406.01361
 
 Key takeaways
-- Use the paper’s no-intervention, prompt-based, and topological baselines to anchor comparisons [1][2].
-- Evaluate an enforceable, typed communication protocol with consensus checks; test with ablations to isolate what matters.
-- Analyze both the primary misalignment rate and the full failure distribution, using paired/unpaired tests as appropriate and mixed-effects models for robustness.
-
-Literature anchors
-- Why Do Multi-Agent LLM Systems Fail? (taxonomy, LLM-as-a-Judge method, and Appendix F interventions) [1][2
+- The intervention isolates the role of hierarchical pooling by replacing it with a single flat mean-pooled summary while holding token budgets and rollout depth fixed [heirarchical-transformer.pdf:3].
+- Evaluate using the paper’s primary metrics on Atari 100k and Crafter and compare variants with paired nonparametric tests, bootstrap CIs, and equivalence tests to support both superiority and non-inferiority claims [heirarchical-transformer.pdf:3].

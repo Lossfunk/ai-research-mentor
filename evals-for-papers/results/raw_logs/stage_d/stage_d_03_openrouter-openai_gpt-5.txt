@@ -1,31 +1,101 @@
-Below is a compact, evidence-based plan to add an “Efficiency Issues” category to the MST taxonomy, define its sub-types, and validate that it is statistically distinct from the existing three categories (Specification, Inter-Agent Misalignment, Verification), while preserving the paper’s LLM-as-a-Judge methodology and non-leakage practices.
+Below is an evaluation extension that adds efficiency metrics—latency, memory, and throughput—without changing the original accuracy-focused protocol. Where the attached paper is explicit (rollout compute cost, rollout error, final RL performance; benchmarks: Atari 100k and Crafter), I cite it. Any additional operational detail is marked Conjecture and chosen to preserve comparability while enabling robust efficiency measurement.
 
-Scope and positioning
-- Rationale: The MST paper deliberately excluded non-correctness metrics (e.g., cost/latency) to focus on correctness-oriented failure taxonomy; we extend the taxonomy with an orthogonal “Efficiency Issues” category evaluated via logs and cost/latency/turns, without redefining correctness outcomes [1].
-- Orthogonality: Treat Efficiency Issues as a distinct category that can co-occur with success or failure; in reporting, provide both the primary correctness category and a binary flag or secondary label for Efficiency. This preserves interpretability while enabling discriminant validity tests against the three correctness-oriented categories [1].
+Scope and invariants from the original evaluation
+- Keep the original primary outcomes: rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+- Keep the same benchmarks (Atari 100k and Crafter) and ablation framing (masking and guidance components) [heirarchical-transformer.pdf:3].
+- Do not change training data, rollout depth, retained-token budget, or model capacity when adding efficiency instrumentation; measure efficiency on the same runs used for accuracy to avoid run-to-run confounds [heirarchical-transformer.pdf:3]. Conjecture.
 
-Operational definition of “Efficiency Issues”
-- A run has an Efficiency Issue if it meets or fails the task objective but exhibits resource overuse relative to pre-registered task budgets or development-set baselines (tokens, turns, tool calls, wall-clock time), independent of correctness. Thresholds are frozen from the development split (e.g., 90th percentile of successful baseline runs per task family) to avoid evaluation-set leakage [1].
-- Signals are computed from execution traces: total tokens, messages, tool calls, unique tools used, retries, wall-clock time, and redundant similarity between consecutive messages. Prior literature motivates communication- and tool-use efficiency as meaningful axes in multi-agent systems [2][3][4].
+New efficiency metrics (definitions and how to measure)
+- Latency (in milliseconds; lower is better)
+  - Training iteration latency: mean wall-clock time per optimization step (after warm-up).
+  - Model-rollout latency: mean time per imagined step at fixed rollout depth and retained-token budget.
+  - Planning latency per decision: end-to-end time from observation encoding to chosen action when planning is used. Conjecture.
+  - Measurement: use synchronized GPU timers (e.g., CUDA events with torch.cuda.synchronize before/after), discard first K warm-up steps (e.g., K=50), then average over T steps (e.g., T≥500). Conjecture.
 
-Proposed sub-types under “Efficiency Issues”
-- Communication redundancy: Excessive back-and-forth, ping–pong loops, or semantically repetitive messages (high inter-message similarity) without new information [2][4].
-- Tool-use thrashing: Unnecessary or repeated tool calls (retrieval, web, code) with near-identical inputs; failure to cache or reuse results [2][4].
-- Over-decomposition/over-staffing: Creating too many subtasks/roles or unnecessary agents relative to task complexity; low work-per-message ratio [3][4].
-- Context bloat: Injecting large, irrelevant context (retrieval bloat or copying logs) that inflates tokens with minimal contribution to progress [2][4].
-- Budget/latency violations: Exceeding pre-specified token/cost or deadline constraints despite reaching similar quality; report as efficiency-specific noncompliance [3][4].
-- Late termination/dithering: Continuing deliberation after the solution is already produced (post-solution chatter) [2].
-- Rework due to poor shared state: Recomputing steps because shared memory/plan hashes are not used, inflating tokens/latency [3][4].
+- Memory (in GB; lower is better)
+  - Peak GPU memory allocated during: (a) forward+backward training iteration; (b) inference rollout at fixed depth; (c) planning step. 
+  - Measurement: max of framework-reported allocator statistics (e.g., torch.cuda.max_memory_allocated/reset_peak_memory_stats). Conjecture.
 
-Annotation and judge rubric
-- Inputs to the judge: Agent dialogue, tool traces, plus a small, fixed metadata block with quantitative metrics (tokens, turns, tool calls, latency, budget/deadline, and whether exceeded). The LLM-as-a-Judge rubric adds a branching section that checks Efficiency criteria after assigning the primary correctness category, mirroring MST’s methodology [1]. Calibrate the judge on a held-out validation split with human labels specific to Efficiency [5].
-- Freezing: Freeze the Efficiency thresholds, rubric, and exemplars using only the development split. Evaluation examples must not appear in judge prompts to prevent leakage [1][5].
+- Throughput (higher is better)
+  - Training throughput: tokens/sec or frames/sec processed during world-model updates.
+  - Rollout throughput: imagined steps/sec or tokens/sec during planning/evaluation at fixed depth/budget.
+  - Report both raw and normalized by hardware (e.g., per-GPU throughput for multi-GPU). Conjecture.
 
-Experimental design to introduce and validate the new category
-- Data splits: Maintain MST-style disjoint splits—development (for threshold setting and rubric drafting), validation (for human–judge calibration), and held-out evaluation (for final reporting) [1].
-- Systems and tasks: Use the original MST task suite and baseline system, plus at least one communication-optimization system (e.g., economical communication pipeline) to test sensitivity of the new category to known efficiency-focused changes [2][3].
-- Metrics: Report per-run primary category (Specification/Misalignment/Verification), Efficiency flag/sub-type(s), and raw efficiency metrics (tokens, turns, tool calls, latency).
+- Retain original “rollout compute cost” for continuity, and show the relationship between FLOPs and measured latency/throughput [heirarchical-transformer.pdf:3]. Conjecture on how FLOPs is computed.
 
-Statistical validation that “Efficiency Issues” is distinct
-- Discriminant validity
-  -
+Measurement protocol to preserve comparability
+- Hardware/software control: fix GPU model, driver, CUDA/cuDNN, framework version, and mixed-precision setting across all runs; disclose in appendix. Conjecture.
+- Workload control: keep batch size, context length, rollout depth, retained-token budget, and sequence lengths fixed when computing efficiency to avoid shape-induced variance [heirarchical-transformer.pdf:3]. Conjecture.
+- Randomness and caching: use fixed seeds; enable deterministic kernels where possible; pre-warm data and compilation caches; run under exclusive GPU mode (no co-tenancy). Conjecture.
+- Replicates: collect efficiency metrics over the same seeds used for accuracy and report per-seed paired results to allow paired tests. Conjecture.
+
+Reporting
+- Per-game (Atari) and per-setting (Crafter) report:
+  - Accuracy: rollout error curves and final RL score, as in the paper [heirarchical-transformer.pdf:3].
+  - Efficiency: median latency, peak memory, and throughput with 95% CIs across seeds.
+- Aggregate across games by median-of-medians for accuracy and efficiency; include interquartile ranges. Conjecture.
+
+Analysis plan to demonstrate statistical separation of accuracy–efficiency trade-offs
+- Paired accuracy vs efficiency comparisons
+  - For each game/seed pair, compute differences: ΔRL score, Δrollout error AUC, Δlatency, Δpeak memory, Δthroughput.
+  - Use paired Wilcoxon signed-rank tests for central tendencies; adjust p-values with Benjamini–Hochberg across games/metrics. Report effect sizes (Cliff’s delta). Conjecture.
+
+- Pareto-front analysis across token budgets and rollout depths
+  - Sweep retained-token budgets (e.g., 10%, 20%, 40%) and possibly rollout depths while holding all else fixed; record (error, latency) and (RL score, latency) pairs.
+  - Compute dominated hypervolume for each method; compare hypervolumes via bootstrap (10k resamples) with BCa CIs. A significant hypervolume gap supports separation in the joint accuracy–efficiency space. Conjecture.
+
+- Non-inferiority/equivalence testing
+  - If the goal is to claim “same accuracy, better efficiency,” run two one-sided tests (TOST) with pre-registered margins:
+    - For accuracy: Δacc within ±2% relative RL score or ±2% rollout error AUC.
+    - For efficiency: superiority on latency and/or memory (e.g., ≥5% lower latency). 
+  - Conclude non-inferiority on accuracy and superiority on efficiency if both tests pass. Conjecture.
+
+- Joint modeling
+  - Fit an ANCOVA/regression per method: accuracy ~ α + β·log(latency). Test whether β differs between methods (interaction term) to show different efficiency sensitivities. Validate with residual checks; use robust SEs. Conjecture.
+
+Concrete, falsifiable experiments
+1) Fixed-compute evaluation of accuracy vs latency
+- Design: Use the paper’s standard setup (same rollout depth and token budget) and collect per-seed RL scores, rollout error AUCs, and rollout latencies [heirarchical-transformer.pdf:3].
+- Hypotheses: H1 non-inferiority on RL score within ±2%; H2 lower rollout latency by ≥5%.
+- Tests: TOST for RL non-inferiority; paired Wilcoxon for latency with FDR correction. Report effect sizes and 95% CIs. Conjecture.
+
+2) Token-budget sweep and Pareto dominance
+- Design: Train/evaluate at three retained-token budgets (10%, 20%, 40%) under identical hyperparameters; record (rollout error AUC, latency) and (RL score, latency) per seed.
+- Hypothesis: Method A achieves a larger dominated hypervolume in accuracy–latency space (dominates at low budgets) [heirarchical-transformer.pdf:3].
+- Tests: Bootstrap hypervolume difference (10k resamples); significant positive median and CI excluding 0 indicates separation. Conjecture.
+
+3) Memory scaling with context length
+- Design: Evaluate inference at context lengths L ∈ {128, 256, 512} while keeping token budget and depth fixed; record peak memory and latency, plus rollout error AUC.
+- Hypotheses: Memory scales sub-quadratically vs L if sparsity reduces activations; accuracy remains within ±2% AUC at matched budgets [heirarchical-transformer.pdf:3].
+- Tests: Linear fit on log–log memory vs L; compare slopes across methods with ANCOVA; TOST on AUC equivalence within ±2%. Conjecture.
+
+4) End-to-end planning throughput under evaluation-time constraints (optional)
+- Design: Cap per-decision latency to a budget (e.g., 50 ms); measure achieved throughput and RL performance under that cap using identical planners.
+- Hypothesis: At tight latency budgets, an efficiency-optimized variant preserves more RL performance [heirarchical-transformer.pdf:3].
+- Tests: Paired Wilcoxon on RL score under the latency cap; report percentage of decisions exceeding the cap.
+
+Implementation notes (to make metrics reproducible)
+- Latency: Use CUDA events around the exact sections: encoder, Transformer rollout, controller/masking, decoder; report both component-level and end-to-end latencies. Synchronize before/after timing. Conjecture.
+- Memory: Reset and read peak memory around the same segments; optionally cross-check with external profilers (Nsight Systems). Conjecture.
+- Throughput: Count tokens or imagined steps processed over a timed window; report mean and 95% CIs across replicates. Conjecture.
+- Mixed precision: Match the paper’s precision; if unspecified, fix to AMP with static loss scale and disclose. Conjecture.
+
+Why this preserves comparability
+- You retain all original accuracy metrics and datasets unchanged [heirarchical-transformer.pdf:3], add orthogonal efficiency readouts, and analyze jointly so conclusions reflect both correctness and cost.
+- Using paired, per-seed measurements and fixed workloads ties efficiency differences directly to the same stochastic realizations underlying accuracy, enabling stronger causal attribution. Conjecture.
+
+Literature anchors
+- MLPerf Inference Benchmark: methodology for standardized latency/throughput measurement and reporting. https://arxiv.org/abs/1911.02549
+- Efficient Transformers: A Survey (definitions and practices for measuring efficiency in attention-based models). https://arxiv.org/abs/2009.06732
+
+Citations
+- [heirarchical-transformer.pdf:3] The paper’s evaluation focuses on rollout compute cost, rollout error, final RL performance, and ablations; benchmarks include Atari 100k and Crafter; it hypothesizes improved computational efficiency and rollout stability with SHI. 
+
+Sources
+- Sparse Hierarchical Imagination for Efficient Transformer World Models — [heirarchical-transformer.pdf:3]
+- Reddi et al., 2020. MLPerf Inference Benchmark — https://arxiv.org/abs/1911.02549
+- Tay et al., 2020. Efficient Transformers: A Survey — https://arxiv.org/abs/2009.06732
+
+Key takeaways
+- Add latency, memory, and throughput metrics at training, rollout, and planning levels while holding workloads constant to preserve comparability with the original evaluation [heirarchical-transformer.pdf:3].
+- Use paired nonparametric tests, equivalence testing, and Pareto-front hypervolume to demonstrate statistical separation in the joint accuracy–efficiency space. Conjecture.

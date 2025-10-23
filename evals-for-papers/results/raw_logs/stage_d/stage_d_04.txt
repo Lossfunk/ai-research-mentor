@@ -1,72 +1,88 @@
-Summary of FC3 (Task Verification) in MST
-- The MST taxonomy isolates “Task (Quality Control) Verification” as a distinct failure category (FC3) with three submodes: FM‑3.1 Premature Termination, FM‑3.2 No or Incomplete Verification, and FM‑3.3 Incorrect Verification [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5]. These reflect, respectively: ending the process before any verification occurs; conducting partial or missing checks; and conducting checks but drawing the wrong conclusion. An example in the paper illustrates missing corrective feedback (e.g., not telling the agent what to fix after an “Invalid credentials” message), which aligns with verification/feedback gaps [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
+Below is a focused ablation plan to sweep local attention window sizes in your Hierarchical Transformer (Sparse Hierarchical Imagination), with a concrete benchmark suite, minimal code changes, compute budgeting, and failure modes to watch. I align metrics with your evaluation guidance to report rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3]. I also leverage the model’s level-specific sparsification to structure per-level window sweeps efficiently [heirarchical-transformer.pdf:2].
 
-Recommended benchmark and system
-- Benchmark: SWE-bench Lite (or SWE-bench if resources allow) for software bug-fixing tasks with ground-truth unit tests. It provides an automated oracle, makes verification explicit (tests/logs), and is a good fit for multi-agent development pipelines where a verifier can run tests, linting, and static checks.
-- System: ChatDev (or MetaGPT). ChatDev has clear roles (e.g., Developer/Reviewer/Tester) so the “verifier” can be mapped to Reviewer/Tester; MetaGPT similarly has QA/review hooks. Both are easy to toggle to ablate an explicit verifier with minimal changes. Recent work emphasizes explicit verification in multi-agent systems and frameworks that make verification a first-class component, which you can leverage or emulate in these systems [P1][P2].
+Benchmark suite
+- Long-context synthetic and language tasks
+  - Long Range Arena (LRA): listops, text, retrieval, pathfinder, image; stress-tests locality vs long-range and is standard for efficient attention [Tay et al., 2021]. Use at least text, retrieval, and pathfinder to probe different locality regimes.
+- World-model rollouts (to match your evaluation)
+  - Choose 1–2 lightweight RL environments for rollout error vs compute (e.g., a small control suite or simplified Atari subset) so you can report rollout compute cost, rollout error, and final RL return as in your plan [heirarchical-transformer.pdf:3]. Keep task difficulty modest to finish sweeps quickly.
+- Optional long-document QA/summarization
+  - One SCROLLS-style long-doc task or a simple “needle-in-a-haystack” retrieval to specifically detect long-context degradation; keep to ≤1 dataset to stay within budget.
 
-Minimal ablations to isolate the verifier
-Implement the following toggles as minimally invasive diffs. Keep the same generator model, temperature, tool budget, and planner across conditions; only change the verifier’s capabilities/authority.
+Minimal code changes
+- Expose per-level local windows
+  - Add a list window_size_per_level = [w_L0, w_L1, …] in the model config. Ensure the default reproduces current behavior (backward-compatible).
+- Sliding-window mask
+  - In the attention module, replace full mask with a banded mask for each token i over [i−w/2, i+w/2]. If you use chunking, align window stride to chunk size; add a small overlap (e.g., 1/4 window) to mitigate boundary artifacts.
+- Global tokens
+  - Preserve global attention for the memory token and any summary tokens so they can connect across windows, which your method relies on for retaining salience in rollouts [heirarchical-transformer.pdf:3].
+- Relative position bias/clipping
+  - Clip or bucket relative positions to the local window span to avoid mismatches between mask and bias.
+- Per-level windows
+  - Because higher levels are sparser, allow larger windows at upper levels (lower token count amortizes cost) [heirarchical-transformer.pdf:2]. Keep level-specific sparsification unchanged to isolate the effect of windows.
 
-- A0 (Baseline, No-Verifier): Remove the explicit verifier agent and any “review/test” step. In ChatDev, skip the Reviewer/Tester roles or gate them behind a flag so they don’t run or emit vetoes.
-- A1 (Advisory-Only Verifier): Keep the verifier but remove veto/repair authority. The verifier can comment but cannot trigger a rework loop; downstream agents ignore “fail” signals and proceed to finalization.
-- A2 (Blindfolded Verifier): Keep the verifier but remove tool access to oracles (unit tests, execution, linters). The verifier must decide based on static artifacts only (e.g., code diff, reasoning). This cleanly stresses FM‑3.2 and FM‑3.3.
-- A3 (Budget-Capped Verifier): Keep authority and tools, but cap verifier compute (# tool calls, # turns). This probes whether “no/incomplete verification” arises from budget constraints rather than capability.
+Compute budget and sweep design
+- Window grid
+  - Start with three configs per level: Small, Medium, Large. Example 3-level model: 
+    - S: [64, 64, 64]
+    - M: [128, 64, 64]
+    - L: [256, 128, 64]
+  - Optionally add an “XL” only at top level: [128, 128, 256] to test long-range propagation through sparse higher levels [heirarchical-transformer.pdf:2].
+- Seeds and steps
+  - 3 seeds per config; 50k–100k steps for LRA tasks; for RL rollouts, run to a fixed token budget or wall-clock cap and report curves (compute vs error vs return) as your evaluation notes [heirarchical-transformer.pdf:3].
+- Hardware/time (estimate; scale as needed)
+  - For a ~150M-parameter model at 4K tokens: local attention cost per layer scales ~O(n·w). Doubling w roughly doubles attention FLOPs and memory per layer.
+  - Expect per-config training wall-clock on 1×A100 40GB: S ≈ 6–8 h; M ≈ 10–14 h; L ≈ 16–24 h, 3 seeds → 1–3 GPU-days per config. Adjust sequence length/Batch to fit VRAM; profile first 1k steps to set batch size.
+- Report efficiency
+  - Log tokens/s, peak VRAM, and per-batch FLOPs alongside rollout error and final return to align with your plan [heirarchical-transformer.pdf:3]. Also track attention span histograms to confirm the effective receptive field matches configured windows.
 
-In ChatDev specifically:
-- Comment out or flag the Tester/Reviewer invocation in the pipeline (e.g., TESTER_ENABLED=False).
-- For A1, strip the branch that triggers a “revise-and-rerun” loop when tests fail.
-- For A2, intercept the verifier’s tool calls (exec, test runner, linter) with no-ops or return masked outputs; keep the same prompts and role.
-- For A3, set a small per-verifier tool-call budget and max_turns.
-
-Failure modes to track and how to operationalize them
-Align your logging/labels to MST’s FC3 to enable direct mapping.
-
-- FM‑3.1 Premature Termination: The pipeline ends without a verifier step or ends before any checks complete. Detection: no verifier turn/logs; or verifier invited but exits before any check; or conversation ends before planned verification. Metric: premature-termination rate (%) [file:5].
-- FM‑3.2 No or Incomplete Verification: The verifier runs fewer than K planned checks (e.g., runs 0 tests or a strict subset), or coverage < threshold (e.g., <90% of available failing tests addressed). Metric: verification coverage = tests_run / tests_available; check-count per task; coverage shortfall rate (%) [file:5].
-- FM‑3.3 Incorrect Verification: The verifier’s final judgment disagrees with the ground-truth oracle (e.g., it accepts solutions that fail tests or rejects solutions that pass). Metrics: false-accept rate (FAR; incorrect but accepted), false-reject rate (FRR; correct but rejected), and overall verifier accuracy [file:5].
-
-Primary outcome metrics
-- Task success: fraction of tasks fully passing the benchmark oracle (unit-test pass rate).
-- Verifier FAR/FRR/Accuracy: computed against the oracle on each task/version.
-- Verification coverage: tests run / available; number and diversity of checks (unit tests, static analysis, runtime probes).
-- Rework productivity: number of verifier-triggered iterations; success-after-rework rate.
-- Cost/time overhead: additional tokens/tool calls/time attributable to the verifier.
-- Premature termination rate (FM‑3.1).
-- Calibration: correlation between verifier confidence (if logged) and correctness (ECE/Brier score).
-
-Secondary diagnostics
-- Root-cause labeling: proportion of failures attributed to FM‑3.2 vs FM‑3.3 (manual spot-checking of logs).
-- Tool-use quality: fraction of verifier tool calls that produce actionable signals (e.g., failing test logs referenced correctly).
-- Iteration quality: acceptance after N cycles and diminishing returns.
+Failure modes to monitor
+- Long-context degradation and boundary effects
+  - Performance drop as context length increases, and errors concentrated near window boundaries when evidence spans >w. Overlapping windows or larger top-level windows can mitigate.
+- Cross-level propagation gaps
+  - If upper levels use too small windows, global information may not propagate, harming multi-step imagination; inspect memory-token attention patterns [heirarchical-transformer.pdf:3].
+- Over-sparsification interactions
+  - Level-specific sparsification plus small windows can prune away necessary tokens; monitor token retention statistics and rollout error spikes [heirarchical-transformer.pdf:2–3].
+- Context-length extrapolation
+  - If trained at w and evaluated at longer sequences, check if performance drops disproportionately; include a 2×-context stress test.
+- Instability under curriculum
+  - If you try window schedules (growing w during training), watch for loss spikes when w changes; consider brief LR warmup on each increase.
 
 Three concrete, falsifiable experiments
-- E1 (Verifier On vs Off, paired): Hypothesis: An explicit verifier reduces FAR and increases overall task success at the cost of time/cost. Design: Run ChatDev on N SWE-bench Lite tasks with fixed seed, temperature, and tool budget under A0 (No-Verifier) vs baseline with full verifier. Metrics: task success, FAR/FRR, tokens/tool calls/time. Expected: ↓FAR, ↑success, ↑overhead with verifier [file:5].
-- E2 (Blindfolded Verifier): Hypothesis: Removing tool access (A2) increases FM‑3.2 and FM‑3.3 (more incomplete and incorrect verification) relative to full verifier. Design: Baseline vs A2 on the same tasks. Metrics: coverage, FAR/FRR, success, premature termination. Expected: ↓coverage, ↑FAR/FRR, ↓success with A2 [file:5].
-- E3 (Authority Ablation): Hypothesis: Removing veto authority (A1) raises FAR (incorrect acceptances) but reduces cost/time. Design: Baseline vs A1. Metrics: FAR/FRR, rework rate, success, cost/time. Expected: ↑FAR, ↓rework, mixed effect on success depending on generator quality [file:5].
+1) Fixed-level window sweep under constant compute
+- Hypothesis: Increasing the base-level window improves LRA retrieval and lowers rollout error up to a point, with diminishing returns beyond M; gains reflected in final RL return [heirarchical-transformer.pdf:3].
+- Variables: w_L0 ∈ {64, 128, 256}; hold w_L1=L2=64 fixed; adjust batch size to keep total FLOPs per step constant across settings.
+- Metrics: LRA retrieval accuracy; rollout error vs tokens; final RL return; tokens/s and peak VRAM [heirarchical-transformer.pdf:3].
+- Expected outcome: 128 > 64; 256 marginal; compute scales roughly with w and memory grows linearly in w.
+- Risks/controls: Same random seeds across configs; early-stop by validation plateau; profile FLOPs vs window.
 
-Experimental controls and analysis
-- Use identical prompts, planner, generator model, seeds/temperatures, and per-agent budgets; vary only verifier toggles.
-- Paired design on the same task set; use McNemar’s test on per-task correctness (pass/fail) and bootstrap CIs for FAR/FRR differences.
-- Sample size: at least 100 tasks on SWE-bench Lite (or a power analysis using pilot effect sizes).
-- Log granular verifier events (tests invoked, outputs parsed, judgments and confidences) to enable precise FM labeling.
+2) Per-level window allocation with fixed cost
+- Hypothesis: Allocating larger windows to upper (sparser) levels yields better long-context generalization than concentrating capacity at the base, at similar compute due to fewer tokens at higher levels [heirarchical-transformer.pdf:2].
+- Variables: Compare A: [256, 64, 64] vs B: [128, 128, 128] vs C: [128, 128, 256]; match step-time via batch tuning.
+- Metrics: LRA pathfinder accuracy; long-document retrieval at 2× training context; rollout error at long horizons; attention diagnostics of memory token [heirarchical-transformer.pdf:3].
+- Expected outcome: C ≥ B ≥ A on long-context metrics at comparable compute; boundary errors reduced when top-level window is larger.
 
-Why this setup
-- SWE-bench’s executable oracles make FC3 verifiable: verification is observable through unit tests, and incorrect/no verification is measurable (coverage, FAR/FRR). Multi-agent frameworks like ChatDev/MetaGPT make it straightforward to create an explicit “verifier” role you can ablate with minimal code changes. Recent research underscores the value of treating verification as a first-class process in multi-agent systems and provides design patterns you can mirror (e.g., verification-aware planning and integrated verification agents) [P1][P2].
+3) Boundary stress test with overlapping vs non-overlapping windows
+- Hypothesis: Modest window overlap (e.g., 25%) reduces boundary-induced errors with minimal compute overhead.
+- Variables: Overlap ∈ {0%, 25%}; fixed w_L0=128; inject test sequences where key evidence straddles window edges; include LRA pathfinder and synthetic “needle across boundary” probes.
+- Metrics: Accuracy on edge-straddling probes; change in tokens/s; rollout error spikes near boundaries [heirarchical-transformer.pdf:3].
+- Expected outcome: Overlap improves edge-straddling accuracy and smooths rollout error; modest throughput drop.
 
-Key takeaways
-- Use SWE-bench Lite + ChatDev (or MetaGPT) with toggles for verifier presence, authority, tools, and budget.
-- Map outcomes to MST’s FC3: FM‑3.1, FM‑3.2, FM‑3.3 [file:5].
-- Track task success, FAR/FRR, coverage, rework, cost/time, and premature termination.
-- Run paired ablations (On vs Off; Blindfolded; No-Veto) and analyze FAR/FRR and success differences.
+Practical notes
+- Start with a pilot on the smallest grid (S/M) to calibrate VRAM and tokens/s; then scale.
+- Keep global attention for the memory token enabled in all configs to preserve salience tracking during imagination [heirarchical-transformer.pdf:3].
+- Document any changes to the sparsification policy; ideally hold it constant so effects are attributable to window size [heirarchical-transformer.pdf:2].
+
+Literature anchors
+- Simple Local Attentions Remain Competitive for Long-Context Tasks: shows that carefully chosen local windows can match more complex methods on long-context benchmarks, motivating window-size sweeps [P1].
+- Long Range Arena: widely-used long-context benchmark; includes diverse tasks that stress window locality and long-range reasoning (Tay et al., 2021).
 
 Citations
-- [file:5] Why Do Multi-Agent LLM Systems Fail? — FC3 “Task Verification” with FM‑3.1 Premature Termination, FM‑3.2 No or Incomplete Verification, FM‑3.3 Incorrect Verification — Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5
-- [file:9] Why Do Multi-Agent LLM Systems Fail? — Example showing missing feedback on a credential failure, illustrating verification/feedback gaps — Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9
-- [P1] Verification-Aware Planning for Multi-Agent Systems — http://arxiv.org/abs/2510.17109v1
-- [P2] MAG-V: A Multi-Agent Framework for Synthetic Data Generation and Verification — http://arxiv.org/abs/2412.04494v2
+- [heirarchical-transformer.pdf:2] Method; level-specific sparsification policies; joint/alternating training with SPARTAN — attached PDF.
+- [heirarchical-transformer.pdf:3] Hypotheses and Evaluation; report rollout compute cost, rollout error, and final RL performance; memory token for salience; imagination — attached PDF.
+- [P1] Simple Local Attentions Remain Competitive for Long-Context Tasks — http://arxiv.org/abs/2112.07210v2
+- [LRA] Long Range Arena: A Benchmark for Efficient Transformers — https://arxiv.org/abs/2011.04006
 
 Sources
-- Why Do Multi-Agent LLM Systems Fail? (MST/MAST taxonomy) [file:5,9]
-- [P1] Verification-Aware Planning for Multi-Agent Systems
-- [P2] MAG-V: A Multi-Agent Framework for Synthetic Data Generation and Verification
+- Attached: heirarchical-transformer.pdf (Sparse Hierarchical Imagination), pages 2–3.
+- Tay et al., 2021. Long Range Arena: A Benchmark for Efficient Transformers. https://arxiv.org/abs/2011.04006
+- Zaheer et al., 2021; Tay et al., 2021; related efficient attention literature; specifically used: Katharopoulos et al. 2021 “Simple Local Attentions Remain Competitive for Long-Context Tasks.” http://arxiv.org/abs/2112.07210v2 [P1]

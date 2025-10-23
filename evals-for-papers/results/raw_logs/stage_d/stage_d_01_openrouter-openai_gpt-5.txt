@@ -1,61 +1,91 @@
-Below is a compact checklist based on the paper’s LLM-as-a-Judge methodology and the public MAST materials, plus concrete tests to validate your replication and guard against leakage.
+Below is a concise, reproduction-oriented checklist based on the attached paper’s description of Sparse Hierarchical Imagination (SHI) with a Transformer world model. Where the paper is precise, I cite it; when details are missing, I mark them as Conjecture and suggest defensible defaults you can adopt until author code or a supplement is available.
 
-Key components to reproduce
-- Clear data splits and freezing: Separate the data used to develop the failure taxonomy and judge rubric from the final evaluation set; freeze taxonomy and prompts before touching the held-out evaluation set [1][2]. Version and hash your taxonomy, prompts, and judge configs to prevent silent drift [3].
-- LLM-as-a-Judge rubric and prompts: Use a structured rubric that maps observed behaviors to taxonomy categories; specify rating scales, tie-breaking, and confidence outputs; keep prompts stable (few-shot exemplars, instructions, temperature, and decoding parameters) [1][3]. Calibrate the judge against human labels on a separate validation set (not the evaluation set) [1][5].
-- Human ground truth and reliability: Obtain human annotations for a subset to benchmark the judge; report inter-annotator agreement and how disagreements are adjudicated [1][2]. Use these only for judge validation/tuning—not for taxonomy development or final evaluation.
-- Agent evaluation protocol: Run multi-agent systems across a fixed set of tasks/environments with multiple seeds; log all intermediate agent messages and decisions to support post-hoc classification of failures and reproducibility [1][3]. Randomize example order and blind system identities when possible.
-- Aggregation and statistics: Aggregate judge outputs into taxonomy-level rates (with bootstrap CIs), report judge-human agreement (e.g., Cohen’s κ) on held-out validation, and quantify run-to-run variance for stochastic agents [1][5].
+Key components to implement
 
-Common pitfalls and how to avoid them
-- Leakage between taxonomy development and evaluation:
-  - Reusing the same cases to define taxonomy labels or few-shot judge exemplars and then to evaluate systems inflates apparent performance; keep disjoint sets and freeze the rubric before evaluation [1][2].
-  - Letting insights, rationales, or example snippets from the evaluation set creep into the judge prompt or taxonomy documentation contaminates the evaluation; use only development-set or synthetic exemplars in the prompt [1][3].
-- Judge bias and instability:
-  - Using a judge from the same family as the evaluated agents can induce self-preference bias; consider cross-family judges or ensemble judges and blind model identities [5].
-  - Failing to calibrate the judge against humans on held-out data can yield misleading conclusions; validate and report agreement before applying at scale [5][6].
-- Procedural drift:
-  - Changing prompts, decoding parameters, or few-shot exemplars mid-study without versioning makes results irreproducible; pin all configs and log hashes [3].
-  - Not running multiple seeds for stochastic agent workflows underestimates variance and overstates differences [1].
-- Overfitting the judge:
-  - Iteratively editing the judge rubric using feedback from the evaluation set amounts to implicit tuning; if iteration is needed, use a development/validation split and keep the evaluation set untouched [2][6].
+Data preprocessing and tokens
+- Input/encoding: Encode each observation x_t into a token set z_t; rollout starts from x0 → z0 and an initialized Transformer hidden state [heirarchical-transformer.pdf:3]. 
+- Hierarchical token organization: Arrange latent tokens into semantic levels (e.g., coarse-to-fine or semantic groups), which supports level-specific masking [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): image resolution, frame stacking, tokenizer type (e.g., ViT patches vs. VQ token codes), normalization, action-repeat, and reward preprocessing. Conjecture: choose a standard vision tokenizer (e.g., ViT-patch tokens for 84×84 RGB frames with 4-frame stack) and document it for comparability.
 
-Concrete, falsifiable experiments to validate your setup
-1) Judge–human agreement on a held-out validation set
-- Design: Sample N tasks disjoint from taxonomy development and final evaluation; collect human labels for failure categories; run your judge and compute agreement (Cohen’s κ or Gwet’s AC1) and accuracy against the adjudicated human label.
-- Falsifiable outcome: If κ < 0.4 (or pre-registered threshold), the judge is deemed unreliable and cannot be used for final evaluation; you must revise on a separate train/dev split and re-test [5][6].
+Model architecture and hierarchical blocks
+- World model backbone: A Transformer operating over “large, structured token spaces” rather than compact latent imagination as in Dreamer; model p(z_{t+1} | z_{≤t}, a_{≤t}) autoregressively [heirarchical-transformer.pdf:2].
+- Hierarchical masking: At rollout step t and level l, apply a binary mask m_t^(l) over tokens to retain a subset ẑ_t^(l) = z_t^(l) ⊙ m_t^(l); the rollout distribution is then p(ẑ_{t+1} | ẑ_{≤t}, a_{≤t}) [heirarchical-transformer.pdf:3].
+- Masking controller: A small network per level outputs m_t^(l) = σ(f^(l)(h_t, u_t, c_t)), where h_t summarizes imagination context (e.g., via a memory token as in DART), u_t is a timestep embedding, and c_t carries auxiliary signals [heirarchical-transformer.pdf:3].
+- Auxiliary signals c_t: 
+  - Token relevance scores from a SPARTAN-style causal graph over tokens [heirarchical-transformer.pdf:2–3].
+  - Token-level uncertainty estimates following a stochastic Transformer approach (STORM-like) [heirarchical-transformer.pdf:3].
+  - Attention scores to a memory token (DART-like) [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): exact Transformer depth/width, attention pattern, memory token implementation, controller architecture, uncertainty mechanism details. Conjecture: start from a GPT-style decoder with a single learnable memory token per layer, small per-level MLP for masks, and uncertainty via dropout ensembles or latent noise, then ablate.
 
-2) Few-shot contamination stress test
-- Design: Compare your judge using (a) the intended few-shot exemplars versus (b) exemplars synthesized from an unrelated domain (or held-out development data). Keep everything else the same.
-- Falsifiable outcome: If failure-category frequencies or judge–human agreement change by more than a pre-registered margin (e.g., ±5–10%), your judge is sensitive to prompt exemplars; treat results as unstable and revise the rubric and/or exemplars [5].
+Training schedule
+- Two-stage pretraining:
+  1) Autoregressive world model pretraining on full token sequences with no sparsification, learning p(z_{t+1} | z_{≤t}, a_{≤t}) [heirarchical-transformer.pdf:2].
+  2) In parallel, train a SPARTAN-style causal graph over token sequences to learn directed edges and token influence; this graph informs masking decisions [heirarchical-transformer.pdf:2].
+- Rollout/imagination pipeline at evaluation or planning time:
+  - Encode x0 → z0; initialize hidden state; at each step t apply level-specific, temporally adaptive masks via the controller, then generate next tokens autoregressively over the retained subset [heirarchical-transformer.pdf:3].
+- Metrics and benchmarks:
+  - Report rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+  - Benchmarks: Atari 100k and Crafter; baselines include DART, IRIS, STORM, and Sparse Imagination [heirarchical-transformer.pdf:3].
+- Ablations to run: isolate the effects of hierarchical masking, causal-graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): optimizer, LR schedule, batch size, number of tokens/levels, warmup, stopping criteria, rollout horizon. Conjecture: AdamW with cosine decay and linear warmup; tune rollout horizon to match baselines; early-stop on validation NLL.
 
-3) Cross-family bias check
-- Design: Evaluate identical outputs from two agent systems where only the underlying base model family differs; judge identities are blinded in the prompt. Repeat with at least two different judge models (ideally from different families).
-- Falsifiable outcome: If one family is favored by >X% across pairwise comparisons without quality differences (verified by humans on a subset), conclude the judge shows family bias; switch to a different judge or ensemble and re-validate [5].
+Comparability requirements (to ensure fair, apples-to-apples results)
+- Equal rollout depth and budgets when comparing SHI to flat token dropout (Sparse Imagination) [heirarchical-transformer.pdf:3].
+- Report identical metrics across methods: per-step FLOPs or wall-clock, token- and image-level rollout error, final RL performance (e.g., median human-normalized score) on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Use the same training data, environment wrappers, observation preprocessing, action-repeat, frame stacking, and evaluation seeds across methods. Conjecture.
+- Match model capacity and compute: parameter count, context length, and training steps across methods; also constrain the retained token budget per step when comparing masking strategies. Conjecture.
+- Run the paper’s recommended ablations (turn off hierarchical masking, remove causal guidance, remove uncertainty) under identical conditions [heirarchical-transformer.pdf:3].
+- Baselines: DART, IRIS, STORM, Sparse Imagination; re-train under the same setup if author numbers are not directly comparable [heirarchical-transformer.pdf:3]. Conjecture: lock seeds and report mean ± 95% CI over ≥5 seeds.
 
-4) Run-to-run variance quantification
-- Design: For each task, run agents with k seeds (e.g., k=5–10), judge each run, and compute confidence intervals for each failure category rate.
-- Falsifiable outcome: If CIs for category rates across systems overlap substantially or variance is large relative to effects, your study is underpowered; increase sample size or seeds before drawing conclusions [1].
+Leakage risks between pretraining and evaluation (and how to avoid them)
+- Using evaluation/holdout trajectories in world-model pretraining or in training the SPARTAN causal graph. Avoid by a strict train/val/test split at the environment-seed level; build the causal graph only from training data. Conjecture.
+- Lookahead in masking/controller: computing masks with features that leak future tokens or rewards (e.g., teacher-forced future context or test-time reward). Ensure the controller and auxiliary signals use only past/present information available at step t [heirarchical-transformer.pdf:3]. Conjecture for the risk; the paper’s rollout description is causal.
+- Reward leakage into the world model: keep world-model pretraining purely self-supervised on tokens/actions (no reward), as described for autoregressive modeling without sparsification [heirarchical-transformer.pdf:2]. If learning a value head, train it only on training rollouts and evaluate on held-out seeds. Conjecture.
+- Tuning on test seeds: hyperparameter search or early stopping using test performance inflates results. Use a validation split distinct from test. Conjecture.
+- Environment or benchmark contamination: pretraining the world model on out-of-distribution data that overlaps future evaluation environments (e.g., using Atari test-game trajectories). Keep pretraining limited to the designated training set for Atari 100k/Crafter. Conjecture.
 
-Minimal replication checklist
-- Disjoint splits: taxonomy development set, judge validation set, final evaluation set [1][2].
-- Pre-registration or freezing: taxonomy labels, judge rubric, prompts, decoding params [2][3].
-- Judge validation: report agreement on held-out; no tuning on the final evaluation set [5][6].
-- Blinding: system identities and example order randomized; no evaluation examples in the prompt [1][5].
-- Reproducibility: versioned code, prompt hashes, seeds, logs of agent traces and judge outputs [3].
-- Statistics: multiple seeds, bootstrap CIs, transparent reporting of N and uncertainty [1][5].
+Concrete, falsifiable experiments to validate your reproduction
+1) Equal-depth masking vs. flat dropout
+- Setup: Compare SHI vs. Sparse Imagination-style flat token dropout at the same rollout depth and retained-token budget [heirarchical-transformer.pdf:3].
+- Metrics: per-step FLOPs, token- and image-level rollout error at horizons H ∈ {50, 100}, and final median human-normalized score on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Hypothesis: SHI uses fewer FLOPs per step than flat dropout at equal depth and achieves lower long-horizon reconstruction error [heirarchical-transformer.pdf:3].
+- Pass/fail: Statistically significant reduction in FLOPs and error; non-decreasing RL performance.
 
-Notes on gaps
-- Exact scales, prompt templates, and category definitions should follow the paper’s Section 3.4 and the MAST repo; if those differ from your current setup, align to their released configs before running your evaluation [1][3]. If specific prompts are not public, document your closest reproduction and justify deviations.
+2) Ablation: hierarchical masking, causal graph, uncertainty
+- Conditions: (a) full SHI, (b) no hierarchical masking (retain a fixed flat subset), (c) no causal-graph guidance, (d) no uncertainty signal [heirarchical-transformer.pdf:3].
+- Metrics: compute cost, rollout error, RL performance, stability (variance across seeds).
+- Hypothesis: Removing any component degrades efficiency and/or stability vs. full SHI [heirarchical-transformer.pdf:3].
+- Pass/fail: Each ablation shows a statistically significant drop on at least one primary metric.
 
-Literature anchors
-- Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena (guidance on judge reliability, bias, and calibration): https://arxiv.org/abs/2306.05685 [5]
-- LLM AS JUDGE WON’T BEAT TWICE THE DATA (cautions on replacing human evaluation and on methodological rigor): https://openreview.net/pdf?id=NO6Tv6QcDs [6]
+3) Controller policy vs. random/heuristic masks
+- Conditions: learned controller vs. random masks vs. heuristics based on static token saliency (no learned controller).
+- Metrics: retained-token fraction, rollout error, compute, RL performance.
+- Hypothesis: The learned controller yields better error-compute trade-offs than random/heuristic masks under the same token budget [heirarchical-transformer.pdf:3].
+- Pass/fail: Pareto improvement in error vs. FLOPs.
 
-Citations
-[1] Why Do Multi-Agent LLM Systems Fail? — https://arxiv.org/abs/2503.13657
-[2] Why Do Multi-Agent LLM Systems Fail? (OpenReview) — https://openreview.net/forum?id=MqBzKkb8eK
-[3] MAST GitHub Repository — https://github.com/multi-agent-systems-failure-taxonomy/MAST
-[4] MAST Project Page (UC Berkeley) — https://sky.cs.berkeley.edu/project/mast/
-[5] Zheng et al., Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://arxiv.org/abs/2306.05685
-[6] LLM AS JUDGE WON’T BEAT TWICE THE DATA (OpenReview) — https://openreview.net/pdf?id=NO6Tv6QcDs
+Optional fourth experiment
+4) Transfer/stability test across seeds and small environment shifts
+- Train on one set of seeds; evaluate rollout error and RL performance on disjoint seeds. 
+- Hypothesis: SHI maintains rollout stability better than baselines across seeds due to semantically informed retention [heirarchical-transformer.pdf:3].
+- Pass/fail: Less degradation in error and performance vs. baselines.
+
+Practical training recipe (fill in missing choices explicitly in your repo)
+- Data: define observation resolution, frame stacking, tokenization (e.g., ViT patches vs. VQ tokenizer), and action-repeat. Conjecture.
+- World model pretraining: autoregressive loss on tokens conditioned on actions; no masking during pretraining [heirarchical-transformer.pdf:2].
+- Causal graph training: SPARTAN-style edge learning on token sequences in parallel; snapshot the graph for use in masking [heirarchical-transformer.pdf:2].
+- Masking controller training: train to optimize rollout efficiency/stability using auxiliary signals (SPARTAN relevance, uncertainty, memory-token attention) without peeking into future tokens [heirarchical-transformer.pdf:3]. Conjecture: use a mixture of supervised targets (keep tokens with high predicted influence/uncertainty) and RL-style objectives for compute-accuracy trade-offs.
+- Policy learning: evaluate on Atari 100k and Crafter; compare to DART, IRIS, STORM, and Sparse Imagination; report compute, rollout error, final scores; run ablations [heirarchical-transformer.pdf:3].
+
+Literature anchors for implementation details
+- Learning to play atari in a world of tokens (DART). Useful for memory-token design and tokenized Atari pipelines. https://arxiv.org/abs/2406.01361 [heirarchical-transformer.pdf:4]
+- Sparse imagination for efficient visual world model planning. Useful for flat token dropout baseline and equal-depth comparisons. https://arxiv.org/abs/2506.01392 [heirarchical-transformer.pdf:4]
+
+Sources
+- Sparse Hierarchical Imagination for Efficient Transformer World Models — [heirarchical-transformer.pdf:2–3]
+- Agarwal et al., 2024. Learning to play atari in a world of tokens — https://arxiv.org/abs/2406.01361 [heirarchical-transformer.pdf:4]
+- Chun et al., 2025. Sparse imagination for efficient visual world model planning — https://arxiv.org/abs/2506.01392 [heirarchical-transformer.pdf:4]
+
+Key takeaways
+- The pipeline has two clear pretraining components: an autoregressive Transformer trained on full token sequences and a SPARTAN-style causal graph trained in parallel; rollout then uses a learned, level-specific, adaptive mask informed by causal relevance, uncertainty, and memory attention [heirarchical-transformer.pdf:2–3].
+- For fair comparisons, fix rollout depth, compute budgets, and metrics; run the specified ablations and evaluate on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Prevent leakage by strict data splits and causal, stepwise masking; fill missing engineering details explicitly and document them as part of your reproducible protocol. Conjecture.

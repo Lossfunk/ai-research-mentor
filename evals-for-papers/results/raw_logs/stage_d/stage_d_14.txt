@@ -1,0 +1,118 @@
+Below is a concrete plan to prototype lightweight, rule-based hierarchical cues before model inference, plus metrics and error analysis to assess parity with your Hierarchical Transformer (HT). Where possible, I align the evaluation with the attached paper’s emphasis on reporting compute/rollout cost, rollout error, final task performance, and ablations of hierarchical masking and uncertainty-based masking [heirarchical-transformer.pdf:3].
+
+A. Pre-inference heuristic pipeline (prototype)
+Goal: cheaply approximate document hierarchy and discourse cues, then convert them into a block-sparse attention/masking plan for the downstream model.
+
+1) Header/section detector (regex + layout)
+- Patterns: numbered headers (e.g., 1., 1.1., I., A.), title-case lines, lines ending with colon, all-caps lines, lines with larger font/indentation (if layout available).
+- Page-level heuristics: demote repetitive headers/footers; promote Table of Contents (if detected).
+- Confidence: aggregate a header-confidence score per line (pattern votes + capitalization + relative length + layout).
+
+2) Subsection/paragraph assignment
+- Build a tree: each detected header is a node; lines until next header become its children; paragraphs are split by blank lines or long punctuation breaks; sentences by punctuation.
+
+3) Discourse cue tagging (dictionary-based)
+- Mark discourse connectives (e.g., however, therefore, because, first, next, finally, in conclusion) and rhetorical transitions (contrast/addition/causal/temporal), leveraging a curated lexicon (e.g., PDTB-style connectives).
+- Tag “topic sentence” candidates: first sentence of a paragraph, sentences with cue phrases, or high TF-IDF overlap with the header.
+
+4) Topic segmentation backstop
+- Apply a lightweight TextTiling-style lexical cohesion score to recover boundaries when header cues are absent (window-based cosine drop).
+
+5) Build a hierarchical mask plan
+- Tokens attend within their paragraph and to:
+  - their paragraph’s first sentence (topic anchor),
+  - their section/subsection headers,
+  - the immediately preceding sentence.
+- Cross-section attention is pruned except via headers and paragraph topic anchors.
+- Strictness knobs:
+  - depth_limit: max header depth to preserve,
+  - within_block: max paragraph window,
+  - cross_block: allow k anchor links across sections,
+  - uncertainty_gate: if header confidence < τ, relax masking to reduce over-pruning.
+
+This approximates hierarchical masking and can be ablated or tuned similarly to the attached work’s hierarchical/uncertainty-based masking investigations [heirarchical-transformer.pdf:3].
+
+B. Parity-oriented metrics
+Align with the attached evaluation where possible (compute/rollout cost, rollout error, final task performance; ablations on hierarchical and uncertainty-based masking) [heirarchical-transformer.pdf:3].
+
+1) Structural fidelity
+- Header detection: precision/recall/F1 vs gold headers (from sources with known headings, e.g., Wikipedia/arXiv).
+- Segmentation quality: Pk and WindowDiff vs gold section/paragraph boundaries.
+- Discourse cue recall: F1 for detecting explicit connectives vs PDTB-annotated spans (if available).
+
+2) Mask similarity (parity with HT’s hierarchy)
+- Attention-edge Jaccard: build binary adjacency matrices for allowed attention edges; report Jaccard and precision/recall vs HT’s hierarchical mask.
+- Leakage/blockage rates: percent of cross-section edges allowed by the heuristic that HT disallows (leakage) and vice versa (blockage).
+- Depth coverage: fraction of tokens with access to the same header/subsection ancestors as HT.
+
+3) Efficiency and compute (aligned with the attached)
+- Rollout compute cost: FLOPs or tokens-attended-per-token; wall-clock latency and peak memory for a fixed sequence length [heirarchical-transformer.pdf:3].
+- Compression ratio: tokens kept after heuristic thinning vs original.
+- Throughput: docs/sec on a fixed GPU/CPU setting.
+
+4) Predictive/task parity
+- If your domain is model rollouts (e.g., world models): rollout error (e.g., MSE/negative log-likelihood over a K-step prediction horizon) and final RL/task performance under matched compute [heirarchical-transformer.pdf:3].
+- If your domain is NLP documents: perplexity (LM), ROUGE/QA-F1/summarization faithfulness, retrieval nDCG/MRR. Report gap to HT at matched compute.
+
+5) Calibration and robustness
+- Uncertainty calibration: ECE/Brier score for header-confidence vs correctness; performance as a function of τ (uncertainty gate).
+- Domain robustness: parity metrics by domain (scientific papers, news, legal, manuals).
+
+C. Error analysis plan
+- Confusion buckets:
+  - False headers: enumerated lists or emphasized lines misread as headers.
+  - Missed headers: soft/inline headers (e.g., “Background.” at sentence start).
+  - Boundary drift: overly aggressive or under-segmentation by TextTiling backstop.
+  - Discourse ambiguity: connectives used non-discursively (“Since 1999…” time vs causal).
+  - Artifacts: PDF hyphenation, headers/footers, tables/code blocks.
+- Depth sensitivity: analyze errors by header level (Section vs Subsection).
+- Mask error attribution:
+  - Leakage: cross-section attention allowed where HT forbids; inspect if this helps or harms task metrics.
+  - Blockage: missing necessary long-range links; trace downstream errors (e.g., factual omissions in summaries).
+- Calibration sweeps: plot performance vs τ and strictness knobs (depth_limit, within_block), highlighting under/over-masking regimes.
+- Qualitative vignettes: side-by-side HT attention vs heuristic mask on same doc spans to illustrate error modes.
+
+D. Concrete, falsifiable experiments
+Experiment 1: Mask-parity vs performance at matched compute
+- Hypothesis: A tuned heuristic mask achieves ≤2% relative task degradation vs HT at the same compute budget while improving wall-clock latency.
+- Setup: Fix model and dataset. Compare HT vs heuristic-masked runs at several budgets (e.g., tokens-attended-per-token grid).
+- Variables: masking method (HT vs heuristic), compute budget.
+- Metrics: mask Jaccard, leakage/blockage; task metric (e.g., QA-F1/ROUGE or rollout error/final performance if in RL); latency/memory [heirarchical-transformer.pdf:3].
+- Expected: With moderate strictness, heuristic loss ≤2% while latency improves; excessive strictness increases blockage and hurts performance.
+
+Experiment 2: Contribution of discourse markers vs headers
+- Hypothesis: Discourse markers reduce blockage errors particularly for cross-paragraph coherence, narrowing the parity gap by ≥1 F1 point on summarization/QA.
+- Setup: Ablate components: headers-only, discourse-only, both; optionally add TextTiling backstop.
+- Variables: component toggles; uncertainty gate τ.
+- Metrics: segmentation Pk/WindowDiff; mask Jaccard; task metric; leakage/blockage.
+- Expected: Best parity with headers + discourse; discourse-only helps on documents with weak structural markup.
+
+Experiment 3: Uncertainty-gated masking
+- Hypothesis: An uncertainty gate (τ) decreases failure due to misdetected headers, improving calibration and stabilizing task metrics under noisy PDFs.
+- Setup: Vary τ in [0,1]; at low confidence relax masking to a wider context window.
+- Variables: τ and degree of relaxation.
+- Metrics: header calibration (ECE), average mask density, task metric, leakage/blockage, compute [heirarchical-transformer.pdf:3].
+- Expected: A mid-range τ yields best trade-off; too high τ under-relaxes and hurts robustness.
+
+Experiment 4: Cross-domain generalization
+- Hypothesis: Heuristic parity degrades on domains with non-standard headings (e.g., legal, manuals) but recovers with small domain-specific rule additions.
+- Setup: Evaluate on 3 domains; add a small domain lexicon (e.g., “Whereas,” “Definitions,” “Scope”).
+- Variables: domain and presence of domain lexicon.
+- Metrics: header F1, Pk/WindowDiff, mask Jaccard, task metric.
+- Expected: Domain lexicon closes ≥50% of the parity gap vs the zero-shot heuristic.
+
+E. Practical instrumentation
+- Build gold structure: use sources with reliable headings (Wikipedia, arXiv LaTeX) for structural metrics.
+- Attention-edge sampling: for long contexts, sample token pairs to estimate mask Jaccard efficiently.
+- Compute logs: record tokens-attended-per-token, FLOPs estimates, peak memory, latency per doc to align with rollout compute reporting [heirarchical-transformer.pdf:3].
+- Reproducibility: fix seeds, publish heuristics code and configuration, and include ablation tables as in the attached paper’s spirit [heirarchical-transformer.pdf:3].
+
+Key takeaways
+- A rule-based pre-inference pass can approximate hierarchical masking by combining header detection, discourse cues, and lexical cohesion, then translating them into block-sparse attention.
+- Evaluate parity along three axes: structural fidelity, mask similarity, and downstream performance under matched compute, mirroring the attached work’s emphasis on compute, rollout error, final performance, and ablations [heirarchical-transformer.pdf:3].
+- Systematic ablations and uncertainty-gated relaxation are critical to mitigate over-pruning and to approach HT performance.
+
+Citations
+- Attached: Sparse Hierarchical Imagination for Efficient Transformer World Models — reports compute/rollout cost, rollout error, final performance, and ablations on hierarchical and uncertainty-based masking [heirarchical-transformer.pdf:3].
+- Marti A. Hearst. 1997. TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages — https://aclanthology.org/J97-1003.pdf
+- Rashmi Prasad, Nikhil Dinesh, et al. 2008. The Penn Discourse TreeBank 2.0 — https://aclanthology.org/L08-1093/

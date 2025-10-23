@@ -1,0 +1,104 @@
+Below is a concise plan to adapt the attached Hierarchical Transformer to healthcare dialogue while keeping results comparable to the original.
+
+What to preserve from the attached model
+- Discrete latent tokens: The original encodes each observation xt into discrete latent tokens via hierarchical VQ-VAE or token clustering [heirarchical-transformer.pdf:2]. Preserve this idea by discretizing utterance/state representations for efficiency.
+- Hierarchical masking and guidance: The original proposes hierarchical masking and considers causal-graph guidance and uncertainty-based masking, with ablations [heirarchical-transformer.pdf:3]. Keep analogous masking/ablations in the dialogue setting.
+- Reporting compute and rollout error: The original reports rollout compute cost, rollout error, and final performance [heirarchical-transformer.pdf:3]. Mirror this with dialogue-appropriate analogs (see Metrics).
+
+Architecture adaptations for healthcare dialogue
+- Two-level hierarchy (utterance → dialogue context)
+  - Utterance encoder: Transformer over tokens to produce a fixed-length utterance embedding.
+  - Context encoder: Transformer over the sequence of utterance embeddings (the “dialogue level”) to model multi-turn dependencies, similar to hierarchical dialogue transformers [P8], and history-aware variants for multi-session context [P1].
+- Discrete latent states (to mirror VQ/discretization)
+  - Replace per-observation VQ-VAE with: (a) k-means or product quantization over utterance embeddings; or (b) vector-quantized codebook for utterance states. Train codebooks on the training set and freeze for fair comparisons. This parallels the attached discrete-latent scheme [heirarchical-transformer.pdf:2].
+  - Optionally add “concept tokens” alongside text: map spans to UMLS/SNOMED concepts and include a concept-ID embedding channel for each token/utterance. Keep this optional and ablate for comparability.
+- Role and structure embeddings
+  - Add speaker-role embeddings (patient vs clinician), turn index, and time-gap embeddings; concatenate/add to utterance embeddings at the context level (standard in hierarchical dialogue models [P8]).
+- Hierarchical masking and guidance
+  - Token-level masking for MLM-like pretraining; utterance-level masking for missing-turn prediction; dialogue-structured masking (e.g., mask entire patient turns) to reflect “hierarchical masking” ablations [heirarchical-transformer.pdf:3].
+  - If feasible, causal-graph guidance: use a lightweight symptom–condition graph to bias attention or loss weighting (ablate as in the attached plan [heirarchical-transformer.pdf:3]).
+  - Uncertainty-based masking: mask or down-weight low-quality spans (ASR low-confidence or heuristic uncertainty), again as an ablation [heirarchical-transformer.pdf:3].
+- Objectives
+  - Next-utterance generation (causal LM) and next-utterance retrieval (contrastive) for robust evaluation.
+  - Auxiliary losses: masked span prediction on clinical entities to sharpen factual grounding (ablate).
+- Inference rollouts
+  - For “rollout error,” generate multi-turn continuations from an early context and compare to held-out gold dialogues (see Metrics), mirroring the attached notion of rollout evaluation [heirarchical-transformer.pdf:3].
+
+Preprocessing for healthcare dialogue
+- PHI removal and normalization
+  - Strict de-identification of text (names, dates, locations) before modeling; if audio is involved, apply NER-based de-ID; audio de-ID literature highlights entity recognition for de-identification [P3].
+  - Normalize medical terms (e.g., lowercase, map abbreviations consistently) and mark negations explicitly (e.g., prepend “NEG_” tags).
+- Turn segmentation and metadata
+  - Ensure accurate speaker labels and timestamps; compute time-gap features; remove duplicates and near-duplicates.
+- Concept extraction (optional)
+  - Use a clinical NER/linker (e.g., scispaCy/UMLS) to produce concept tokens for optional input channels; keep aligned to text tokens.
+- Splits and leakage control
+  - Split by patient/conversation (not by utterance) to prevent leakage across train/dev/test; keep site/provider splits stable to assess generalization.
+- Reproducibility scaffolding
+  - Fix tokenization (e.g., SentencePiece vocab size), max tokens per utterance and max turns per dialogue, and random seeds to support apples-to-apples comparisons.
+
+Evaluation: keep comparability while adding healthcare-appropriate metrics
+- Compute and efficiency (comparability with attached)
+  - Report training FLOPs, GPU-hours, peak memory, and tokens/sec. Include “rollout compute cost” (wall-clock for k-turn simulated rollouts) [heirarchical-transformer.pdf:3].
+- Generative quality
+  - Perplexity on next-utterance prediction; next-utterance retrieval Recall@k/MRR.
+  - Text similarity: BERTScore and BLEU/ROUGE for references (with caution about correlation to quality in medical settings) [P4].
+- Clinical content and safety
+  - Entity-level correctness: precision/recall/F1 of medical entities and attributes (e.g., medication, dosage, symptom, onset) in generated responses; track negation errors (incorrectly flipping presence/absence).
+  - Factuality/consistency: rate of medically unsupported statements (expert-annotated or rubric-based, as recommended in healthcare conversation metrics work [P4]).
+  - Harm/safety: proportion of responses that include unsafe instructions, lack appropriate disclaimers, or violate scope-of-practice (rubric aligned to clinical safety dimensions [P4]).
+- Dialogue/task success (if labels available)
+  - Intent/slot accuracy (task-oriented), goal/task success, diagnosis/triage accuracy (if the dataset supports these), consistent with hierarchical task-oriented dialogue evaluation [P8].
+- Rollout error (dialogue analogue)
+  - Multi-turn rollout divergence: over k generated turns, measure entity trajectory divergence (edit distance over entity sets per turn) and intent/slot drift vs gold. This mirrors “rollout error” in the attached evaluation framing [heirarchical-transformer.pdf:3].
+- Human evaluation (small, blinded)
+  - Clinical appropriateness, helpfulness, clarity, and empathy; inter-rater agreement (κ) and confidence intervals. Use a standardized rubric for healthcare conversations [P4].
+
+IRB and ethics considerations (to maintain comparability and compliance)
+- Data use and consent
+  - Determine whether the dataset is fully de-identified public data (which may qualify for IRB exemption) or contains PHI requiring full IRB review and Data Use Agreements. Document determinations and apply consistently across runs to ensure comparable conditions.
+- Privacy and de-identification
+  - Apply HIPAA Safe Harbor or Expert Determination for text de-identification when using real patient data; restrict access, keep audit logs, and prevent re-identification attempts. If audio is present, follow audio de-identification best practices (e.g., entity recognition for PHI in audio/text) [P3]. See HHS guidance for HIPAA de-identification methods: https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html
+- Risk mitigation
+  - Human-in-the-loop: generated outputs must be considered research artifacts, not clinical advice; include disclaimers.
+  - Safety review: pre-register an adverse-content taxonomy (unsafe medication advice, diagnosis without uncertainty, etc.), monitor and report frequencies, and gate model access.
+- Fairness and subgroup analyses
+  - Evaluate performance across demographics (if available) or proxy variables; report disparities and mitigation (e.g., reweighting, calibration).
+- Reproducibility and transparency
+  - Pre-register the protocol, release code/configs, and report hardware, compute budget, and ablation decisions (including hierarchical masking and guidance) to match the attached study’s emphasis on compute and ablations [heirarchical-transformer.pdf:3].
+
+Three concrete, falsifiable experiments
+1) Discretization improves efficiency without degrading clinical accuracy
+  - Hypothesis: Replacing continuous utterance embeddings with vector-quantized or clustered discrete codes reduces compute while maintaining clinical entity F1 within 1 point.
+  - Variables: Continuous vs VQ/clustered discrete utterance states (codebook sizes {256, 1024}); all else fixed.
+  - Metrics: Training GPU-hours, tokens/sec, memory; next-utterance perplexity; entity F1; multi-turn rollout entity-drift. Expected: ≥20% lower compute with ≤1 F1 drop [heirarchical-transformer.pdf:2,3]; supported by hierarchical dialogue design with utterance-level abstractions [P8].
+2) Hierarchical masking reduces rollout error and hallucinated entities
+  - Hypothesis: Adding utterance-level masking (mask entire patient or clinician turns) during training lowers multi-turn rollout error and hallucinated-entity rate vs token-only masking.
+  - Variables: Token-only masking vs token+utterance hierarchical masking; mask ratios {15%, 30%}; optional uncertainty-based masking.
+  - Metrics: Rollout error (k=5 turns), hallucinated-entity rate, next-utterance retrieval Recall@10, BERTScore. Expected: Lower rollout error and hallucinations with hierarchical masking [heirarchical-transformer.pdf:3]; aligns with hierarchical dialogue modeling benefits [P8].
+3) Causal-graph guidance improves factuality and safety
+  - Hypothesis: Incorporating a lightweight symptom–condition graph to bias attention or loss reduces medically unsupported statements and unsafe advice compared to unguided training.
+  - Variables: No graph vs graph guidance; guidance strengths {λ=0.1, 0.3}; same data and compute.
+  - Metrics: Clinician-rated factuality/safety error rate [P4], entity consistency across turns, task success (if applicable). Expected: Reduced unsupported claims with guidance [heirarchical-transformer.pdf:3].
+
+Notes to keep results comparable
+- Fix tokenization, context window (max tokens per utterance; max turns per dialogue), batching, optimizer, and training steps across all runs.
+- Report compute and rollout metrics analogous to the attached (compute cost, rollout error), plus final task performance where available [heirarchical-transformer.pdf:3].
+- Run ablations isolating each adaptation (discretization, hierarchical masking, causal-graph guidance) and a non-hierarchical baseline.
+- Use patient-level splits and identical seeds; release scripts to reproduce preprocessing.
+
+Literature anchors
+- Hierarchical transformer designs and benefits in task-oriented dialogue: Hierarchical Transformer for Task Oriented Dialog Systems (2020) [P8].
+- Evaluation in healthcare conversations: Foundation Metrics for Evaluating Effectiveness of Healthcare Conversations Powered by Generative AI (2023) [P4].
+- De-identification for clinical data (esp. audio/text entities): Audio De-identification: A New Entity Recognition Task (2019) [P3].
+- Multi-session history-aware hierarchical modeling for dialogue context: History-Aware Hierarchical Transformer for Multi-session Open-domain Dialogue System (2023) [P1].
+
+Citations
+- [P1] History-Aware Hierarchical Transformer for Multi-session Open-domain Dialogue System — http://arxiv.org/abs/2302.00907v1
+- [P3] Audio De-identification: A New Entity Recognition Task — http://arxiv.org/abs/1903.07037v2
+- [P4] Foundation Metrics for Evaluating Effectiveness of Healthcare Conversations Powered by Generative AI — http://arxiv.org/abs/2309.12444v3
+- [P8] Hierarchical Transformer for Task Oriented Dialog Systems — http://arxiv.org/abs/2011.08067v3
+
+Inline references to the attached document:
+- Discrete latent tokens via hierarchical VQ-VAE or clustering [heirarchical-transformer.pdf:2]
+- Reporting rollout compute cost, rollout error, and ablations on hierarchical masking, causal graph guidance, uncertainty-based masking [heirarchical-transformer.pdf:3]

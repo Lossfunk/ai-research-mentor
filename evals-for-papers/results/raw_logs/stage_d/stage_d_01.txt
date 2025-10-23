@@ -1,89 +1,110 @@
-Below is a concise checklist to replicate the “LLM-as-a-Judge” pipeline in Why Do Multi‑Agent LLM Systems Fail? (Section 3.4) and to avoid leakage between taxonomy development and evaluation. I also include concrete validation experiments and literature anchors.
+Below is a concrete reproduction plan and risk checklist based only on what the attached document explicitly specifies, plus standard, clearly-labeled implementation choices where the PDF does not provide details.
 
-Key components to reproduce
-- Failure taxonomy and rubric
-  - Define a fixed set of failure categories with operational definitions and decision rules (e.g., mutually exclusive vs. multi-label; severity tiers). Lock the taxonomy before any test-time evaluation.
-  - Provide a structured, unambiguous rubric and a strict output schema (JSON with required fields) to reduce judge variability [P3].
-- Judge prompt and protocol
-  - A single judging prompt (or small set) that instructs the LLM judge how to apply the rubric; includes: (a) the task, (b) the agent’s output, and (c) the rubric; optional: brief rationale requirement; no system identity or hyperparameter hints.
-  - Fix model, temperature, decoding parameters, and sampling seeds; prefer a low-variance setting.
-  - Consider multi-judge aggregation or a meta-judge for adjudication to reduce variance and bias [P2]. Blind the judge to system identity to reduce bias amplification [P1].
-- Dataset split and sequencing
-  - Separate dev vs. test tasks and outputs. Use dev only to draft/refine the taxonomy, prompts, and exemplars; use test only once, after freezing these.
-  - Register a “prompt+rubric+taxonomy” version and do not change it once test evaluation begins.
-- Scoring and aggregation
-  - Per-instance labeling for each failure type, with clear aggregation rules (e.g., proportion of instances exhibiting each failure; CIs via bootstrap).
-  - Reliability checks: compute agreement across multiple LLM judges and with a small human-labeled sample when possible.
-- Reporting and reproducibility
-  - Release: taxonomy text (versioned), judge prompts, judge model/version, decoding params, seeds, task lists, raw judgments, and code to re-run scoring.
+What the attached PDF explicitly says
+- Method: structured sparsification of Transformer world-model rollouts via “Sparse Hierarchical Imagination,” organizing latent tokens into semantic levels and learning adaptive behavior at those levels [heirarchical-transformer.pdf:3].
+- Evaluation/metrics to report: rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+- Ablations to run: the impact of hierarchical masking, causal graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3].
 
-Leakage risks and how to prevent them
-- Using test data to shape the taxonomy or judge prompt
-  - Freeze taxonomy and prompts based solely on dev; preregister or log a version hash and timestamp before touching test.
-  - Keep all few-shot exemplars in the judge prompt drawn from dev only.
-- Implicit leakage through examples in prompts
-  - Remove any example that is identical or near-duplicate to test items; detect with fuzzy matching.
-- Judge exposure to system identity or experimental condition
-  - Blind the judge: do not include agent names, temperatures, or model families in the judging context; randomize output ordering and anonymize headers [P1].
-- Format and verbosity biases
-  - Normalize formatting for all systems (e.g., strip metadata, enforce a standard transcript format sent to the judge). Otherwise, the judge may pick up spurious cues [P3].
-- Overfitting via prompt iteration on test
-  - Disallow prompt edits after the first test pass. If any fix is unavoidable (e.g., JSON parsing bug), rerun all systems under the same updated prompt and mark the change as a new preregistered version.
-- Single-judge instability
-  - Use n≥3 independent samples or ≥2 distinct judge models (cross-family if possible) with a clear aggregation policy (majority vote or meta-judge) [P2]. Report inter-judge agreement.
-- Family bias and self-preference
-  - Avoid using the same model family as both agent and judge when possible; cross-family judging reduces self-preference and bias amplification [P1].
-- Chain-of-thought contamination
-  - If you require rationales, ensure they don’t leak reference solutions or evaluation hints into future stages; hide rationales from any subsequent generation models.
+Key components to implement
 
-Minimal replication checklist (practical)
-- Data: Disjoint dev/test task lists; dev-only exemplars bank; hashed splits.
-- Taxonomy: Versioned rubric text with last-modified timestamp prior to test.
-- Judge: Model ID/version, decoding params, frozen prompts, and a JSON schema.
-- Blinding: Agent/system IDs removed; outputs normalized; randomized order.
-- Reliability: Plan for multi-judge or repeated samples and a small human check set.
-- Logs: All runs with seeds and prompt hashes; a public artifact for re-running.
+1) Data preprocessing
+- Trajectory collection
+  - Collect training trajectories from the target environments to fit the world model. Split trajectories into train/val/test with no overlap at the episode level and no reuse of test environment seeds in train/val [heirarchical-transformer.pdf:3].
+- Observation and action preprocessing
+  - Normalize continuous observations/actions (e.g., per-dimension mean/std from train only) and discretize only if the method requires tokens; document whether latent tokens are discrete or continuous (not specified in PDF; choose and document).
+- Latent token hierarchy construction
+  - Implement a token hierarchy consistent with “latent tokens into semantic levels,” e.g., K levels, with grouping ratio g between levels; define how lower-level tokens are aggregated into higher-level tokens (pooling or learned grouping) [heirarchical-transformer.pdf:3].
+- Splits for rollout evaluation
+  - Ensure rollout error is computed on a held-out validation set distinct from any tuning or ablation selection; final RL performance should be on a held-out test set [heirarchical-transformer.pdf:3].
 
-Concrete, falsifiable validation experiments
-1) Leakage stress test via exemplars
-   - Hypothesis: If any leakage exists (dev exemplars overlap with test), failure rates will improve spuriously for overlapping cases.
-   - Method: Intentionally create a “leaky” condition by inserting near-duplicate dev exemplars of certain test items into the judge prompt; compare failure rates vs. a clean prompt.
-   - Metrics: Difference in failure rate per category; McNemar’s test on paired judgments; 95% CIs via bootstrap.
-   - Expected outcome: A significant drop in judged failures for overlapped items would indicate sensitivity to leakage; in clean replication this drop should be near zero.
+2) Model: hierarchical Transformer blocks
+- Multi-level token representation
+  - Maintain K semantic levels. Within-level self-attention, plus limited cross-level attention (top-down/bottom-up) to enable hierarchical abstraction [heirarchical-transformer.pdf:3].
+- Structured sparsification via masking
+  - Implement “hierarchical masking” to prune attention/rollout computation across levels according to the sparse imagination scheme [heirarchical-transformer.pdf:3].
+- Optional guidance modules (ablation-controlled)
+  - Causal graph guidance: restrict or weight attentions/rollouts according to a causal prior over variables/dynamics (as an ablation factor) [heirarchical-transformer.pdf:3].
+  - Uncertainty-based masking: gate rollouts in regions of high predictive uncertainty to reduce wasted compute; calibrate on validation only and treat as an ablation [heirarchical-transformer.pdf:3].
 
-2) Blinding ablation
-   - Hypothesis: Blinding reduces judge bias toward/against particular systems.
-   - Method: Evaluate the same system outputs under blinded vs. unblinded prompts (unblinded includes system name or family); randomize order.
-   - Metrics: Mean difference in failure rates and effect size (Cohen’s d); inter-judge agreement.
-   - Expected outcome: Unblinded prompts produce larger variance and shifted failure rates; blinded prompts yield more stable estimates [P1].
+3) Training schedule
+- Pretraining the world model
+  - Objective: next-step prediction in the latent space (next latent token/state), optionally with auxiliary heads (reward, termination). Choose a loss family (e.g., NLL for discrete tokens or MSE + KL for stochastic continuous latents) and document.
+  - Curriculum: optionally increase rollout horizon during training to stabilize learning; validate choices on validation only.
+  - Optimizer/schedule: use a standard optimizer (e.g., AdamW) with linear warmup and cosine decay; tune on validation only and record the total training tokens and effective batch size (the PDF requires reporting compute-related metrics, so record FLOPs and wall-clock) [heirarchical-transformer.pdf:3].
+  - Early stopping: select by validation rollout error.
+- RL integration and evaluation
+  - Plug the world model into the planner/agent (e.g., model-predictive control or latent imagination planning). Constrain imagination depth/width to meet compute budgets; measure “rollout compute cost” per decision step and overall [heirarchical-transformer.pdf:3].
+  - Report: rollout compute cost, rollout error (on held-out rollouts), and final RL performance (episodic return in held-out test environments/seeds) as the primary metrics [heirarchical-transformer.pdf:3].
 
-3) Cross-judge reliability and human calibration
-   - Hypothesis: A robust pipeline yields substantial agreement across judge models and with humans.
-   - Method: Judge with two distinct models (e.g., two families) and a meta-judge adjudicator; obtain a 100–200 item human-labeled subset.
-   - Metrics: Cohen’s kappa/Kendall’s tau between judges and human set; majority-vote vs. meta-judge consistency; 95% CIs.
-   - Expected outcome: Moderate-to-strong agreement (e.g., κ≥0.6) and small deltas between majority vote and meta-judge [P2], with structured rubric helping consistency [P3].
+Comparability requirements (to match the paper’s intent)
+- Fixed datasets/splits
+  - Same environments, observation/action processing, and train/val/test splits; no episode or seed overlap.
+- Fixed compute and capacity
+  - Match parameter count, context length, rollout horizon, and report total training tokens and FLOPs; enforce identical compute budgets during planning/imagination when comparing ablations [heirarchical-transformer.pdf:3].
+- Fixed training protocol
+  - Same optimizer, LR schedule, batch size/effective tokens, early stopping rule, and number of training steps.
+- Seeds and statistics
+  - At least 3–5 seeds per setting; report mean ± 95% CI for rollout error and final RL performance; use paired tests where possible.
+- Ablation isolation
+  - Only toggle the target component (hierarchical masking, causal guidance, uncertainty-based masking) while holding all else constant; keep total compute matched across ablations [heirarchical-transformer.pdf:3].
+- Metric definitions
+  - Rollout error: define clearly (e.g., k-step prediction loss or state/reward forecasting error) on a fixed validation split.
+  - Rollout compute cost: define as FLOPs or measured wall-clock per imagined step and per decision step; keep measurement environment constant [heirarchical-transformer.pdf:3].
 
-4) Prompt version lock test
-   - Hypothesis: Post-hoc prompt edits inflate apparent performance.
-   - Method: Evaluate on test with v1 prompt, then (improperly) tweak prompt after seeing results; re-evaluate. Compare to a proper preregistered v2 evaluated fresh.
-   - Metrics: Change in failure rates and the share of instances that flip labels.
-   - Expected outcome: Large swings after post-hoc edits signal overfitting; properly preregistered v2 shows smaller, explainable changes.
+Leakage risks between pretraining and evaluation (and mitigations)
+- Environment/seed overlap
+  - Risk: same environments or seeds in pretraining and evaluation inflate performance. Mitigation: strict disjoint seeds and distinct test environments; list seed sets explicitly.
+- Trajectory contamination
+  - Risk: using expert/evaluation trajectories in pretraining. Mitigation: pretraining only on training trajectories; keep a clean test set never used for tuning or calibration.
+- Hyperparameter tuning leakage
+  - Risk: selecting hyperparameters or ablations using test performance. Mitigation: tune exclusively on validation rollout error; lock the protocol before final test runs.
+- Guidance module leakage
+  - Risk: “causal graph guidance” derived from test environment knowledge. Mitigation: derive priors from training environments only; if environment-specific, treat as oracle and clearly label it; disallow any test-only features [heirarchical-transformer.pdf:3].
+- Uncertainty calibration leakage
+  - Risk: calibrating uncertainty thresholds on test data. Mitigation: calibrate on validation only and freeze settings before test [heirarchical-transformer.pdf:3].
+- Normalization/statistics leakage
+  - Risk: computing normalization using all splits. Mitigation: compute normalization from training data only and apply to val/test.
 
-Notes on evaluation rigor
-- Prefer structured, rubric-driven judgments with JSON schemas and explicit definitions to reduce ambiguity [P3].
-- Use multi-judge or adjudication frameworks to stabilize results and expose judge-specific biases [P2].
-- Blind the judge and consider cross-family judges to mitigate bias amplification and self-preference [P1].
+Three+ concrete, falsifiable experiments (align with stated ablations and metrics)
+1) Impact of hierarchical masking on compute–performance trade-off
+- Hypothesis: Hierarchical masking reduces rollout compute cost at similar rollout error and final RL performance relative to dense attention at matched capacity [heirarchical-transformer.pdf:3].
+- Variables: masking on vs off; match params and FLOPs budget at train and plan time.
+- Metrics: rollout compute cost, rollout error (k-step), final RL return [heirarchical-transformer.pdf:3].
+- Expected outcome: A Pareto improvement or parity in RL return with lower compute when masking is enabled (conjecture to be tested).
 
-Literature anchors (for your replication report)
-- Why Do Multi-Agent LLM Systems Fail? — arXiv PDF; see Section 3.4 for their LLM-as-a-Judge setup: https://arxiv.org/pdf/2503.13657.pdf
-- Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena (Zheng et al., 2023): https://browse.arxiv.org/html/2306.05685v4
-- A Survey on LLM-as-a-Judge (2024): https://arxiv.org/html/2411.15594v3
+2) Number of semantic levels K
+- Hypothesis: Increasing K beyond 1 improves compute efficiency at fixed or improved rollout error due to better abstraction [heirarchical-transformer.pdf:3].
+- Variables: K ∈ {1, 2, 3, 4}; fix total parameters by adjusting width.
+- Metrics: rollout compute cost, rollout error, final RL return [heirarchical-transformer.pdf:3].
+- Expected outcome: Diminishing returns after moderate K; too large K may hurt due to overhead (conjecture).
+
+3) Causal graph guidance ablation
+- Hypothesis: Injecting causal priors reduces rollout error and improves final RL return by focusing computation on causally-relevant dependencies [heirarchical-transformer.pdf:3].
+- Variables: guidance on vs off; keep masking and uncertainty modules constant.
+- Metrics: rollout error, final RL return, compute cost [heirarchical-transformer.pdf:3].
+- Expected outcome: Improved rollout error and return without increasing compute (conjecture).
+
+4) Uncertainty-based masking threshold sweep
+- Hypothesis: Tighter uncertainty thresholds reduce unnecessary rollouts, lowering compute with minimal loss in accuracy [heirarchical-transformer.pdf:3].
+- Variables: threshold τ ∈ {low, medium, high}; matched capacity.
+- Metrics: rollout compute cost, rollout error, final RL return [heirarchical-transformer.pdf:3].
+- Expected outcome: A sweet spot τ that improves compute with negligible return drop (conjecture).
+
+5) Compute budget sensitivity at plan time
+- Hypothesis: Under tight planning budgets, hierarchical models degrade more gracefully than flat models [heirarchical-transformer.pdf:3].
+- Variables: budget ∈ {25%, 50%, 100%} of baseline imagination steps; compare hierarchical vs non-hierarchical.
+- Metrics: final RL return vs budget; rollout compute cost [heirarchical-transformer.pdf:3].
+- Expected outcome: Hierarchical retains higher return at reduced budgets (conjecture).
+
+Notes on gaps to resolve before reproduction
+- The PDF does not specify datasets/environments, exact tokenization scheme, hierarchical block details (e.g., cross-level attention patterns), or hyperparameters. Decide and document these choices up front, and keep them fixed across experiments to ensure comparability [heirarchical-transformer.pdf:3].
+- Define precise formulas for “rollout error” and “rollout compute cost” and publish them with your code, since they are required metrics in the paper’s evaluation [heirarchical-transformer.pdf:3].
+
+Literature anchors for implementation choices
+- H-Transformer-1D: Fast One-Dimensional Hierarchical Attention for Sequences (Zhu and Soricut, 2021) — a concrete design for hierarchical attention that you can adapt to multi-level token interactions. https://arxiv.org/abs/2107.11906
+- DreamerV3: Mastering Diverse Domains via World Models (Hafner et al., 2023) — strong reference for world-model training, rollout evaluation, and reporting RL performance with careful train/val/test protocols. https://arxiv.org/abs/2301.04104
 
 Citations
-- [P1] Judging with Many Minds: Do More Perspectives Mean Less Prejudice? On Bias Amplifications and Resistance in Multi-Agent Based LLM-as-Judge — http://arxiv.org/abs/2505.19477v3
-- [P2] Leveraging LLMs as Meta-Judges: A Multi-Agent Framework for Evaluating LLM Judgments — http://arxiv.org/abs/2504.17087v1
-- [P3] Multi-Agent LLM Judge: automatic personalized LLM judge design for evaluating natural language generation applications — http://arxiv.org/abs/2504.02867v1
-- Why Do Multi-Agent LLM Systems Fail? — https://arxiv.org/pdf/2503.13657.pdf
-- Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://browse.arxiv.org/html/2306.05685v4
-
-If you can share your current taxonomy draft and judge prompt, I can review them for leakage risks and suggest a locked version suitable for test-time evaluation.
+- [heirarchical-transformer.pdf:3] Method, metrics to report (rollout compute cost, rollout error, final RL performance), and ablations (hierarchical masking, causal graph guidance, uncertainty-based masking) — attached PDF.
+- H-Transformer-1D: Fast One-Dimensional Hierarchical Attention for Sequences — https://arxiv.org/abs/2107.11906
+- DreamerV3: Mastering Diverse Domains via World Models — https://arxiv.org/abs/2301.04104

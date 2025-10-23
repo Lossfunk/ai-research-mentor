@@ -1,108 +1,77 @@
-Below is a concrete plan to extend the paper’s MST taxonomy with a fourth top-level category, Efficiency Issues, while keeping it orthogonal to the paper’s correctness-focused categories (Specification, Inter-Agent Misalignment, Verification) shown in their taxonomy figure and MAS trace examples [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5][Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
+Below is a compact plan to extend your Hierarchical Transformer evaluation with efficiency metrics while keeping results comparable to the original, followed by an analysis plan to demonstrate statistical separation between accuracy and efficiency trade-offs.
 
-Definition and scope of the new category
-- Efficiency Issues (new top-level): Failures primarily characterized by excessive resource use (time, tokens, tool calls, budget) relative to task complexity, regardless of eventual correctness. This category captures wasteful behaviors that degrade cost/latency but do not necessarily cause incorrect outputs, unlike Verification errors (e.g., premature or incorrect checks), Inter-Agent Misalignment (coordination errors), or Specification flaws (system design/setup) shown in the MST taxonomy [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Operational metrics to quantify efficiency:
-  - Latency: wall-clock time to completion
-  - Token I/O: prompt + completion tokens
-  - Tool-call count and external API latency
-  - Agent-message turns per unit of task progress
-  - Budget usage: cost spent vs. task value; budget/timeouts hit ratio
+Context from the attached plan
+- The current evaluation already reports rollout compute cost, rollout error, and final RL performance, and includes ablations for hierarchical masking, causal-graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3]. We will instrument these same settings with latency, memory, and throughput, and analyze efficiency–accuracy trade-offs without changing tasks, seeds, or horizons [heirarchical-transformer.pdf:3].
 
-Proposed sub-types (with inclusion/exclusion rules)
-- E1. Communication Overhead: Excessive turns with little new information or progress (chatter loops, redundant recaps). Include when message count per progress unit is a high outlier; exclude when loops are clearly due to misinterpretation (then classify under Misalignment) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- E2. Redundant Tooling: Repeated or unnecessary tool/API calls (e.g., multiple identical retrieval/Python invocations) without added utility. Exclude when redundant checks are incorrect or missing—those are Verification failures [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- E3. Serialization Bottlenecks: Avoidable waits because agents or checks run sequentially when they could run in parallel. Exclude when the wait stems from incorrect role assignment or coordination breakdown (Misalignment) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- E4. Over-Verification: Repeated verification after success, or heavy verification disproportionate to task risk. Exclude when verification is wrong (Verification: Incorrect/No/Incomplete, Premature Termination) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- E5. Budget Mismanagement: Exceeding token/cost budgets or hitting timeouts without correctness errors (e.g., late but correct answer after budget reset). Exclude when timeouts stem from derailment or miscoordination (Misalignment) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- E6. Over-Delegation/Role Thrashing: Spawning too many agents or unnecessary role hand-offs that inflate cost/latency without added capability. Exclude when role mismatch leads to incorrectness (Misalignment) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
+What to measure (and how)
+- Latency
+  - Time-to-first-token (TTFT): wall-clock time from inference call to first output.
+  - Per-step latency: mean/median and 5/95th percentiles for rollout steps.
+  - End-to-end episode latency: from start to termination/horizon.
+  - Protocol: 50–100 warmup steps; then 200+ measured steps per seed. Report medians and dispersion. Separate and report any one-time compilation overhead, if applicable.
+- Throughput
+  - Tokens/s (or model steps/s for rollouts), reported at fixed batch sizes used for accuracy evaluation plus a scaling curve.
+  - Protocol: stabilize clock rates (nvidia-smi -lgc if available), measure steady-state throughput and variance.
+- Memory
+  - Peak GPU memory reserved/allocated (torch.cuda.max_memory_reserved), peak KV-cache, peak activation memory during inference rollout.
+  - Optional: VRAM traffic estimates via profiler (read/write bytes) to contextualize IO-bound behavior [P5].
+- Compute cost per rollout step
+  - Kernel-level FLOPs via a profiler (e.g., PyTorch Profiler with FLOP counters) or analytical estimates per attention/MLP block; report average FLOPs/step and per-token FLOPs. This aligns with “rollout compute cost” already in the plan [heirarchical-transformer.pdf:3].
 
-Instrumentation and dataset
-- Reuse the paper’s multi-agent traces and role/invocation logs (e.g., Supervisor/Phone/Python traces) to annotate efficiency events alongside existing MST labels [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
-- Add automatic counters: turn count, tokens, tool calls, wall-clock, budget/timeouts. Compute per-task normalized z-scores by task class to identify outliers.
+Preserving comparability to the original results
+- Keep everything else fixed: tasks, datasets, horizons, evaluation protocol, and ablations (hierarchical masking, causal-graph guidance, uncertainty-based masking) [heirarchical-transformer.pdf:3].
+- Seeds: use the same seeds, and per-seed, collect paired accuracy and efficiency measurements.
+- Hardware/software: same GPU model, driver, CUDA/cuDNN, precision (fp16/bf16), attention kernel, and compiler flags. Lock GPU clocks if possible to reduce drift. Disable dropout in eval.
+- Shapes: evaluate at the same sequence lengths and batch sizes as the original; add explicit length/batch scaling curves as supplementary analysis (not the headline number) to avoid shifting baselines.
+- Warmups and timer: exclude JIT/graph compile time from steady-state latency and throughput; report it separately.
 
-Three validation goals for “statistical distinctness”
-- Reliability: New sub-type labels must achieve good inter-rater agreement (Krippendorff’s α ≥ 0.67).
-- Construct/discriminant validity: Efficiency labels load on a distinct factor from Specification, Misalignment, and Verification; low cross-loadings; HTMT < 0.85; Fornell–Larcker AVE satisfies square-root-AVE > inter-factor correlations.
-- Predictive validity: Efficiency labels predict cost/latency strongly (and correctness weakly), whereas existing MST categories predict correctness strongly (and cost weakly).
+Analysis plan for statistical separation of accuracy–efficiency trade-offs
+- Paired evaluation across seeds/episodes
+  - For each configuration, collect paired tuples: (accuracy metric: rollout error or RL return, efficiency metrics: TTFT, per-step latency, throughput, peak memory, FLOPs/step).
+  - Use paired non-parametric tests (Wilcoxon signed-rank) on per-episode latency and memory at matched seeds to assess distributional shifts independent of accuracy differences.
+- Pareto frontier and hypervolume
+  - Construct Pareto fronts for each method in the space of (error, latency), (error, memory), and (error, throughput). Compute dominated hypervolume with a fixed reference point (worst observed values). Use bootstrap (e.g., 1,000 resamples over episodes/seeds) to get 95% CIs for hypervolume and frontier locations; compare methods by the separation of hypervolume distributions [P1]. This directly summarizes multi-objective trade-offs.
+- MANOVA/ANCOVA
+  - MANOVA on joint (accuracy, latency) or (accuracy, memory) to test overall separation; or ANCOVA modeling latency as dependent variable with accuracy as a covariate and method as a factor to test whether a method achieves lower latency at a given accuracy level (and analogously for memory/throughput).
+- Stratifications and normalization
+  - Stratify by sequence length and batch size. Also analyze per-token latency and memory to control for length effects, guided by IO-aware attention literature indicating bandwidth/IO can dominate latency at long lengths [P5].
+- Effect sizes and visualizations
+  - Report effect sizes (e.g., Cliff’s delta) alongside p-values. Plot trade-off curves with 95% bootstrap ribbons, and annotate statistically non-overlapping regions. Include decomposition (attention vs MLP time) from the profiler to diagnose where gains arise [P5].
 
-Experiments (falsifiable, with tests and expected outcomes)
+Three concrete, falsifiable experiments
+1) Hierarchical masking strength sweep
+- Hypothesis: Increasing masking strength reduces compute and memory (lower per-step latency, peak memory, and FLOPs/step) with minimal accuracy loss up to a regime-specific threshold [heirarchical-transformer.pdf:3].
+- Variables: masking strength or token-retention threshold (K or probability); keep all else fixed (tasks, seeds, precision, hardware).
+- Metrics: rollout error/return; TTFT; per-step latency; throughput; peak memory; FLOPs/step.
+- Analysis: For each setting, compute Pareto front and hypervolume (error vs latency, error vs memory). Use bootstrap CIs; test hypervolume differences. Paired tests on per-episode latency at matched seeds. Expect a smooth efficiency gain until a knee where accuracy drops.
+2) Causal-graph guidance ablation and intensity
+- Hypothesis: Enabling causal-graph guidance yields better accuracy at similar cost, or similar accuracy at lower cost, by focusing attention on causally relevant tokens [heirarchical-transformer.pdf:3].
+- Variables: guidance on/off; guidance strength (weight or topological pruning level).
+- Metrics: same as above plus “tokens attended per step” (retained/active tokens) to mechanistically explain efficiency.
+- Analysis: Compare paired differences in latency and memory while matching accuracy bins. Evaluate hypervolume improvement; test if guided configs dominate unguided configs in Pareto space with non-overlapping bootstrap CIs.
+3) Uncertainty-based masking calibration
+- Hypothesis: Calibrated uncertainty thresholds retain only high-uncertainty (informative) tokens, improving efficiency without degrading accuracy until an over-pruning regime [heirarchical-transformer.pdf:3].
+- Variables: uncertainty threshold; calibration method (e.g., temperature scaling); evaluation under identical seeds/horizons.
+- Metrics: same as above; additionally report “retained-token fraction” and its correlation with latency/memory.
+- Analysis: Fit ANCOVA with latency as outcome, accuracy as covariate, and method/threshold as factors; test whether certain thresholds achieve significantly lower latency at equivalent accuracy. Compare hypervolume vs baseline and vs hierarchical-only masking.
+Optional robustness/sensitivity study
+- Sequence-length scaling: measure latency ∝ f(N) and memory ∝ f(N) for each method; verify shifts from quadratic/bandwidth-limited regimes and relate to IO-awareness [P5]. Use slopes and confidence intervals to quantify scaling improvements.
 
-Experiment 1 — Taxonomy extension via annotation + factor modeling
-- Hypothesis H1: A four-factor model (Specification, Misalignment, Verification, Efficiency) fits annotation data significantly better than the original three-factor model, and Efficiency subtypes form a coherent, distinct factor.
-- Design: Randomly sample N≈600 MAS traces spanning tasks the paper used; annotate each trace for existing sub-types and new E1–E6 with a decision codebook; double-annotate 25% for reliability [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5][Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
-- Variables:
-  - Independent: Presence/absence of sub-type labels (binary per sub-type).
-  - Dependent: Latent factor structure; fit indices.
-- Metrics:
-  - Inter-rater: Krippendorff’s α per sub-type.
-  - Model fit: Three-factor vs four-factor CFA on tetrachoric correlations; report Δχ² LRT, CFI/TLI, RMSEA, AIC/BIC; HTMT; Fornell–Larcker AVE.
-- Controls:
-  - Stratify by task type and model; control for task difficulty using baseline single-agent performance where available.
-- Statistical tests:
-  - LRT comparing 3F vs 4F; inspect loadings (>0.5 on Efficiency, <0.3 cross-loadings).
-  - HTMT and Fornell–Larcker criteria for discriminant validity.
-- Expected outcomes:
-  - α≥0.67 for E1–E6.
-  - 4F significantly improves fit (p<0.01), Efficiency items load together, and discriminant validity criteria are met, supporting “statistical distinctness.”
+Reporting checklist (preserving comparability)
+- Replicate the original tables with rollout error and final RL performance, then append columns for: per-step latency (median, p5/p95), throughput, peak memory, FLOPs/step, and TTFT [heirarchical-transformer.pdf:3].
+- Provide per-seed paired summaries and bootstrap CIs; include Pareto plots and hypervolume with 95% CIs [P1].
+- Fix and report: GPU model/driver, CUDA/cuDNN, precision, batch sizes, sequence lengths, warmup steps, seeds, and whether attention kernels (e.g., FlashAttention) were used, as IO/bandwidth can materially affect latency/memory [P5].
 
-Experiment 2 — Convergent vs discriminant validity via multi-outcome regression
-- Hypothesis H2: Efficiency labels explain variance in resource outcomes (latency, tokens, tool calls, budget hits) beyond existing MST categories, while contributing minimally to correctness error rates.
-- Design: For the same traces, compute standardized resource outcomes; also record correctness error (final success/failure attributable to Specification, Misalignment, Verification) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Variables:
-  - Predictors: Binary indicators for each top-level category (any sub-type present) and counts of sub-types.
-  - Outcomes: z-latency, z-token, z-tool calls, budget hit (binary), correctness failure (binary).
-- Metrics: Partial R² for resource outcomes; AUROC for budget-hit; odds ratios for correctness failure.
-- Controls: Task type, model, prompt length, tool latency distributions.
-- Statistical tests:
-  - Nested models (3-category vs 4-category) with LRT/AIC/BIC; likelihood ratio χ² for logistic models; Bonferroni/Holm correction across outcomes.
-- Expected outcomes:
-  - Adding Efficiency yields significant ΔR² for resource outcomes (p<0.01) but negligible change for correctness failure, establishing discriminant validity.
-
-Experiment 3 — Intervention study: communication-economic agent pipeline
-- Hypothesis H3: Applying a communication-economizing policy reduces Efficiency issues (E1/E2/E6) and cost/latency without degrading correctness rates.
-- Intervention: Introduce a “communication economy” layer (message compression, redundant-tool-call suppression, dynamic delegation caps) inspired by economical communication pipelines for LLM-based MAS [Cut the Crap, 2024; reduces unnecessary inter-agent chatter and tool calls] [5], and instrument using AutoGen/AgentEval-style metrics [1][2].
-- Design: A/B test on a held-out set (N≈300 tasks) with the same agents/specs (to avoid confounding with Specification) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Variables:
-  - Condition: Control (baseline) vs Treatment (economy policy).
-  - Outcomes: Rate of E1/E2/E6 labels, latency, tokens, tool calls, correctness error categories.
-- Statistical tests: Two-sample tests with covariate adjustment (ANCOVA) for task difficulty; Cliff’s delta; nonparametric bootstrap CIs.
-- Expected outcomes:
-  - 15–30% relative reduction in E1/E2/E6 and resource metrics; no significant increase in Verification/Misalignment/Specification errors, supporting the separability of efficiency from correctness.
-
-Experiment 4 — Parallelization ablation (optional but recommended)
-- Hypothesis H4: Enabling safe parallel tool calls/checks reduces E3 (Serialization Bottlenecks) with no systematic effect on Verification/Misalignment labels.
-- Design: On tasks permitting independence, run agents with parallel vs serialized execution while keeping prompts/roles constant [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Outcomes: E3 rate, latency, correctness labels.
-- Tests: Paired tests on per-task runs; mixed-effects model with random intercepts per task.
-- Expected: Significant E3 decrease and faster completion; correctness categories unchanged, reinforcing distinctness.
-
-Annotation protocol (to ensure reproducibility)
-- Codebook with inclusion/exclusion examples from actual MAS traces (e.g., supervisor/phone/python sequences) [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9].
-- Double-coding and adjudication; report α and confusion matrices between Efficiency and existing top-level labels to quantify overlap.
-
-Threats to validity and controls
-- Confounding by task difficulty: use stratification and include task-fixed effects.
-- Stochasticity of LLMs: run k≥3 seeds per task-condition; aggregate by majority or hierarchical modeling.
-- Overlap with Verification: enforce exclusion rules; if a turn both over-verifies and verifies incorrectly, prioritize Verification (primary-causal label) and tag E4 as secondary.
-
-How to implement quickly
-- Instrumentation: If you use AutoGen or similar MAS frameworks, adopt existing counters and AgentEval-style utilities for per-run cost/latency/turns [1][2].
-- Baselines: Include a single-agent strong baseline to calibrate “excess” resource use per task class.
-- Pre-registration: Specify four-factor CFA, regression outcomes, and primary/secondary label precedence rules before annotation.
-
-Literature anchors for efficiency interventions and measurement
-- MAS communication economy: “Cut the Crap: An Economical Communication Pipeline for LLM-based Multi-Agent Systems” proposes reducing unnecessary inter-agent chatter and tool calls; adapt its ideas for the H3 intervention [5].
-- Instrumentation: AutoGen’s multi-agent framework and AgentEval provide practical tools for measuring agent utility, turns, and cost—useful for standardized efficiency metrics [1][2].
-
-Citations
-- [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5] MST taxonomy figure showing top-level categories (Specification, Inter-Agent Misalignment, Verification), their subtypes (e.g., Premature Termination, Incorrect/No/Incomplete Verification), and MAS trace failure framing.
-- [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:9] Example MAS traces with agent roles (e.g., Supervisor, Phone, Python) to guide codebook examples and instrumentation.
-- [1] AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation Framework — https://www.microsoft.com/en-us/research/publication/autogen-enabling-next-gen-llm-applications-via-multi-agent-conversation-framework/
-- [2] AgentEval: A Developer Tool to Assess Utility of LLM-powered Applications — https://microsoft.github.io/autogen/0.2/blog/2024/06/21/AgentEval/
-- [5] Cut the Crap: An Economical Communication Pipeline for LLM-based Multi-Agent Systems — https://arxiv.org/abs/2410.02506
+Why these analyses
+- Hypervolume and Pareto-front analysis are standard, decision-relevant ways to summarize multi-objective trade-offs and enable statistical comparison via bootstrap CIs [P1].
+- IO-aware attention work shows that memory bandwidth and data movement dominate runtime in Transformers at scale, justifying the decomposition of latency and explicit memory measurements, not just FLOPs [P5].
 
 Key takeaways
-- Define Efficiency Issues with clear sub-types and exclusion rules so they remain orthogonal to correctness categories in the MST taxonomy [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Validate the new category via reliability (α), four-factor CFA fit vs three-factor baseline, and predictive validity on resource outcomes.
-- Show experimental separability via interventions that reduce efficiency issues without increasing correctness failures, supported by practical MAS instrumentation [1][2][5].
+- Add TTFT, per-step latency, throughput, peak memory, and FLOPs/step to the existing rollout compute cost/error/RL performance while keeping the original tasks, seeds, horizons, and ablations unchanged [heirarchical-transformer.pdf:3].
+- Use paired tests, MANOVA/ANCOVA, and bootstrap hypervolume on Pareto fronts to show statistically significant separation of accuracy–efficiency trade-offs [P1].
+- Diagnose mechanisms via profiler-based breakdowns and token-retention stats, guided by IO-aware attention insights [P5].
+
+Citations
+- [heirarchical-transformer.pdf:3] Sparse Hierarchical Imagination for Efficient Transformer World Models — (attached PDF)
+- [P1] Multi-Objective Learning to Predict Pareto Fronts Using Hypervolume Maximization — http://arxiv.org/abs/2102.04523v2
+- [P5] FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness — http://arxiv.org/abs/2205.14135v2

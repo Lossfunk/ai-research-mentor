@@ -1,0 +1,116 @@
+Below is a lightweight, pre-inference heuristics module to approximate hierarchical cues (section headers and discourse markers) for long-text inputs, plus an evaluation plan to test parity with the Hierarchical Transformer on the paper’s primary axes: rollout compute cost, rollout error, and final performance, alongside the same ablations (hierarchical masking, causal guidance, uncertainty masking) for attribution [heirarchical-transformer.pdf:3]. The goal is to swap learned hierarchy discovery with zero-parameter (or near-zero) rules while holding the rest of the stack fixed, so any differences can be attributed to the heuristics vs the original hierarchy modules [heirarchical-transformer.pdf:3]. Where I generalize to long-text, I keep compute and stability metrics in parallel with the paper’s framing [heirarchical-transformer.pdf:2–3].
+
+Prototype heuristics (pre-inference, zero- or near-zero-parameter)
+- Segment unit: sentences (primary) and lines/paragraphs (secondary). Tokenize sentences, maintain mapping to token indices.
+- H1. Section/heading detector
+  - Regex patterns for headings:
+    - Numbered: ^((\d+(\.\d+){0,3})|[IVXLCM]+(\.[IVXLCM]+){0,3})[)\.\-:]\s+.
+    - Bulleted/list: ^[\-\*\•▪◦]\s+ or ^\(\w+\)\s+.
+    - Title case + length: 2–12 words, ≥70% TitleCase words, no trailing period.
+    - All-caps with stopword filter and len ∈ [2,12].
+  - Structural context boosts: blank-line padding above/below, indentation drop, page/section prefix tokens (e.g., “Abstract”, “Introduction”, “Methods”).
+  - Output: section boundary candidates with confidence s_hdr ∈ [0,1] from weighted rules.
+- H2. Discourse-marker boundary scorer
+  - Lexicon-based cues (PDTB-style connectives): contrast (however, but, although), cause (because, therefore), elaboration/addition (moreover, furthermore), temporal (then, subsequently), enumeration (first, second, finally).
+  - Score s_disc at sentence i by:
+    - Marker presence and type weight (strong: contrast/cause; moderate: temporal/addition).
+    - POS/parse checks (marker as discourse connective vs adverbial noise).
+    - Local coherence dip: drop in cosine similarity of sentence embeddings across the boundary (optional; if used, keep a small, fixed model like sentence-BERT-mini to stay near-zero-param; otherwise skip for strict rule-only).
+- H3. Enumeration/outline structure
+  - Detect runs of ordered/unordered lists; start a sub-section at the start of a run; merge tiny segments at end.
+- H4. Paragraph density and length regularizers
+  - Prevent over-segmentation: enforce min segment length (e.g., ≥3 sentences except for headings), merge segments failing minimum.
+- H5. Two-level tree construction
+  - Top-level: promote H1 headings as parents.
+  - Second-level: split within each section using H2/H3 peaks; cap depth at 2–3 for parity with typical hierarchical summaries.
+- H6. Saliency/importance hints
+  - Assign sentence saliency w_sent: +1 if in section lead, +1 if contains headings’ key terms, +1 if contains discourse markers of cause/contrast; −1 if boilerplate (copyright, references). Normalize to a [0,1] rank per section.
+
+Integration into the model (no change to backbone)
+- Boundary-to-mask mapping
+  - Convert section/subsection splits into attention masks so tokens attend fully within segments; allow cross-segment attention via summary/memory tokens (unchanged count vs original to match compute) [heirarchical-transformer.pdf:3].
+  - At retained-token selection time, add a small deterministic boost to tokens in section leads and high-saliency sentences; keep retained-token budget identical to the original to preserve compute comparisons [heirarchical-transformer.pdf:3].
+- Summary initialization
+  - Initialize summary/memory tokens from section-lead mean embeddings; no learned pooling changes. Turn off any learned boundary predictors to isolate the heuristic swap.
+
+Datasets and conditions (long-text)
+- Corpora: Wikipedia long articles, GovReport-like reports, and arXiv abstracts+introductions (public, de-identified). Use fixed train/val/test splits by document ID; no overlap.
+- Conditions:
+  1) Original Hierarchical Transformer (HT) with learned hierarchy.
+  2) HT+Heuristics (rules drive boundaries/saliency; learned hierarchy modules disabled).
+  3) Flat transformer (no hierarchy) of iso-capacity.
+  4) Ablations for attribution: HT with uncertainty-off, causal-off (paper’s grid) [heirarchical-transformer.pdf:3].
+- Keep identical seeds, context length, retained-token budgets, rollout depth, optimizer/schedule to preserve comparability on compute and error metrics [heirarchical-transformer.pdf:3].
+
+Metrics for parity and impact
+- Primary (mirroring the paper)
+  - Rollout compute cost: FLOPs/token and per-document; include heuristic preprocessing overhead. Report medians and CIs [heirarchical-transformer.pdf:3].
+  - Rollout error: next-token NLL/perplexity and error-vs-horizon curves under teacher forcing on held-out documents [heirarchical-transformer.pdf:3].
+  - Final task performance: document QA (extractive or short-form) and/or section-level summarization ROUGE/BERTScore as the application-level utility proxy.
+- Hierarchy alignment (model vs heuristics vs humans, if available)
+  - Boundary metrics: Pk, WindowDiff, and F1 with ±3-sentence tolerance against human headings (if present) or editorial section markers.
+  - Saliency alignment: NDCG@{10,20} and Kendall’s τ between model-retained tokens’ sentence ranks and heuristic/human highlights.
+- Behavioral agreement and regressions
+  - Token-level agreement: top-1 next-token prediction agreement between HT and HT+Heuristics; symmetric KL of their predictive distributions.
+  - Regression/anti-regression rates: fraction of positions where HT is correct and HT+Heuristics errs (and vice versa), using ground truth text.
+- Stability under hierarchy
+  - Boundary churn across sliding windows; oscillation rate of retained-token sets as document grows.
+- Non-inferiority targets (pre-registered)
+  - Rollout error non-inferiority margin: ≤ +2% relative perplexity vs original HT; compute cost ≤ original ±2%; task performance non-inferiority: ≤ −2% relative.
+
+Error analysis and failure subtypes
+- Header false positives: decorative lines or short uppercase phrases misclassified as headings; count and proportion per 1k sentences.
+- Missed implicit sections: topic shifts without overt markers; track heuristic-vs-human boundary misses where semantic similarity drops but rules do not trigger.
+- Discourse-marker ambiguity: markers used non-discursively (e.g., “However” in quotes); measure via POS/parse disambiguation errors.
+- Over-segmentation from lists: long enumerations fractured into too many sub-sections; measure segment length distribution and tail heaviness.
+- Hierarchy–model conflicts: segments where masking reduces cross-section dependencies and increases rollout error; localize by ΔNLL spikes at boundaries.
+- Compute attribution: proportion of compute saved or added due to masks vs heuristic overhead; ensure overhead remains small (<1–2% FLOPs).
+
+Statistical analysis
+- Paired, per-document tests across seeds
+  - Wilcoxon signed-rank for perplexity, compute cost, and task metrics; report Cliff’s delta and BCa bootstrap 95% CIs; FDR across metrics/families.
+- Agreement/regressions
+  - McNemar’s test on token-level correctness (HT vs HT+Heuristics); report risk difference with Wilson 95% CIs.
+  - Symmetric KL and agreement rates compared with Wilcoxon; horizon-slope effects via mixed-effects regression: Error ~ Method + Horizon + Method×Horizon + (1|Doc).
+- Non-inferiority (TOST)
+  - Margins: +2% perplexity, −2% task metric, +2% compute cost. Conclude parity if both bounds pass.
+
+Three concrete, falsifiable experiments
+1) Parity on compute and rollout error
+- Setup: Evaluate HT vs HT+Heuristics on 3 long-text corpora; same seeds, budgets, rollout depth.
+- Hypotheses: Heuristics achieve non-inferior perplexity (≤ +2%) and equal or lower rollout compute cost (±2%) at iso-capacity [heirarchical-transformer.pdf:3].
+- Tests: TOST for perplexity and compute; Wilcoxon for differences; report error–horizon curves.
+
+2) Boundary and saliency alignment
+- Setup: Compare heuristic boundaries and saliency to HT’s learned hierarchy and to human section markers (where available).
+- Hypotheses: Heuristics reach Pk/WindowDiff within Δ=0.05 of HT; NDCG@20 within Δ=0.05; major errors concentrated in implicit-topic-shift cases.
+- Tests: Wilcoxon on Pk/WindowDiff and NDCG; error subtype counts with bootstrap CIs.
+
+3) Regression audit and ablations
+- Setup: Run uncertainty-off and causal-off ablations for both HT and HT+Heuristics; measure token-level regressions and stability.
+- Hypotheses: Heuristics show no excess regression rate vs HT beyond +1% absolute; turning off uncertainty guidance harms long-horizon error AUC more for heuristic masks (fewer learned corrections) [heirarchical-transformer.pdf:3].
+- Tests: McNemar on regression rates; mixed-effects Method×Horizon for error AUC; FDR across tests.
+
+Implementation checklist
+- Pre-inference module returns:
+  - boundaries: list of (start_idx, end_idx, level), saliency scores per sentence.
+  - masks: attention blocks within sections with cross-section routes via summary/memory tokens (keep counts identical to original) [heirarchical-transformer.pdf:3].
+- Logging for analysis:
+  - per-chunk: perplexity, compute, retained-token sets, boundary indices, agreement with HT, and error spikes near boundaries.
+- Ablation toggles: enable/disable H1–H6 individually to attribute which rules matter.
+
+Why this matches the paper’s evaluation
+- You keep the primary axes—rollout compute cost, rollout error, and final performance—unchanged and run the same ablations (hierarchical masking, causal guidance, uncertainty masking), enabling attribution consistent with the original protocol [heirarchical-transformer.pdf:3]. The heuristics are strictly pre-inference and near-zero-parameter, so any differences are attributable to hierarchy discovery rather than backbone capacity [heirarchical-transformer.pdf:2–3].
+
+Literature anchors
+- Hearst, 1997. TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages. Classic rule-based segmentation baseline. https://www.aclweb.org/anthology/J97-1003
+- Prasad et al., 2008. The Penn Discourse TreeBank 2.0. Canonical inventory of discourse connectives used for rule-based boundary cues. https://aclanthology.org/L08-1093/
+
+Citations
+- [heirarchical-transformer.pdf:2] Method overview emphasizing structured sparsification and hierarchical masking for efficiency/stability.
+- [heirarchical-transformer.pdf:3] Evaluation protocol: report rollout compute cost, rollout error, and final performance; ablate hierarchical masking, causal guidance, and uncertainty-based masking.
+
+Sources
+- Sparse Hierarchical Imagination for Efficient Transformer World Models — User-provided PDF [heirarchical-transformer.pdf:2–3]
+- Hearst, 1997. TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages — https://www.aclweb.org/anthology/J97-1003
+- Prasad et al., 2008. The Penn Discourse TreeBank 2.0 — https://aclanthology.org/L08-1093/

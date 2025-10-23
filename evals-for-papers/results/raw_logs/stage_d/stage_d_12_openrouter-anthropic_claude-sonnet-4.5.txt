@@ -1,0 +1,1791 @@
+Based on the attached paper, I'll design a comprehensive framework to replace the base SHI Transformer with a committee of smaller open-weight models and evaluate the trade-offs.
+
+## Committee-Based SHI Architecture
+
+### 1. Committee Design
+
+```python
+class CommitteeSHI:
+    """
+    Replace monolithic SHI with committee of smaller open-weight models.
+    
+    Original SHI: Single large transformer (6 layers, 512 dim) [inferred from paper]
+    Committee SHI: Multiple smaller transformers with aggregation
+    """
+    def __init__(self, committee_config):
+        self.committee_config = committee_config
+        self.committee_members = self._initialize_committee()
+        self.aggregator = self._initialize_aggregator()
+        
+    def _initialize_committee(self):
+        """
+        Initialize committee of smaller models.
+        
+        Design choices:
+        1. Homogeneous: All members same architecture (different initializations)
+        2. Heterogeneous: Different architectures for diversity
+        3. Specialized: Each member focuses on different hierarchy level
+        """
+        committee = []
+        
+        if self.committee_config['type'] == 'homogeneous':
+            # All members identical architecture, different random seeds
+            for i in range(self.committee_config['n_members']):
+                member = SmallTransformer(
+                    num_layers=self.committee_config['layers_per_member'],
+                    d_model=self.committee_config['d_model_per_member'],
+                    num_heads=self.committee_config['heads_per_member'],
+                    seed=i
+                )
+                committee.append(member)
+                
+        elif self.committee_config['type'] == 'heterogeneous':
+            # Different architectures for diversity
+            architectures = [
+                {'layers': 2, 'd_model': 256, 'heads': 4},  # Small & fast
+                {'layers': 3, 'd_model': 384, 'heads': 6},  # Medium
+                {'layers': 4, 'd_model': 256, 'heads': 8},  # Deep & narrow
+                {'layers': 2, 'd_model': 512, 'heads': 8},  # Shallow & wide
+                {'layers': 3, 'd_model': 256, 'heads': 4},  # Balanced
+            ]
+            
+            for arch in architectures[:self.committee_config['n_members']]:
+                member = SmallTransformer(**arch)
+                committee.append(member)
+                
+        elif self.committee_config['type'] == 'specialized':
+            # Each member specializes in one hierarchy level
+            for level in range(3):  # 3 hierarchy levels [heirarchical-transformer.pdf:2]
+                member = SpecializedTransformer(
+                    num_layers=self.committee_config['layers_per_member'],
+                    d_model=self.committee_config['d_model_per_member'],
+                    num_heads=self.committee_config['heads_per_member'],
+                    specialization_level=level
+                )
+                committee.append(member)
+        
+        return committee
+    
+    def _initialize_aggregator(self):
+        """
+        Initialize aggregation mechanism for committee outputs.
+        
+        Aggregation strategies:
+        1. Voting: Majority vote (for discrete outputs)
+        2. Averaging: Mean/median (for continuous outputs)
+        3. Weighted: Learned weights based on confidence
+        4. Attention: Attention-based aggregation
+        5. Mixture of Experts: Gating network
+        """
+        if self.committee_config['aggregation'] == 'voting':
+            return VotingAggregator()
+        elif self.committee_config['aggregation'] == 'averaging':
+            return AveragingAggregator()
+        elif self.committee_config['aggregation'] == 'weighted':
+            return WeightedAggregator(n_members=self.committee_config['n_members'])
+        elif self.committee_config['aggregation'] == 'attention':
+            return AttentionAggregator(
+                d_model=self.committee_config['d_model_per_member'],
+                n_members=self.committee_config['n_members']
+            )
+        elif self.committee_config['aggregation'] == 'moe':
+            return MixtureOfExpertsAggregator(
+                n_members=self.committee_config['n_members'],
+                d_model=self.committee_config['d_model_per_member']
+            )
+    
+    def forward(self, observations, actions):
+        """
+        Forward pass through committee.
+        """
+        # Encode observations (shared VQ-VAE)
+        tokens = self.vqvae.encode(observations)
+        token_embeddings = self.vqvae.get_embeddings(tokens)
+        
+        # Each committee member processes tokens
+        member_outputs = []
+        member_hierarchies = []
+        member_maskings = []
+        
+        for member in self.committee_members:
+            # Member-specific forward pass
+            output = member(token_embeddings, actions)
+            
+            # Extract hierarchy assignments
+            hierarchy = member.assign_hierarchy(token_embeddings)
+            
+            # Extract masking decisions
+            masking = member.compute_masking(hierarchy, token_embeddings)
+            
+            member_outputs.append(output)
+            member_hierarchies.append(hierarchy)
+            member_maskings.append(masking)
+        
+        # Aggregate outputs
+        aggregated_output = self.aggregator.aggregate_predictions(member_outputs)
+        aggregated_hierarchy = self.aggregator.aggregate_hierarchies(member_hierarchies)
+        aggregated_masking = self.aggregator.aggregate_maskings(member_maskings)
+        
+        # Return aggregated results + individual member outputs (for analysis)
+        return {
+            'aggregated': {
+                'predictions': aggregated_output,
+                'hierarchy': aggregated_hierarchy,
+                'masking': aggregated_masking
+            },
+            'individual': {
+                'predictions': member_outputs,
+                'hierarchies': member_hierarchies,
+                'maskings': member_maskings
+            }
+        }
+```
+
+### 2. Aggregation Mechanisms
+
+```python
+class VotingAggregator:
+    """
+    Majority voting for discrete outputs (hierarchy levels).
+    """
+    def aggregate_hierarchies(self, member_hierarchies):
+        """
+        Args:
+            member_hierarchies: List of [B, L] tensors (one per member)
+        
+        Returns:
+            aggregated_hierarchy: [B, L] tensor (majority vote)
+        """
+        # Stack member hierarchies
+        stacked = torch.stack(member_hierarchies, dim=0)  # [n_members, B, L]
+        
+        # Majority vote
+        aggregated, _ = torch.mode(stacked, dim=0)
+        
+        return aggregated
+    
+    def aggregate_predictions(self, member_predictions):
+        """
+        For continuous predictions, use median (robust to outliers).
+        """
+        stacked = torch.stack(member_predictions, dim=0)
+        aggregated = torch.median(stacked, dim=0)[0]
+        
+        return aggregated
+    
+    def aggregate_maskings(self, member_maskings):
+        """
+        For binary masks, use majority vote.
+        For soft masks, use median.
+        """
+        stacked = torch.stack(member_maskings, dim=0)
+        
+        # If binary masks
+        if member_maskings[0].dtype == torch.bool:
+            aggregated = (stacked.sum(dim=0) > len(member_maskings) / 2)
+        else:
+            # Soft masks
+            aggregated = torch.median(stacked, dim=0)[0]
+        
+        return aggregated
+
+class WeightedAggregator(nn.Module):
+    """
+    Learned weighted aggregation based on member confidence.
+    """
+    def __init__(self, n_members):
+        super().__init__()
+        self.n_members = n_members
+        
+        # Learnable weights per member
+        self.member_weights = nn.Parameter(torch.ones(n_members) / n_members)
+        
+    def aggregate_predictions(self, member_predictions):
+        """
+        Weighted average of predictions.
+        """
+        # Normalize weights
+        weights = F.softmax(self.member_weights, dim=0)
+        
+        # Stack predictions
+        stacked = torch.stack(member_predictions, dim=0)  # [n_members, B, ...]
+        
+        # Weighted sum
+        aggregated = torch.sum(
+            stacked * weights.view(-1, *([1] * (stacked.ndim - 1))),
+            dim=0
+        )
+        
+        return aggregated
+    
+    def aggregate_hierarchies(self, member_hierarchies):
+        """
+        Weighted voting for hierarchies.
+        """
+        # Convert to one-hot
+        n_levels = 3
+        stacked = torch.stack(member_hierarchies, dim=0)  # [n_members, B, L]
+        
+        one_hot = F.one_hot(stacked, num_classes=n_levels).float()  # [n_members, B, L, n_levels]
+        
+        # Weighted sum
+        weights = F.softmax(self.member_weights, dim=0)
+        weighted_votes = torch.sum(
+            one_hot * weights.view(-1, 1, 1, 1),
+            dim=0
+        )  # [B, L, n_levels]
+        
+        # Take argmax
+        aggregated = torch.argmax(weighted_votes, dim=-1)
+        
+        return aggregated
+
+class AttentionAggregator(nn.Module):
+    """
+    Attention-based aggregation (context-dependent weighting).
+    """
+    def __init__(self, d_model, n_members):
+        super().__init__()
+        self.n_members = n_members
+        
+        # Attention mechanism
+        self.query_proj = nn.Linear(d_model, d_model)
+        self.key_proj = nn.Linear(d_model, d_model)
+        self.value_proj = nn.Linear(d_model, d_model)
+        
+    def aggregate_predictions(self, member_predictions, token_embeddings):
+        """
+        Attention-based aggregation conditioned on input.
+        
+        Args:
+            member_predictions: List of [B, L, D] tensors
+            token_embeddings: [B, L, D] input embeddings
+        """
+        # Stack predictions
+        stacked = torch.stack(member_predictions, dim=0)  # [n_members, B, L, D]
+        
+        # Compute attention scores
+        queries = self.query_proj(token_embeddings)  # [B, L, D]
+        keys = self.key_proj(stacked)  # [n_members, B, L, D]
+        
+        # Attention weights
+        attention_scores = torch.einsum('bld,mbld->mbl', queries, keys)  # [n_members, B, L]
+        attention_scores = attention_scores / np.sqrt(queries.shape[-1])
+        attention_weights = F.softmax(attention_scores, dim=0)  # [n_members, B, L]
+        
+        # Weighted sum
+        values = self.value_proj(stacked)  # [n_members, B, L, D]
+        aggregated = torch.sum(
+            values * attention_weights.unsqueeze(-1),
+            dim=0
+        )  # [B, L, D]
+        
+        return aggregated
+
+class MixtureOfExpertsAggregator(nn.Module):
+    """
+    Mixture of Experts with learned gating network.
+    """
+    def __init__(self, n_members, d_model):
+        super().__init__()
+        self.n_members = n_members
+        
+        # Gating network
+        self.gate = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.ReLU(),
+            nn.Linear(d_model // 2, n_members)
+        )
+        
+    def aggregate_predictions(self, member_predictions, token_embeddings):
+        """
+        MoE aggregation with learned gating.
+        """
+        # Compute gate weights
+        gate_logits = self.gate(token_embeddings)  # [B, L, n_members]
+        gate_weights = F.softmax(gate_logits, dim=-1)  # [B, L, n_members]
+        
+        # Stack predictions
+        stacked = torch.stack(member_predictions, dim=0)  # [n_members, B, L, D]
+        
+        # Weighted sum
+        aggregated = torch.sum(
+            stacked * gate_weights.permute(2, 0, 1).unsqueeze(-1),
+            dim=0
+        )  # [B, L, D]
+        
+        return aggregated
+```
+
+### 3. Committee Configurations
+
+```python
+class CommitteeConfigurations:
+    """
+    Pre-defined committee configurations for evaluation.
+    """
+    def __init__(self):
+        self.configs = {
+            'baseline_single': self._config_baseline_single,
+            'committee_3_homogeneous': self._config_3_homogeneous,
+            'committee_5_homogeneous': self._config_5_homogeneous,
+            'committee_3_heterogeneous': self._config_3_heterogeneous,
+            'committee_3_specialized': self._config_3_specialized,
+            'committee_5_moe': self._config_5_moe,
+        }
+    
+    def _config_baseline_single(self):
+        """
+        Original SHI (single model baseline).
+        """
+        return {
+            'type': 'single',
+            'num_layers': 6,
+            'd_model': 512,
+            'num_heads': 8,
+            'total_parameters': self._count_params(6, 512, 8),
+            'description': 'Original SHI baseline'
+        }
+    
+    def _config_3_homogeneous(self):
+        """
+        3 identical smaller models (homogeneous committee).
+        
+        Target: ~1/3 parameters per member (same total as baseline)
+        """
+        return {
+            'type': 'homogeneous',
+            'n_members': 3,
+            'layers_per_member': 3,  # Half the layers
+            'd_model_per_member': 384,  # ~75% of original
+            'heads_per_member': 6,
+            'aggregation': 'voting',
+            'total_parameters': self._count_params(3, 384, 6) * 3,
+            'description': '3 homogeneous members with voting'
+        }
+    
+    def _config_5_homogeneous(self):
+        """
+        5 identical smaller models.
+        
+        Target: ~1/5 parameters per member
+        """
+        return {
+            'type': 'homogeneous',
+            'n_members': 5,
+            'layers_per_member': 2,
+            'd_model_per_member': 256,
+            'heads_per_member': 4,
+            'aggregation': 'averaging',
+            'total_parameters': self._count_params(2, 256, 4) * 5,
+            'description': '5 homogeneous members with averaging'
+        }
+    
+    def _config_3_heterogeneous(self):
+        """
+        3 different architectures for diversity.
+        """
+        return {
+            'type': 'heterogeneous',
+            'n_members': 3,
+            'architectures': [
+                {'layers': 2, 'd_model': 512, 'heads': 8},  # Shallow & wide
+                {'layers': 4, 'd_model': 256, 'heads': 8},  # Deep & narrow
+                {'layers': 3, 'd_model': 384, 'heads': 6},  # Balanced
+            ],
+            'aggregation': 'weighted',
+            'total_parameters': sum([
+                self._count_params(2, 512, 8),
+                self._count_params(4, 256, 8),
+                self._count_params(3, 384, 6)
+            ]),
+            'description': '3 heterogeneous members with learned weighting'
+        }
+    
+    def _config_3_specialized(self):
+        """
+        3 members, each specialized for one hierarchy level.
+        """
+        return {
+            'type': 'specialized',
+            'n_members': 3,
+            'layers_per_member': 3,
+            'd_model_per_member': 384,
+            'heads_per_member': 6,
+            'specialization': 'hierarchy_level',  # Each member focuses on one level
+            'aggregation': 'attention',
+            'total_parameters': self._count_params(3, 384, 6) * 3,
+            'description': '3 specialized members (one per hierarchy level) with attention aggregation'
+        }
+    
+    def _config_5_moe(self):
+        """
+        5 members with Mixture of Experts gating.
+        """
+        return {
+            'type': 'homogeneous',
+            'n_members': 5,
+            'layers_per_member': 2,
+            'd_model_per_member': 256,
+            'heads_per_member': 4,
+            'aggregation': 'moe',
+            'total_parameters': self._count_params(2, 256, 4) * 5 + 256 * 128 + 128 * 5,  # +gating network
+            'description': '5 members with MoE gating'
+        }
+    
+    def _count_params(self, num_layers, d_model, num_heads):
+        """
+        Estimate parameter count for transformer.
+        
+        Simplified formula:
+        - Attention: 4 * d_model^2 per layer (Q, K, V, O projections)
+        - FFN: 8 * d_model^2 per layer (assuming d_ff = 4 * d_model)
+        - Total per layer: 12 * d_model^2
+        """
+        params_per_layer = 12 * d_model ** 2
+        total_params = num_layers * params_per_layer
+        
+        return total_params
+```
+
+### 4. Open-Weight Model Selection
+
+```python
+class OpenWeightModels:
+    """
+    Catalog of open-weight models suitable for committee members.
+    """
+    def __init__(self):
+        self.models = {
+            'gpt2_small': {
+                'source': 'HuggingFace',
+                'model_id': 'gpt2',
+                'parameters': '124M',
+                'layers': 12,
+                'd_model': 768,
+                'license': 'MIT',
+                'suitable_for': 'general purpose'
+            },
+            'distilgpt2': {
+                'source': 'HuggingFace',
+                'model_id': 'distilgpt2',
+                'parameters': '82M',
+                'layers': 6,
+                'd_model': 768,
+                'license': 'Apache 2.0',
+                'suitable_for': 'efficient inference'
+            },
+            'pythia_70m': {
+                'source': 'EleutherAI',
+                'model_id': 'EleutherAI/pythia-70m',
+                'parameters': '70M',
+                'layers': 6,
+                'd_model': 512,
+                'license': 'Apache 2.0',
+                'suitable_for': 'small committee member'
+            },
+            'pythia_160m': {
+                'source': 'EleutherAI',
+                'model_id': 'EleutherAI/pythia-160m',
+                'parameters': '160M',
+                'layers': 12,
+                'd_model': 768,
+                'license': 'Apache 2.0',
+                'suitable_for': 'medium committee member'
+            },
+            'opt_125m': {
+                'source': 'Meta',
+                'model_id': 'facebook/opt-125m',
+                'parameters': '125M',
+                'layers': 12,
+                'd_model': 768,
+                'license': 'OPT-175B License',
+                'suitable_for': 'general purpose'
+            },
+            'bloom_560m': {
+                'source': 'BigScience',
+                'model_id': 'bigscience/bloom-560m',
+                'parameters': '560M',
+                'layers': 24,
+                'd_model': 1024,
+                'license': 'BigScience RAIL License',
+                'suitable_for': 'multilingual'
+            }
+        }
+    
+    def recommend_committee(self, target_total_params='500M', n_members=3):
+        """
+        Recommend committee composition based on parameter budget.
+        """
+        target_params = self._parse_param_string(target_total_params)
+        params_per_member = target_params / n_members
+        
+        # Find models closest to target size
+        recommendations = []
+        
+        for model_name, model_info in self.models.items():
+            model_params = self._parse_param_string(model_info['parameters'])
+            
+            if 0.5 * params_per_member <= model_params <= 1.5 * params_per_member:
+                recommendations.append({
+                    'model': model_name,
+                    'info': model_info,
+                    'size_match': abs(model_params - params_per_member) / params_per_member
+                })
+        
+        # Sort by size match
+        recommendations.sort(key=lambda x: x['size_match'])
+        
+        return recommendations[:n_members]
+    
+    def _parse_param_string(self, param_str):
+        """Convert '124M' to 124000000."""
+        if param_str.endswith('M'):
+            return float(param_str[:-1]) * 1e6
+        elif param_str.endswith('B'):
+            return float(param_str[:-1]) * 1e9
+        else:
+            return float(param_str)
+```
+
+## Evaluation Framework
+
+### 5. Agreement Metrics
+
+```python
+class AgreementMetrics:
+    """
+    Measure agreement between committee members and with baseline.
+    """
+    def __init__(self):
+        pass
+    
+    def compute_pairwise_agreement(self, member_outputs):
+        """
+        Compute pairwise agreement between all committee members.
+        
+        Metrics:
+        1. Hierarchy agreement (Cohen's kappa)
+        2. Prediction agreement (correlation)
+        3. Masking agreement (Jaccard similarity)
+        """
+        n_members = len(member_outputs)
+        
+        # Initialize agreement matrices
+        hierarchy_agreements = np.zeros((n_members, n_members))
+        prediction_agreements = np.zeros((n_members, n_members))
+        masking_agreements = np.zeros((n_members, n_members))
+        
+        for i in range(n_members):
+            for j in range(i+1, n_members):
+                # Hierarchy agreement (Cohen's kappa)
+                hierarchy_i = member_outputs[i]['hierarchy'].flatten()
+                hierarchy_j = member_outputs[j]['hierarchy'].flatten()
+                
+                from sklearn.metrics import cohen_kappa_score
+                kappa = cohen_kappa_score(hierarchy_i, hierarchy_j)
+                hierarchy_agreements[i, j] = kappa
+                hierarchy_agreements[j, i] = kappa
+                
+                # Prediction agreement (Pearson correlation)
+                pred_i = member_outputs[i]['predictions'].flatten()
+                pred_j = member_outputs[j]['predictions'].flatten()
+                
+                from scipy.stats import pearsonr
+                corr, _ = pearsonr(pred_i, pred_j)
+                prediction_agreements[i, j] = corr
+                prediction_agreements[j, i] = corr
+                
+                # Masking agreement (Jaccard similarity)
+                mask_i = (member_outputs[i]['masking'] > 0.5).flatten()
+                mask_j = (member_outputs[j]['masking'] > 0.5).flatten()
+                
+                intersection = (mask_i & mask_j).sum()
+                union = (mask_i | mask_j).sum()
+                jaccard = intersection / (union + 1e-10)
+                
+                masking_agreements[i, j] = jaccard
+                masking_agreements[j, i] = jaccard
+        
+        # Set diagonal to 1 (self-agreement)
+        np.fill_diagonal(hierarchy_agreements, 1.0)
+        np.fill_diagonal(prediction_agreements, 1.0)
+        np.fill_diagonal(masking_agreements, 1.0)
+        
+        return {
+            'hierarchy_kappa_matrix': hierarchy_agreements,
+            'prediction_corr_matrix': prediction_agreements,
+            'masking_jaccard_matrix': masking_agreements,
+            'mean_hierarchy_kappa': np.mean(hierarchy_agreements[np.triu_indices(n_members, k=1)]),
+            'mean_prediction_corr': np.mean(prediction_agreements[np.triu_indices(n_members, k=1)]),
+            'mean_masking_jaccard': np.mean(masking_agreements[np.triu_indices(n_members, k=1)])
+        }
+    
+    def compute_diversity_metrics(self, member_outputs):
+        """
+        Measure diversity among committee members.
+        
+        High diversity → members make different errors → better ensemble
+        Low diversity → members redundant → no benefit from ensemble
+        """
+        n_members = len(member_outputs)
+        
+        # Diversity metric 1: Disagreement rate
+        hierarchies = torch.stack([m['hierarchy'] for m in member_outputs], dim=0)  # [n_members, B, L]
+        
+        # For each token, count how many members disagree
+        mode_hierarchy, _ = torch.mode(hierarchies, dim=0)  # [B, L]
+        disagreements = (hierarchies != mode_hierarchy.unsqueeze(0)).float()  # [n_members, B, L]
+        disagreement_rate = disagreements.mean().item()
+        
+        # Diversity metric 2: Entropy of predictions
+        # Higher entropy → more diverse predictions
+        from scipy.stats import entropy
+        
+        prediction_entropies = []
+        for token_idx in range(hierarchies.shape[2]):
+            token_hierarchies = hierarchies[:, :, token_idx].flatten().cpu().numpy()
+            hist, _ = np.histogram(token_hierarchies, bins=3, range=(0, 3))
+            hist = hist / hist.sum()
+            ent = entropy(hist)
+            prediction_entropies.append(ent)
+        
+        mean_entropy = np.mean(prediction_entropies)
+        
+        # Diversity metric 3: Q-statistic (Kuncheva & Whitaker, 2003)
+        # Measures pairwise diversity
+        q_statistics = []
+        
+        for i in range(n_members):
+            for j in range(i+1, n_members):
+                # Binary agreement/disagreement
+                agree_both_correct = ((hierarchies[i] == mode_hierarchy) & 
+                                     (hierarchies[j] == mode_hierarchy)).float().sum()
+                agree_both_wrong = ((hierarchies[i] != mode_hierarchy) & 
+                                   (hierarchies[j] != mode_hierarchy)).float().sum()
+                disagree = ((hierarchies[i] == mode_hierarchy) != 
+                           (hierarchies[j] == mode_hierarchy)).float().sum()
+                
+                total = hierarchies.shape[1] * hierarchies.shape[2]
+                
+                # Q-statistic
+                q = (agree_both_correct * agree_both_wrong - disagree**2 / 4) / \
+                    (agree_both_correct * agree_both_wrong + disagree**2 / 4 + 1e-10)
+                
+                q_statistics.append(q.item())
+        
+        mean_q = np.mean(q_statistics)
+        
+        return {
+            'disagreement_rate': disagreement_rate,
+            'mean_prediction_entropy': mean_entropy,
+            'mean_q_statistic': mean_q,
+            'interpretation': self._interpret_diversity(disagreement_rate, mean_q)
+        }
+    
+    def _interpret_diversity(self, disagreement_rate, q_statistic):
+        """
+        Interpret diversity metrics.
+        
+        Q-statistic:
+        - Q = 1: Members always agree (no diversity)
+        - Q = 0: Members independent
+        - Q = -1: Members always disagree (maximum diversity)
+        """
+        if q_statistic > 0.5:
+            diversity = 'Low diversity (members highly correlated)'
+        elif q_statistic > 0:
+            diversity = 'Moderate diversity (some independence)'
+        elif q_statistic > -0.5:
+            diversity = 'High diversity (largely independent)'
+        else:
+            diversity = 'Very high diversity (negatively correlated)'
+        
+        return diversity
+    
+    def compute_baseline_agreement(self, committee_output, baseline_output):
+        """
+        Measure agreement between committee and original baseline.
+        """
+        # Hierarchy agreement
+        from sklearn.metrics import cohen_kappa_score
+        
+        committee_hierarchy = committee_output['hierarchy'].flatten()
+        baseline_hierarchy = baseline_output['hierarchy'].flatten()
+        
+        hierarchy_kappa = cohen_kappa_score(committee_hierarchy, baseline_hierarchy)
+        
+        # Prediction agreement
+        from scipy.stats import pearsonr
+        
+        committee_pred = committee_output['predictions'].flatten()
+        baseline_pred = baseline_output['predictions'].flatten()
+        
+        pred_corr, pred_p = pearsonr(committee_pred, baseline_pred)
+        
+        # Masking agreement
+        committee_mask = (committee_output['masking'] > 0.5).flatten()
+        baseline_mask = (baseline_output['masking'] > 0.5).flatten()
+        
+        intersection = (committee_mask & baseline_mask).sum()
+        union = (committee_mask | baseline_mask).sum()
+        masking_jaccard = (intersection / (union + 1e-10)).item()
+        
+        return {
+            'hierarchy_kappa': hierarchy_kappa,
+            'prediction_correlation': pred_corr,
+            'prediction_p_value': pred_p,
+            'masking_jaccard': masking_jaccard,
+            'interpretation': self._interpret_baseline_agreement(hierarchy_kappa, pred_corr)
+        }
+    
+    def _interpret_baseline_agreement(self, kappa, corr):
+        """
+        Interpret agreement with baseline.
+        """
+        if kappa > 0.8 and corr > 0.9:
+            return 'Very high agreement (committee replicates baseline)'
+        elif kappa > 0.6 and corr > 0.7:
+            return 'High agreement (committee mostly consistent with baseline)'
+        elif kappa > 0.4 and corr > 0.5:
+            return 'Moderate agreement (some divergence from baseline)'
+        else:
+            return 'Low agreement (committee significantly different from baseline)'
+```
+
+### 6. Coverage Metrics
+
+```python
+class CoverageMetrics:
+    """
+    Measure coverage: Does committee cover same capabilities as baseline?
+    """
+    def __init__(self):
+        pass
+    
+    def compute_task_coverage(self, committee_results, baseline_results, tasks):
+        """
+        Measure coverage across different tasks.
+        
+        Tasks:
+        - Atari games (26 games) [heirarchical-transformer.pdf:3]
+        - Crafter achievements
+        - Different hierarchy levels
+        - Different rollout horizons
+        """
+        coverage_by_task = {}
+        
+        for task_name, task_data in tasks.items():
+            # Extract performance
+            committee_perf = committee_results[task_name]['performance']
+            baseline_perf = baseline_results[task_name]['performance']
+            
+            # Coverage: Does committee achieve ≥X% of baseline performance?
+            coverage_threshold = 0.9  # 90% of baseline
+            
+            if baseline_perf > 0:
+                relative_perf = committee_perf / baseline_perf
+                covered = relative_perf >= coverage_threshold
+            else:
+                relative_perf = 0
+                covered = False
+            
+            coverage_by_task[task_name] = {
+                'committee_performance': committee_perf,
+                'baseline_performance': baseline_perf,
+                'relative_performance': relative_perf,
+                'covered': covered
+            }
+        
+        # Overall coverage rate
+        coverage_rate = np.mean([v['covered'] for v in coverage_by_task.values()])
+        
+        return {
+            'coverage_by_task': coverage_by_task,
+            'overall_coverage_rate': coverage_rate,
+            'num_tasks_covered': sum([v['covered'] for v in coverage_by_task.values()]),
+            'total_tasks': len(tasks)
+        }
+    
+    def compute_state_space_coverage(self, committee_outputs, baseline_outputs, state_embeddings):
+        """
+        Measure coverage of state space.
+        
+        Method: Compare distributions of visited states.
+        """
+        # Extract state embeddings from rollouts
+        committee_states = committee_outputs['state_embeddings']  # [N, D]
+        baseline_states = baseline_outputs['state_embeddings']  # [M, D]
+        
+        # Method 1: KL divergence between state distributions
+        from scipy.stats import gaussian_kde
+        
+        # Fit KDE to baseline states
+        baseline_kde = gaussian_kde(baseline_states.T)
+        
+        # Evaluate committee states under baseline KDE
+        committee_log_probs = baseline_kde.logpdf(committee_states.T)
+        
+        # Fit KDE to committee states
+        committee_kde = gaussian_kde(committee_states.T)
+        
+        # Evaluate baseline states under committee KDE
+        baseline_log_probs = committee_kde.logpdf(baseline_states.T)
+        
+        # Approximate KL divergence
+        kl_div = np.mean(committee_log_probs) - np.mean(baseline_log_probs)
+        
+        # Method 2: Coverage via nearest neighbors
+        # For each baseline state, check if committee visited nearby state
+        from sklearn.neighbors import NearestNeighbors
+        
+        nn = NearestNeighbors(n_neighbors=1)
+        nn.fit(committee_states)
+        
+        distances, _ = nn.kneighbors(baseline_states)
+        
+        # Coverage: % of baseline states with nearby committee state
+        coverage_threshold = np.percentile(distances, 10)  # 10th percentile
+        coverage_rate = (distances < coverage_threshold).mean()
+        
+        return {
+            'kl_divergence': kl_div,
+            'state_coverage_rate': coverage_rate,
+            'mean_nearest_neighbor_distance': distances.mean(),
+            'interpretation': self._interpret_state_coverage(kl_div, coverage_rate)
+        }
+    
+    def compute_error_mode_coverage(self, committee_errors, baseline_errors):
+        """
+        Check if committee makes same types of errors as baseline.
+        
+        Important: We want to cover baseline's successes, not its failures.
+        """
+        # Categorize errors
+        committee_error_types = self._categorize_errors(committee_errors)
+        baseline_error_types = self._categorize_errors(baseline_errors)
+        
+        # Compute overlap in error types
+        committee_error_set = set(committee_error_types.keys())
+        baseline_error_set = set(baseline_error_types.keys())
+        
+        common_errors = committee_error_set & baseline_error_set
+        committee_only_errors = committee_error_set - baseline_error_set
+        baseline_only_errors = baseline_error_set - committee_error_set
+        
+        return {
+            'common_error_types': list(common_errors),
+            'committee_only_errors': list(committee_only_errors),
+            'baseline_only_errors': list(baseline_only_errors),
+            'error_overlap_rate': len(common_errors) / (len(baseline_error_set) + 1e-10),
+            'interpretation': self._interpret_error_coverage(
+                len(common_errors),
+                len(committee_only_errors),
+                len(baseline_only_errors)
+            )
+        }
+    
+    def _categorize_errors(self, errors):
+        """
+        Categorize errors into types.
+        
+        Error types:
+        - High-confidence incorrect predictions
+        - Rollout divergence
+        - Hierarchy misassignment
+        - Masking errors
+        """
+        error_types = {}
+        
+        for error in errors:
+            error_type = error['type']
+            if error_type not in error_types:
+                error_types[error_type] = []
+            error_types[error_type].append(error)
+        
+        return error_types
+    
+    def _interpret_state_coverage(self, kl_div, coverage_rate):
+        """Interpret state space coverage."""
+        if coverage_rate > 0.9:
+            return 'Excellent coverage (committee explores similar states)'
+        elif coverage_rate > 0.7:
+            return 'Good coverage (most baseline states covered)'
+        elif coverage_rate > 0.5:
+            return 'Moderate coverage (some gaps in state space)'
+        else:
+            return 'Poor coverage (committee explores different states)'
+    
+    def _interpret_error_coverage(self, common, committee_only, baseline_only):
+        """Interpret error mode coverage."""
+        if committee_only > baseline_only:
+            return 'Committee makes more error types than baseline (regression)'
+        elif committee_only < baseline_only:
+            return 'Committee makes fewer error types than baseline (improvement)'
+        else:
+            return 'Committee and baseline make similar error types'
+```
+
+### 7. Regression Detection
+
+```python
+class RegressionDetection:
+    """
+    Detect performance regressions when switching to committee.
+    """
+    def __init__(self, significance_level=0.05):
+        self.alpha = significance_level
+        
+    def detect_performance_regression(self, committee_scores, baseline_scores):
+        """
+        Statistical test for performance regression.
+        
+        H0: Committee performance ≥ Baseline performance
+        H1: Committee performance < Baseline performance (regression)
+        """
+        from scipy.stats import ttest_rel, wilcoxon
+        
+        # Paired t-test (assumes normality)
+        t_stat, p_value_t = ttest_rel(
+            committee_scores,
+            baseline_scores,
+            alternative='less'  # Committee < Baseline
+        )
+        
+        # Wilcoxon signed-rank test (non-parametric)
+        w_stat, p_value_w = wilcoxon(
+            committee_scores,
+            baseline_scores,
+            alternative='less'
+        )
+        
+        # Effect size (Cohen's d for paired samples)
+        diff = committee_scores - baseline_scores
+        d = diff.mean() / diff.std()
+        
+        # Regression detected if p < alpha
+        regression_detected = (p_value_t < self.alpha) or (p_value_w < self.alpha)
+        
+        # Magnitude of regression
+        mean_diff = committee_scores.mean() - baseline_scores.mean()
+        percent_change = (mean_diff / baseline_scores.mean()) * 100
+        
+        return {
+            'regression_detected': regression_detected,
+            't_test_p_value': p_value_t,
+            'wilcoxon_p_value': p_value_w,
+            'cohens_d': d,
+            'mean_difference': mean_diff,
+            'percent_change': percent_change,
+            'interpretation': self._interpret_regression(regression_detected, percent_change, d)
+        }
+    
+    def detect_task_specific_regressions(self, committee_results, baseline_results, tasks):
+        """
+        Detect regressions on specific tasks.
+        """
+        regressions = {}
+        
+        for task_name in tasks:
+            committee_perf = committee_results[task_name]
+            baseline_perf = baseline_results[task_name]
+            
+            # Test for regression
+            regression_result = self.detect_performance_regression(
+                committee_perf,
+                baseline_perf
+            )
+            
+            regressions[task_name] = regression_result
+        
+        # Identify tasks with significant regressions
+        regressed_tasks = [
+            task for task, result in regressions.items()
+            if result['regression_detected']
+        ]
+        
+        return {
+            'regressions_by_task': regressions,
+            'regressed_tasks': regressed_tasks,
+            'num_regressions': len(regressed_tasks),
+            'total_tasks': len(tasks),
+            'regression_rate': len(regressed_tasks) / len(tasks)
+        }
+    
+    def detect_capability_regressions(self, committee_outputs, baseline_outputs):
+        """
+        Detect regressions in specific capabilities.
+        
+        Capabilities:
+        - Long-horizon rollout accuracy
+        - Hierarchy quality
+        - Masking efficiency
+        - Computational cost
+        """
+        capabilities = {}
+        
+        # Capability 1: Rollout accuracy at different horizons
+        for horizon in [5, 10, 15]:
+            committee_error = committee_outputs[f'rollout_error_h{horizon}']
+            baseline_error = baseline_outputs[f'rollout_error_h{horizon}']
+            
+            # Lower error is better, so test if committee_error > baseline_error
+            from scipy.stats import ttest_ind
+            
+            t_stat, p_value = ttest_ind(
+                committee_error,
+                baseline_error,
+                alternative='greater'  # Committee error > Baseline error
+            )
+            
+            regression = p_value < self.alpha
+            
+            capabilities[f'rollout_h{horizon}'] = {
+                'regression': regression,
+                'p_value': p_value,
+                'committee_mean_error': committee_error.mean(),
+                'baseline_mean_error': baseline_error.mean()
+            }
+        
+        # Capability 2: Hierarchy quality (measured by human alignment)
+        # Assume we have human ratings
+        if 'hierarchy_alignment' in committee_outputs:
+            committee_alignment = committee_outputs['hierarchy_alignment']
+            baseline_alignment = baseline_outputs['hierarchy_alignment']
+            
+            regression_result = self.detect_performance_regression(
+                committee_alignment,
+                baseline_alignment
+            )
+            
+            capabilities['hierarchy_quality'] = regression_result
+        
+        # Capability 3: Computational efficiency
+        committee_flops = committee_outputs['total_flops']
+        baseline_flops = baseline_outputs['total_flops']
+        
+        # Higher FLOPs is worse (regression)
+        flops_increase = (committee_flops - baseline_flops) / baseline_flops
+        
+        capabilities['computational_efficiency'] = {
+            'regression': flops_increase > 0.1,  # >10% increase is regression
+            'flops_increase': flops_increase,
+            'committee_flops': committee_flops,
+            'baseline_flops': baseline_flops
+        }
+        
+        return capabilities
+    
+    def _interpret_regression(self, detected, percent_change, cohens_d):
+        """Interpret regression results."""
+        if not detected:
+            return 'No significant regression detected'
+        
+        if abs(cohens_d) < 0.2:
+            magnitude = 'negligible'
+        elif abs(cohens_d) < 0.5:
+            magnitude = 'small'
+        elif abs(cohens_d) < 0.8:
+            magnitude = 'medium'
+        else:
+            magnitude = 'large'
+        
+        return f'Significant regression detected ({magnitude} effect, {percent_change:.1f}% change)'
+```
+
+### 8. Comprehensive Evaluation Protocol
+
+```python
+class CommitteeEvaluationProtocol:
+    """
+    Complete evaluation protocol for committee vs. baseline.
+    """
+    def __init__(self, committee_model, baseline_model):
+        self.committee = committee_model
+        self.baseline = baseline_model
+        
+        self.agreement_metrics = AgreementMetrics()
+        self.coverage_metrics = CoverageMetrics()
+        self.regression_detection = RegressionDetection()
+        
+    def run_evaluation(self, test_datasets):
+        """
+        Execute complete evaluation protocol.
+        """
+        print("=" * 80)
+        print("COMMITTEE EVALUATION PROTOCOL")
+        print("=" * 80)
+        
+        results = {}
+        
+        # Phase 1: Collect outputs
+        print("\n[Phase 1/5] Collecting model outputs...")
+        committee_outputs = self._collect_outputs(self.committee, test_datasets)
+        baseline_outputs = self._collect_outputs(self.baseline, test_datasets)
+        
+        # Phase 2: Agreement analysis
+        print("\n[Phase 2/5] Analyzing agreement...")
+        results['agreement'] = {
+            'inter_member': self.agreement_metrics.compute_pairwise_agreement(
+                committee_outputs['individual_members']
+            ),
+            'diversity': self.agreement_metrics.compute_diversity_metrics(
+                committee_outputs['individual_members']
+            ),
+            'baseline_agreement': self.agreement_metrics.compute_baseline_agreement(
+                committee_outputs['aggregated'],
+                baseline_outputs
+            )
+        }
+        
+        # Phase 3: Coverage analysis
+        print("\n[Phase 3/5] Analyzing coverage...")
+        results['coverage'] = {
+            'task_coverage': self.coverage_metrics.compute_task_coverage(
+                committee_outputs,
+                baseline_outputs,
+                test_datasets
+            ),
+            'state_space_coverage': self.coverage_metrics.compute_state_space_coverage(
+                committee_outputs,
+                baseline_outputs,
+                test_datasets['state_embeddings']
+            ),
+            'error_mode_coverage': self.coverage_metrics.compute_error_mode_coverage(
+                committee_outputs['errors'],
+                baseline_outputs['errors']
+            )
+        }
+        
+        # Phase 4: Regression detection
+        print("\n[Phase 4/5] Detecting regressions...")
+        results['regressions'] = {
+            'overall': self.regression_detection.detect_performance_regression(
+                committee_outputs['scores'],
+                baseline_outputs['scores']
+            ),
+            'task_specific': self.regression_detection.detect_task_specific_regressions(
+                committee_outputs,
+                baseline_outputs,
+                test_datasets
+            ),
+            'capability_specific': self.regression_detection.detect_capability_regressions(
+                committee_outputs,
+                baseline_outputs
+            )
+        }
+        
+        # Phase 5: Generate report
+        print("\n[Phase 5/5] Generating report...")
+        self._generate_report(results)
+        
+        return results
+    
+    def _collect_outputs(self, model, test_datasets):
+        """
+        Collect model outputs on all test datasets.
+        """
+        outputs = {
+            'predictions': [],
+            'hierarchies': [],
+            'maskings': [],
+            'scores': [],
+            'errors': [],
+            'state_embeddings': []
+        }
+        
+        for dataset_name, dataset in test_datasets.items():
+            print(f"  Evaluating on {dataset_name}...")
+            
+            for batch in dataset:
+                # Forward pass
+                output = model(batch['observations'], batch['actions'])
+                
+                # Collect outputs
+                outputs['predictions'].append(output['predictions'])
+                outputs['hierarchies'].append(output['hierarchy'])
+                outputs['maskings'].append(output['masking'])
+                
+                # Compute scores
+                score = self._compute_score(output, batch['targets'])
+                outputs['scores'].append(score)
+                
+                # Detect errors
+                errors = self._detect_errors(output, batch['targets'])
+                outputs['errors'].extend(errors)
+                
+                # Extract state embeddings
+                state_emb = output.get('state_embeddings', None)
+                if state_emb is not None:
+                    outputs['state_embeddings'].append(state_emb)
+        
+        # Concatenate
+        outputs['predictions'] = torch.cat(outputs['predictions'], dim=0)
+        outputs['hierarchies'] = torch.cat(outputs['hierarchies'], dim=0)
+        outputs['maskings'] = torch.cat(outputs['maskings'], dim=0)
+        outputs['scores'] = np.array(outputs['scores'])
+        
+        if outputs['state_embeddings']:
+            outputs['state_embeddings'] = torch.cat(outputs['state_embeddings'], dim=0)
+        
+        return outputs
+    
+    def _compute_score(self, output, targets):
+        """
+        Compute performance score.
+        
+        For Atari: Human-normalized score
+        For Crafter: Achievement score
+        """
+        # Simplified - actual implementation depends on task
+        mse = F.mse_loss(output['predictions'], targets).item()
+        return -mse  # Negative MSE (higher is better)
+    
+    def _detect_errors(self, output, targets):
+        """
+        Detect and categorize errors.
+        """
+        errors = []
+        
+        # High-confidence incorrect predictions
+        confidence = 1.0 - output.get('uncertainty', torch.zeros_like(output['predictions']))
+        error_magnitude = torch.abs(output['predictions'] - targets)
+        
+        high_conf_errors = (confidence > 0.8) & (error_magnitude > 0.5)
+        
+        for idx in high_conf_errors.nonzero(as_tuple=True)[0]:
+            errors.append({
+                'type': 'high_confidence_error',
+                'index': idx.item(),
+                'confidence': confidence[idx].item(),
+                'error': error_magnitude[idx].item()
+            })
+        
+        return errors
+    
+    def _generate_report(self, results):
+        """
+        Generate comprehensive evaluation report.
+        """
+        report = f"""
+# Committee Evaluation Report
+
+## Agreement Analysis
+
+### Inter-Member Agreement
+- **Mean Hierarchy Kappa:** {results['agreement']['inter_member']['mean_hierarchy_kappa']:.3f}
+- **Mean Prediction Correlation:** {results['agreement']['inter_member']['mean_prediction_corr']:.3f}
+- **Mean Masking Jaccard:** {results['agreement']['inter_member']['mean_masking_jaccard']:.3f}
+
+### Diversity
+- **Disagreement Rate:** {results['agreement']['diversity']['disagreement_rate']:.2%}
+- **Mean Q-Statistic:** {results['agreement']['diversity']['mean_q_statistic']:.3f}
+- **Interpretation:** {results['agreement']['diversity']['interpretation']}
+
+### Baseline Agreement
+- **Hierarchy Kappa:** {results['agreement']['baseline_agreement']['hierarchy_kappa']:.3f}
+- **Prediction Correlation:** {results['agreement']['baseline_agreement']['prediction_correlation']:.3f}
+- **Masking Jaccard:** {results['agreement']['baseline_agreement']['masking_jaccard']:.3f}
+- **Interpretation:** {results['agreement']['baseline_agreement']['interpretation']}
+
+## Coverage Analysis
+
+### Task Coverage
+- **Coverage Rate:** {results['coverage']['task_coverage']['overall_coverage_rate']:.1%}
+- **Tasks Covered:** {results['coverage']['task_coverage']['num_tasks_covered']} / {results['coverage']['task_coverage']['total_tasks']}
+
+### State Space Coverage
+- **KL Divergence:** {results['coverage']['state_space_coverage']['kl_divergence']:.3f}
+- **Coverage Rate:** {results['coverage']['state_space_coverage']['state_coverage_rate']:.1%}
+- **Interpretation:** {results['coverage']['state_space_coverage']['interpretation']}
+
+### Error Mode Coverage
+- **Common Errors:** {len(results['coverage']['error_mode_coverage']['common_error_types'])}
+- **Committee-Only Errors:** {len(results['coverage']['error_mode_coverage']['committee_only_errors'])}
+- **Baseline-Only Errors:** {len(results['coverage']['error_mode_coverage']['baseline_only_errors'])}
+- **Interpretation:** {results['coverage']['error_mode_coverage']['interpretation']}
+
+## Regression Analysis
+
+### Overall Performance
+- **Regression Detected:** {results['regressions']['overall']['regression_detected']}
+- **Percent Change:** {results['regressions']['overall']['percent_change']:.1f}%
+- **Cohen's d:** {results['regressions']['overall']['cohens_d']:.3f}
+- **Interpretation:** {results['regressions']['overall']['interpretation']}
+
+### Task-Specific Regressions
+- **Regression Rate:** {results['regressions']['task_specific']['regression_rate']:.1%}
+- **Regressed Tasks:** {', '.join(results['regressions']['task_specific']['regressed_tasks'][:5])}
+
+### Capability Regressions
+{self._format_capability_regressions(results['regressions']['capability_specific'])}
+
+## Recommendations
+
+{self._generate_recommendations(results)}
+"""
+        
+        # Save report
+        with open('committee_evaluation_report.md', 'w') as f:
+            f.write(report)
+        
+        print("\nReport saved to: committee_evaluation_report.md")
+        
+        return report
+    
+    def _format_capability_regressions(self, capabilities):
+        """Format capability regression results."""
+        formatted = ""
+        
+        for capability, result in capabilities.items():
+            formatted += f"\n**{capability}:**\n"
+            formatted += f"- Regression: {result.get('regression', 'N/A')}\n"
+            
+            if 'p_value' in result:
+                formatted += f"- p-value: {result['p_value']:.4f}\n"
+            
+            if 'committee_mean_error' in result:
+                formatted += f"- Committee Error: {result['committee_mean_error']:.3f}\n"
+                formatted += f"- Baseline Error: {result['baseline_mean_error']:.3f}\n"
+        
+        return formatted
+    
+    def _generate_recommendations(self, results):
+        """Generate recommendations based on results."""
+        recommendations = []
+        
+        # Check agreement
+        if results['agreement']['baseline_agreement']['hierarchy_kappa'] < 0.6:
+            recommendations.append(
+                "⚠️ Low hierarchy agreement with baseline. Consider retraining committee with hierarchy-specific losses."
+            )
+        
+        # Check coverage
+        if results['coverage']['task_coverage']['overall_coverage_rate'] < 0.8:
+            recommendations.append(
+                "⚠️ Low task coverage. Committee may not be suitable for all tasks. Consider task-specific committees."
+            )
+        
+        # Check regressions
+        if results['regressions']['overall']['regression_detected']:
+            recommendations.append(
+                "❌ Significant performance regression detected. Do not deploy committee without addressing regressions."
+            )
+        else:
+            recommendations.append(
+                "✅ No significant performance regression. Committee is viable alternative to baseline."
+            )
+        
+        # Check diversity
+        if results['agreement']['diversity']['mean_q_statistic'] > 0.7:
+            recommendations.append(
+                "⚠️ Low diversity among committee members. Consider heterogeneous architectures or different training procedures."
+            )
+        
+        return "\n".join(recommendations)
+```
+
+### 9. Experimental Design
+
+```python
+class ExperimentalDesign:
+    """
+    Complete experimental design for committee evaluation.
+    """
+    def __init__(self):
+        pass
+    
+    def define_test_datasets(self):
+        """
+        Define comprehensive test datasets.
+        """
+        datasets = {
+            'atari_100k': {
+                'name': 'Atari 100k',
+                'games': [
+                    'Pong', 'Breakout', 'Qbert', 'Seaquest', 'SpaceInvaders',
+                    'BeamRider', 'Enduro', 'MsPacman', 'Asterix', 'Freeway',
+                    # ... 16 more games (26 total) [heirarchical-transformer.pdf:3]
+                ],
+                'num_episodes_per_game': 100,
+                'evaluation_metric': 'human_normalized_score'
+            },
+            
+            'crafter': {
+                'name': 'Crafter',
+                'num_episodes': 100,
+                'evaluation_metric': 'achievement_score'
+            },
+            
+            'rollout_horizons': {
+                'name': 'Rollout Accuracy at Different Horizons',
+                'horizons': [5, 10, 15],  # [heirarchical-transformer.pdf:3]
+                'num_rollouts': 1000,
+                'evaluation_metric': 'mse_at_checkpoint'
+            },
+            
+            'hierarchy_levels': {
+                'name': 'Performance by Hierarchy Level',
+                'levels': [0, 1, 2],  # Coarse, medium, fine
+                'num_examples_per_level': 500,
+                'evaluation_metric': 'level_specific_accuracy'
+            },
+            
+            'rare_states': {
+                'name': 'Rare State Handling',
+                'num_rare_states': 500,
+                'rarity_threshold': 0.01,  # <1% frequency in training
+                'evaluation_metric': 'prediction_error'
+            }
+        }
+        
+        return datasets
+    
+    def define_evaluation_schedule(self):
+        """
+        Define evaluation schedule and sample sizes.
+        """
+        schedule = {
+            'phase_1_agreement': {
+                'duration': '1 week',
+                'sample_size': 1000,  # 1000 examples for agreement analysis
+                'metrics': ['pairwise_kappa', 'diversity', 'baseline_agreement']
+            },
+            
+            'phase_2_coverage': {
+                'duration': '2 weeks',
+                'sample_size': {
+                    'atari': 26 * 100,  # 26 games × 100 episodes
+                    'crafter': 100,
+                    'rollout': 1000
+                },
+                'metrics': ['task_coverage', 'state_coverage', 'error_coverage']
+            },
+            
+            'phase_3_regression': {
+                'duration': '2 weeks',
+                'sample_size': 'same as phase_2',
+                'metrics': ['performance_regression', 'task_regressions', 'capability_regressions']
+            },
+            
+            'phase_4_analysis': {
+                'duration': '1 week',
+                'activities': ['Statistical analysis', 'Report generation', 'Visualization']
+            }
+        }
+        
+        return schedule
+    
+    def compute_required_compute(self):
+        """
+        Estimate computational requirements.
+        """
+        compute_budget = {
+            'baseline_evaluation': {
+                'atari_100k': 26 * 100 * 0.01,  # 26 GPU-hours
+                'crafter': 100 * 0.1,  # 10 GPU-hours
+                'rollout_tests': 1000 * 0.001,  # 1 GPU-hour
+                'total': 37  # GPU-hours
+            },
+            
+            'committee_evaluation': {
+                'n_members': 5,
+                'atari_100k': 26 * 100 * 0.01 * 5,  # 130 GPU-hours (5x baseline)
+                'crafter': 100 * 0.1 * 5,  # 50 GPU-hours
+                'rollout_tests': 1000 * 0.001 * 5,  # 5 GPU-hours
+                'total': 185  # GPU-hours
+            },
+            
+            'analysis': {
+                'agreement_metrics': 10,  # GPU-hours
+                'coverage_metrics': 20,
+                'regression_tests': 10,
+                'total': 40
+            },
+            
+            'grand_total': 37 + 185 + 40,  # 262 GPU-hours
+            'estimated_cost': 262 * 2.50  # $655 on A100s
+        }
+        
+        return compute_budget
+```
+
+### 10. Visualization & Reporting
+
+```python
+class EvaluationVisualization:
+    """
+    Comprehensive visualizations for committee evaluation.
+    """
+    def __init__(self):
+        pass
+    
+    def create_agreement_visualizations(self, agreement_results):
+        """
+        Visualize agreement metrics.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # Plot 1: Pairwise agreement heatmap
+        sns.heatmap(
+            agreement_results['inter_member']['hierarchy_kappa_matrix'],
+            annot=True,
+            fmt='.2f',
+            cmap='RdYlGn',
+            vmin=0,
+            vmax=1,
+            ax=axes[0, 0]
+        )
+        axes[0, 0].set_title('Pairwise Hierarchy Agreement (Cohen\'s κ)')
+        axes[0, 0].set_xlabel('Member')
+        axes[0, 0].set_ylabel('Member')
+        
+        # Plot 2: Diversity metrics
+        diversity = agreement_results['diversity']
+        metrics = ['Disagreement Rate', 'Mean Entropy', 'Q-Statistic']
+        values = [
+            diversity['disagreement_rate'],
+            diversity['mean_prediction_entropy'] / np.log(3),  # Normalize
+            (diversity['mean_q_statistic'] + 1) / 2  # Scale to [0, 1]
+        ]
+        
+        axes[0, 1].bar(metrics, values)
+        axes[0, 1].set_ylim(0, 1)
+        axes[0, 1].set_ylabel('Normalized Value')
+        axes[0, 1].set_title('Diversity Metrics')
+        axes[0, 1].axhline(0.5, color='r', linestyle='--', label='Moderate')
+        axes[0, 1].legend()
+        
+        # Plot 3: Baseline agreement comparison
+        baseline_agreement = agreement_results['baseline_agreement']
+        metrics = ['Hierarchy\nKappa', 'Prediction\nCorrelation', 'Masking\nJaccard']
+        values = [
+            baseline_agreement['hierarchy_kappa'],
+            baseline_agreement['prediction_correlation'],
+            baseline_agreement['masking_jaccard']
+        ]
+        
+        axes[1, 0].bar(metrics, values, color=['#FF6B6B', '#4ECDC4', '#95E1D3'])
+        axes[1, 0].set_ylim(0, 1)
+        axes[1, 0].set_ylabel('Agreement Score')
+        axes[1, 0].set_title('Agreement with Baseline')
+        axes[1, 0].axhline(0.8, color='g', linestyle='--', label='High agreement')
+        axes[1, 0].axhline(0.6, color='orange', linestyle='--', label='Moderate')
+        axes[1, 0].legend()
+        
+        # Plot 4: Agreement distribution
+        # Simulate distribution for visualization
+        np.random.seed(42)
+        committee_preds = np.random.normal(0.7, 0.1, 1000)
+        baseline_preds = np.random.normal(0.75, 0.08, 1000)
+        
+        axes[1, 1].hist(committee_preds, bins=30, alpha=0.5, label='Committee', color='blue')
+        axes[1, 1].hist(baseline_preds, bins=30, alpha=0.5, label='Baseline', color='red')
+        axes[1, 1].set_xlabel('Prediction Value')
+        axes[1, 1].set_ylabel('Frequency')
+        axes[1, 1].set_title('Prediction Distribution Comparison')
+        axes[1, 1].legend()
+        
+        plt.tight_layout()
+        
+        return fig
+    
+    def create_coverage_visualizations(self, coverage_results):
+        """
+        Visualize coverage metrics.
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # Plot 1: Task coverage
+        task_coverage = coverage_results['task_coverage']['coverage_by_task']
+        
+        tasks = list(task_coverage.keys())[:10]  # Show first 10 tasks
+        relative_perfs = [task_coverage[t]['relative_performance'] for t in tasks]
+        covered = [task_coverage[t]['covered'] for t in tasks]
+        
+        colors = ['green' if c else 'red' for c in covered]
+        
+        axes[0, 0].barh(tasks, relative_perfs, color=colors)
+        axes[0, 0].axvline(0.9, color='black', linestyle='--', label='Coverage threshold')
+        axes[0, 0].set_xlabel('Relative Performance (Committee / Baseline)')
+        axes[0, 0].set_title('Task Coverage')
+        axes[0, 0].legend()
+        
+        # Plot 2: Coverage rate summary
+        coverage_rate = coverage_results['task_coverage']['overall_coverage_rate']
+        
+        axes[0, 1].pie(
+            [coverage_rate, 1 - coverage_rate],
+            labels=['Covered', 'Not Covered'],
+            autopct='%1.1f%%',
+            colors=['green', 'red']
+        )
+        axes[0, 1].set_title(f'Overall Coverage Rate: {coverage_rate:.1%}')
+        
+        # Plot 3: State space coverage
+        # Visualize state distribution overlap (2D projection via PCA)
+        # Placeholder - actual implementation would use real embeddings
+        
+        axes[1, 0].scatter(
+            np.random.randn(500), np.random.randn(500),
+            alpha=0.3, label='Committee states', color='blue'
+        )
+        axes[1, 0].scatter(
+            np.random.randn(500) + 0.5, np.random.randn(500) + 0.5,
+            alpha=0.3, label='Baseline states', color='red'
+        )
+        axes[1, 0].set_xlabel('PC1')
+        axes[1, 0].set_ylabel('PC2')
+        axes[1, 0].set_title('State Space Coverage (PCA Projection)')
+        axes[1, 0].legend()
+        
+        # Plot 4: Error mode coverage
+        error_coverage = coverage_results['error_mode_coverage']
+        
+        categories = ['Common\nErrors', 'Committee\nOnly', 'Baseline\nOnly']
+        counts = [
+            len(error_coverage['common_error_types']),
+            len(error_coverage['committee_only_errors']),
+            len(error_coverage['baseline_only_errors'])
+        ]
+        
+        axes[1, 1].bar(categories, counts, color=['gray', 'blue', 'red'])
+        axes[1, 1].set_ylabel('Number of Error Types')
+        axes[1, 1].set_title('Error Mode Coverage')
+        
+        plt.tight_layout()
+        
+        return fig
+    
+    def create_regression_visualizations(self, regression_results):
+        """
+        Visualize regression analysis.
+        """
+        fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+        
+        # Plot 1: Overall performance comparison
+        overall = regression_results['overall']
+        
+        # Simulated data for visualization
+        committee_scores = np.random.normal(0.70, 0.1, 100)
+        baseline_scores = np.random.normal(0.75, 0.08, 100)
+        
+        axes[0, 0].boxplot(
+            [baseline_scores, committee_scores],
+            labels=['Baseline', 'Committee']
+        )
+        axes[0, 0].set_ylabel('Performance Score')
+        axes[0, 0].set_title(f'Overall Performance\n(Δ = {overall["percent_change"]:.1f}%)')
+        
+        if overall['regression_detected']:
+            axes[0, 0].text(
+                1.5, 0.9, 'Regression\nDetected',
+                bbox=dict(boxstyle='round', facecolor='red', alpha=0.5),
+                ha='center'
+            )
+        
+        # Plot 2: Task-specific regressions
+        task_regressions = regression_results['task_specific']['regressions_by_task']
+        
+        tasks = list(task_regressions.keys())[:10]
+        percent_changes = [task_regressions[t]['percent_change'] for t in tasks]
+        regressed = [task_regressions[t]['regression_detected'] for t in tasks]
+        
+        colors = ['red' if r else 'green' for r in regressed]
+        
+        axes[0, 1].barh(tasks, percent_changes, color=colors)
+        axes[0, 1].axvline(0, color='black', linestyle='-')
+        axes[0, 1].axvline(-10, color='red', linestyle='--', alpha=0.5, label='Regression threshold')
+        axes[0, 1].set_xlabel('Percent Change (%)')
+        axes[0, 1].set_title('Task-Specific Performance Changes')
+        axes[0, 1].legend()
+        
+        # Plot 3: Capability regressions
+        capabilities = regression_results['capability_specific']
+        
+        cap_names = list(capabilities.keys())
+        cap_regressed = [capabilities[c].get('regression', False) for c in cap_names]
+        
+        axes[1, 0].bar(
+            range(len(cap_names)),
+            [1 if r else 0 for r in cap_regressed],
+            color=['red' if r else 'green' for r in cap_regressed]
+        )
+        axes[1, 0].set_xticks(range(len(cap_names)))
+        axes[1, 0].set_xticklabels(cap_names, rotation=45, ha='right')
+        axes[1, 0].set_ylabel('Regression (1=Yes, 0=No)')
+        axes[1, 0].set_title('Capability Regressions')
+        axes[1, 0].set_ylim(0, 1.2)
+        
+        # Plot 4: Effect size distribution
+        effect_sizes = [
+            task_regressions[t]['cohens_d']
+            for t in task_regressions.keys()
+            if 'cohens_d' in task_regressions[t]
+        ]
+        
+        axes[1, 1].hist(effect_sizes, bins=20, edgecolor='black')
+        axes[1, 1].axvline(0, color='black', linestyle='-', label='No effect')
+        axes[1, 1].axvline(-0.2, color='orange', linestyle='--', label='Small effect')
+        axes[1, 1].axvline(-0.5, color='red', linestyle='--', label='Medium effect')
+        axes[1, 1].set_xlabel('Cohen\'s d (Effect Size)')
+        axes[1, 1].set_ylabel('Frequency')
+        axes[1, 1].set_title('Distribution of Effect Sizes')
+        axes[1, 1].legend()
+        
+        plt.tight_layout()
+        
+        return fig
+```
+
+## Summary
+
+**Committee Architecture:**
+- Replace single SHI with 3-5 smaller open-weight models
+- Configurations: Homogeneous, heterogeneous, specialized, MoE
+- Aggregation: Voting, averaging, weighted, attention, MoE gating
+
+**Evaluation Metrics:**
+
+1. **Agreement:**
+   - Inter-member: Cohen's κ, correlation, Jaccard
+   - Diversity: Disagreement rate, entropy, Q-statistic
+   - Baseline: κ, correlation, Jaccard
+
+2. **Coverage:**
+   - Task coverage: % tasks with ≥90% baseline performance
+   - State space: KL divergence, nearest neighbor coverage
+   - Error modes: Overlap in error types
+
+3. **Regressions:**
+   - Overall: Paired t-test, Wilcoxon, Cohen's d
+   - Task-specific: Per-task regression tests
+   - Capability-specific: Rollout accuracy, hierarchy quality, efficiency
+
+**Computational Budget:**
+- Baseline evaluation: 37 GPU-hours
+- Committee evaluation: 185 GPU-hours (5 members)
+- Analysis: 40 GPU-hours
+- **Total:** ~262 GPU-hours (~$655 on A100s)
+
+**Expected Timeline:**
+- Agreement analysis: 1 week
+- Coverage analysis: 2 weeks
+- Regression detection: 2 weeks
+- Analysis & reporting: 1 week
+- **Total:** 6 weeks
+
+## Sources
+
+This committee evaluation framework is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the hierarchical token organization [heirarchical-transformer.pdf:2], evaluation on Atari 100k and Crafter [heirarchical-transformer.pdf:3], and rollout checkpoints at t ∈ {0, 5, 10} [heirarchical-transformer.pdf:3]
+
+For committee/ensemble methodology, I recommend:
+- **Ensemble diversity:** Kuncheva & Whitaker (2003) "Measures of Diversity in Classifier Ensembles and Their Relationship with the Ensemble Accuracy" (Machine Learning)
+- **Mixture of Experts:** Shazeer et al. (2017) "Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer" (ICLR)
+- **Agreement metrics:** Cohen (1960) "A Coefficient of Agreement for Nominal Scales" (Educational and Psychological Measurement)
+- **Regression testing:** Jiang et al. (2020) "How Can We Know What Language Models Know?" (TACL)
+- **Open-weight models:** Biderman et al. (2023) "Pythia: A Suite for Analyzing Large Language Models" (ICML)

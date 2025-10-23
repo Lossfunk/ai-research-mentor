@@ -1,0 +1,120 @@
+Below is a two-phase replication plan designed to (1) re-implement the attached Hierarchical Transformer baseline exactly as evaluated in the paper, and (2) introduce a low-parameter alternative (grouped pooling) while preserving apples-to-apples comparability. I retain the paper’s benchmarks and primary metrics and cite them; any missing operational detail is marked Conjecture and chosen to keep comparisons fair.
+
+Phase 1 — Baseline re-implementation (faithful replication)
+- Benchmarks and primary outcomes
+  - Datasets: Atari 100k and Crafter, as in the attached paper [heirarchical-transformer.pdf:3].
+  - Metrics: rollout compute cost, rollout error, and final RL performance; include the paper’s ablations on hierarchical masking, causal graph guidance, and uncertainty-based masking to check fidelity [heirarchical-transformer.pdf:3].
+- Model and training (minimal-risk defaults when unspecified; Conjecture)
+  - Data preprocessing: mirror the paper’s observation pipeline; document resolution, frame-stacking, action repeat, tokenization, and normalization; keep identical across all variants for comparability.
+  - World model: Transformer with hierarchical masking across levels and a controller guided by auxiliary signals (causal graph, uncertainty, memory attention); pretrain autoregressively on full token sequences; do not sparsify during pretraining [heirarchical-transformer.pdf:2–3].
+  - Evaluation/runtime: apply Sparse Hierarchical Imagination (SHI) masking during rollout; report the three primary metrics on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Fidelity checks (replication acceptance criteria)
+  - Replicate the baseline’s qualitative behavior: lower rollout compute cost with stable long-horizon rollouts and competitive RL performance on the two benchmarks [heirarchical-transformer.pdf:3].
+  - Quantitatively, aim for confidence intervals overlapping the paper’s reported numbers (if available) or show internal consistency across seeds on the three primary metrics.
+
+Phase 2 — Low-parameter alternative: grouped pooling
+- Motivation
+  - Replace hierarchical pooled summaries with a low-parameter grouped pooling mechanism that aggregates tokens into K groups with shared parameters, holding retained-token budgets, rollout depth, and datasets fixed for comparability [heirarchical-transformer.pdf:3]. Conjecture.
+- Design (minimal code-diff; Conjecture)
+  - Group assignment: assign each token to one of K groups using either static heuristics (e.g., spatial tiling or codebook index modulo K) or a tiny grouping MLP that outputs soft group weights (temperature-controlled softmax). Start with fixed groups to avoid extra parameters.
+  - Grouped pooling: for each group g, compute s_g = mean of token embeddings in g; concatenate or average {s_g} to form the summary fed to the controller/memory. Replace per-level hierarchical summaries with these grouped summaries.
+  - Controller adaptation: replace per-level inputs with the grouped summary vector (optionally pass group-size counts); keep the controller size equal or smaller than baseline to preserve “low-parameter” intent.
+  - Parameter budget: target ≤90% of the baseline’s pooling/summary parameter count; if fewer parameters reduce capacity excessively, add only a single small MLP on the concatenated group summary while staying below parity. Conjecture.
+- Comparability controls
+  - Keep parameter counts, rollout depth, retained-token budget, optimizer, schedule, context length, and seeds fixed; if parameter counts differ, report both absolute and per-parameter-normalized results and perform iso-FLOPs comparisons [heirarchical-transformer.pdf:3]. Conjecture.
+
+Benchmark suite and protocol (applies to both phases)
+- Datasets: Atari 100k and Crafter (same preprocessing, seeds, and evaluation protocol as the paper) [heirarchical-transformer.pdf:3].
+- Seeds and runs: ≥5 independent seeds per game for each variant; pair seeds across variants to enable paired testing. Conjecture.
+- Reported metrics
+  - Primary: rollout compute cost, rollout error (token- and image-level over multiple horizons), final RL performance [heirarchical-transformer.pdf:3].
+  - Secondary: latency and throughput (training-step and rollout), peak memory, and retained-token fraction distribution to contextualize compute cost (does not replace the paper’s compute metric) [heirarchical-transformer.pdf:3]. Conjecture.
+
+Compute budget (planning and tracking; Conjecture)
+- Keep the per-run budget identical to the baseline. Total budget scales by number of variants × number of seeds × number of games.
+- Example accounting template: total GPU-hours = sum over runs of (training_steps × time_per_step + eval_rollout_steps × time_per_step_eval) with time measured via synchronized device timers. Publish a table with per-variant totals so reviewers can compare compute fairly.
+- If constrained, start with a 6–10 game Atari subset spanning dynamics (e.g., dense vs sparse reward) for pilot variance estimation, then scale to full Atari 100k once power targets are met.
+
+Statistical analysis and power
+- Primary hypothesis tests
+  - Accuracy: paired Wilcoxon signed-rank on per-game seed-averaged RL scores and rollout error AUCs; report effect size (Cliff’s delta). Adjust across games/metrics via Benjamini–Hochberg FDR.
+  - Efficiency: paired Wilcoxon on rollout compute cost; optionally report latency and memory with 95% bootstrap CIs.
+  - Non-inferiority: two one-sided tests (TOST) for “no accuracy degradation” with a pre-registered margin (e.g., ±2% relative on RL score and error AUC), followed by superiority testing on compute cost if non-inferiority is met. Conjecture.
+- Power analysis (plan-then-adapt; Conjecture)
+  - Design for paired tests across seeds per game. Let δ be the minimally interesting effect on RL score (e.g., 2% relative), σ be the within-game SD of paired differences across seeds, and ρ across-seed correlation approximately captured by pairing.
+  - Sample size per game for a two-sided paired t-test: n ≥ [(z_{1−α/2}+z_{1−β}) × σ/δ]^2. Use the nonparametric Wilcoxon’s asymptotic relative efficiency (~0.955) to adjust if using Wilcoxon.
+  - Procedure:
+    1) Run a small pilot (e.g., 3 seeds on 6 games) to estimate σ for RL and error AUC.
+    2) Compute required seeds per game to detect δ with 80–90% power at α adjusted for multiple games (FDR).
+    3) Scale seeds or games until the minimum power across games exceeds target; confirm via bootstrap power simulation using pilot residuals.
+  - Report achieved power post hoc for the observed effect sizes, acknowledging uncertainty.
+- Aggregation
+  - Report per-game results and aggregate across games via median and IQR (robust to outliers), as commonly used in Atari reporting. Conjecture.
+
+Avoiding double-counting correlated improvements
+- Factorial design and iso-FLOPs controls
+  - Use a 2×2×2 design crossing: hierarchy on/off (baseline vs grouped pooling), causal graph guidance on/off, uncertainty on/off. This disentangles pooled-summary change from auxiliary signals the controller uses [heirarchical-transformer.pdf:3].
+  - For each cell, match compute (iso-FLOPs) by fixing retained-token budget and rollout depth; additionally report iso-latency comparisons to control for kernel/implementation differences. Conjecture.
+- Shapley value attribution over ablations
+  - Compute Shapley values of each component’s contribution (hierarchy, causal, uncertainty) using the set of all ablations; the Shapley payoff is the change relative to the empty model (all three off) averaged over coalition orders. This credits shared improvements only once and quantifies interaction effects.
+- Regression-based adjustment
+  - Fit a mixed-effects model: outcome ~ β0 + β1·GroupedPooling + β2·Causal + β3·Uncertainty + β4·log(FLOPs) + β5·Params + (1|Game) + (1|Seed), using robust SEs. Inspect interactions (e.g., GroupedPooling×Causal) to detect correlated gains. Use this only for interpretation; primary claims rest on preregistered paired tests.
+- Pre-register invariants
+  - Fix hyperparameters, parameter count targets, FLOPs/latency measurement protocol, and evaluation seeds across all variants; do not tune per-variant to avoid over-attributing improvements to the intervention.
+
+Concrete, falsifiable experiments
+1) Baseline fidelity check
+- Goal: Establish that your re-implementation behaves like the paper’s baseline.
+- Setup: Train the hierarchical baseline; evaluate on Atari 100k and Crafter; report rollout compute cost, rollout error (H ∈ {25, 50, 100}), and final RL performance [heirarchical-transformer.pdf:3].
+- Pass/fail: CIs overlap author-reported ranges (if available) or internal variance across seeds is low and consistent across both datasets. Deviations trigger a debugging pass.
+
+2) Grouped pooling vs hierarchical pooling (primary comparison)
+- Goal: Test if grouped pooling maintains accuracy while reducing parameters and/or compute.
+- Setup: Same training schedule, seeds, and compute settings; grouped pooling with K ∈ {4, 8} groups; controller adapted to grouped summary; all else fixed.
+- Hypotheses: Non-inferior RL score and rollout error (Δ within ±2%); equal or lower rollout compute cost. Conjecture.
+- Tests: TOST for accuracy non-inferiority; paired Wilcoxon for compute cost with FDR correction.
+
+3) Factorial ablation (double-counting guard)
+- Goal: Attribute gains without double-counting correlated effects.
+- Setup: 2×2×2 across hierarchy/grouped, causal graph on/off, uncertainty on/off; iso-FLOPs. Report Shapley contributions for RL score and error AUC.
+- Pass/fail: Grouped pooling’s Shapley value significantly > 0 for compute or accuracy while controlling for other components; interactions reported with CIs.
+
+4) Budget sweep and Pareto analysis (robustness)
+- Goal: Compare accuracy–efficiency trade-offs.
+- Setup: Retained-token budgets at 10%, 20%, 40% (rollout depth fixed); evaluate (RL score, rollout error AUC) vs compute cost.
+- Metric: Dominated hypervolume in the accuracy–compute plane; bootstrap 95% CI of hypervolume difference.
+- Pass/fail: Either grouped pooling dominates (larger hypervolume) or is statistically equivalent (TOST within ±2% RL and ±2% AUC at matched compute).
+
+Failure modes to monitor
+- Long-context degradation: rising long-horizon rollout error and RL drops if grouped pooling blurs critical long-range dependencies [heirarchical-transformer.pdf:3].
+- Controller–summary mismatch: controller trained on hierarchical summaries may need re-initialization or freezing; monitor mask entropy and retained-token fraction stability.
+- Instability at rollout: increased variance across seeds, or collapse to trivial masks (all on/off).
+- Under-parameterization: excessive parameter cuts reduce capacity; watch for persistent underfitting (plateaued NLL) despite sufficient steps.
+
+Minimal code changes (implementation sketch; Conjecture)
+- Insert a grouped pooling module after token embeddings (or after each block if hierarchical summaries are multi-layer):
+  - Static groups: precompute group IDs per token; grouped means via segment-mean; concatenate K pooled vectors.
+  - Controller input: replace hierarchical summary tensor with the grouped summary; adjust input dimension via a linear layer; keep controller depth/width unchanged or smaller.
+  - Preserve masking, rollout depth, retained-token budgets, and evaluation harness unchanged.
+- Ensure FLOPs accounting includes grouped pooling but excludes no-op paths consistently across variants.
+
+Risk mitigation and reproducibility
+- Strict train/val/test seed splits; no tuning on test seeds.
+- Identical hardware/software stacks across variants; report versions.
+- Use synchronized device timers and framework memory stats for efficiency reporting; keep protocol constant.
+- Release a config registry: every variant is a declarative config diff from the baseline to prevent hidden changes.
+
+Literature anchors (implementation precedents)
+- Agarwal et al., 2024. Learning to play Atari in a world of tokens (DART). Useful for tokenized Atari pipelines, memory/summary tokens, and evaluation practices. https://arxiv.org/abs/2406.01361
+- Ryoo et al., 2021. TokenLearner: What Can 8 Learned Tokens Do for Images and Videos? Lightweight token selection/pooling modules that inspire grouped/learned token aggregation. https://arxiv.org/abs/2106.11297
+
+Key takeaways
+- Keep the paper’s datasets and primary metrics fixed [heirarchical-transformer.pdf:3]; validate a faithful baseline first, then swap in grouped pooling under iso-FLOPs and fixed seeds.
+- Use a factorial ablation with Shapley attribution and non-inferiority plus superiority tests to avoid double-counting correlated improvements and to separate accuracy from efficiency gains.
+- Size the study with paired power analysis informed by a small pilot; scale seeds/games until 80–90% power is achieved for the minimally interesting effect.
+
+Citations
+- [heirarchical-transformer.pdf:2] 3. Method — User-provided PDF
+- [heirarchical-transformer.pdf:3] Report rollout compute cost, rollout error, and final RL performance; ablations and benchmarks include Atari 100k and Crafter — User-provided PDF
+- Agarwal et al., 2024. Learning to play atari in a world of tokens (DART) — https://arxiv.org/abs/2406.01361
+- Ryoo et al., 2021. TokenLearner: What Can 8 Learned Tokens Do for Images and Videos? — https://arxiv.org/abs/2106.11297

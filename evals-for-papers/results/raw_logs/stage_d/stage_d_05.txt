@@ -1,70 +1,113 @@
-Below is a compact plan you can lift into a preregistration.
+Below is a two-phase replication plan tailored to the attached baseline. It follows the paper’s evaluation axes and ablation levers, and adds a low-parameter hierarchy alternative. I include a practical power analysis and safeguards against double-counting correlated improvements.
 
-Two-phase replication design (FC3 Task Verification category)
-- Phase 1: Baseline MST re-implementation
-  - Reproduce the baseline MST pipeline exactly (same prompts, decoding, tool use, timeouts, and FC3 task verifier; same item split). Freeze all parameters. Define the primary endpoint as item-level task success under the FC3 verifier (binary per item).
-  - Log stagewise outcomes and artifacts for each item (inputs, solver outputs, verifier judgment, FC3 harness result, errors/timeouts).
-- Phase 2: Verifier-agent augmentation (minimal-change)
-  - Add a verifier agent that only produces an accept/reject/abstain judgment on the solver’s proposed answer; do not change solver prompts, sampling, or tools.
-  - Two common minimal-change options:
-    1) Gate-and-retry: If the verifier rejects, request one additional solver attempt (same prompt/params), then stop. This is a single extra step that keeps the rest unchanged and can improve end success if the first sample was wrong. Self-consistency–style resampling is a known lever for improvement [P5].
-    2) Gate-only: If the verifier rejects, treat as failure (no retries). This tests the verifier’s ability to prevent accepting wrong answers without introducing new sampling effects (useful for isolating verifier classification quality; but it will not increase pass rate).
-  - Keep the FC3 harness unchanged as the ground-truth arbiter of success. Treat the verifier as a pre-check (classification) layer; do not re-weight or alter the harness.
+Objective and scope
+- Replicate the Hierarchical Transformer with level-specific sparsification and imagination rollouts, then compare to a low-parameter alternative that replaces the hierarchy with grouped pooling or token merging.
+- Align evaluation with the paper: report rollout compute cost, rollout error, and final RL performance; and ablate hierarchical masking, causal graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3]. The method centers on structured, level-specific sparsification during rollouts [heirarchical-transformer.pdf:2], with an imagination pipeline that applies level-specific temporal/spatial masking at each step [heirarchical-transformer.pdf:3].
 
-Primary statistical analysis and power
-- Design: Paired, within-item comparison of pipelines (baseline MST vs MST+verifier) on the same items. Define Y0i, Y1i ∈ {0,1} as FC3-verified success for item i under baseline and verifier-augmented pipelines, respectively.
-- Hypothesis: H0: P(Y1=1)=P(Y0=1) vs H1: P(Y1=1)≠P(Y0=1). Use McNemar’s test on paired binary outcomes, which is the standard for paired accuracy comparisons.
-- Power analysis (paired binary / McNemar): Power is driven by the discordant-pair rates p01 = P(Y0=0,Y1=1) and p10 = P(Y0=1,Y1=0). Let q = p01 + p10 and d = p01 − p10 (the net improvement). An approximate required sample size is:
-  N ≈ ((z_{1−α/2} + z_{1−β})^2 × q) / d^2
-  - Pilot to estimate p01 and p10 (e.g., on 100–200 items), then size your main run from these estimates.
-  - Example (illustrative): Suppose a small pilot suggests q ≈ 0.20 (20% of items change outcome between pipelines) and net improvement d ≈ 0.05. For α=0.05 (two-sided) and 1−β=0.80, N ≈ ((1.96+0.84)^2 × 0.20)/0.05^2 ≈ 628 items.
-  - If you stratify across FC3 subcategories or templates, block randomize and maintain paired comparisons within blocks; for CIs, use a block bootstrap to respect within-template correlation. Report exact or mid-p McNemar if discordant counts are small.
-- Secondary endpoints and error analysis:
-  - Verifier operating characteristic (if it scores): ROC/AUROC, calibration (ECE/Brier), false accept (solver wrong but verifier accepts) and false reject (solver right but verifier rejects) rates. If you do threshold tuning, split dev/test to avoid optimistic bias.
-  - Multiple comparisons: Pre-specify one primary endpoint (end-to-end success) and one primary test (McNemar). Treat others as exploratory, or control false discovery (e.g., BH/FDR) if you intend confirmatory claims across multiple FC3 subtasks.
+Phase 1 — Faithful re-implementation of the baseline
+1) Scope and matching details
+- Model: Hierarchical Transformer with level-specific sparsification/masking across levels L0..Lk [heirarchical-transformer.pdf:2–3]. Replicate tokenization/encoding, attention sparsity per level, and imagination rollout scheduling.
+- Rollout pipeline: Encode observation x0 → z0; initialize hidden state; at each t, perform level-specific temporal/spatial masked attention and produce next latent/state prediction [heirarchical-transformer.pdf:3].
+- Losses: Use the same training losses as the baseline (world-model predictive losses plus any auxiliary terms). If not fully specified, pre-register a best-effort reproduction using standard world-model losses (e.g., reconstruction and dynamics-prediction terms) and note deviations.
+- Data/environments: Use the exact environments if specified; otherwise, pre-register a public suite (≥2 environments) with diverse dynamics to reduce overfitting to one domain.
+- Metrics (primary/secondary):
+  - Primary: final RL performance (episodic return) [heirarchical-transformer.pdf:3].
+  - Secondary: rollout error (e.g., MSE of predicted vs. true observations/rewards across horizons) and rollout compute cost (wall time and approximate FLOPs) [heirarchical-transformer.pdf:3]. Record memory footprint as an auxiliary efficiency indicator.
+- Reproducibility: Fixed seeds, deterministic dataloaders (as feasible), hardware logging, configuration files, and code release. Report mean ± 95% CI across seeds and tasks; share raw per-seed results.
 
-Avoiding double counting failure modes
-- Make failure attribution mutually exclusive at the pipeline level:
-  - Define a stage-ordered taxonomy and assign exactly one primary cause per failed item using precedence rules:
-    1) Input/format/tooling failure (IO/timeouts)
-    2) Solver content error (incorrect or non-compiling answer)
-    3) Verifier misclassification (false accept or false reject)
-    4) External harness mismatch (rare; e.g., harness bug or spec ambiguity)
-  - Attribute a failure to the earliest stage that made the outcome inevitably incorrect. For example, if the solver is wrong and the verifier also misses it, the primary cause is “solver error” or “verifier false accept”? Choose and preregister one convention. To isolate verifier effects, many studies attribute primary cause to “verifier false accept” when the solver was wrong but would have been caught by the verifier under the intended design; keep the convention consistent across all items and phases.
-- Separate counts by stage; don’t sum across stages:
-  - Report per-stage confusion matrices (solver vs ground truth; verifier vs ground truth). Aggregate rates by stage, not by summing labels across stages, to avoid double counting the same item.
-  - For multi-label annotations (e.g., an item has both “reasoning error” and “formatting error”), report one primary label for rates and retain secondary tags only for qualitative analysis. You can provide a 100%-summing decomposition either by a precedence rule or by proportional attribution (e.g., Shapley-style) but use only one scheme for quantitative claims.
-- Instance-level unit of analysis:
-  - Each item counts at most once toward failure rates and once toward success rates. If your pipeline produces multiple candidate attempts, bind all attempts for an item into a single item-level decision (success if any accepted and correct under the FC3 harness; failure otherwise) to avoid inflating denominators.
-- Changes in failure-mode composition:
-  - If you compare distributions of mutually exclusive failure categories between phases, use a paired multinomial test (e.g., Stuart–Maxwell) on items whose outcomes remain failures, without re-counting multiple tags on the same item.
+2) Implementation checklist
+- Hierarchical masking: Implement per-level attention windows, stride, or block-sparse patterns consistent with the baseline description [heirarchical-transformer.pdf:2–3].
+- Imagination schedule: Define rollout horizon(s) and cadence for invoking hierarchy levels at each t [heirarchical-transformer.pdf:3].
+- Efficiency accounting: Standardize batch size, sequence length, and precision; report FLOPs or an agreed proxy plus wall time on a fixed GPU model [heirarchical-transformer.pdf:3].
+- Ablations: Toggle hierarchical masking, causal-graph guidance, and uncertainty-based masking to match baseline ablation study frame [heirarchical-transformer.pdf:3].
 
-Three concrete, falsifiable experiments
-1) Paired end-to-end efficacy test (primary)
-  - Hypothesis: Adding a verifier with one gate-and-retry improves end-to-end FC3 success rate by at least Δ ≥ 3 percentage points versus baseline.
-  - Design: Paired evaluation on the same N items. Compute McNemar’s test and 95% CI for the net gain. Log discordant pairs to estimate p01 and p10. Pre-register Δ and α.
-  - Expected outcome: Statistically significant improvement if the verifier filters enough wrong first attempts and the single retry recovers a nontrivial share of them [P5].
-2) Verifier operating curve and calibration
-  - Hypothesis: The verifier’s score is calibrated (ECE ≤ 0.05 on dev) and achieves AUROC ≥ 0.80 at discriminating correct vs incorrect solver outputs.
-  - Design: Hold out a dev split for threshold selection and calibration (e.g., temperature scaling). Evaluate AUROC, AUPRC, ECE, Brier score on test. Report false-accept/false-reject at the preregistered operating point.
-  - Expected outcome: Reasonable discriminative ability; caution that LLM-as-judge style verifiers can be vulnerable to persuasive but wrong rationales, potentially inflating false accepts [P3], and that rationalized judgments can improve consistency/calibration [P6].
-3) Robustness to adversarially phrased but wrong answers
-  - Hypothesis: The verifier’s false-accept rate increases under adversarially persuasive rationales relative to neutral wrong answers.
-  - Design: For a fixed set of items known to be solvable, craft matched wrong outputs with and without persuasive rationales; measure Δ in false-accept rate. Use McNemar within-item where each item yields both variants assessed blindly and in randomized order.
-  - Expected outcome: Elevated false-accepts on persuasive variants, consistent with known vulnerabilities of LLM judges [P3]; quantify the gap and include it in risk reporting.
+Phase 2 — Low-parameter alternative to the hierarchy (grouped pooling)
+Design goals
+- Replace hierarchy levels with a parameter-light pooling or merging scheme that reduces token count while mimicking multi-scale context aggregation, minimizing learned parameters added on top of the backbone.
 
-Reporting checklist
-- Pre-register: primary endpoint, α, power target, minimal detectable effect, and the failure-mode taxonomy + precedence rules.
-- Use paired analyses (McNemar) for the primary endpoint with CIs; stratify or block by FC3 subcategory if applicable, with block bootstrap for CIs.
-- Control multiplicity for confirmatory secondary claims or declare them exploratory.
-- Publish per-stage confusion matrices and the mutually exclusive failure-mode distribution; avoid summing multi-label counts.
+Two concrete alternatives
+- Grouped pooling: Partition tokens into groups (spatial windows or learned clusters), then pool within groups using parameter-free or very light-weight operators (mean, max, or depthwise conv). Pass group tokens through a flat transformer or a shallow two-level variant. Tune group size to match compute target.
+- Token merging: Merge most similar tokens periodically inside the transformer to reduce the token set without new parameters (e.g., spectrum-preserving token merging or learnable token merging variants). This can act as a drop-in reduction mechanism akin to a hierarchy with minimal additional parameters. See Accelerating Transformers with Spectrum-Preserving Token Merging (2024) and Efficient Visual Transformer by Learnable Token Merging (2024) as design anchors (links in Citations).
 
-Literature anchors
-- Reasoning-aware self-consistency and sampling as a lever for error reduction and verification [P5].
-- Vulnerability of LLM-as-judge/verifier to persuasive but wrong content; motivates adversarial robustness checks [P3].
-- Using rationales to improve fine-grained judging consistency/calibration (relevant to verifier design) [P6].
+Evaluation and analysis plan
+- Match training and evaluation protocols to Phase 1. Ensure parameter count and compute budgets are recorded to compare model efficiency fairly.
+- Report the same three metrics (primary return, rollout error, compute cost) [heirarchical-transformer.pdf:3], plus a compute-normalized return (e.g., return per 1e12 FLOPs) to summarize trade-offs.
+- Conduct ablations analogous to the baseline to isolate the effect of grouped pooling vs. hierarchy.
+
+Power analysis and statistical plan
+Primary endpoint and design
+- Primary endpoint: Final RL performance (episodic return) [heirarchical-transformer.pdf:3]. Use paired comparisons between models under identical seeds per environment to reduce variance.
+- Secondary endpoints: Rollout error and compute cost [heirarchical-transformer.pdf:3]. Treat compute as largely deterministic conditional on batch/sequence/hardware; still measure multiple times to capture system noise.
+
+Pilot and sample size
+- Pilot: Run 5–8 paired seeds per environment to estimate the SD of paired differences σ_d in final return between baseline and alternative.
+- Sample size for paired t-test: For target minimum detectable effect δ (absolute or % of baseline return) with power 1−β=0.8 and α=0.05, choose n ≈ ((z_1−α/2 + z_1−β) · σ_d / δ)^2. Example: If σ_d ≈ 0.05 (relative units) and δ ≈ 0.03, n ≈ (2.8 · 0.05 / 0.03)^2 ≈ 22 paired seeds per environment. If σ_d ≈ 0.03 and δ ≈ 0.03, n ≈ 8 paired seeds. Use the pilot’s σ_d and adjust n accordingly. Consider a pre-registered group-sequential design (one interim after 50% of planned seeds) to stop early for futility or efficacy while controlling α.
+
+Across multiple environments/tasks
+- Mixed-effects analysis: If evaluating across multiple tasks, fit a linear mixed-effects model with random intercepts for task and seed block, and a fixed effect for model; test the model effect as primary. This properly accounts for task-to-task variability and paired seeds while avoiding overconfident pooled tests.
+- Bootstrap CIs: Complement parametric tests with a stratified bootstrap that resamples within task to produce task-robust CIs for median improvement.
+
+Multiple outcomes and avoiding double-counting correlated improvements
+- Pre-register one primary outcome (final RL performance) and one key secondary (compute-normalized return). Treat “rollout error” as an explanatory metric, not another success criterion, to avoid counting one improvement multiple times.
+- Factorial ablations: For components mentioned in the paper—hierarchical masking, causal-graph guidance, uncertainty-based masking—use a factorial or fractional-factorial design and analyze main effects and interactions with ANOVA or mixed models [heirarchical-transformer.pdf:3]. Report standardized effects and interaction terms to attribute gains to specific components instead of attributing correlated changes multiple times.
+- Familywise error control: If you must test multiple endpoints or many ablations, use Holm-Bonferroni to control familywise error without the over-conservatism of Bonferroni (link in Citations).
+- Contribution accounting: To summarize credit across several interdependent components, compute Shapley-style attributions over the set of model components evaluated on the primary outcome. This allocates shared gains without double-counting when effects interact; use it as a descriptive attribution, not as the primary hypothesis test. See references in Citations.
+
+Three+ concrete, falsifiable experiments
+1) Baseline replication fidelity
+- Hypothesis: A faithful re-implementation of the hierarchical baseline reproduces reported trends across metrics when measured under the same conditions (within expected statistical tolerance).
+- Variables: Fixed architecture; vary only seeds and environments.
+- Metrics: Final RL performance (primary), rollout error, rollout compute cost [heirarchical-transformer.pdf:3].
+- Expected outcome: Replicated results within pre-registered tolerance bands; deviations documented alongside implementation diffs.
+
+2) Grouped pooling vs. hierarchy at matched compute
+- Hypothesis: Grouped pooling (parameter-light) achieves non-inferior final RL performance to the hierarchical baseline at equal or lower rollout compute cost.
+- Variables: Model type ∈ {hierarchical baseline, grouped pooling}; compute budget matched by tuning group size and/or number of pooled tokens.
+- Metrics: Primary RL performance; compute cost; compute-normalized return [heirarchical-transformer.pdf:3].
+- Decision rule: Non-inferiority margin δ_pre (e.g., −2% relative return); test via one-sided paired test and mixed-effects confirmation.
+
+3) Token merging vs. hierarchy at matched parameters
+- Hypothesis: Token merging reduces rollout compute cost while preserving or improving rollout error and final RL performance, without increasing parameter count.
+- Variables: Model type ∈ {hierarchical baseline, token merging variant}; parameter budget matched; token merge frequency schedule.
+- Metrics: Compute cost, rollout error, final RL performance [heirarchical-transformer.pdf:3].
+- Expected outcome: Lower compute with comparable performance; if performance regresses, quantify the trade-off and identify regimes (sequence length, rollout horizon) where merging is most beneficial.
+
+4) Ablation grid across components to avoid double-counting
+- Hypothesis: The main performance gains are attributable to hierarchical masking rather than correlated additions (causal-graph guidance, uncertainty-based masking).
+- Variables: 2×2×2 factorial across {hierarchical masking on/off} × {causal-graph guidance on/off} × {uncertainty-based masking on/off} [heirarchical-transformer.pdf:3].
+- Metrics: Primary RL performance; analysis via mixed-effects model with main effects and interactions, Holm-Bonferroni-corrected post-hoc contrasts.
+- Expected outcome: Clear main effect sizes and interaction terms; attribution that avoids double-counting correlated improvements.
+
+5) Scaling study on hierarchy depth vs. group size
+- Hypothesis: There exists a Pareto frontier where shallow hierarchies with grouping/merging recover most of the benefits of deeper hierarchies at lower compute.
+- Variables: Depth of hierarchy L and grouped-pooling group size or merge ratio.
+- Metrics: Compute–performance frontier: plot return vs. compute; summarize with area-under-frontier or compute-normalized return [heirarchical-transformer.pdf:3].
+- Expected outcome: Identification of efficient operating points; guidance for default settings.
+
+Reporting and artifacts
+- Release: Code, configs, seeds, and environment versions; FLOPs estimation script; per-run CSVs.
+- Pre-registration: Primary/secondary outcomes, non-inferiority/equivalence margins, power plan, multiple-comparisons plan, and stopping rules.
+- Efficiency transparency: Publish both wall time and FLOPs with hardware details so others can situate your results [heirarchical-transformer.pdf:3].
+
+Risks and mitigations
+- Spec mismatch: If environment or loss details are missing, document choices, run a small sensitivity analysis, and bound the impact on outcomes.
+- Compute variance: Fix dataloader workers, CPU affinity, and CUDA settings; average multiple timing runs.
+- RL variance: Use paired seeds and mixed-effects modeling to mitigate high variance in episodic returns.
+
+Literature anchors for the low-parameter alternative
+- Token merging for efficient transformers (e.g., spectrum-preserving or learnable ToMe variants): these reduce token counts with minimal added parameters while preserving accuracy; they are natural stand-ins for hierarchical reduction when compute is key. See “Accelerating Transformers with Spectrum-Preserving Token Merging” (2024) and “Efficient Visual Transformer by Learnable Token Merging” (2024).
+- Pooling-based transformer backbones show that hierarchical pooling can be implemented with light operators; the idea maps to grouped pooling in our context. See “Pooling-based Vision Transformer (PiT)” (2021).
+
+Key takeaways
+- Keep the baseline faithful to the hierarchy and imagination protocol [heirarchical-transformer.pdf:2–3], match the three evaluation axes [heirarchical-transformer.pdf:3], and run paired, adequately powered comparisons.
+- Use factorial ablations and multiple-comparison control to avoid counting the same correlated gain twice; reserve Shapley-style attribution as a descriptive summary of shared contributions.
+- The grouped pooling/token merging alternatives provide low-parameter routes to multi-scale context; benchmark them at matched compute/parameter budgets to produce fair trade-off curves.
 
 Citations
-- [P3] Can You Trick the Grader? Adversarial Persuasion of LLM Judges — http://arxiv.org/abs/2508.07805v1
-- [P5] Reasoning Aware Self-Consistency: Leveraging Reasoning Paths for Efficient LLM Sampling — http://arxiv.org/abs/2408.17017v3
-- [P6] Self-rationalization improves LLM as a fine-grained judge — http://arxiv.org/abs/2410.05495v1
+- [heirarchical-transformer.pdf:2] Goal: structured, level-specific sparsification during Transformer rollouts.
+- [heirarchical-transformer.pdf:3] Evaluation metrics (rollout compute cost, rollout error, final RL performance), imagination rollout procedure, and ablation levers (hierarchical masking, causal graph guidance, uncertainty-based masking).
+- Accelerating Transformers with Spectrum-Preserving Token Merging (2024) — https://arxiv.org/abs/2405.16148
+- Efficient Visual Transformer by Learnable Token Merging (2024) — https://arxiv.org/abs/2407.15219
+- Pooling-based Vision Transformer (PiT) (2021) — https://arxiv.org/abs/2103.16302
+- Holm–Bonferroni method (multiple comparisons control) — https://en.wikipedia.org/wiki/Holm%E2%80%93Bonferroni_method
+- Adding Error Bars to Evals: A Statistical Approach to Language Model Evaluations (mixed-effects and uncertainty reporting; general eval guidance) — https://arxiv.org/abs/2411.00640

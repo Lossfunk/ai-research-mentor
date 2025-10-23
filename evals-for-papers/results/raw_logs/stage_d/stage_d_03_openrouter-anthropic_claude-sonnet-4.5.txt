@@ -1,381 +1,623 @@
-Based on the MST paper's methodology, I'll design a comprehensive experimental framework to extend the taxonomy with an "Efficiency Issues" category while ensuring statistical rigor and distinctiveness from existing categories.
+Based on the attached paper, I'll design a comprehensive efficiency evaluation extension that maintains comparability with the original accuracy-focused results while enabling rigorous analysis of accuracy-efficiency trade-offs.
 
-## Experimental Design for Efficiency Issues Taxonomy Extension
+## Extended Efficiency Metrics
 
-### 1. **Proposed "Efficiency Issues" Category Definition**
+### 1. Latency Metrics
 
-**Core Definition**: Failures where the multi-agent system produces correct outputs but consumes excessive resources, exhibits poor scalability, or demonstrates suboptimal coordination patterns that impede practical deployment.
+**Rollout Latency** [heirarchical-transformer.pdf:3]
+- **Single-step latency (μs)**: Time to predict one future state given current state
+  - Measured from token input to token output
+  - Excludes VQ-VAE encoding/decoding (isolates world model)
+  - Report: mean, p50, p95, p99 across 10,000 rollout steps
+  
+- **K-step rollout latency (ms)**: Time for full imagination trajectory
+  - K ∈ {5, 10, 15} steps (matching reconstruction checkpoints [heirarchical-transformer.pdf:3])
+  - Includes all masking decisions and memory token updates
+  - Critical for policy planning latency
 
-**Key Distinction**: Unlike the existing three categories (Specification, Misalignment, Verification) which focus on *correctness*, Efficiency Issues focus on *resource consumption and operational viability* while maintaining correctness.
+- **End-to-end inference latency (ms)**: Full pipeline from raw observation to action
+  - VQ-VAE encoding + world model rollout + policy network
+  - Real-world deployment metric
+  - Measured at 60 FPS target (16.67ms budget)
 
-### 2. **Proposed Sub-Types of Efficiency Failures**
+**Training Latency**
+- **Steps per second**: Environment steps processed during training
+- **Time to threshold**: Wall-clock hours to reach 50% of final performance
+- **Gradient computation time**: Backward pass latency per batch
 
-#### **2.1 Redundant Computation (EC-1)**
-- **Definition**: Agents perform duplicate work or re-compute information already available
-- **Indicators**: 
-  - Multiple agents solve the same sub-problem independently
-  - Repeated API calls with identical inputs
-  - Regeneration of previously computed results
-- **Example**: In a research assistant system, multiple agents independently retrieve the same paper when one retrieval would suffice
+### 2. Memory Metrics
 
-#### **2.2 Communication Overhead (EC-2)**
-- **Definition**: Excessive inter-agent messages that don't contribute to task progress
-- **Indicators**:
-  - Message count >> minimum required for task completion
-  - Circular conversations without information gain
-  - Broadcasting when targeted communication would suffice
-- **Example**: Agents engage in 20 rounds of clarification when the task could be completed in 5
+**Peak Memory Usage (GB)**
+- **Model parameters**: Static memory for weights
+  - Transformer: embedding + attention + FFN layers
+  - VQ-VAE: encoder + decoder + codebook
+  - SPARTAN: causal graph network [heirarchical-transformer.pdf:2]
+  
+- **Activation memory**: Dynamic memory during forward pass
+  - Attention maps: O(L² × H × B) for sequence length L, heads H, batch B
+  - KV cache for autoregressive rollout
+  - Intermediate activations
 
-#### **2.3 Suboptimal Decomposition (EC-3)**
-- **Definition**: Task breakdown creates unnecessary dependencies or bottlenecks
-- **Indicators**:
-  - Sequential execution when parallelization is possible
-  - Unbalanced workload distribution across agents
-  - Critical path length >> theoretical minimum
-- **Example**: A planning agent creates 10 sequential subtasks when 5 could run in parallel
+- **Rollout buffer**: Memory for K-step imagination
+  - Token sequences: K × L × B × embedding_dim
+  - Hidden states: K × B × hidden_dim
+  - Masked token storage
 
-#### **2.4 Resource Thrashing (EC-4)**
-- **Definition**: Agents repeatedly switch contexts or undo previous work
-- **Indicators**:
-  - Frequent state reversals or backtracking
-  - Oscillating decisions without convergence
-  - Repeated context loading/unloading
-- **Example**: Agents alternate between two solution approaches without settling on one
+**Memory Efficiency Ratios**
+- **Memory per token**: Peak memory / active tokens
+- **Sparsity benefit**: (Dense memory - Sparse memory) / Dense memory
+- **Batch scaling**: Memory growth rate as batch size increases
 
-#### **2.5 Premature Scaling (EC-5)**
-- **Definition**: System invokes more agents than necessary for task complexity
-- **Indicators**:
-  - Agent count >> task complexity warrants
-  - Idle agents during execution
-  - Coordination cost > computation cost
-- **Example**: Deploying 10 specialized agents for a task a single generalist could handle
+### 3. Throughput Metrics
 
-#### **2.6 Memory Inefficiency (EC-6)**
-- **Definition**: Poor management of shared state or context
-- **Indicators**:
-  - Redundant storage of identical information
-  - Failure to prune irrelevant historical context
-  - Excessive context window usage
-- **Example**: Each agent maintains full conversation history when only recent context is needed
+**Training Throughput**
+- **Samples per second**: Environment transitions processed
+- **Tokens per second**: Discrete latent tokens processed
+- **GPU utilization (%)**: Actual compute usage
+- **Batch efficiency**: Throughput / theoretical peak
 
-### 3. **Validation Strategy: Proving Statistical Distinctiveness**
+**Inference Throughput**
+- **Rollouts per second**: Parallel imagination trajectories
+- **Actions per second**: Policy decisions in deployment
+- **Multi-environment scaling**: Throughput with N parallel environments
 
-#### **Phase 1: Theoretical Distinctiveness (Conceptual Validation)**
+### 4. Computational Cost Metrics [heirarchical-transformer.pdf:3]
 
-**Approach**: Demonstrate that Efficiency Issues are orthogonal to existing categories
+**FLOPs Analysis**
+- **Rollout FLOPs**: Total floating-point operations per K-step rollout
+  - Attention: 2 × L² × d_model per layer
+  - FFN: 4 × L × d_model × d_ff per layer
+  - Masking overhead: SPARTAN + uncertainty computation
+  
+- **Training FLOPs**: Total FLOPs to convergence
+- **FLOPs reduction**: (Baseline FLOPs - SHI FLOPs) / Baseline FLOPs
 
-**Method**:
-1. **Create a 2×2 contingency table** for each existing category:
-   ```
-                    Efficiency Issue Present | Efficiency Issue Absent
-   Category X Present        A                |         B
-   Category X Absent         C                |         D
-   ```
+**Token Efficiency**
+- **Active tokens per step**: Mean number of unmasked tokens
+- **Token retention rate**: Active tokens / total tokens
+- **Hierarchical sparsity**: Retention rate per hierarchy level
 
-2. **Independence hypothesis**: If Efficiency Issues are distinct, they should be statistically independent from Specification/Misalignment/Verification failures
+### 5. Energy Metrics
 
-3. **Expected outcome**: A task can simultaneously have:
-   - Correct output (no Specification/Verification failure) + Efficiency Issue
-   - Incorrect output (Specification failure) + Efficiency Issue
-   - Incorrect output (Specification failure) + No Efficiency Issue
+**Power Consumption**
+- **GPU power draw (W)**: Measured via nvidia-smi during rollout
+- **Energy per rollout (J)**: Power × latency
+- **Training energy (kWh)**: Total energy to 100k steps
 
-#### **Phase 2: Empirical Validation (Data Collection)**
+**Carbon Footprint** (optional but recommended)
+- **CO₂ equivalent (kg)**: Using regional grid carbon intensity
+- **Efficiency score**: Performance / energy
 
-**Dataset Construction**:
+## Measurement Protocol
 
-1. **Curate a dual-annotated dataset** (n ≥ 200 multi-agent executions):
-   - Annotate for existing MST categories (Specification, Misalignment, Verification)
-   - Independently annotate for proposed Efficiency sub-types
-   - Use the same LLM-as-a-Judge methodology from Section 3.4
+### Hardware Standardization
 
-2. **Stratified sampling**:
-   - Include tasks with varying complexity (simple, medium, complex)
-   - Cover multiple domains (coding, reasoning, planning, retrieval)
-   - Ensure representation of different multi-agent architectures (hierarchical, flat, debate-based)
+**Primary Platform:**
+- GPU: NVIDIA A100 40GB (PCIe)
+- CPU: AMD EPYC 7742 (16 cores allocated)
+- RAM: 128GB DDR4
+- CUDA: 11.8, PyTorch 2.0
+- Batch size: 64 (fixed across all methods)
 
-3. **Annotation protocol**:
-   ```
-   For each execution:
-     Step 1: Evaluate correctness → Assign MST category if incorrect
-     Step 2: IF correct OR after identifying correctness issues:
-             Evaluate efficiency → Assign Efficiency sub-types
-     Step 3: Record metrics (tokens, messages, latency, agent-count)
-   ```
+**Secondary Platform (for generalization):**
+- GPU: NVIDIA RTX 3090 24GB
+- Same software stack
+- Tests deployment on consumer hardware
 
-**Critical Design Choice**: Annotate efficiency **independently** of correctness to avoid conflation
+**Measurement Tools:**
+- Latency: PyTorch CUDA events (microsecond precision)
+- Memory: torch.cuda.max_memory_allocated()
+- FLOPs: fvcore.nn.FlopCountAnalysis
+- Power: nvidia-smi --query-gpu=power.draw (100ms polling)
+- Profiling: PyTorch Profiler with CUPTI
 
-#### **Phase 3: Statistical Tests for Distinctiveness**
+### Measurement Procedure
 
-**Test 1: Independence via Chi-Square**
+**Warmup Protocol:**
+1. Run 100 dummy rollouts to warm up GPU
+2. Clear CUDA cache
+3. Reset peak memory counters
+4. Synchronize CUDA streams
 
-For each existing category (Spec, Misalign, Verify):
-```
-H0: Efficiency Issues are independent of Category X
-H1: Efficiency Issues are dependent on Category X
+**Latency Measurement:**
+```python
+# Pseudocode
+torch.cuda.synchronize()
+start_event = torch.cuda.Event(enable_timing=True)
+end_event = torch.cuda.Event(enable_timing=True)
 
-Apply: Chi-square test of independence
-Decision rule: Fail to reject H0 (p > 0.05) supports distinctiveness
-```
+start_event.record()
+output = model.rollout(input, k_steps=15)
+end_event.record()
 
-**Test 2: Correlation Analysis**
-
-Calculate **Cramér's V** between Efficiency Issues and each existing category:
-- V < 0.1: Negligible association (strong distinctiveness)
-- 0.1 ≤ V < 0.3: Weak association (moderate distinctiveness)
-- V ≥ 0.3: Moderate-to-strong association (questionable distinctiveness)
-
-**Target**: Cramér's V < 0.2 for all three existing categories
-
-**Test 3: Conditional Probability Analysis**
-
-Calculate:
-- P(Efficiency Issue | Specification Failure)
-- P(Efficiency Issue | No Specification Failure)
-- P(Efficiency Issue | Misalignment)
-- P(Efficiency Issue | Verification Failure)
-
-**Validation criterion**: If Efficiency is distinct, these probabilities should be similar (difference < 0.15)
-
-**Test 4: Inter-Rater Reliability for New Category**
-
-- Use **Fleiss' kappa** or **Krippendorff's alpha** with ≥3 annotators
-- Target: κ ≥ 0.6 (substantial agreement) for Efficiency sub-types
-- Compare to inter-rater reliability reported in original MST paper
-
-**Test 5: Discriminant Analysis**
-
-Apply **Linear Discriminant Analysis (LDA)** or **Logistic Regression**:
-```
-Features: [token_count, message_count, latency, agent_count, 
-           redundancy_score, parallelization_ratio]
-Target: Efficiency Issue (binary) vs. Existing Categories (binary)
-
-Metric: Classification accuracy and feature importance
+torch.cuda.synchronize()
+latency_ms = start_event.elapsed_time(end_event)
 ```
 
-**Validation**: If efficiency-specific features (e.g., token_count, message_count) are strong predictors of Efficiency Issues but weak predictors of existing categories, this supports distinctiveness.
+**Repeated Measurements:**
+- 1,000 iterations per configuration
+- Report median (robust to outliers) and 95% CI via bootstrap
+- Discard first 10% (warmup effects)
 
-### 4. **Quantitative Metrics for Efficiency Sub-Types**
+**Controlled Conditions:**
+- Disable GPU boost clocks (fixed frequency)
+- Exclusive GPU access (no concurrent jobs)
+- Fixed random seeds for reproducibility
+- Same input sequences across methods
 
-To operationalize the sub-types, define measurable thresholds:
+## Preserving Comparability to Original Results
 
-| Sub-Type | Primary Metric | Threshold (Proposed) |
-|----------|----------------|----------------------|
-| EC-1: Redundant Computation | Duplicate operation ratio | > 20% of operations |
-| EC-2: Communication Overhead | Messages per task completion | > 2× baseline single-agent |
-| EC-3: Suboptimal Decomposition | Parallelization efficiency | < 50% of theoretical max |
-| EC-4: Resource Thrashing | State reversal count | > 3 reversals per task |
-| EC-5: Premature Scaling | Agent utilization rate | < 60% average utilization |
-| EC-6: Memory Inefficiency | Context redundancy ratio | > 30% duplicate tokens |
+### Accuracy Metrics (Unchanged) [heirarchical-transformer.pdf:3]
 
-**Calibration Process**:
-1. Collect metrics from 50 "known efficient" and 50 "known inefficient" executions
-2. Use ROC analysis to determine optimal thresholds
-3. Validate thresholds on held-out set
+**Primary:**
+- Final median human-normalized score (Atari 100k, Crafter)
+- Rollout error at checkpoints {t₅, t₁₀, t₁₅}
 
-### 5. **Experimental Protocol**
+**Secondary:**
+- Sample efficiency curves
+- Reward prediction error
 
-#### **Step 1: Pilot Study (n=50)**
+### Comparability Requirements
 
+**1. Identical Training Setup**
+- Same hyperparameters as accuracy-only evaluation
+- Same random seeds (enables paired analysis)
+- Same number of environment steps
+- Same evaluation frequency
+
+**2. Non-Invasive Measurement**
+- Efficiency metrics collected **without** modifying training
+- Separate profiling runs for detailed metrics
+- Validation that measurement overhead < 1%
+
+**3. Baseline Parity**
+- Measure efficiency for all baselines (IRIS, DART, STORM) [heirarchical-transformer.pdf:3]
+- Use official implementations (no re-implementation bias)
+- Same hardware and software stack
+- Document any baseline-specific optimizations
+
+**4. Reporting Standards**
+- Report both accuracy and efficiency for same runs
+- Provide correlation analysis between metrics
+- Include raw scores (not just normalized)
+- Share full data for independent analysis
+
+### Validation Checks
+
+**Accuracy Preservation:**
+- Verify final scores match original evaluation (±2% tolerance)
+- Compare learning curves visually
+- Statistical test: paired t-test on final scores (original vs. extended)
+- If p > 0.05, measurement is non-invasive
+
+**Measurement Reliability:**
+- Coefficient of variation < 5% for latency
+- Repeat measurements on different days (test temporal stability)
+- Cross-validate FLOPs with manual calculation
+- Compare memory measurements with profiler tools
+
+## Statistical Analysis Plan: Accuracy-Efficiency Trade-offs
+
+### Research Questions
+
+**RQ1:** Does SHI achieve Pareto improvement (better accuracy AND efficiency)?
+
+**RQ2:** What is the accuracy cost per unit efficiency gain?
+
+**RQ3:** Are accuracy and efficiency gains independent or correlated?
+
+**RQ4:** Which efficiency dimension (latency/memory/throughput) best predicts accuracy?
+
+### Analysis 1: Pareto Frontier Analysis
+
+**Objective:** Visualize trade-off space and identify Pareto-optimal methods
+
+**Procedure:**
+1. For each method, compute mean accuracy (human-normalized score) and mean efficiency (1/latency or 1/FLOPs)
+2. Plot 2D scatter: x-axis = efficiency, y-axis = accuracy
+3. Identify Pareto frontier: methods not dominated on both dimensions
+4. Compute hypervolume indicator (area under Pareto curve)
+
+**Statistical Test:**
+- **Null:** SHI is not on Pareto frontier
+- **Test:** Bootstrap confidence regions (1,000 samples)
+  - Resample games/seeds
+  - Recompute Pareto frontier
+  - Count % of bootstraps where SHI is Pareto-optimal
+- **Significance:** If SHI on frontier in >95% of bootstraps, reject null
+
+**Visualization:**
+- Scatter plot with 95% confidence ellipses
+- Pareto frontier curve
+- Iso-performance lines (constant accuracy × efficiency product)
+
+### Analysis 2: Efficiency-Normalized Performance
+
+**Objective:** Quantify accuracy per unit computational cost
+
+**Metrics:**
+- **Score per TFLOP:** Human-normalized score / (rollout FLOPs / 10¹²)
+- **Score per second:** Human-normalized score / rollout latency
+- **Score per GB:** Human-normalized score / peak memory
+
+**Statistical Test:**
+- **Null:** SHI and baselines have equal efficiency-normalized performance
+- **Test:** Wilcoxon signed-rank test (paired by game/seed)
+  - Pair: Same game, compare SHI vs. IRIS efficiency-normalized score
+  - One-tailed: SHI > IRIS
+  - Bonferroni correction for multiple baselines
+- **Effect Size:** Hodges-Lehmann estimator (median difference)
+
+**Reporting:**
+- Table: Method | Score | FLOPs | Score/TFLOP | Rank
+- Median improvement and 95% CI
+- Win/tie/loss counts
+
+### Analysis 3: Multi-Objective Optimization
+
+**Objective:** Find optimal operating points for different deployment constraints
+
+**Approach:** Constrained optimization
+- **Scenario A (Latency-constrained):** Maximize accuracy subject to latency ≤ 10ms
+- **Scenario B (Memory-constrained):** Maximize accuracy subject to memory ≤ 8GB
+- **Scenario C (Energy-constrained):** Maximize accuracy subject to energy ≤ 100J per rollout
+
+**Method:**
+- For each method, check if constraints satisfied
+- Among feasible methods, rank by accuracy
+- Compute "regret": accuracy gap to unconstrained optimum
+
+**Statistical Test:**
+- **Null:** SHI and best baseline have equal accuracy under constraints
+- **Test:** Permutation test
+  - Statistic: Accuracy difference under constraint
+  - Null distribution: 10,000 random label permutations
+  - p-value: Proportion of permutations with difference ≥ observed
+
+### Analysis 4: Correlation and Independence
+
+**Objective:** Test whether accuracy and efficiency gains are independent
+
+**Hypothesis:**
+- **H0:** Accuracy and efficiency improvements are uncorrelated (ρ = 0)
+- **H1:** Positive correlation (methods good at one are good at both)
+
+**Procedure:**
+1. For each method, compute:
+   - Accuracy gain: (SHI score - baseline score)
+   - Efficiency gain: (baseline FLOPs - SHI FLOPs) / baseline FLOPs
+2. Compute Spearman correlation across games
+3. Test significance via permutation test
+
+**Interpretation:**
+- **ρ > 0, p < 0.05:** Efficiency improvements drive accuracy (or vice versa)
+- **ρ ≈ 0:** Independent mechanisms (hierarchy helps both separately)
+- **ρ < 0:** Trade-off exists (efficiency hurts accuracy)
+
+**Visualization:**
+- Scatter: x = efficiency gain, y = accuracy gain
+- Regression line with 95% CI
+- Annotate outlier games
+
+### Analysis 5: Hierarchical Regression
+
+**Objective:** Decompose variance in accuracy into efficiency components
+
+**Model:** Linear mixed-effects regression
 ```
-Objective: Refine sub-type definitions and annotation guidelines
-
-Process:
-1. Select 50 diverse multi-agent executions
-2. Have 3 expert annotators independently label:
-   - Existing MST categories
-   - Proposed Efficiency sub-types
-3. Calculate inter-rater reliability (Fleiss' kappa)
-4. Resolve disagreements through discussion
-5. Refine definitions and create annotation manual
+Accuracy ~ Latency + Memory + FLOPs + (1|Game) + (1|Seed)
 ```
 
-#### **Step 2: Main Study (n=200-300)**
+**Fixed Effects:**
+- Latency (log-transformed)
+- Memory (log-transformed)
+- FLOPs (log-transformed)
 
+**Random Effects:**
+- Game (accounts for game difficulty)
+- Seed (accounts for random variation)
+
+**Analysis:**
+- Standardized coefficients: which efficiency metric predicts accuracy best?
+- Variance partitioning: % variance explained by efficiency vs. game vs. seed
+- Interaction terms: Efficiency × Method (tests if SHI's efficiency helps more)
+
+**Statistical Test:**
+- Likelihood ratio test for each predictor
+- AIC/BIC for model comparison
+- Conditional R² (variance explained)
+
+**Reporting:**
+- Coefficient table with 95% CI
+- Variance decomposition plot
+- Marginal effects: predicted accuracy at different efficiency levels
+
+### Analysis 6: Dominance Analysis
+
+**Objective:** Determine if SHI statistically dominates baselines on both dimensions
+
+**Procedure:**
+For each baseline B:
+1. **Accuracy dominance:** Test if SHI > B on accuracy (Wilcoxon signed-rank)
+2. **Efficiency dominance:** Test if SHI > B on efficiency (Wilcoxon signed-rank)
+3. **Joint dominance:** Both tests significant at α = 0.025 (Bonferroni)
+
+**Dominance Matrix:**
 ```
-Objective: Validate distinctiveness and prevalence
-
-Dataset composition:
-- 100 executions with correctness failures (existing MST categories)
-- 100 executions with correct outputs
-- 50-100 executions with mixed characteristics
-
-Annotation:
-- 2 independent annotators per execution
-- Third annotator for disagreements (Cohen's κ < 0.6)
-- Blind to each other's annotations
-
-Metrics collected per execution:
-- Binary presence/absence of each MST category
-- Binary presence/absence of each Efficiency sub-type
-- Quantitative metrics (tokens, messages, latency, etc.)
-- Task metadata (domain, complexity, architecture)
-```
-
-#### **Step 3: Statistical Validation**
-
-```
-Analysis pipeline:
-1. Construct contingency tables (Efficiency × each MST category)
-2. Run chi-square tests (α = 0.05, Bonferroni-corrected for 3 tests → α = 0.0167)
-3. Calculate Cramér's V effect sizes
-4. Compute conditional probabilities
-5. Perform discriminant analysis
-6. Generate confusion matrices
-```
-
-#### **Step 4: Qualitative Validation**
-
-```
-Case study analysis:
-- Select 10 cases with Efficiency Issues + No correctness failures
-- Select 10 cases with Efficiency Issues + Correctness failures
-- Select 10 cases with No Efficiency Issues + Correctness failures
-
-Analyze:
-- Are the failure mechanisms genuinely different?
-- Do interventions for one category affect the other?
-- Can domain experts distinguish the categories reliably?
+         | IRIS | DART | STORM | Sparse Imagination
+---------+------+------+-------+-------------------
+Accuracy |  ✓   |  ✓   |   ✗   |        ✓
+Efficiency|  ✓   |  ✗   |   ✓   |        ✓
+Joint    |  ✓   |  ✗   |   ✗   |        ✓
 ```
 
-### 6. **Potential Confounds and Mitigation**
+**Interpretation:**
+- ✓ = SHI significantly better (p < 0.025)
+- ✗ = No significant difference or baseline better
+- Joint ✓ = Pareto dominance
 
-#### **Confound 1: Efficiency Issues Causing Correctness Failures**
+### Analysis 7: Sensitivity Analysis
 
-**Risk**: Excessive resource use might lead to timeouts or truncation, causing incorrect outputs
+**Objective:** Test robustness of trade-offs to measurement choices
 
-**Mitigation**:
-- Explicitly code for "timeout-induced failures" as a separate marker
-- Analyze: P(Correctness Failure | Efficiency Issue ∧ Timeout) vs. P(Correctness Failure | Efficiency Issue ∧ No Timeout)
-- If timeout is a mediator, control for it in statistical tests
+**Variations:**
+1. **Metric choice:** Repeat with different efficiency metrics (latency vs. FLOPs vs. memory)
+2. **Aggregation:** Median vs. mean across games
+3. **Normalization:** Raw scores vs. human-normalized vs. IQM (interquartile mean)
+4. **Subset:** Easy games vs. hard games (split by median baseline score)
 
-#### **Confound 2: Task Complexity as Common Cause**
+**Procedure:**
+- Recompute Pareto frontier for each variation
+- Check if SHI remains Pareto-optimal
+- Compute rank correlation between variations
 
-**Risk**: Complex tasks might independently cause both correctness and efficiency failures
+**Reporting:**
+- Robustness table: % of variations where SHI is Pareto-optimal
+- Sensitivity plot: Pareto frontier across variations
+- Identify conditions where trade-offs change
 
-**Mitigation**:
-- Stratify analysis by task complexity
-- Use **partial correlation** controlling for complexity
-- Apply **Cochran-Mantel-Haenszel test** for stratified independence
+## Experimental Design
 
-#### **Confound 3: Annotation Bias**
+### Factorial Design
 
-**Risk**: Annotators might assume inefficient systems are also incorrect
+**Factors:**
+- **Method:** SHI-Hierarchical, SHI-Flat, IRIS, DART, STORM, Sparse Imagination (6 levels)
+- **Game:** 26 Atari games (26 levels)
+- **Seed:** 5 random seeds (5 levels)
+- **Measurement:** Accuracy, Latency, Memory, FLOPs (4 dependent variables)
 
-**Mitigation**:
-- Present correctness and efficiency annotations in separate sessions
-- Randomize order of presentation
-- Use different annotators for correctness vs. efficiency when possible
-- Measure and report annotation order effects
+**Total Runs:** 6 × 26 × 5 = 780 runs
 
-#### **Confound 4: Architecture-Specific Patterns**
+**Blocking:**
+- Block by game (controls for game difficulty)
+- Block by seed (enables paired tests)
+- Randomize method order within blocks
 
-**Risk**: Certain architectures (e.g., debate-based) might inherently have more communication overhead
+### Data Collection Schedule
 
-**Mitigation**:
-- Report prevalence rates stratified by architecture type
-- Define efficiency relative to architecture-specific baselines
-- Use **mixed-effects models** with architecture as random effect
+**Phase 1: Accuracy Replication (Weeks 1-4)**
+- Run all methods on Atari 100k with original protocol
+- Collect accuracy metrics only
+- Validate against published baselines
 
-### 7. **Success Criteria for Validation**
+**Phase 2: Efficiency Profiling (Weeks 5-6)**
+- Load checkpoints from Phase 1
+- Run profiling on fixed test set (1,000 rollouts per checkpoint)
+- Collect latency, memory, FLOPs, energy
 
-The Efficiency Issues category is considered **statistically distinct** if:
+**Phase 3: Joint Analysis (Weeks 7-8)**
+- Merge accuracy and efficiency data
+- Run all statistical tests
+- Generate visualizations
 
-1. ✓ **Independence**: Chi-square tests fail to reject independence (p > 0.0167) for at least 2 of 3 existing categories
-2. ✓ **Weak association**: Cramér's V < 0.25 for all three existing categories
-3. ✓ **Conditional probability**: |P(Eff | Cat_X) - P(Eff | ¬Cat_X)| < 0.20 for all existing categories
-4. ✓ **Reliability**: Inter-rater agreement κ ≥ 0.60 for Efficiency sub-types
-5. ✓ **Discriminability**: LDA/logistic regression achieves ≥70% accuracy in distinguishing Efficiency from existing categories using efficiency-specific features
-6. ✓ **Prevalence**: Efficiency Issues occur in ≥15% of correct executions (demonstrating they're not just a byproduct of incorrectness)
+**Phase 4: Sensitivity Analysis (Week 9)**
+- Repeat key analyses with variations
+- Test robustness
 
-### 8. **Alternative Validation: Intervention Study**
+**Phase 5: Reporting (Week 10)**
+- Compile results
+- Write manuscript sections
 
-A complementary approach to prove distinctiveness:
+## Reporting Template
 
-**Design**:
-```
-Hypothesis: Interventions targeting Efficiency should reduce Efficiency Issues 
-            without significantly affecting rates of existing MST categories
+### Main Results Table
 
-Experiment:
-1. Identify 50 executions with Efficiency Issues but no correctness failures
-2. Apply efficiency-specific interventions:
-   - Add caching mechanisms (targets EC-1)
-   - Implement message budgets (targets EC-2)
-   - Optimize task decomposition (targets EC-3)
-3. Re-run and measure:
-   - Change in Efficiency Issue rate
-   - Change in existing MST category rates
+| Method | Score↑ | Latency↓ (ms) | Memory↓ (GB) | FLOPs↓ (T) | Score/TFLOP↑ | Pareto? |
+|--------|--------|---------------|--------------|------------|--------------|---------|
+| SHI-H  | 0.85±0.03 | 8.2±0.4 | 6.1±0.2 | 2.3±0.1 | 0.37 | ✓ |
+| SHI-F  | 0.82±0.03 | 9.1±0.5 | 6.5±0.3 | 2.8±0.1 | 0.29 | ✗ |
+| IRIS   | 0.79±0.04 | 12.3±0.6 | 8.9±0.4 | 4.1±0.2 | 0.19 | ✗ |
+| DART   | 0.81±0.03 | 10.5±0.5 | 7.2±0.3 | 3.5±0.1 | 0.23 | ✗ |
+| STORM  | 0.77±0.04 | 11.8±0.7 | 8.1±0.4 | 3.9±0.2 | 0.20 | ✗ |
+| Sparse | 0.76±0.03 | 9.8±0.5 | 6.8±0.3 | 3.2±0.1 | 0.24 | ✗ |
 
-Expected outcome: 
-- Efficiency Issue rate decreases significantly (>30% reduction)
-- Existing MST category rates remain stable (change <10%)
+*Values are median ± 95% CI across 26 games × 5 seeds. ↑ = higher is better, ↓ = lower is better.*
 
-Statistical test: Paired t-test or Wilcoxon signed-rank test
-```
+### Statistical Separation Table
 
-**Interpretation**: If efficiency interventions selectively reduce Efficiency Issues without affecting correctness-related failures, this provides strong evidence of distinctiveness.
+| Comparison | Accuracy p-value | Efficiency p-value | Joint Dominance |
+|------------|------------------|--------------------|--------------------|
+| SHI-H vs. IRIS | 0.003** | <0.001*** | ✓ |
+| SHI-H vs. DART | 0.041* | 0.002** | ✓ |
+| SHI-H vs. STORM | 0.001** | <0.001*** | ✓ |
+| SHI-H vs. Sparse | <0.001*** | <0.001*** | ✓ |
+| SHI-H vs. SHI-F | 0.028* | 0.015* | ✓ |
 
-### 9. **Reporting Standards**
+*Wilcoxon signed-rank test, Bonferroni-corrected. * p<0.05, ** p<0.01, *** p<0.001*
 
-Your validation paper should include:
+### Visualization Suite
 
-**Tables**:
-1. Contingency tables for Efficiency × each MST category
-2. Inter-rater reliability scores (κ) for each sub-type
-3. Prevalence rates stratified by task domain and architecture
-4. Confusion matrix from discriminant analysis
+**Figure 1: Pareto Frontier**
+- 2D scatter: FLOPs (x) vs. Score (y)
+- Confidence ellipses per method
+- Pareto curve highlighted
+- Iso-performance contours
 
-**Figures**:
-1. Venn diagram showing overlap between Efficiency and existing categories
-2. ROC curves for quantitative threshold calibration
-3. Distribution plots of efficiency metrics across categories
+**Figure 2: Multi-Dimensional Trade-offs**
+- Parallel coordinates plot
+- Axes: Score, Latency, Memory, FLOPs, Energy
+- Lines colored by method
+- Highlights SHI's balanced profile
 
-**Statistical Results**:
-1. Chi-square statistics with p-values and Cramér's V
-2. Conditional probability tables
-3. Regression coefficients from discriminant analysis
-4. Effect sizes with 95% confidence intervals
+**Figure 3: Efficiency Breakdown**
+- Stacked bar chart per method
+- Components: Attention, FFN, Masking, VQ-VAE
+- Shows where SHI saves computation
 
-### 10. **Potential Challenges and Limitations**
+**Figure 4: Scaling Analysis**
+- Line plots: Efficiency vs. rollout horizon K
+- Separate panels for latency, memory, FLOPs
+- Shows SHI's advantage grows with K
 
-**Challenge 1: Defining "Excessive"**
+**Figure 5: Per-Game Analysis**
+- Heatmap: Games (rows) × Methods (columns)
+- Cell color: Efficiency-normalized score
+- Identifies games where hierarchy helps most
 
-Efficiency is inherently relative. What's "excessive" for one use case may be acceptable for another.
+**Figure 6: Correlation Analysis**
+- Scatter: Efficiency gain (x) vs. Accuracy gain (y)
+- Each point = one game
+- Regression line with 95% CI
+- Annotate outliers
 
-**Solution**: 
-- Define efficiency relative to single-agent baseline
-- Report percentile rankings rather than absolute thresholds
-- Acknowledge context-dependency in limitations section
+## Advanced Analyses
 
-**Challenge 2: Measurement Overhead**
+### Conditional Efficiency Analysis
 
-Collecting detailed efficiency metrics may require instrumentation not present in original MST study.
+**Question:** Does efficiency advantage depend on game characteristics?
 
-**Solution**:
-- Use proxy metrics when direct measurement unavailable
-- Report measurement limitations transparently
-- Validate proxies against ground truth on subset
+**Game Features:**
+- Visual complexity: Number of distinct sprites
+- Temporal dynamics: Frame-to-frame difference
+- Reward sparsity: % of zero-reward transitions
 
-**Challenge 3: Temporal Dynamics**
+**Analysis:**
+- Cluster games by features (k-means, k=3)
+- Compute efficiency gain per cluster
+- Test interaction: Efficiency gain × Cluster (ANOVA)
 
-Efficiency issues may emerge over time or at scale, not visible in single-task evaluations.
+**Interpretation:**
+- If interaction significant: Hierarchy helps more in visually complex games
+- Guides deployment decisions
 
-**Solution**:
-- Include long-running tasks in dataset
-- Measure efficiency degradation over task sequences
-- Consider "efficiency at scale" as future work
+### Ablation-Efficiency Interaction
 
-## Key Takeaways
+**Question:** Which SHI component contributes most to efficiency?
 
-1. **Define Efficiency Issues as orthogonal to correctness**: Focus on resource consumption in both correct and incorrect executions
+**Ablations:**
+- SHI-NoHierarchy (flat masking)
+- SHI-NoSPARTAN (no causal graphs) [heirarchical-transformer.pdf:2]
+- SHI-NoUncertainty (no uncertainty masking)
+- SHI-NoMemory (no memory tokens)
 
-2. **Propose 6 sub-types** (EC-1 through EC-6) covering computation, communication, decomposition, thrashing, scaling, and memory
+**Analysis:**
+- Measure efficiency for each ablation
+- Compute marginal contribution: Efficiency(Full) - Efficiency(Ablation)
+- Rank components by contribution
 
-3. **Use multiple statistical tests**: Chi-square for independence, Cramér's V for association strength, conditional probabilities, and discriminant analysis
+**Visualization:**
+- Waterfall chart showing cumulative efficiency gains
+- Identifies critical components
 
-4. **Set clear success criteria**: Independence tests (p > 0.0167), weak association (V < 0.25), and high inter-rater reliability (κ ≥ 0.6)
+### Deployment Scenario Analysis
 
-5. **Control for confounds**: Task complexity, architecture type, timeouts, and annotation bias
+**Scenarios:**
+1. **Real-time control:** Latency < 16ms (60 FPS)
+2. **Edge deployment:** Memory < 4GB (mobile GPU)
+3. **Batch processing:** Maximize throughput
+4. **Energy-constrained:** Minimize energy per decision
 
-6. **Validate through intervention**: Show that efficiency
+**For each scenario:**
+- Identify feasible methods
+- Rank by accuracy
+- Compute deployment cost ($/hour on cloud GPU)
+
+**Output:**
+- Decision matrix: Scenario → Recommended method
+- Cost-benefit analysis
+
+## Potential Confounds & Mitigations
+
+**Confound 1: Implementation efficiency**
+- *Risk:* SHI optimized code, baselines naive implementation
+- *Mitigation:* Use official baseline repos; apply same optimizations (e.g., Flash Attention) to all
+
+**Confound 2: Batch size effects**
+- *Risk:* Methods scale differently with batch size
+- *Mitigation:* Test multiple batch sizes {16, 32, 64, 128}; report scaling curves
+
+**Confound 3: Hardware-specific optimizations**
+- *Risk:* SHI tuned for A100, baselines for V100
+- *Mitigation:* Test on multiple GPUs; report per-hardware results
+
+**Confound 4: Measurement overhead**
+- *Risk:* Profiling slows down training
+- *Mitigation:* Separate profiling runs; validate accuracy unchanged
+
+**Confound 5: Compiler optimizations**
+- *Risk:* PyTorch JIT benefits some architectures more
+- *Mitigation:* Test with/without torch.compile(); report both
+
+## Reproducibility Checklist
+
+- [ ] Pin all software versions (CUDA, PyTorch, Python)
+- [ ] Document GPU driver version
+- [ ] Provide Docker container with exact environment
+- [ ] Release profiling scripts and measurement code
+- [ ] Share raw efficiency data (CSV with all measurements)
+- [ ] Include hardware specs in paper appendix
+- [ ] Provide instructions to reproduce each figure
+- [ ] Archive code on Zenodo with DOI
+- [ ] Pre-register analysis plan on OSF
+
+## Expected Outcomes
+
+### Scenario 1: Pareto Dominance
+- SHI significantly better on both accuracy and efficiency
+- **Claim:** "SHI achieves 8% higher score with 44% fewer FLOPs (p<0.001)"
+- **Implication:** Clear win, recommend for all use cases
+
+### Scenario 2: Trade-off Exists
+- SHI better on efficiency, slightly worse on accuracy
+- **Claim:** "SHI reduces latency by 35% at cost of 3% score (p=0.04)"
+- **Implication:** Recommend for latency-critical applications
+
+### Scenario 3: Conditional Advantage
+- SHI better on complex games, worse on simple games
+- **Claim:** "SHI improves efficiency by 50% on visually complex games (p<0.001) with no accuracy loss"
+- **Implication:** Adaptive method selection based on game features
+
+### Scenario 4: Efficiency-Accuracy Correlation
+- Strong positive correlation (ρ=0.72, p<0.001)
+- **Claim:** "Efficiency improvements directly translate to accuracy gains"
+- **Implication:** Hierarchy provides better inductive bias, not just computational savings
+
+## Timeline & Resources
+
+**Computational Budget:**
+- Accuracy runs: 780 runs × 4 GPU-hours = 3,120 GPU-hours
+- Profiling runs: 780 runs × 0.5 GPU-hours = 390 GPU-hours
+- Ablations: 4 variants × 130 runs × 4 GPU-hours = 2,080 GPU-hours
+- **Total:** ~5,600 GPU-hours (~$11,200 on cloud A100s)
+
+**Personnel:**
+- 1 researcher (implementation & analysis): 10 weeks
+- 1 engineer (profiling infrastructure): 2 weeks
+- 1 statistician (consultation): 1 week
+
+**Deliverables:**
+1. Extended results table with efficiency metrics
+2. Statistical analysis report
+3. Visualization suite (6 figures)
+4. Reproducibility package (code + data + Docker)
+5. Manuscript sections (Methods, Results, Discussion)
+
+## Sources
+
+This analysis plan is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the original evaluation plan with rollout compute cost, rollout error, and final RL performance metrics [heirarchical-transformer.pdf:3], baseline comparisons against DART, IRIS, STORM [heirarchical-transformer.pdf:3], and the SPARTAN causal graph component [heirarchical-transformer.pdf:2]
+
+For statistical methodology, I recommend:
+- Dolan & Moré (2002) "Benchmarking optimization software with performance profiles" - for Pareto frontier analysis
+- Zitzler et al. (2003) "Performance assessment of multiobjective optimizers" - for hypervolume indicator
+- Agarwal et al. (2021) "Deep Reinforcement Learning at the Edge of the Statistical Precipice" (NeurIPS) - for RL-specific statistical testing and stratified bootstrap methods

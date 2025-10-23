@@ -1,0 +1,79 @@
+Below is a zero-shot variant and evaluation plan that removes any hierarchy-specific pretraining while keeping metrics, datasets, and comparators aligned with the original evaluation. I cite the paper where it fixes datasets and primary outcomes; all other design choices are marked Conjecture and are chosen to preserve comparability.
+
+Goal and invariants from the paper
+- Keep benchmarks and primary outcomes unchanged: Atari 100k and Crafter; report rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+- Compare against the original hierarchical baseline and ablations (hierarchical masking, causal guidance, uncertainty-based masking) using the same seeds and evaluation harness [heirarchical-transformer.pdf:3].
+
+Zero-shot variant: hierarchy-free pretraining and inference-time selection
+- Core idea: Eliminate any training phase that learns hierarchy-specific controllers, summaries, or masks. Train the world model with standard sequence modeling only; at inference, perform sparsification and summarization using deterministic, zero-parameter heuristics computed on-the-fly. Conjecture.
+- Training (single-stage, no hierarchy-specific pretraining)
+  - Model: same Transformer world model backbone and decoder as the baseline, but remove or freeze all hierarchy-specific modules (e.g., learned mask/controller, level-wise pooling heads). Train with a standard autoregressive loss on trajectories; no sparsification during training. Conjecture.
+  - Objective and data: identical sequences, preprocessing, and schedules as the baseline world-model training; no alternation/joint training with masking components [heirarchical-transformer.pdf:3]. Conjecture.
+- Inference-time sparse imagination (zero-shot controller)
+  - Token saliency scoring (no learned parameters):
+    - Predictive entropy: H(p(x_t+1|context)) per token; higher entropy ⇒ retain.
+    - Temporal surprise: KL divergence between successive predictive distributions; spikes ⇒ retain.
+    - Attention centrality: last-layer attention mass received from summary/memory tokens (if present) or mean inbound attention; tokens with higher centrality ⇒ retain.
+    - Recency prior: small bias to most recent tokens to stabilize short-horizon rollouts. Conjecture.
+  - Selection: normalize and combine the scores (e.g., z-scored and averaged); retain the top-K tokens per step under the same retained-token budget and rollout depth used in the paper to ensure apples-to-apples compute comparisons [heirarchical-transformer.pdf:3]. Conjecture.
+  - Pooling/summarization: replace hierarchy-specific pooled summaries with a zero-parameter alternative:
+    - Flat mean pooling over retained tokens; or grouped mean pooling with static groups (e.g., spatial tiling) to keep parameter count ≤ baseline (no learned grouping). Conjecture.
+  - Optional memory token: keep a single learnable summary/memory token that attends to retained tokens (no level-specific design). Conjecture.
+
+Training configuration redesign (to keep metrics comparable)
+- Single-stage dense training:
+  - Train the backbone transformer densely (no sparsity) for the same number of updates, batch shapes, and optimizers as the baseline world-model pretraining [heirarchical-transformer.pdf:3]. Conjecture.
+  - No hierarchy-specific losses, controllers, or alternating schedules. Conjecture.
+- Evaluation-time sparsity only:
+  - Apply the zero-shot selection and pooling during imagination/rollout at evaluation and planning time, not during training. This isolates “no hierarchy-specific pretraining” as the only change while preserving the training compute profile. Conjecture.
+- Controls for comparability:
+  - Fix retained-token budget, rollout depth, context length, and seeds across comparisons [heirarchical-transformer.pdf:3].
+  - Report both absolute metrics and iso-FLOPs comparisons (adjust budgets if needed to match compute within ±2%). Conjecture.
+
+Why metrics remain comparable
+- Outcomes are identical to those prescribed by the paper—rollout compute cost, rollout error, final RL performance on Atari 100k and Crafter—so headline figures are directly comparable [heirarchical-transformer.pdf:3].
+- By holding seeds, trajectory preprocessing, rollout depth, and retained-token budget fixed, differences can be attributed to removing hierarchy-specific pretraining rather than to workload or data changes [heirarchical-transformer.pdf:3]. Conjecture.
+- If parameter counts drop (no controller/pooling heads), report both raw results and parameter-normalized or iso-FLOPs outcomes to avoid confounding capacity with method. Conjecture.
+
+Statistical analysis plan
+- Primary tests:
+  - RL score and rollout error AUC: paired Wilcoxon signed-rank across seeds per game; Benjamini–Hochberg FDR across games/metrics. Report effect sizes (Cliff’s delta). Conjecture.
+  - Compute: paired Wilcoxon on rollout compute cost; optionally latency/peak memory as secondary efficiency readouts.
+- Non-inferiority framing:
+  - If the goal is “no accuracy loss, similar/better efficiency,” use TOST with a pre-registered margin (e.g., ±2% relative for RL score and rollout error AUC). If non-inferiority holds, test efficiency superiority. Conjecture.
+- Uncertainty:
+  - 10k paired bootstrap for mean differences and area under error–horizon curves; BCa 95% CIs. Conjecture.
+
+Failure modes to monitor (and mitigations)
+- Train–eval mismatch: dense training but sparse evaluation may increase long-horizon rollout error. Monitor error-vs-horizon slope and add a light temperature calibration or small recency prior in selection to stabilize. Conjecture.
+- Missing rare-but-critical tokens: zero-shot heuristics may overlook small, high-utility signals. Track per-token retention vs local prediction error; consider a small “protected quota” for rare events (e.g., top surprise). Conjecture.
+- Controller dependence: if the baseline exploits causal/uncertainty guidance, ensure the zero-shot scores incorporate uncertainty and recency to partially capture that signal. Conjecture.
+
+Three concrete, falsifiable experiments
+1) Dense-train, zero-shot-sparse eval vs hierarchical baseline
+- Setup: Train backbone densely with the baseline schedule; evaluate with zero-shot token selection and flat mean pooling. Control seeds, rollout depth, and retained-token budget on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Hypotheses: Non-inferior RL score within ±2% relative; similar or lower rollout compute cost vs hierarchical baseline. Conjecture.
+- Tests: TOST on RL score and rollout error AUC; paired Wilcoxon on compute cost; report BCa 95% CIs.
+
+2) Scoring ablation
+- Setup: Evaluate zero-shot selection using (a) entropy only, (b) entropy+surprise, (c) +attention centrality. Budgets fixed.
+- Hypothesis: Adding surprise and centrality reduces long-horizon error AUC without increasing compute. Conjecture.
+- Tests: Paired Wilcoxon on error AUC; visualize error–horizon curves; bootstrap AUC differences.
+
+3) Budget sweep and Pareto efficiency
+- Setup: Sweep retained-token budgets (e.g., 10%, 20%, 40%) at fixed rollout depth for zero-shot and hierarchical variants.
+- Hypotheses: Hierarchical may dominate at very low budgets; zero-shot reaches parity at moderate budgets. Conjecture.
+- Tests: Dominated hypervolume in accuracy–compute space; bootstrap 95% CI of hypervolume difference; TOST for parity at mid budgets.
+
+Minimal code changes (sketch)
+- Remove or bypass hierarchy-specific modules during training; train the backbone with the same autoregressive loss and schedules [heirarchical-transformer.pdf:3]. Conjecture.
+- Implement inference-time scoring hooks to compute entropy and KL surprise from the model’s logits; compute attention centrality from the last layer’s attention maps; combine scores and select top-K tokens per step. Conjecture.
+- Replace hierarchical pooling with flat mean or static grouped mean; feed a single summary/memory token if used. Conjecture.
+- Keep the rest of the rollout/planning stack identical; FLOPs accounting includes selection and pooling consistently across variants. Conjecture.
+
+Literature anchors (context for zero-shot token selection)
+- ToMe: Token Merging for Vision Transformers (zero-shot token reduction using attention affinities). https://arxiv.org/abs/2210.09461
+- TokenLearner: What Can 8 Learned Tokens Do for Images and Videos? (lightweight token selection/pooling; informs grouping/aggregation choices). https://arxiv.org/abs/2106.11297
+
+Citations
+- [heirarchical-transformer.pdf:3] 4. Hypotheses and Evaluation: benchmarks (Atari 100k, Crafter) and primary outcomes (rollout compute cost, rollout error, final RL performance); ablations include hierarchical masking, causal guidance, and uncertainty-based masking — User-provided PDF

@@ -1,0 +1,1995 @@
+Based on the attached paper, I'll design a comprehensive user study to validate whether the hierarchical representations learned by the Sparse Hierarchical Imagination (SHI) Transformer align with human-perceived structure. Since the original paper focuses on visual RL [heirarchical-transformer.pdf:2,3], I'll adapt the hierarchy validation to long documents as a domain transfer test.
+
+## User Study Design: Hierarchical Representation Alignment
+
+### 1. Research Questions
+
+**Primary Research Question (RQ1):**
+Do the hierarchical token representations learned by SHI align with human-perceived document structure?
+
+**Secondary Research Questions:**
+- **RQ2:** Which hierarchy levels (coarse vs. fine-grained) show stronger alignment?
+- **RQ3:** Does alignment vary by document type (narrative, technical, argumentative)?
+- **RQ4:** Can humans predict which tokens SHI assigns to higher hierarchy levels?
+- **RQ5:** Do SHI's masking decisions align with human judgments of token importance?
+
+### 2. Hypotheses
+
+```python
+class StudyHypotheses:
+    """
+    Formal hypotheses for user study.
+    """
+    def __init__(self):
+        self.hypotheses = {
+            'H1_alignment': {
+                'null': 'SHI hierarchy assignments are independent of human structure judgments',
+                'alternative': 'SHI hierarchy assignments correlate with human structure judgments',
+                'direction': 'two-sided',
+                'test': 'correlation',
+                'expected_effect': 'ρ > 0.5 (moderate-to-strong correlation)'
+            },
+            'H2_level_specificity': {
+                'null': 'Alignment is equal across all hierarchy levels',
+                'alternative': 'Coarse levels (0) show stronger alignment than fine levels (2)',
+                'direction': 'one-sided',
+                'test': 'repeated_measures_anova',
+                'expected_effect': 'Level 0 alignment > Level 2 alignment'
+            },
+            'H3_document_type': {
+                'null': 'Alignment is equal across document types',
+                'alternative': 'Alignment varies by document type',
+                'direction': 'two-sided',
+                'test': 'anova',
+                'expected_effect': 'Technical documents show higher alignment'
+            },
+            'H4_predictability': {
+                'null': 'Humans cannot predict SHI hierarchy assignments above chance',
+                'alternative': 'Humans can predict SHI assignments better than chance',
+                'direction': 'one-sided',
+                'test': 'binomial_test',
+                'expected_effect': 'Accuracy > 50% (chance level for 3 levels)'
+            },
+            'H5_masking_importance': {
+                'null': 'SHI masking decisions are independent of human importance judgments',
+                'alternative': 'SHI masking correlates with human importance judgments',
+                'direction': 'two-sided',
+                'test': 'correlation',
+                'expected_effect': 'ρ > 0.4'
+            }
+        }
+```
+
+### 3. Sample Size Determination
+
+```python
+class SampleSizeCalculation:
+    """
+    Power analysis for determining required sample size.
+    """
+    def __init__(self):
+        pass
+    
+    def compute_sample_size_correlation(self, 
+                                       expected_rho=0.5,
+                                       alpha=0.05,
+                                       power=0.80):
+        """
+        Sample size for correlation test (H1, H5).
+        
+        Using Fisher's z-transformation.
+        """
+        from scipy.stats import norm
+        
+        # Fisher's z-transformation
+        z_rho = 0.5 * np.log((1 + expected_rho) / (1 - expected_rho))
+        
+        # Standard error
+        z_alpha = norm.ppf(1 - alpha/2)
+        z_beta = norm.ppf(power)
+        
+        # Required sample size
+        n = ((z_alpha + z_beta) / z_rho) ** 2 + 3
+        
+        return {
+            'n_participants': int(np.ceil(n)),
+            'expected_rho': expected_rho,
+            'alpha': alpha,
+            'power': power,
+            'test': 'correlation'
+        }
+    
+    def compute_sample_size_anova(self,
+                                  num_groups=3,
+                                  effect_size=0.25,  # Cohen's f
+                                  alpha=0.05,
+                                  power=0.80):
+        """
+        Sample size for ANOVA (H2, H3).
+        """
+        from statsmodels.stats.power import FTestAnovaPower
+        
+        power_analysis = FTestAnovaPower()
+        
+        n_per_group = power_analysis.solve_power(
+            effect_size=effect_size,
+            alpha=alpha,
+            power=power,
+            k_groups=num_groups
+        )
+        
+        return {
+            'n_per_group': int(np.ceil(n_per_group)),
+            'total_n': int(np.ceil(n_per_group * num_groups)),
+            'num_groups': num_groups,
+            'effect_size': effect_size,
+            'alpha': alpha,
+            'power': power,
+            'test': 'anova'
+        }
+    
+    def compute_sample_size_binomial(self,
+                                    null_prob=0.33,  # Chance for 3 levels
+                                    alternative_prob=0.50,
+                                    alpha=0.05,
+                                    power=0.80):
+        """
+        Sample size for binomial test (H4).
+        """
+        from statsmodels.stats.power import binom_test_reject_interval
+        
+        # Approximate using normal approximation
+        z_alpha = norm.ppf(1 - alpha)
+        z_beta = norm.ppf(power)
+        
+        p0 = null_prob
+        p1 = alternative_prob
+        
+        n = ((z_alpha * np.sqrt(p0 * (1 - p0)) + 
+              z_beta * np.sqrt(p1 * (1 - p1))) / (p1 - p0)) ** 2
+        
+        return {
+            'n_trials': int(np.ceil(n)),
+            'null_prob': null_prob,
+            'alternative_prob': alternative_prob,
+            'alpha': alpha,
+            'power': power,
+            'test': 'binomial'
+        }
+    
+    def determine_final_sample_size(self):
+        """
+        Determine final sample size based on all hypotheses.
+        """
+        # Compute for each hypothesis
+        n_h1 = self.compute_sample_size_correlation(expected_rho=0.5)
+        n_h2 = self.compute_sample_size_anova(num_groups=3, effect_size=0.25)
+        n_h3 = self.compute_sample_size_anova(num_groups=3, effect_size=0.25)
+        n_h4 = self.compute_sample_size_binomial()
+        n_h5 = self.compute_sample_size_correlation(expected_rho=0.4)
+        
+        # Take maximum (conservative)
+        max_n = max(
+            n_h1['n_participants'],
+            n_h2['total_n'],
+            n_h3['total_n'],
+            n_h4['n_trials'],
+            n_h5['n_participants']
+        )
+        
+        # Add 20% for attrition
+        final_n = int(np.ceil(max_n * 1.2))
+        
+        return {
+            'required_n': final_n,
+            'breakdown': {
+                'H1_correlation': n_h1['n_participants'],
+                'H2_anova': n_h2['total_n'],
+                'H3_anova': n_h3['total_n'],
+                'H4_binomial': n_h4['n_trials'],
+                'H5_correlation': n_h5['n_participants']
+            },
+            'attrition_buffer': 0.20,
+            'recommendation': f"Recruit {final_n} participants"
+        }
+
+# Calculate sample size
+calculator = SampleSizeCalculation()
+sample_size_result = calculator.determine_final_sample_size()
+print(f"Required sample size: {sample_size_result['required_n']} participants")
+# Expected output: ~85-100 participants
+```
+
+**Final Sample Size Recommendation:**
+- **Primary sample:** 100 participants
+- **Breakdown:** 
+  - 60 general population (diverse backgrounds)
+  - 40 domain experts (linguists, NLP researchers, technical writers)
+- **Attrition buffer:** 20%
+- **Total recruitment target:** 120 participants
+
+### 4. Participant Recruitment & Screening
+
+```python
+class ParticipantRecruitment:
+    """
+    Participant recruitment and screening protocol.
+    """
+    def __init__(self):
+        self.inclusion_criteria = {
+            'age': '18-65 years',
+            'language': 'Native or fluent English speaker',
+            'education': 'High school diploma or equivalent',
+            'vision': 'Normal or corrected-to-normal vision',
+            'availability': 'Can complete 60-minute session'
+        }
+        
+        self.exclusion_criteria = {
+            'prior_exposure': 'No prior exposure to study materials',
+            'cognitive_impairment': 'No diagnosed cognitive impairments affecting reading',
+            'technical_knowledge': 'No prior knowledge of transformer models (for general population)'
+        }
+        
+        self.expert_criteria = {
+            'education': 'Graduate degree in linguistics, NLP, or related field',
+            'experience': '2+ years working with text analysis or document structure',
+            'publications': 'Optional: Publications in relevant areas'
+        }
+    
+    def create_screening_questionnaire(self):
+        """
+        Screening questionnaire for participant eligibility.
+        """
+        questionnaire = {
+            'demographics': [
+                {
+                    'id': 'age',
+                    'question': 'What is your age?',
+                    'type': 'numeric',
+                    'validation': lambda x: 18 <= x <= 65
+                },
+                {
+                    'id': 'language',
+                    'question': 'What is your English proficiency level?',
+                    'type': 'multiple_choice',
+                    'options': ['Native', 'Fluent', 'Advanced', 'Intermediate', 'Beginner'],
+                    'validation': lambda x: x in ['Native', 'Fluent']
+                },
+                {
+                    'id': 'education',
+                    'question': 'What is your highest level of education?',
+                    'type': 'multiple_choice',
+                    'options': ['High school', 'Bachelor\'s', 'Master\'s', 'PhD', 'Other'],
+                    'validation': lambda x: x != 'Other'
+                }
+            ],
+            'expertise': [
+                {
+                    'id': 'field',
+                    'question': 'What is your field of expertise?',
+                    'type': 'multiple_choice',
+                    'options': ['Linguistics', 'NLP/AI', 'Technical Writing', 'Other', 'None'],
+                    'expert_validation': lambda x: x in ['Linguistics', 'NLP/AI', 'Technical Writing']
+                },
+                {
+                    'id': 'experience',
+                    'question': 'How many years of experience do you have in text analysis?',
+                    'type': 'numeric',
+                    'expert_validation': lambda x: x >= 2
+                }
+            ],
+            'exclusions': [
+                {
+                    'id': 'prior_exposure',
+                    'question': 'Have you previously participated in studies involving document structure analysis?',
+                    'type': 'yes_no',
+                    'validation': lambda x: x == 'no'
+                },
+                {
+                    'id': 'transformer_knowledge',
+                    'question': 'Are you familiar with transformer neural network architectures?',
+                    'type': 'yes_no',
+                    'general_validation': lambda x: x == 'no',
+                    'expert_validation': lambda x: True  # Experts can know
+                }
+            ]
+        }
+        
+        return questionnaire
+    
+    def assign_participant_group(self, screening_responses):
+        """
+        Assign participant to general or expert group.
+        """
+        # Check expert criteria
+        is_expert = (
+            screening_responses['field'] in ['Linguistics', 'NLP/AI', 'Technical Writing'] and
+            screening_responses['experience'] >= 2
+        )
+        
+        return 'expert' if is_expert else 'general'
+```
+
+### 5. Study Materials
+
+```python
+class StudyMaterials:
+    """
+    Prepare study materials: documents and SHI representations.
+    """
+    def __init__(self, shi_model):
+        self.shi_model = shi_model
+        self.document_types = ['narrative', 'technical', 'argumentative']
+        
+    def select_documents(self):
+        """
+        Select diverse set of documents for study.
+        
+        Criteria:
+        - Length: 500-2000 words
+        - Readability: Flesch-Kincaid grade 8-12
+        - Diversity: Multiple genres and topics
+        - Structure: Clear hierarchical organization
+        """
+        documents = {
+            'narrative': [
+                {
+                    'id': 'N1',
+                    'title': 'Short Story: The Last Question',
+                    'source': 'Isaac Asimov',
+                    'length': 1200,
+                    'readability': 9.5,
+                    'structure': 'chronological with flashbacks'
+                },
+                {
+                    'id': 'N2',
+                    'title': 'News Article: Climate Summit',
+                    'source': 'Reuters',
+                    'length': 800,
+                    'readability': 10.2,
+                    'structure': 'inverted pyramid'
+                },
+                # ... 8 more narrative documents
+            ],
+            'technical': [
+                {
+                    'id': 'T1',
+                    'title': 'Tutorial: Introduction to Python',
+                    'source': 'Python.org',
+                    'length': 1500,
+                    'readability': 11.0,
+                    'structure': 'hierarchical sections with code examples'
+                },
+                {
+                    'id': 'T2',
+                    'title': 'Research Paper: Attention Mechanisms',
+                    'source': 'arXiv',
+                    'length': 1800,
+                    'readability': 14.5,
+                    'structure': 'IMRaD (Introduction, Methods, Results, Discussion)'
+                },
+                # ... 8 more technical documents
+            ],
+            'argumentative': [
+                {
+                    'id': 'A1',
+                    'title': 'Opinion Essay: Universal Basic Income',
+                    'source': 'The Atlantic',
+                    'length': 1000,
+                    'readability': 12.0,
+                    'structure': 'claim-evidence-reasoning'
+                },
+                {
+                    'id': 'A2',
+                    'title': 'Policy Brief: Education Reform',
+                    'source': 'Brookings Institution',
+                    'length': 1400,
+                    'readability': 13.0,
+                    'structure': 'problem-solution with recommendations'
+                },
+                # ... 8 more argumentative documents
+            ]
+        }
+        
+        # Total: 30 documents (10 per type)
+        return documents
+    
+    def extract_shi_representations(self, document):
+        """
+        Extract SHI hierarchical representations for document.
+        
+        Adapts SHI from visual RL to text domain.
+        """
+        # Tokenize document
+        tokens = self.tokenize_document(document['text'])
+        
+        # Get SHI hierarchy assignments
+        with torch.no_grad():
+            # Encode tokens
+            token_embeddings = self.shi_model.encode(tokens)
+            
+            # Get hierarchy levels (0=coarse, 1=medium, 2=fine)
+            hierarchy_levels = self.shi_model.assign_hierarchy(token_embeddings)
+            
+            # Get masking decisions
+            masking_weights = self.shi_model.compute_masking(
+                hierarchy_levels,
+                token_embeddings
+            )
+            
+            # Get SPARTAN causal scores
+            causal_scores = self.shi_model.spartan.compute_scores(token_embeddings)
+        
+        return {
+            'tokens': tokens,
+            'hierarchy_levels': hierarchy_levels.cpu().numpy(),
+            'masking_weights': masking_weights.cpu().numpy(),
+            'causal_scores': causal_scores.cpu().numpy(),
+            'token_embeddings': token_embeddings.cpu().numpy()
+        }
+    
+    def create_visualization(self, document, shi_representation):
+        """
+        Create visualization of SHI hierarchy for participants.
+        
+        Visualization shows:
+        - Document text with color-coded hierarchy levels
+        - Interactive highlighting
+        - Masking indicators
+        """
+        visualization = {
+            'type': 'interactive_html',
+            'components': {
+                'text_display': self._create_text_display(
+                    document['text'],
+                    shi_representation['hierarchy_levels']
+                ),
+                'hierarchy_legend': {
+                    'level_0': {'color': '#FF6B6B', 'label': 'Coarse (e.g., sections, main ideas)'},
+                    'level_1': {'color': '#4ECDC4', 'label': 'Medium (e.g., paragraphs, arguments)'},
+                    'level_2': {'color': '#95E1D3', 'label': 'Fine (e.g., details, examples)'}
+                },
+                'masking_overlay': self._create_masking_overlay(
+                    shi_representation['masking_weights']
+                ),
+                'controls': {
+                    'toggle_hierarchy': True,
+                    'toggle_masking': True,
+                    'zoom': True
+                }
+            }
+        }
+        
+        return visualization
+    
+    def _create_text_display(self, text, hierarchy_levels):
+        """
+        Create HTML display with color-coded hierarchy.
+        """
+        tokens = text.split()
+        
+        html = '<div class="document-display">'
+        
+        for i, (token, level) in enumerate(zip(tokens, hierarchy_levels)):
+            color = ['#FF6B6B', '#4ECDC4', '#95E1D3'][level]
+            html += f'<span class="token level-{level}" style="background-color: {color}; padding: 2px; margin: 1px;" data-token-id="{i}">{token}</span> '
+        
+        html += '</div>'
+        
+        return html
+    
+    def _create_masking_overlay(self, masking_weights):
+        """
+        Create overlay showing which tokens would be masked.
+        """
+        # Tokens with masking_weight < 0.5 are masked
+        masked_indices = np.where(masking_weights < 0.5)[0]
+        
+        return {
+            'masked_tokens': masked_indices.tolist(),
+            'opacity_map': masking_weights.tolist()
+        }
+```
+
+### 6. Study Instruments
+
+#### 6.1 Task 1: Hierarchy Alignment Rating
+
+```python
+class HierarchyAlignmentTask:
+    """
+    Task 1: Rate alignment between SHI hierarchy and human perception.
+    
+    Participants view document with SHI hierarchy visualization and rate
+    how well it matches their perception of document structure.
+    """
+    def __init__(self):
+        self.task_name = "Hierarchy Alignment Rating"
+        self.duration = "15 minutes"
+        
+    def create_task_interface(self, document, shi_representation):
+        """
+        Create task interface.
+        """
+        interface = {
+            'instructions': """
+            You will see a document with words color-coded by a computer model's 
+            understanding of their importance in the document structure:
+            
+            - RED: Coarse-level (main sections, key ideas)
+            - TEAL: Medium-level (paragraphs, supporting arguments)
+            - LIGHT GREEN: Fine-level (details, examples)
+            
+            Please rate how well this color-coding matches your own understanding
+            of the document's structure.
+            """,
+            
+            'document_display': self._create_document_display(document, shi_representation),
+            
+            'rating_questions': [
+                {
+                    'id': 'overall_alignment',
+                    'question': 'Overall, how well does the color-coding match your perception of the document structure?',
+                    'type': 'likert_7',
+                    'labels': {
+                        1: 'Not at all',
+                        4: 'Moderately',
+                        7: 'Extremely well'
+                    }
+                },
+                {
+                    'id': 'level_0_alignment',
+                    'question': 'How well do the RED (coarse-level) tokens capture the main ideas?',
+                    'type': 'likert_7',
+                    'labels': {1: 'Not at all', 4: 'Moderately', 7: 'Extremely well'}
+                },
+                {
+                    'id': 'level_1_alignment',
+                    'question': 'How well do the TEAL (medium-level) tokens capture supporting content?',
+                    'type': 'likert_7',
+                    'labels': {1: 'Not at all', 4: 'Moderately', 7: 'Extremely well'}
+                },
+                {
+                    'id': 'level_2_alignment',
+                    'question': 'How well do the LIGHT GREEN (fine-level) tokens capture details?',
+                    'type': 'likert_7',
+                    'labels': {1: 'Not at all', 4: 'Moderately', 7: 'Extremely well'}
+                }
+            ],
+            
+            'open_ended': [
+                {
+                    'id': 'misalignment_examples',
+                    'question': 'Please describe any specific examples where the color-coding does NOT match your perception.',
+                    'type': 'text_area',
+                    'optional': False
+                },
+                {
+                    'id': 'alignment_examples',
+                    'question': 'Please describe any specific examples where the color-coding DOES match your perception well.',
+                    'type': 'text_area',
+                    'optional': False
+                }
+            ]
+        }
+        
+        return interface
+    
+    def _create_document_display(self, document, shi_representation):
+        """
+        Create interactive document display.
+        """
+        # Implementation from StudyMaterials.create_visualization
+        pass
+
+#### 6.2 Task 2: Hierarchy Prediction
+
+class HierarchyPredictionTask:
+    """
+    Task 2: Predict which hierarchy level SHI would assign to tokens.
+    
+    Tests whether humans can predict SHI's hierarchy assignments.
+    """
+    def __init__(self):
+        self.task_name = "Hierarchy Prediction"
+        self.duration = "10 minutes"
+        
+    def create_task_interface(self, document, shi_representation):
+        """
+        Create task interface.
+        """
+        # Select 30 tokens for prediction (10 per level)
+        selected_tokens = self._select_representative_tokens(
+            document,
+            shi_representation,
+            n_per_level=10
+        )
+        
+        interface = {
+            'instructions': """
+            You will see individual words/phrases from the document.
+            
+            For each, predict which level of importance the computer model 
+            assigned to it:
+            
+            - COARSE: Main sections, key ideas
+            - MEDIUM: Paragraphs, supporting arguments  
+            - FINE: Details, examples
+            
+            Consider the word's role in the overall document structure.
+            """,
+            
+            'prediction_items': [
+                {
+                    'id': f'token_{i}',
+                    'token': token['text'],
+                    'context': token['context'],  # ±5 words
+                    'question': f'What level would the model assign to "{token["text"]}"?',
+                    'type': 'multiple_choice',
+                    'options': ['Coarse', 'Medium', 'Fine'],
+                    'correct_answer': token['true_level'],  # Hidden from participant
+                    'randomize_options': True
+                }
+                for i, token in enumerate(selected_tokens)
+            ],
+            
+            'confidence_ratings': [
+                {
+                    'id': f'confidence_{i}',
+                    'question': 'How confident are you in this prediction?',
+                    'type': 'likert_5',
+                    'labels': {1: 'Not confident', 3: 'Moderately confident', 5: 'Very confident'}
+                }
+                for i in range(len(selected_tokens))
+            ]
+        }
+        
+        return interface
+    
+    def _select_representative_tokens(self, document, shi_representation, n_per_level=10):
+        """
+        Select representative tokens for prediction task.
+        
+        Criteria:
+        - Balanced across hierarchy levels
+        - Diverse positions in document
+        - Clear examples (not ambiguous)
+        """
+        tokens = document['text'].split()
+        hierarchy_levels = shi_representation['hierarchy_levels']
+        
+        selected = []
+        
+        for level in [0, 1, 2]:
+            # Get tokens at this level
+            level_indices = np.where(hierarchy_levels == level)[0]
+            
+            # Sample n_per_level tokens
+            sampled_indices = np.random.choice(
+                level_indices,
+                size=min(n_per_level, len(level_indices)),
+                replace=False
+            )
+            
+            for idx in sampled_indices:
+                # Get context (±5 words)
+                context_start = max(0, idx - 5)
+                context_end = min(len(tokens), idx + 6)
+                context = ' '.join(tokens[context_start:context_end])
+                
+                selected.append({
+                    'text': tokens[idx],
+                    'context': context,
+                    'true_level': level,
+                    'position': idx
+                })
+        
+        # Shuffle to avoid order effects
+        np.random.shuffle(selected)
+        
+        return selected
+```
+
+#### 6.3 Task 3: Importance Ranking
+
+```python
+class ImportanceRankingTask:
+    """
+    Task 3: Rank tokens by importance.
+    
+    Compares human importance judgments with SHI masking decisions.
+    """
+    def __init__(self):
+        self.task_name = "Importance Ranking"
+        self.duration = "15 minutes"
+        
+    def create_task_interface(self, document, shi_representation):
+        """
+        Create task interface.
+        """
+        # Select 20 tokens for ranking
+        selected_tokens = self._select_tokens_for_ranking(
+            document,
+            shi_representation,
+            n_tokens=20
+        )
+        
+        interface = {
+            'instructions': """
+            You will see a list of words/phrases from the document.
+            
+            Please rank them by importance to understanding the document's 
+            main message. Drag and drop to reorder.
+            
+            - Most important: Essential for understanding the document
+            - Least important: Could be removed without losing main message
+            """,
+            
+            'ranking_interface': {
+                'type': 'drag_and_drop',
+                'items': [
+                    {
+                        'id': f'token_{i}',
+                        'text': token['text'],
+                        'context': token['context'],
+                        'shi_importance': token['masking_weight'],  # Hidden
+                        'initial_position': i  # Randomized
+                    }
+                    for i, token in enumerate(selected_tokens)
+                ],
+                'allow_ties': False
+            },
+            
+            'follow_up': [
+                {
+                    'id': 'ranking_strategy',
+                    'question': 'What criteria did you use to rank importance?',
+                    'type': 'multiple_choice_multiple',
+                    'options': [
+                        'Frequency of the word',
+                        'Position in document (e.g., title, headings)',
+                        'Semantic centrality (key concepts)',
+                        'Grammatical role (e.g., main verbs, subjects)',
+                        'Other (please specify)'
+                    ]
+                }
+            ]
+        }
+        
+        return interface
+    
+    def _select_tokens_for_ranking(self, document, shi_representation, n_tokens=20):
+        """
+        Select diverse tokens for ranking task.
+        """
+        tokens = document['text'].split()
+        masking_weights = shi_representation['masking_weights']
+        
+        # Select tokens spanning full range of masking weights
+        # Stratified sampling across importance quartiles
+        
+        quartiles = np.percentile(masking_weights, [25, 50, 75])
+        
+        selected = []
+        
+        for q_low, q_high in [(0, quartiles[0]), (quartiles[0], quartiles[1]), 
+                               (quartiles[1], quartiles[2]), (quartiles[2], 1.0)]:
+            # Get tokens in this quartile
+            in_quartile = np.where(
+                (masking_weights >= q_low) & (masking_weights < q_high)
+            )[0]
+            
+            # Sample n_tokens/4 from this quartile
+            sampled = np.random.choice(
+                in_quartile,
+                size=min(n_tokens // 4, len(in_quartile)),
+                replace=False
+            )
+            
+            for idx in sampled:
+                context_start = max(0, idx - 5)
+                context_end = min(len(tokens), idx + 6)
+                context = ' '.join(tokens[context_start:context_end])
+                
+                selected.append({
+                    'text': tokens[idx],
+                    'context': context,
+                    'masking_weight': masking_weights[idx],
+                    'position': idx
+                })
+        
+        # Shuffle
+        np.random.shuffle(selected)
+        
+        return selected
+```
+
+#### 6.4 Task 4: Structure Annotation
+
+```python
+class StructureAnnotationTask:
+    """
+    Task 4: Annotate document structure.
+    
+    Participants create their own hierarchical structure annotation.
+    """
+    def __init__(self):
+        self.task_name = "Structure Annotation"
+        self.duration = "20 minutes"
+        
+    def create_task_interface(self, document):
+        """
+        Create task interface.
+        """
+        interface = {
+            'instructions': """
+            Please annotate the structure of this document by:
+            
+            1. Identifying major sections (e.g., introduction, body, conclusion)
+            2. Marking key sentences or phrases within each section
+            3. Highlighting supporting details
+            
+            Use the annotation tools to mark different levels of structure.
+            """,
+            
+            'annotation_tools': {
+                'type': 'hierarchical_annotator',
+                'levels': [
+                    {
+                        'id': 'level_0',
+                        'name': 'Major Sections',
+                        'color': '#FF6B6B',
+                        'tool': 'bracket',
+                        'instructions': 'Select text spans that represent major sections'
+                    },
+                    {
+                        'id': 'level_1',
+                        'name': 'Key Content',
+                        'color': '#4ECDC4',
+                        'tool': 'highlight',
+                        'instructions': 'Highlight key sentences or phrases'
+                    },
+                    {
+                        'id': 'level_2',
+                        'name': 'Supporting Details',
+                        'color': '#95E1D3',
+                        'tool': 'underline',
+                        'instructions': 'Underline supporting details or examples'
+                    }
+                ],
+                'allow_overlap': True,
+                'allow_nesting': True
+            },
+            
+            'document_display': {
+                'text': document['text'],
+                'editable': False,
+                'selectable': True
+            },
+            
+            'validation': {
+                'min_annotations_per_level': 3,
+                'require_coverage': 0.7  # At least 70% of document annotated
+            }
+        }
+        
+        return interface
+    
+    def extract_annotations(self, participant_annotations):
+        """
+        Extract structured annotations from participant input.
+        """
+        annotations = {
+            'level_0': [],
+            'level_1': [],
+            'level_2': []
+        }
+        
+        for annotation in participant_annotations:
+            level = annotation['level']
+            span = annotation['span']  # (start_idx, end_idx)
+            
+            annotations[level].append({
+                'start': span[0],
+                'end': span[1],
+                'text': annotation['text'],
+                'timestamp': annotation['timestamp']
+            })
+        
+        return annotations
+```
+
+### 7. Study Procedure
+
+```python
+class StudyProcedure:
+    """
+    Complete study procedure and session flow.
+    """
+    def __init__(self):
+        self.total_duration = "60 minutes"
+        self.compensation = "$15 USD"
+        
+    def create_session_flow(self):
+        """
+        Define complete session flow.
+        """
+        session = {
+            'phase_1_consent': {
+                'duration': '5 minutes',
+                'activities': [
+                    'Review informed consent form',
+                    'Answer participant questions',
+                    'Obtain electronic signature',
+                    'Assign participant ID'
+                ]
+            },
+            
+            'phase_2_tutorial': {
+                'duration': '10 minutes',
+                'activities': [
+                    'Explain hierarchy concept with examples',
+                    'Demonstrate task interfaces',
+                    'Practice with sample document (not in main study)',
+                    'Comprehension check (must pass to continue)'
+                ],
+                'materials': {
+                    'tutorial_document': 'Short news article (300 words)',
+                    'practice_tasks': ['Alignment rating', 'Prediction (5 items)']
+                }
+            },
+            
+            'phase_3_main_tasks': {
+                'duration': '40 minutes',
+                'activities': [
+                    'Complete tasks for 3 documents (randomized order)',
+                    'Each document: All 4 tasks in sequence',
+                    'Short break between documents (optional)'
+                ],
+                'document_assignment': {
+                    'method': 'latin_square',
+                    'ensures': 'Balanced document types across participants'
+                },
+                'task_order': [
+                    'Task 1: Hierarchy Alignment Rating (5 min)',
+                    'Task 2: Hierarchy Prediction (3 min)',
+                    'Task 3: Importance Ranking (5 min)',
+                    'Task 4: Structure Annotation (7 min)'
+                ]
+            },
+            
+            'phase_4_questionnaire': {
+                'duration': '5 minutes',
+                'activities': [
+                    'Post-study questionnaire',
+                    'Demographic information',
+                    'Feedback on study design'
+                ]
+            }
+        }
+        
+        return session
+    
+    def create_comprehension_check(self):
+        """
+        Comprehension check after tutorial.
+        """
+        check = {
+            'questions': [
+                {
+                    'id': 'hierarchy_understanding',
+                    'question': 'Which level represents the most important, high-level content?',
+                    'type': 'multiple_choice',
+                    'options': ['Coarse', 'Medium', 'Fine'],
+                    'correct': 'Coarse'
+                },
+                {
+                    'id': 'task_understanding',
+                    'question': 'In the prediction task, what are you predicting?',
+                    'type': 'multiple_choice',
+                    'options': [
+                        'Your own judgment of importance',
+                        'What level the computer model assigned',
+                        'The grammatical role of the word',
+                        'The frequency of the word'
+                    ],
+                    'correct': 'What level the computer model assigned'
+                },
+                {
+                    'id': 'masking_understanding',
+                    'question': 'What does it mean when a token is "masked"?',
+                    'type': 'multiple_choice',
+                    'options': [
+                        'The model considers it less important',
+                        'The model considers it more important',
+                        'The model is uncertain about it',
+                        'The model cannot process it'
+                    ],
+                    'correct': 'The model considers it less important'
+                }
+            ],
+            'passing_criteria': {
+                'min_correct': 3,  # All questions must be correct
+                'allow_retake': True,
+                'max_attempts': 2
+            }
+        }
+        
+        return check
+    
+    def create_post_study_questionnaire(self):
+        """
+        Post-study questionnaire.
+        """
+        questionnaire = {
+            'usability': [
+                {
+                    'id': 'task_clarity',
+                    'question': 'How clear were the task instructions?',
+                    'type': 'likert_7',
+                    'labels': {1: 'Very unclear', 4: 'Moderately clear', 7: 'Very clear'}
+                },
+                {
+                    'id': 'interface_usability',
+                    'question': 'How easy was the interface to use?',
+                    'type': 'likert_7',
+                    'labels': {1: 'Very difficult', 4: 'Moderately easy', 7: 'Very easy'}
+                }
+            ],
+            
+            'strategy': [
+                {
+                    'id': 'hierarchy_strategy',
+                    'question': 'What strategy did you use to judge hierarchy levels?',
+                    'type': 'text_area'
+                },
+                {
+                    'id': 'difficulty',
+                    'question': 'Which task was most difficult?',
+                    'type': 'multiple_choice',
+                    'options': [
+                        'Alignment Rating',
+                        'Hierarchy Prediction',
+                        'Importance Ranking',
+                        'Structure Annotation'
+                    ]
+                }
+            ],
+            
+            'demographics': [
+                {
+                    'id': 'age_group',
+                    'question': 'Age group',
+                    'type': 'multiple_choice',
+                    'options': ['18-24', '25-34', '35-44', '45-54', '55-65']
+                },
+                {
+                    'id': 'gender',
+                    'question': 'Gender',
+                    'type': 'multiple_choice',
+                    'options': ['Male', 'Female', 'Non-binary', 'Prefer not to say']
+                },
+                {
+                    'id': 'reading_frequency',
+                    'question': 'How often do you read long documents (>1000 words)?',
+                    'type': 'multiple_choice',
+                    'options': ['Daily', 'Weekly', 'Monthly', 'Rarely']
+                }
+            ],
+            
+            'feedback': [
+                {
+                    'id': 'general_feedback',
+                    'question': 'Any additional comments or feedback?',
+                    'type': 'text_area',
+                    'optional': True
+                }
+            ]
+        }
+        
+        return questionnaire
+```
+
+### 8. Data Collection & Quality Control
+
+```python
+class DataCollection:
+    """
+    Data collection and quality control procedures.
+    """
+    def __init__(self):
+        self.data_storage = 'secure_database'
+        self.anonymization = True
+        
+    def define_data_structure(self):
+        """
+        Define structure of collected data.
+        """
+        data_schema = {
+            'participant_data': {
+                'participant_id': 'string (anonymized)',
+                'group': 'enum (general, expert)',
+                'session_date': 'datetime',
+                'completion_time': 'integer (minutes)',
+                'compensation_paid': 'boolean'
+            },
+            
+            'task_1_alignment': {
+                'document_id': 'string',
+                'overall_alignment': 'integer (1-7)',
+                'level_0_alignment': 'integer (1-7)',
+                'level_1_alignment': 'integer (1-7)',
+                'level_2_alignment': 'integer (1-7)',
+                'misalignment_examples': 'text',
+                'alignment_examples': 'text',
+                'response_time': 'integer (seconds)'
+            },
+            
+            'task_2_prediction': {
+                'document_id': 'string',
+                'predictions': [
+                    {
+                        'token_id': 'string',
+                        'predicted_level': 'integer (0-2)',
+                        'true_level': 'integer (0-2)',
+                        'correct': 'boolean',
+                        'confidence': 'integer (1-5)',
+                        'response_time': 'integer (milliseconds)'
+                    }
+                ]
+            },
+            
+            'task_3_ranking': {
+                'document_id': 'string',
+                'rankings': [
+                    {
+                        'token_id': 'string',
+                        'rank': 'integer (1-20)',
+                        'shi_masking_weight': 'float (0-1)'
+                    }
+                ],
+                'ranking_strategy': 'list[string]',
+                'response_time': 'integer (seconds)'
+            },
+            
+            'task_4_annotation': {
+                'document_id': 'string',
+                'annotations': [
+                    {
+                        'level': 'integer (0-2)',
+                        'start_idx': 'integer',
+                        'end_idx': 'integer',
+                        'text': 'string',
+                        'timestamp': 'datetime'
+                    }
+                ],
+                'total_annotations': 'integer',
+                'coverage': 'float (0-1)'
+            },
+            
+            'questionnaire_data': {
+                'task_clarity': 'integer (1-7)',
+                'interface_usability': 'integer (1-7)',
+                'hierarchy_strategy': 'text',
+                'most_difficult_task': 'string',
+                'demographics': 'dict',
+                'feedback': 'text'
+            }
+        }
+        
+        return data_schema
+    
+    def define_quality_checks(self):
+        """
+        Define quality control checks.
+        """
+        quality_checks = {
+            'attention_checks': [
+                {
+                    'type': 'comprehension_check',
+                    'location': 'after_tutorial',
+                    'criterion': 'must_pass'
+                },
+                {
+                    'type': 'catch_trial',
+                    'location': 'task_2_prediction',
+                    'description': 'Include 2 obvious tokens (e.g., "the", "and") that should be fine-level',
+                    'criterion': 'must_answer_correctly'
+                },
+                {
+                    'type': 'consistency_check',
+                    'location': 'task_3_ranking',
+                    'description': 'Check if rankings are consistent with alignment ratings',
+                    'criterion': 'correlation > 0.3'
+                }
+            ],
+            
+            'completion_checks': [
+                {
+                    'type': 'minimum_time',
+                    'criterion': 'total_time > 30 minutes',
+                    'action': 'flag_for_review'
+                },
+                {
+                    'type': 'maximum_time',
+                    'criterion': 'total_time < 120 minutes',
+                    'action': 'flag_for_review'
+                },
+                {
+                    'type': 'task_completion',
+                    'criterion': 'all_tasks_completed',
+                    'action': 'exclude_if_incomplete'
+                }
+            ],
+            
+            'response_quality': [
+                {
+                    'type': 'variance_check',
+                    'description': 'Check if participant uses full rating scale',
+                    'criterion': 'rating_variance > 0.5',
+                    'action': 'flag_for_review'
+                },
+                {
+                    'type': 'text_response_length',
+                    'description': 'Check if open-ended responses are substantive',
+                    'criterion': 'min_words > 10',
+                    'action': 'flag_for_review'
+                },
+                {
+                    'type': 'annotation_coverage',
+                    'description': 'Check if participant annotated sufficient content',
+                    'criterion': 'coverage > 0.5',
+                    'action': 'exclude_if_below'
+                }
+            ]
+        }
+        
+        return quality_checks
+    
+    def implement_exclusion_criteria(self):
+        """
+        Define criteria for excluding participants from analysis.
+        """
+        exclusion_criteria = {
+            'failed_comprehension_check': {
+                'description': 'Failed comprehension check after 2 attempts',
+                'action': 'exclude_all_data'
+            },
+            'failed_attention_checks': {
+                'description': 'Failed >50% of catch trials',
+                'action': 'exclude_all_data'
+            },
+            'incomplete_data': {
+                'description': 'Did not complete all required tasks',
+                'action': 'exclude_all_data'
+            },
+            'suspicious_timing': {
+                'description': 'Completion time <30 min or >120 min',
+                'action': 'review_manually'
+            },
+            'low_quality_responses': {
+                'description': 'Failed >2 quality checks',
+                'action': 'review_manually'
+            },
+            'technical_issues': {
+                'description': 'Reported technical problems affecting responses',
+                'action': 'review_manually'
+            }
+        }
+        
+        return exclusion_criteria
+```
+
+### 9. Analysis Plan
+
+```python
+class AnalysisPlan:
+    """
+    Comprehensive statistical analysis plan.
+    """
+    def __init__(self):
+        self.alpha = 0.05
+        self.correction_method = 'holm'  # For multiple comparisons
+        
+    def primary_analysis_h1(self, data):
+        """
+        H1: SHI hierarchy correlates with human judgments.
+        
+        Method: Spearman correlation between SHI levels and human ratings.
+        """
+        from scipy.stats import spearmanr
+        
+        # Extract data
+        shi_levels = data['shi_hierarchy_levels']  # [n_tokens]
+        human_ratings = data['human_alignment_ratings']  # [n_tokens]
+        
+        # Compute correlation
+        rho, p_value = spearmanr(shi_levels, human_ratings)
+        
+        # Effect size interpretation
+        if abs(rho) < 0.3:
+            effect = 'small'
+        elif abs(rho) < 0.5:
+            effect = 'medium'
+        else:
+            effect = 'large'
+        
+        # Bootstrap confidence interval
+        n_bootstrap = 10000
+        bootstrap_rhos = []
+        
+        for _ in range(n_bootstrap):
+            indices = np.random.choice(len(shi_levels), size=len(shi_levels), replace=True)
+            boot_rho, _ = spearmanr(shi_levels[indices], human_ratings[indices])
+            bootstrap_rhos.append(boot_rho)
+        
+        ci_lower = np.percentile(bootstrap_rhos, 2.5)
+        ci_upper = np.percentile(bootstrap_rhos, 97.5)
+        
+        return {
+            'hypothesis': 'H1',
+            'test': 'spearman_correlation',
+            'rho': rho,
+            'p_value': p_value,
+            'ci_95': (ci_lower, ci_upper),
+            'effect_size': effect,
+            'interpretation': f"{'Significant' if p_value < self.alpha else 'Non-significant'} {effect} correlation",
+            'conclusion': 'Reject H0' if p_value < self.alpha else 'Fail to reject H0'
+        }
+    
+    def primary_analysis_h2(self, data):
+        """
+        H2: Alignment varies by hierarchy level.
+        
+        Method: Repeated measures ANOVA.
+        """
+        import pandas as pd
+        from statsmodels.stats.anova import AnovaRM
+        
+        # Prepare data
+        df = pd.DataFrame({
+            'participant_id': data['participant_ids'],
+            'level_0_alignment': data['level_0_ratings'],
+            'level_1_alignment': data['level_1_ratings'],
+            'level_2_alignment': data['level_2_ratings']
+        })
+        
+        # Reshape to long format
+        df_long = pd.melt(
+            df,
+            id_vars=['participant_id'],
+            value_vars=['level_0_alignment', 'level_1_alignment', 'level_2_alignment'],
+            var_name='level',
+            value_name='alignment'
+        )
+        
+        # Repeated measures ANOVA
+        aovrm = AnovaRM(
+            df_long,
+            depvar='alignment',
+            subject='participant_id',
+            within=['level']
+        )
+        
+        results = aovrm.fit()
+        
+        # Post-hoc pairwise comparisons (Bonferroni corrected)
+        from scipy.stats import ttest_rel
+        
+        pairwise = {}
+        comparisons = [
+            ('level_0', 'level_1'),
+            ('level_0', 'level_2'),
+            ('level_1', 'level_2')
+        ]
+        
+        alpha_corrected = self.alpha / len(comparisons)
+        
+        for level_a, level_b in comparisons:
+            t_stat, p_value = ttest_rel(
+                df[f'{level_a}_alignment'],
+                df[f'{level_b}_alignment']
+            )
+            
+            # Cohen's d for paired samples
+            diff = df[f'{level_a}_alignment'] - df[f'{level_b}_alignment']
+            d = diff.mean() / diff.std()
+            
+            pairwise[f'{level_a}_vs_{level_b}'] = {
+                't_statistic': t_stat,
+                'p_value': p_value,
+                'p_value_corrected': p_value * len(comparisons),
+                'cohens_d': d,
+                'significant': p_value < alpha_corrected
+            }
+        
+        return {
+            'hypothesis': 'H2',
+            'test': 'repeated_measures_anova',
+            'anova_results': results,
+            'f_statistic': results.anova_table['F Value'][0],
+            'p_value': results.anova_table['Pr > F'][0],
+            'pairwise_comparisons': pairwise,
+            'conclusion': 'Reject H0' if results.anova_table['Pr > F'][0] < self.alpha else 'Fail to reject H0'
+        }
+    
+    def primary_analysis_h3(self, data):
+        """
+        H3: Alignment varies by document type.
+        
+        Method: One-way ANOVA.
+        """
+        from scipy.stats import f_oneway
+        
+        # Extract data by document type
+        narrative_ratings = data['alignment_ratings'][data['document_type'] == 'narrative']
+        technical_ratings = data['alignment_ratings'][data['document_type'] == 'technical']
+        argumentative_ratings = data['alignment_ratings'][data['document_type'] == 'argumentative']
+        
+        # One-way ANOVA
+        f_stat, p_value = f_oneway(narrative_ratings, technical_ratings, argumentative_ratings)
+        
+        # Effect size (eta-squared)
+        grand_mean = np.mean(data['alignment_ratings'])
+        ss_between = (
+            len(narrative_ratings) * (np.mean(narrative_ratings) - grand_mean)**2 +
+            len(technical_ratings) * (np.mean(technical_ratings) - grand_mean)**2 +
+            len(argumentative_ratings) * (np.mean(argumentative_ratings) - grand_mean)**2
+        )
+        ss_total = np.sum((data['alignment_ratings'] - grand_mean)**2)
+        eta_squared = ss_between / ss_total
+        
+        # Post-hoc comparisons (Tukey HSD)
+        from scipy.stats import tukey_hsd
+        
+        res = tukey_hsd(narrative_ratings, technical_ratings, argumentative_ratings)
+        
+        return {
+            'hypothesis': 'H3',
+            'test': 'one_way_anova',
+            'f_statistic': f_stat,
+            'p_value': p_value,
+            'eta_squared': eta_squared,
+            'group_means': {
+                'narrative': np.mean(narrative_ratings),
+                'technical': np.mean(technical_ratings),
+                'argumentative': np.mean(argumentative_ratings)
+            },
+            'tukey_hsd': res,
+            'conclusion': 'Reject H0' if p_value < self.alpha else 'Fail to reject H0'
+        }
+    
+    def primary_analysis_h4(self, data):
+        """
+        H4: Humans can predict SHI assignments above chance.
+        
+        Method: Binomial test.
+        """
+        from scipy.stats import binomtest
+        
+        # Extract prediction data
+        predictions = data['predictions']  # [n_predictions]
+        correct = data['correct']  # [n_predictions] boolean
+        
+        n_correct = np.sum(correct)
+        n_total = len(correct)
+        
+        # Binomial test (chance = 1/3 for 3 levels)
+        result = binomtest(n_correct, n_total, p=1/3, alternative='greater')
+        
+        # Accuracy
+        accuracy = n_correct / n_total
+        
+        # Confidence interval (Wilson score)
+        from statsmodels.stats.proportion import proportion_confint
+        
+        ci_lower, ci_upper = proportion_confint(n_correct, n_total, alpha=0.05, method='wilson')
+        
+        # Cohen's h (effect size for proportions)
+        p0 = 1/3
+        p1 = accuracy
+        cohens_h = 2 * (np.arcsin(np.sqrt(p1)) - np.arcsin(np.sqrt(p0)))
+        
+        return {
+            'hypothesis': 'H4',
+            'test': 'binomial_test',
+            'accuracy': accuracy,
+            'n_correct': n_correct,
+            'n_total': n_total,
+            'chance_level': 1/3,
+            'p_value': result.pvalue,
+            'ci_95': (ci_lower, ci_upper),
+            'cohens_h': cohens_h,
+            'conclusion': 'Reject H0' if result.pvalue < self.alpha else 'Fail to reject H0'
+        }
+    
+    def primary_analysis_h5(self, data):
+        """
+        H5: SHI masking correlates with human importance rankings.
+        
+        Method: Spearman correlation.
+        """
+        from scipy.stats import spearmanr
+        
+        # Extract data
+        human_rankings = data['human_rankings']  # [n_tokens] (1=most important)
+        shi_masking = data['shi_masking_weights']  # [n_tokens] (higher=more important)
+        
+        # Invert rankings so higher=more important
+        human_importance = len(human_rankings) + 1 - human_rankings
+        
+        # Compute correlation
+        rho, p_value = spearmanr(human_importance, shi_masking)
+        
+        # Bootstrap CI
+        n_bootstrap = 10000
+        bootstrap_rhos = []
+        
+        for _ in range(n_bootstrap):
+            indices = np.random.choice(len(human_importance), size=len(human_importance), replace=True)
+            boot_rho, _ = spearmanr(human_importance[indices], shi_masking[indices])
+            bootstrap_rhos.append(boot_rho)
+        
+        ci_lower = np.percentile(bootstrap_rhos, 2.5)
+        ci_upper = np.percentile(bootstrap_rhos, 97.5)
+        
+        return {
+            'hypothesis': 'H5',
+            'test': 'spearman_correlation',
+            'rho': rho,
+            'p_value': p_value,
+            'ci_95': (ci_lower, ci_upper),
+            'conclusion': 'Reject H0' if p_value < self.alpha else 'Fail to reject H0'
+        }
+    
+    def secondary_analysis_expert_vs_general(self, data):
+        """
+        Secondary analysis: Compare expert vs. general population.
+        """
+        from scipy.stats import mannwhitneyu
+        
+        expert_ratings = data['alignment_ratings'][data['group'] == 'expert']
+        general_ratings = data['alignment_ratings'][data['group'] == 'general']
+        
+        # Mann-Whitney U test
+        u_stat, p_value = mannwhitneyu(expert_ratings, general_ratings, alternative='two-sided')
+        
+        # Effect size (rank-biserial correlation)
+        n1 = len(expert_ratings)
+        n2 = len(general_ratings)
+        r = 1 - (2*u_stat) / (n1 * n2)
+        
+        return {
+            'test': 'mann_whitney_u',
+            'u_statistic': u_stat,
+            'p_value': p_value,
+            'rank_biserial_r': r,
+            'expert_median': np.median(expert_ratings),
+            'general_median': np.median(general_ratings),
+            'conclusion': 'Significant difference' if p_value < self.alpha else 'No significant difference'
+        }
+    
+    def secondary_analysis_inter_rater_reliability(self, data):
+        """
+        Secondary analysis: Inter-rater reliability for structure annotations.
+        """
+        from sklearn.metrics import cohen_kappa_score
+        
+        # Compute pairwise Cohen's kappa for all participant pairs
+        annotations = data['structure_annotations']  # [n_participants, n_tokens]
+        
+        n_participants = len(annotations)
+        kappas = []
+        
+        for i in range(n_participants):
+            for j in range(i+1, n_participants):
+                kappa = cohen_kappa_score(annotations[i], annotations[j])
+                kappas.append(kappa)
+        
+        # Average kappa
+        avg_kappa = np.mean(kappas)
+        
+        # Interpretation
+        if avg_kappa < 0:
+            interpretation = 'Poor agreement'
+        elif avg_kappa < 0.20:
+            interpretation = 'Slight agreement'
+        elif avg_kappa < 0.40:
+            interpretation = 'Fair agreement'
+        elif avg_kappa < 0.60:
+            interpretation = 'Moderate agreement'
+        elif avg_kappa < 0.80:
+            interpretation = 'Substantial agreement'
+        else:
+            interpretation = 'Almost perfect agreement'
+        
+        return {
+            'test': 'inter_rater_reliability',
+            'metric': 'cohens_kappa',
+            'average_kappa': avg_kappa,
+            'kappa_range': (np.min(kappas), np.max(kappas)),
+            'interpretation': interpretation
+        }
+    
+    def multiple_comparisons_correction(self, p_values):
+        """
+        Apply multiple comparisons correction.
+        """
+        from statsmodels.stats.multitest import multipletests
+        
+        reject, p_corrected, alpha_sidak, alpha_bonf = multipletests(
+            p_values,
+            alpha=self.alpha,
+            method=self.correction_method
+        )
+        
+        return {
+            'method': self.correction_method,
+            'original_p_values': p_values,
+            'corrected_p_values': p_corrected,
+            'reject_null': reject,
+            'n_significant': np.sum(reject)
+        }
+```
+
+### 10. Expected Results & Interpretation
+
+```python
+class ExpectedResults:
+    """
+    Expected results and interpretation guidelines.
+    """
+    def __init__(self):
+        self.scenarios = {
+            'strong_alignment': self._scenario_strong_alignment,
+            'moderate_alignment': self._scenario_moderate_alignment,
+            'weak_alignment': self._scenario_weak_alignment,
+            'level_specific': self._scenario_level_specific
+        }
+    
+    def _scenario_strong_alignment(self):
+        """
+        Scenario 1: Strong alignment (ρ > 0.7).
+        
+        Interpretation: SHI hierarchy closely matches human perception.
+        """
+        return {
+            'h1_rho': 0.75,
+            'h1_p': 0.001,
+            'h4_accuracy': 0.68,
+            'h5_rho': 0.72,
+            'interpretation': """
+            Strong alignment indicates that SHI's learned hierarchical 
+            representations capture human-perceived document structure well.
+            This suggests the model has learned meaningful semantic hierarchies
+            that transfer from visual RL to text domains.
+            """,
+            'implications': [
+                'SHI hierarchy is interpretable and aligned with human cognition',
+                'Hierarchical masking decisions are likely to be sensible',
+                'Model can be trusted for document understanding tasks'
+            ],
+            'recommendations': [
+                'Deploy SHI for document processing applications',
+                'Use SHI hierarchy for explainable AI systems',
+                'Investigate what linguistic features drive hierarchy assignment'
+            ]
+        }
+    
+    def _scenario_moderate_alignment(self):
+        """
+        Scenario 2: Moderate alignment (0.4 < ρ < 0.7).
+        
+        Interpretation: Partial alignment with room for improvement.
+        """
+        return {
+            'h1_rho': 0.55,
+            'h1_p': 0.01,
+            'h4_accuracy': 0.52,
+            'h5_rho': 0.48,
+            'interpretation': """
+            Moderate alignment suggests SHI captures some aspects of document
+            structure but misses others. The hierarchy may be driven by
+            surface features rather than deep semantic understanding.
+            """,
+            'implications': [
+                'SHI hierarchy is partially interpretable',
+                'Some masking decisions may not align with human intuition',
+                'Model needs refinement for document understanding'
+            ],
+            'recommendations': [
+                'Analyze misalignment patterns to identify failure modes',
+                'Incorporate linguistic features into hierarchy learning',
+                'Consider hybrid approach (SHI + explicit structure)'
+            ]
+        }
+    
+    def _scenario_weak_alignment(self):
+        """
+        Scenario 3: Weak alignment (ρ < 0.4).
+        
+        Interpretation: Little alignment with human perception.
+        """
+        return {
+            'h1_rho': 0.25,
+            'h1_p': 0.15,
+            'h4_accuracy': 0.38,
+            'h5_rho': 0.22,
+            'interpretation': """
+            Weak alignment indicates that SHI's hierarchy does not transfer
+            well from visual RL to text. The learned structure may be
+            domain-specific or driven by low-level features.
+            """,
+            'implications': [
+                'SHI hierarchy is not interpretable for text',
+                'Masking decisions may be arbitrary from human perspective',
+                'Model not suitable for document understanding without adaptation'
+            ],
+            'recommendations': [
+                'Do not deploy SHI for text without retraining',
+                'Investigate domain-specific hierarchy learning',
+                'Consider alternative architectures for text'
+            ]
+        }
+    
+    def _scenario_level_specific(self):
+        """
+        Scenario 4: Level-specific alignment.
+        
+        Interpretation: Alignment varies by hierarchy level.
+        """
+        return {
+            'h2_significant': True,
+            'level_0_alignment': 6.2,  # High (out of 7)
+            'level_1_alignment': 4.8,  # Moderate
+            'level_2_alignment': 3.5,  # Low
+            'interpretation': """
+            Level-specific alignment suggests SHI is better at identifying
+            coarse structure (main ideas) than fine-grained details.
+            This may reflect the model's training on long-horizon planning
+            which emphasizes high-level structure.
+            """,
+            'implications': [
+                'SHI is reliable for identifying main ideas',
+                'Fine-grained hierarchy may need refinement',
+                'Different levels may require different validation approaches'
+            ],
+            'recommendations': [
+                'Use SHI primarily for coarse-level structure',
+                'Develop separate model for fine-grained analysis',
+                'Investigate why fine-level alignment is weak'
+            ]
+        }
+```
+
+### 11. Reporting & Visualization
+
+```python
+class ResultsReporting:
+    """
+    Generate comprehensive results report with visualizations.
+    """
+    def __init__(self):
+        pass
+    
+    def generate_report(self, analysis_results):
+        """
+        Generate complete results report.
+        """
+        report = f"""
+# User Study Results: Hierarchical Representation Alignment
+
+## Study Overview
+
+- **Participants:** {analysis_results['n_participants']} 
+  ({analysis_results['n_general']} general, {analysis_results['n_expert']} expert)
+- **Documents:** {analysis_results['n_documents']} 
+  ({analysis_results['n_per_type']} per type)
+- **Completion Rate:** {analysis_results['completion_rate']:.1%}
+- **Mean Duration:** {analysis_results['mean_duration']:.1f} minutes
+
+## Primary Results
+
+### H1: Hierarchy Alignment (Overall)
+
+- **Spearman ρ:** {analysis_results['h1']['rho']:.3f} 
+  [95% CI: {analysis_results['h1']['ci_95'][0]:.3f}, {analysis_results['h1']['ci_95'][1]:.3f}]
+- **p-value:** {analysis_results['h1']['p_value']:.4f}
+- **Effect Size:** {analysis_results['h1']['effect_size']}
+- **Conclusion:** {analysis_results['h1']['conclusion']}
+
+**Interpretation:** {analysis_results['h1']['interpretation']}
+
+### H2: Level-Specific Alignment
+
+- **F-statistic:** {analysis_results['h2']['f_statistic']:.3f}
+- **p-value:** {analysis_results['h2']['p_value']:.4f}
+
+**Mean Alignment by Level:**
+- Level 0 (Coarse): {analysis_results['h2']['level_0_mean']:.2f} / 7
+- Level 1 (Medium): {analysis_results['h2']['level_1_mean']:.2f} / 7
+- Level 2 (Fine): {analysis_results['h2']['level_2_mean']:.2f} / 7
+
+**Pairwise Comparisons:**
+{self._format_pairwise_comparisons(analysis_results['h2']['pairwise'])}
+
+### H3: Document Type Effects
+
+- **F-statistic:** {analysis_results['h3']['f_statistic']:.3f}
+- **p-value:** {analysis_results['h3']['p_value']:.4f}
+
+**Mean Alignment by Document Type:**
+- Narrative: {analysis_results['h3']['narrative_mean']:.2f} / 7
+- Technical: {analysis_results['h3']['technical_mean']:.2f} / 7
+- Argumentative: {analysis_results['h3']['argumentative_mean']:.2f} / 7
+
+### H4: Prediction Accuracy
+
+- **Accuracy:** {analysis_results['h4']['accuracy']:.1%} 
+  (Chance: {analysis_results['h4']['chance_level']:.1%})
+- **p-value:** {analysis_results['h4']['p_value']:.4f}
+- **95% CI:** [{analysis_results['h4']['ci_95'][0]:.1%}, {analysis_results['h4']['ci_95'][1]:.1%}]
+
+### H5: Importance Ranking Alignment
+
+- **Spearman ρ:** {analysis_results['h5']['rho']:.3f}
+- **p-value:** {analysis_results['h5']['p_value']:.4f}
+
+## Secondary Results
+
+### Expert vs. General Population
+
+- **Expert Median:** {analysis_results['expert_vs_general']['expert_median']:.2f}
+- **General Median:** {analysis_results['expert_vs_general']['general_median']:.2f}
+- **Mann-Whitney U:** {analysis_results['expert_vs_general']['u_statistic']:.1f}
+- **p-value:** {analysis_results['expert_vs_general']['p_value']:.4f}
+
+### Inter-Rater Reliability
+
+- **Average Cohen's κ:** {analysis_results['inter_rater']['average_kappa']:.3f}
+- **Interpretation:** {analysis_results['inter_rater']['interpretation']}
+
+## Qualitative Findings
+
+### Common Misalignment Patterns
+
+{self._summarize_qualitative_data(analysis_results['qualitative']['misalignments'])}
+
+### Participant Strategies
+
+{self._summarize_qualitative_data(analysis_results['qualitative']['strategies'])}
+
+## Limitations
+
+1. **Sample Characteristics:** {analysis_results['limitations']['sample']}
+2. **Document Selection:** {analysis_results['limitations']['documents']}
+3. **Task Design:** {analysis_results['limitations']['tasks']}
+
+## Conclusions
+
+{analysis_results['conclusions']}
+
+## Recommendations
+
+{analysis_results['recommendations']}
+"""
+        
+        return report
+    
+    def create_visualizations(self, data):
+        """
+        Create comprehensive visualizations.
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        
+        # Plot 1: Alignment ratings distribution
+        sns.violinplot(
+            data=data['alignment_ratings_long'],
+            x='level',
+            y='rating',
+            ax=axes[0, 0]
+        )
+        axes[0, 0].set_title('Alignment Ratings by Hierarchy Level')
+        axes[0, 0].set_ylabel('Alignment Rating (1-7)')
+        
+        # Plot 2: Prediction accuracy by level
+        accuracy_by_level = data['prediction_accuracy_by_level']
+        axes[0, 1].bar(['Level 0', 'Level 1', 'Level 2'], accuracy_by_level)
+        axes[0, 1].axhline(1/3, color='r', linestyle='--', label='Chance')
+        axes[0, 1].set_title('Prediction Accuracy by Level')
+        axes[0, 1].set_ylabel('Accuracy')
+        axes[0, 1].legend()
+        
+        # Plot 3: Correlation scatter (SHI vs. Human)
+        axes[0, 2].scatter(
+            data['shi_hierarchy_levels'],
+            data['human_ratings'],
+            alpha=0.5
+        )
+        axes[0, 2].set_xlabel('SHI Hierarchy Level')
+        axes[0, 2].set_ylabel('Human Alignment Rating')
+        axes[0, 2].set_title(f"Correlation: ρ={data['correlation']:.3f}")
+        
+        # Plot 4: Document type comparison
+        sns.boxplot(
+            data=data['alignment_by_doc_type'],
+            x='document_type',
+            y='alignment',
+            ax=axes[1, 0]
+        )
+        axes[1, 0].set_title('Alignment by Document Type')
+        axes[1, 0].set_ylabel('Alignment Rating')
+        
+        # Plot 5: Expert vs. General
+        sns.violinplot(
+            data=data['alignment_by_group'],
+            x='group',
+            y='alignment',
+            ax=axes[1, 1]
+        )
+        axes[1, 1].set_title('Expert vs. General Population')
+        axes[1, 1].set_ylabel('Alignment Rating')
+        
+        # Plot 6: Importance ranking correlation
+        axes[1, 2].scatter(
+            data['human_rankings'],
+            data['shi_masking_weights'],
+            alpha=0.5
+        )
+        axes[1, 2].set_xlabel('Human Importance Rank')
+        axes[1, 2].set_ylabel('SHI Masking Weight')
+        axes[1, 2].set_title(f"Ranking Correlation: ρ={data['ranking_correlation']:.3f}")
+        
+        plt.tight_layout()
+        
+        return fig
+```
+
+## Summary
+
+**Study Design:**
+- **Sample Size:** 100 participants (60 general, 40 expert)
+- **Duration:** 60 minutes per session
+- **Compensation:** $15 USD
+- **Documents:** 30 documents (10 narrative, 10 technical, 10 argumentative)
+
+**Tasks:**
+1. Hierarchy Alignment Rating (Likert scales)
+2. Hierarchy Prediction (forced choice)
+3. Importance Ranking (drag-and-drop)
+4. Structure Annotation (interactive annotation)
+
+**Primary Analyses:**
+- H1: Spearman correlation (SHI hierarchy vs. human ratings)
+- H2: Repeated measures ANOVA (alignment by level)
+- H3: One-way ANOVA (alignment by document type)
+- H4: Binomial test (prediction accuracy vs. chance)
+- H5: Spearman correlation (SHI masking vs. human importance)
+
+**Expected Timeline:**
+- IRB approval: 4 weeks
+- Pilot study (n=10): 2 weeks
+- Main study recruitment: 4 weeks
+- Data collection: 6 weeks
+- Analysis: 4 weeks
+- **Total:** ~20 weeks
+
+**Budget:**
+- Participant compensation: $1,800 (120 × $15)
+- Platform fees (Prolific/MTurk): $360 (20%)
+- **Total:** ~$2,160
+
+## Sources
+
+This user study design is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the hierarchical token organization concept [heirarchical-transformer.pdf:2] and SPARTAN causal graph component [heirarchical-transformer.pdf:2]
+
+For user study methodology, I recommend:
+- **Sample size:** Cohen (1988) "Statistical Power Analysis for the Behavioral Sciences"
+- **Inter-rater reliability:** Fleiss (1971) "Measuring nominal scale agreement among many raters"
+- **Document structure:** van Dijk & Kintsch (1983) "Strategies of Discourse Comprehension"
+- **Hierarchy perception:** McNamara et al. (2014) "Automated Evaluation of Text and Discourse with Coh-Metrix"
+- **HCI evaluation:** Lazar et al. (2017) "Research Methods in Human-Computer Interaction" (2nd ed.)

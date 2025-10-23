@@ -1,128 +1,116 @@
-Below is a concrete experiment plan to stress the Verification category by injecting realistic synthetic bugs into collaborative coding tasks, and to estimate statistical differences with and without MST interventions. I assume “MST interventions” are the practices/prompts/checklists you propose under the MST taxonomy for Verification (e.g., verification checklists, structured review prompts, agent assistance, or gating tests). If that’s not accurate, I can adapt the design.
+Below is a compact, evidence-grounded stress-test plan to probe robustness of the attached Hierarchical Transformer on collaborative code and long-document tasks outside its original world-model domain. I anchor the ablations and efficiency reporting to the paper’s emphasis on hierarchical masking/sparsification and compute reporting [heirarchical-transformer.pdf:2–3], and I suggest sparse-attention baselines inspired by Sparse/Routing Transformers referenced in the text [heirarchical-transformer.pdf:2].
 
-Study overview and hypotheses
-- Goal: Test whether MST-based Verification interventions improve defect detection (and reduce verification failures) under realistic collaborative coding settings.
-- Primary hypothesis (H1): MST increases the probability that seeded verification bugs are detected during collaborative workflows (e.g., PR review).
-- Secondary hypotheses (H2–H4):
-  - H2: MST reduces time-to-detection.
-  - H3: MST reduces residual seeded bugs that escape into main branch or post-merge.
-  - H4: MST does not meaningfully increase false positives or review burden.
+Scope and framing
+- Goal: Quantify robustness gaps—performance deltas between clean and perturbed inputs—on (a) repository-level collaborative code tasks and (b) long-document QA/summarization. 
+- Architectural levers to test: level-specific sparsification and hierarchical masking, plus toggles for causal-graph guidance and uncertainty-based masking, as reported in the original work’s ablations [heirarchical-transformer.pdf:3], and sparse attention design choices [heirarchical-transformer.pdf:2].
+- Report both task performance and efficiency (compute cost) as the original paper does for rollouts [heirarchical-transformer.pdf:3], adapted to inference throughput and memory in long-context settings.
 
-Synthetic bug injection to stress Verification
-- Bug sources (to ensure realism and breadth):
-  - Realistic bug replays via FixReverter: re-introduce real, historically fixed defects back into target code to simulate realistic failures and edge cases in verification and regression logic (e.g., off-by-one, API misuse, state handling) [FixReverter; Xiao et al., 2022].
-  - Mutation testing seeds: inject mutants emphasizing verification-relevant faults (logic negation, boundary changes, arithmetic and boolean operator changes, exception/return path changes). Include higher-order mutants to increase realism and difficulty; calibrate by excluding trivial/equivalent mutants [Jia & Harman, 2011; Jia, 2013].
-  - Task framing: embed seeded bugs into PRs that simulate common collaborative workflows (feature addition, refactor + tests, bugfix PRs, dependency updates). Include both code and test-verification bugs to probe verification failures (e.g., tests that incorrectly pass because of oracle weakness).
-- Calibration and difficulty control:
-  - Pretest each seed with a baseline test suite and an independent reviewer group to estimate “difficulty” (kill rate for mutants; rediscovery time for FixReverter seeds). Keep only seeds with medium difficulty (e.g., 30–70% baseline detection) to avoid ceiling/floor effects.
-  - Map seeds to Verification subtypes (e.g., spec/requirements adherence, regression guarding, boundary/sanitization, API pre/postconditions, concurrency/resource correctness) and balance counts per subtype.
-- Blinding:
-  - Participants are blind to which PRs contain seeds.
-  - Analysts blind to condition during labeling where feasible.
+Synthetic perturbations (parameterized “knobs”)
+Collaborative code (multi-file, multi-turn)
+- Cross-file dependency depth: Introduce call chains spanning 2–6 files; optionally interleave with interface/abstract base classes. Vary depth and fan-out.
+- Distractor code: Add dead code or near-duplicate functions/classes sharing names/syntax cues across files; vary distractor-to-signal ratio.
+- Identifier collisions: Reuse function/variable names across modules with different semantics; optionally shadow in nested scopes.
+- Structural reordering: Shuffle module/file order, move key definitions across chunk boundaries; add circular imports guarded by try/except.
+- Comment/review noise: Inject realistic code-review threads, inline comments, and commit history with conflicting guidance; vary comment density and sentiment polarity.
+- Diff/patch realism: Provide PR-style unified diffs with unrelated hunks; mask some context lines or introduce line-number drift.
+- Surface noise: Add formatting churn, docstring verbosity, and mixed tabs/spaces; simulate merge conflict markers.
+- Length and density sweeps: Scale repository size (0.5× to 4×), file count, and tokens-per-file; create length-position sweeps for crucial references near chunk boundaries.
 
-Design 1: Team-level randomized controlled trial (PR review)
-- Units: PR-level tasks with seeded bugs; reviewers (or review teams) are clusters.
-- Randomization: Cluster-randomize reviewers/teams to MST vs Control. Control uses standard review. MST arm uses your MST Verification interventions (e.g., structured checklists, prompting templates, AI verifier assistant).
-- Procedure:
-  - Each team reviews a balanced set of PRs with/without seeds across Verification subtypes.
-  - To avoid contamination/learning, hold out a disjoint set of PRs for post-test (optional).
-- Primary outcome: Detection rate of seeded bugs per PR (binary per seed and per PR).
-- Secondary outcomes:
-  - Time-to-first-detection for each seeded bug (survival metric).
-  - False positives (reported “bugs” not corresponding to seeds).
-  - Review time, comments volume, changes requested, re-review count.
-- Statistical analysis:
-  - Mixed-effects logistic regression: logit(Pr(detected_ij=1)) = β0 + β1*MST_j + β2*difficulty_i + β3*experience_j + u_team(j) + v_task(i); report odds ratio for MST (β1).
-  - Bug-type interaction: include MST × bug_type to test whether MST specifically helps Verification subtypes where you suspect underestimation.
-  - Survival analysis: Cox PH on time-to-detection with MST as covariate; cluster-robust SE by team.
-  - Multiplicity: control FDR (Benjamini–Hochberg) across subgroup tests.
-- Power and sample size:
-  - Use cluster randomized trial calculators to account for ICC at team-level; plan for 15–25 teams and 10–20 PRs per team to detect a 10 percentage point improvement (e.g., 0.45→0.55) with ICC≈0.05–0.10 at 80% power. Final numbers via clusterPower/PowerUpR with your ICC and variance estimates.
+Long-document (QA, citation-grounded summarization, multi-hop reading)
+- Distractor sections: Insert semantically similar but irrelevant passages; vary lexical overlap and TF-IDF similarity to the question.
+- Boundary shifts: Move key facts to chunk starts/ends or split across chunks; insert page breaks mid-sentence.
+- Cross-reference perturbations: Renumber figures/tables/equations; mismatch captions; split references/footnotes across pages.
+- Structural shuffles: Reorder sections (e.g., Methods before Results), move appendices into main text.
+- Paraphrase/abbreviation pressure: Replace terms with domain synonyms/abbreviations; add OCR-like character noise at controlled rates.
+- Multi-hop hardness: Increase hops (2→5) and spread supporting evidence across distant sections.
 
-Design 2: Cluster-crossover (pair programming or joint debug)
-- Units: Teams as clusters; matched tasks in two periods (A→B).
-- Randomization: Counterbalance period order (MST first vs Control first). Include a short washout (different codebase or module) to reduce carryover.
-- Procedure:
-  - Teams collaboratively fix seeded defects (visible failing tests or issue reports). MST arm uses Verification checklists or an MST “verification gate” (e.g., explicit pre-commit verification questions; test-oracle prompts).
-- Outcomes:
-  - Defects fixed correctly (no reversion) within time budget.
-  - Overlooked seeded bugs per task.
-  - Number of “verification escapes” detected by a post-hoc oracle (full test suite + static analysis + independent audit).
-- Analysis:
-  - Mixed-effects logistic regression with random intercepts for team and task; fixed effects for condition, period, and their interaction (to check carryover).
-  - Time-truncated survival models for time-to-fix; stratify by task.
-- Sensitivity:
-  - Exclude first N minutes as warmup; re-estimate models.
-  - Model experience and language familiarity as covariates.
+Evaluation metrics
+Task correctness
+- Code: pass@k on generated patches (k ∈ {1,5}); unit-test success; build success; semantic diff correctness (AST-equivalent patch rate).
+- Long-doc: Exact Match/F1 for extractive QA; ROUGE/BERTScore for summarization; citation grounding (precision/recall of evidence spans).
+Localization and attribution
+- Evidence retrieval hit rate@k; position-normalized success by chunk-relative location (begin/middle/end) to detect “lost-in-the-middle” patterns.
+- Cross-chunk dependency success: proportion of questions/edits requiring information across ≥2 chunks that are solved correctly.
+Efficiency and stability (aligned with “compute cost” reporting)
+- Tokens processed, peak memory, latency, and throughput versus context length; max stable context length without degradation [heirarchical-transformer.pdf:3].
+Robustness gap summaries
+- Δ clean vs perturbed: absolute and relative drops in the above metrics.
+- Area under robustness curve (AURC): integrate metric over perturbation levels.
+- Length sensitivity slopes: performance change per log2 increase in context length.
+Calibration (if probabilistic outputs available)
+- ECE, Brier score; selective risk (accuracy at coverage q).
 
-Design 3: CI pipeline verification with SWE-bench-style harness
-- Units: Issue/PR-level tasks with verification harness; e.g., SWE-bench Verified-like tasks where correctness can be automatically adjudicated by tests [SWE-bench Verified, 2025].
-- Randomization: Assign tasks to MST-augmented CI (verification check gates, AI-assisted test-oracle checks) vs standard CI.
-- Bug injection:
-  - For each task, inject one synthetic verification seed into either code or test-oracle path; ensure the harness passes only if both code and tests are correct.
-- Outcomes:
-  - Pass/fail rate of tasks given the harness; residual seeded bugs escaping to “green” status.
-  - Post-merge escape rate (if teams continue development).
-- Analysis:
-  - Mixed-effects logistic regression with random effects for repo/project and task, fixed effect for MST, and bug-type.
-  - If pre-intervention historical baselines exist, add difference-in-differences on escape rates.
+Concrete, falsifiable experiments
+1) Cross-chunk dependency stress (code)
+- Hypothesis: With level-specific sparsification and hierarchical masking, accuracy on repo-level tasks will degrade sublinearly with cross-file dependency depth compared to dense or non-hierarchical baselines [heirarchical-transformer.pdf:2–3].
+- Design: Create synthetic repos where solving a task requires following a call chain of length L across files (L=1..6), with and without distractors. 
+- Variables: L, distractor ratio, boundary placement (key symbol near chunk boundary vs center).
+- Metrics: pass@k, test success, evidence localization hit rate; Δ vs clean; throughput and memory [heirarchical-transformer.pdf:3].
+- Expected outcome: A measurable robustness slope in both models; smaller slope (less degradation) for the hierarchical variant if sparsification preserves salient global links [heirarchical-transformer.pdf:2]. If performance collapses at chunk boundaries, that indicates boundary sensitivity.
 
-Measurement details
-- Primary metric: Seeded-bug detection probability (per seed and per PR). Report absolute difference and odds ratio with 95% CIs.
-- Secondary metrics:
-  - Time-to-first-detection (median difference; hazard ratio).
-  - False positive rate (per PR).
-  - Review/verification effort (minutes, comments).
-  - Residual defects (seeds that escape into main; post-merge breakages).
-- Reliability checks:
-  - Mutant “kill rate” and equivalent-mutant filtering for mutation seeds.
-  - For FixReverter seeds, validate by reproducing the historical failing test and confirming fix restores pass [FixReverter].
-  - Inter-rater agreement for seed adjudication (if manual judgments are needed).
-- Threats and controls:
-  - Learning/contamination: use cluster randomization and/or crossover with counterbalancing; holdout projects.
-  - Construct validity: balance bug types and difficulty; include real-bug replays (FixReverter) to avoid overfitting to mutants.
-  - Experience imbalance: measure and include as covariate; optionally block randomize by experience.
-  - External validity: run across multiple stacks (Python/JS/Java) and orgs.
+2) Boundary-shift and “lost-in-the-middle” probe (long-doc)
+- Hypothesis: Moving key facts to chunk boundaries causes larger performance drops than moving them within-chunk; hierarchical masking may mitigate but not eliminate boundary effects [heirarchical-transformer.pdf:2].
+- Design: For each item, create 5 variants placing evidence at positions uniformly across the context (start, early, middle, late, end), plus a split-evidence version across two adjacent chunks.
+- Variables: Position, chunk size, degree of paraphrase.
+- Metrics: QA EM/F1, evidence precision/recall, position-conditioned success; Δ vs clean middle-position control.
+- Expected outcome: Position-dependent accuracy curve with a trough at the middle or boundary; the magnitude of the trough quantifies robustness gaps.
 
-Three concrete, falsifiable experiments
-1) PR Review RCT (Verification seeds)
-- Hypothesis: MST increases seeded verification bug detection by ≥10% absolute.
-- Setup: 20 teams randomized to MST vs Control; 12 PRs/team; 1–2 seeds/PR balanced across Verification subtypes; mix of mutants and FixReverter seeds.
-- Metrics: Detection probability, time-to-detection, false positives.
-- Analysis: Mixed-effects logistic regression for detection; Cox model for time; FDR-controlled subgroup tests.
-- Expected outcome: If MST is effective for Verification, odds ratio > 1 and significant; specific subtypes (e.g., boundary/spec) show the largest gains.
+3) Distractor-overlap stress with sparsification (both domains)
+- Hypothesis: Level-specific sparsification reduces distraction more than dense local attention by filtering irrelevant tokens at higher levels [heirarchical-transformer.pdf:2].
+- Design: Inject semantically similar but irrelevant passages/functions at controlled overlap levels (cosine similarity bins).
+- Variables: Overlap bin, number of distractors, sparsification/summary depth (if configurable).
+- Metrics: Task accuracy, evidence precision (penalize citing distractors), AURC over overlap; compute cost [heirarchical-transformer.pdf:3].
+- Expected outcome: Graceful degradation under rising distractor load for the hierarchical model relative to baselines.
 
-2) Pair Debug Cluster-Crossover
-- Hypothesis: Under time pressure, MST reduces verification escapes by ≥30% relative rate.
-- Setup: 12 teams; two matched tasks per team; counterbalanced MST vs Control order; 90-minute sessions.
-- Metrics: Number of missed seeds; correct fixes without regression; rework needed.
-- Analysis: Mixed-effects logistic with period and carryover terms; sensitivity excluding first task per team.
-- Expected outcome: Fewer missed seeds and rework in MST condition without increased false positives.
+4) Ablations on hierarchical components (both domains)
+- Hypothesis: Removing hierarchical masking, causal-graph guidance, or uncertainty-based masking increases sensitivity to perturbations [heirarchical-transformer.pdf:3].
+- Design: Evaluate the same perturbation grid with each component toggled off.
+- Variables: Component on/off, perturbation type/level.
+- Metrics: ΔAURC, Δ length-sensitivity slope, compute/perf trade-offs [heirarchical-transformer.pdf:3].
+- Expected outcome: Identifiable contributions of each component to robustness; e.g., uncertainty-based masking helps under high distractor load.
 
-3) MST-Gated CI with SWE-bench-Style Adjudication
-- Hypothesis: MST gates reduce the fraction of “green-but-wrong” passes on seeded verification tasks by ≥40% relative.
-- Setup: 200 tasks across 10 repos; randomized to MST-gated CI vs standard CI; one verification seed per task.
-- Metrics: Harness pass/fail vs ground truth; post-merge escapes; fix latency.
-- Analysis: Mixed-effects logistic (random effects for repo/task family); difference-in-differences vs pre-intervention baseline if available.
-- Expected outcome: Significant reduction in escapes in MST arm and improved adjudication fidelity.
+Baselines and controls
+- Sparse-attention comparators: BigBird-like or Routing Transformer-like attention patterns as motivated by the paper’s related work [heirarchical-transformer.pdf:2].
+- Dense transformer with sliding-window or global tokens (matched parameters).
+- Truncation control: a strong short-context model restricted to a fixed window to quantify long-context lift.
+- Keep tokenization, chunk size, and context length matched across models.
 
-How to report statistical differences
-- Primary effect: Report absolute difference in detection probability and odds ratio with 95% CIs and p-values from the mixed-effects logistic regression.
-- Time-to-detection: Report hazard ratio (Cox PH) with 95% CIs; provide survival plots stratified by condition.
-- Subtypes: Provide adjusted estimates per Verification subtype with multiplicity control (BH-FDR q-values).
-- Robustness: Pre-register models; include planned covariates (experience, task difficulty), clustering, and missing-data handling (e.g., multiple imputation if needed).
-- Powering: Use cluster randomized trial methods and software (clusterPower, PowerUpR) to determine teams × tasks required given your ICC and expected effect sizes.
+Statistical analysis plan
+- Design: Within-item repeated-measures. For each base item (repo or document), generate multiple perturbation levels. Randomize order. Evaluate with ≥5 seeds.
+- Primary analyses:
+  - Paired comparisons: Compute per-item Δ (perturbed − clean); report mean Δ with 95% BCa bootstrap CIs; use paired bootstrap for EM/F1 and pass@k.
+  - Mixed-effects regression: Metric ~ Model × PerturbationLevel + Length + Position + (1|Item) + (1|Repo/Doc), with by-item random slopes for perturbation. Inspect Model×Perturbation interactions to quantify robustness gaps.
+  - Non-inferiority on efficiency: Predefine margin (e.g., no more than 5% perf drop for 2× length) and test using TOST, alongside compute cost reporting [heirarchical-transformer.pdf:3].
+- Multiple comparisons: Control FDR (Benjamini–Hochberg) across perturbation families.
+- Power: Pilot 50–100 items to estimate Δ and variance; target 80% power to detect Δ=3–5 points, adjusting item count per domain.
+- Reliability: Report seed sensitivity; include calibration metrics. Release perturbation generators and item IDs for reproducibility.
+- Error taxonomy: Sample 100 failures per condition; label boundary errors, cross-chunk misses, distractor attraction, and parsing/formatting issues.
 
-Notes and options
-- If you worry the MST taxonomy underestimates failures in specific Verification subtypes, build targeted seeds (e.g., test-oracle mistakes, contract violations, concurrency orderings) and test MST × subtype interactions. This makes your claim empirically falsifiable.
-- To mitigate any bias from synthetic seeds, include a small fraction of “real” unfixed issues from historical repos (no injection), adjudicated by an independent harness or SRE-like incident reproduction.
+Reporting and artifacts
+- Curves: Accuracy vs length; AURC by perturbation; position-conditioned accuracy; compute/perf frontiers [heirarchical-transformer.pdf:3].
+- Ablation table: Component toggles vs ΔAURC and efficiency [heirarchical-transformer.pdf:3].
+- Robustness cards: One-page per model summarizing gaps across code and long-doc tasks.
 
-Would you confirm what concrete MST interventions you want compared (e.g., a checklist, a verification prompt template, an AI-assisted verifier in review, or CI gating)? I can tailor seeds, prompts, and measurement accordingly.
+Why this is aligned with the model’s claims
+- The plan explicitly targets failure modes where hierarchical sparsification and masking could help (global structure, cross-chunk dependencies) [heirarchical-transformer.pdf:2], while quantifying compute/performance trade-offs emphasized in the original work [heirarchical-transformer.pdf:3]. Including sparse-attention baselines is natural given the related work cited (Sparse/Routing Transformers) [heirarchical-transformer.pdf:2].
+
+Optional datasets/tools to instantiate the plan
+- Collaborative code: SWE-bench or synthetic repo harness with unit tests; evaluate pass@k patches and test outcomes.
+- Long-doc: SCROLLS-style tasks or custom QA with gold evidence spans; include position sweeps and distractor injections.
+
+Literature anchors (for context on long-context and sparse-attention baselines)
+- Lost in the Middle: demonstrates position-dependent degradation in long contexts; useful for boundary-shift probes.
+- BigBird: canonical sparse attention baseline for long sequences.
+
+Key takeaways
+- Use parameterized perturbations to probe cross-chunk dependencies, distractors, and boundary sensitivity.
+- Measure both correctness and efficiency to surface trade-offs the original work highlights [heirarchical-transformer.pdf:3].
+- Use paired analyses and mixed-effects models to quantify robustness gaps and isolate contributions of hierarchical components [heirarchical-transformer.pdf:3].
 
 Citations
-- Jia Y., Harman M. (2011). An Analysis and Survey of the Development of Mutation Testing — https://mutationtesting.uni.lu/TR-09-06.pdf
-- Jia Y. (2013). Higher Order Mutation Testing — https://web4.cs.ucl.ac.uk/staff/Y.Jia/resources/papers/Jia2013.pdf
-- Xiao H. et al. (2022). FIXREVERTER: A Realistic Bug Injection Methodology for Benchmarking Fuzz Testing — https://par.nsf.gov/biblio/10357972-fixreverter-realistic-bug-injection-methodology-benchmarking-fuzz-testing
-- Bacchelli A., Bird C. (2013). Expectations, Outcomes, and Challenges of Modern Code Review — https://sback.it/publications/icse2013.pdf
-- Methods for sample size determination in cluster randomized trials — https://pmc.ncbi.nlm.nih.gov/articles/PMC4521133/
-- SWE-bench Verified (overview/leaderboard) — https://hal.cs.princeton.edu/swebench and background: https://www.swebench.com/
+- [heirarchical-transformer.pdf:2] …“level-specific sparsification policies.” Also references Sparse Transformers and Routing Transformers as related work.
+- [heirarchical-transformer.pdf:3] …“report rollout compute cost, rollout error, and final RL performance. Additional ablation studies will investigate the impact of hierarchical masking, causal graph guidance, and uncertainty-based masking…”
+
+External literature anchors
+- Lost in the Middle: How Language Models Use Long Context — https://arxiv.org/abs/2307.03172
+- Big Bird: Transformers for Longer Sequences — https://arxiv.org/abs/2007.14062

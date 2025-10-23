@@ -1,99 +1,92 @@
-Below is a “fairness/ethics overlay” protocol that augments the MST taxonomy’s correctness-focused evaluation without editing or influencing its original labels. It treats fairness/ethics as a parallel, blinded layer on the same items and model outputs.
+Below is a drop-in “fairness/ethics audit layer” you can add to your existing Hierarchical Transformer evaluation without touching the original labels or pipelines, plus concrete uncertainty reporting. I anchor to your current plan to report rollout compute cost, rollout error, and final RL performance and to study uncertainty-based masking and causal guidance [heirarchical-transformer.pdf:3]. The audit attaches sidecar annotations and metrics to the same datasets, and slices your existing metrics by subgroups and intersectional factors, so your base benchmarks remain intact.
 
-Principle
-- Separation of concerns: keep the MST failure taxonomy and detection pipeline intact; add a separate, versioned overlay of fairness/ethics labels keyed by example IDs, never modifying the original labels or dataset content [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Blinding and immutability: fairness raters do not see correctness labels; correctness raters remain unaware of fairness labels. Original labels are read-only and checksummed.
+Scope and what to audit on the same datasets
+- Slice existing metrics: For each dataset and split, report your current metrics (rollout error, final RL performance) stratified by subgroups and intersectional groups without changing ground-truth labels [heirarchical-transformer.pdf:3]. Examples: demographics (if present), domain/stressor factors (lighting, occlusion, sensor noise, rare states), difficulty bins, or scenario types. If human attributes are absent, use dataset-specific “risk factors” (rare/long-horizon states, edge-case dynamics) as ethical audit axes.
+- Hierarchical-specific audits: Report subgroup gaps at each hierarchy level and across imagination/masking variants, since you already plan ablations on hierarchical masking and uncertainty-based masking [heirarchical-transformer.pdf:3].
 
-Data and schema
-- IDs: Reuse the MST example_id and response_id keys. Release a separate fairness_overlay.jsonl file with one record per (example_id, response_id).
-- Versioning: schema_version_fairness separate from MST schema_version.
-- Suggested fields (overlay):
-  - sensitive_context.present: boolean; sensitive_context.categories: list (e.g., race, gender, religion, nationality, age, disability, sexual orientation; “implicit” vs “explicit” flag).
-  - representational_harm: ordinal 0–2 (none, borderline, clear), with tags (stereotype, slur/hate, erasure/othering).
-  - allocational_outcome: categorical (helpful, unhelpful, refusal, misdirection), plus justification.
-  - disparity_risk_flag: boolean; disparity_notes: free-text rationale tied to rubric clauses.
-  - privacy_risk: ordinal 0–2 (none, possible PII, clear PII); pii_type tags.
-  - deception/manipulation_risk: ordinal 0–2.
-  - counterfactual_handles: list of identity tokens detected (e.g., “he/she,” “American/Nigerian,” role labels).
-  - annotator_id (pseudonymous), timestamp, task_url, evidence_spans: character offsets.
-  - iaa_group_id: for tracking which annotators labeled the same item.
-  - provenance.hash_original_labels: hash of MST labels snapshot to confirm no edits.
+How to add new annotations or audits without contaminating original labels
+- Freeze dataset vX: Do not modify original files. Create a separate “audit sidecar” keyed by immutable sample_id.
+- Sidecar schema: audit_v1.jsonl (or Parquet) with fields such as sample_id, audit_version, annotator_id (pseudonymous), timestamp, subgroup tags (e.g., gender, scenario_type), intersectional_group_id, notes, confidence, provenance.
+- Blind and independent collection:
+  - Annotate from a read-only copy with original labels hidden to avoid anchoring and label leakage.
+  - Randomize item order and salt sample_ids for annotator UIs. Keep annotators blind to model predictions.
+- Data governance:
+  - Sensitive attributes: Minimize collection; obtain consent or use approved proxies. Store separately with access controls and k-anonymity thresholds for reporting small-N groups.
+  - Log guidelines and decision rules; publish an audit codebook and example adjudication cases.
+- Multi-annotator design for reliability:
+  - Assign ≥2 annotators per item for sensitive tags; compute inter-annotator agreement (e.g., Krippendorff’s alpha; bootstrap CI).
+  - Aggregate with a principled model (e.g., Dawid–Skene) and control for unreliable annotators using FDR where applicable [P5]. This avoids overfitting to one annotator’s bias and keeps original labels intact.
+- Non-contamination in training/eval:
+  - Training: Do not feed audit tags to the model unless explicitly running fairness-aware training ablations; keep the canonical baseline identical.
+  - Evaluation: Load the sidecar only to define slices and weights. Maintain the original test set; create an “audit holdout” subset for exploratory analyses.
+  - Reproducibility: Version the audit sidecar (audit_v1), record annotation tool versions, and publish a data card addendum.
 
-Annotation workflow (adaptations to avoid contamination)
-- Freeze-and-fork: freeze the MST dataset and labels; fork only the response texts and metadata into an annotation UI where original labels are not shown and are technically read-only [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-- Dual-track teams:
-  - Correctness team (unchanged from MST).
-  - Fairness/ethics team with a dedicated rubric and training; no access to correctness labels or adjudication threads.
-- Blinded UI:
-  - Hide correctness labels and model identity; show only prompt/context and the model output being evaluated.
-  - Prevent any write access to MST labels at the permission level.
-- Calibration and QA:
-  - Pilot 100–200 examples; compute IAA (Cohen’s κ or Krippendorff’s α) per dimension; refine rubric until κ ≥ 0.6 for core harms.
-  - Use seeded gold/honeypots to monitor drift.
-  - Majority-vote primary labels; escalate disagreements to a separate adjudicator who remains blinded to correctness labels.
-- Counterfactual audit preparation:
-  - During annotation, raters mark identity tokens that enable group-swap tests (counterfactual_handles).
-  - Automatically generate candidate counterfactual pairs for downstream audits; store pair_ids in overlay (still no edits to MST).
-- Governance:
-  - Ethics triage for high-risk outputs (e.g., clear PII, threats).
-  - Documentation: add a fairness section to the model card and dataset card describing metrics, coverage, and known limitations.
+Fairness and ethics metrics
+- For classification-like outcomes (if applicable to rollouts or event detection):
+  - Demographic parity difference, equalized odds gaps (FPR/FNR differences), subgroup calibration error (ECE per subgroup).
+- For continuous or RL outcomes:
+  - Mean and quantile of rollout error and final return per subgroup; worst-group performance; reward gap between groups; tail risk (CVaR) per subgroup; coverage of conformal intervals per subgroup (see below).
+- Intersectional analysis: Report the same metrics across intersectional slices (e.g., subgroup A ∩ scenario type B), with small-N safeguards.
 
-Metrics and analyses (computed from overlay + original labels, joined on IDs)
-- Disaggregated accuracy and error: subgroup-wise correctness using the original MST labels (no label changes), reported alongside fairness indicators.
-- Allocation/refusal gap: difference in refusal vs helpfulness rates across protected groups; report absolute and relative gaps.
-- Representational harm prevalence: rate of stereotype/hate/other harms when sensitive_context.present = true.
-- Privacy risk rate: prevalence of PII flags.
-- Counterfactual disparity: for generated group-swap pairs, measure change in outcome (refusal/score/toxicity) and textual sentiment polarity; report mean absolute disparity and rate of sign flips.
-- Equalized error measures: e.g., equalized odds/equality of opportunity on tasks with ground truth decisions.
+Uncertainty reporting (for both annotations and fairness metrics)
+- For audit annotations:
+  - Inter-annotator agreement: Report alpha/kappa with bootstrap CIs; adjudicate disagreements using Dawid–Skene or similar and report residual uncertainty as soft labels [P5]. Where disagreements encode intrinsic ambiguity, analyze whether it stems from annotators vs data factors [P2].
+- For subgroup rates/gaps:
+  - Use Wilson or Jeffreys binomial intervals for rates (FPR/FNR) with explicit n per subgroup; for differences, use stratified bootstrap with 5k+ replicates and report percentile or BCa intervals. Control multiple comparisons over subgroups via BH-FDR.
+- For rollouts and RL:
+  - Cluster bootstrap at the episode/trajectory level to respect temporal dependence; report mean difference in rollout error and return with 95% CIs. Aggregate across seeds; for paired comparisons (same seeds), use paired bootstrap or permutation tests.
+- Calibration and coverage:
+  - Report ECE and Brier score per subgroup with bootstrap CIs.
+  - Provide split conformal prediction intervals/sets and report empirical coverage per subgroup; check “equalized coverage” and coverage gaps. Conformal methods maintain distribution-free coverage under exchangeability; under mild contamination, robust/split variants can preserve guarantees or quantify degradation [P4]. When calibration data may be noisy, discuss robustness to contamination and replicate with a trimmed or filtered calibration set [P4].
+- Handling noisy or contaminated audits:
+  - If you suspect mislabeled subgroup tags in calibration/reference sets, assess impact using robust conformal or contamination-aware calibration analyses and sensitivity checks [P4].
 
-Rubric sketch (concise, operational)
-- Sensitive context detection: explicit vs implicit mention; stakeholder role.
-- Representational harms: stereotypes (group trait claims), slur/hate/incitement, erasure/othering; each with concrete examples and boundary cases.
-- Allocational harms: refusal/unhelpfulness/overcompliance when requests are equivalent across groups; requires matched or counterfactual prompts.
-- Privacy: PII taxonomy (names with contact info, addresses, financial IDs, health).
-- Deception/manipulation: misleading claims about groups or instructions encouraging unethical actions.
+Reporting template (Fairness/Ethics Addendum)
+- Methods: Who annotated, guidelines used, blinding, IAA statistics and CIs, aggregation method, governance and privacy controls.
+- Metrics by slice: For each dataset and split, report subgroup and worst-group rollout error, return, calibration, and gap metrics with 95% CIs; include sample sizes. For intersectional slices, apply small-N warnings or suppress if n < threshold.
+- Uncertainty: Clearly state seed ranges, bootstrap settings (replicates, clustering level), and whether CIs are paired or unpaired.
+- Ablations: Report fairness metrics and CIs for hierarchy/masking variants (including uncertainty-based masking) alongside your existing metrics [heirarchical-transformer.pdf:3].
+- Limitations and sensitivity: Note potential residual bias (missing attributes, unobserved confounders), and show sensitivity to different aggregation models and slice definitions [P2].
 
-Release format
-- Publish fairness_overlay.jsonl (and a data card) as a separate artifact with:
-  - Schema, definitions, decision rules, and examples.
-  - Annotation guidelines, IAA statistics, and rater demographics (aggregate).
-  - Model Card section reporting disaggregated metrics and counterfactual audits.
+Three concrete, falsifiable experiments
+1) Does uncertainty-based masking reduce subgroup error gaps?
+- Hypothesis: Uncertainty-based masking will reduce the worst-group rollout error and shrink subgroup rollout-error gaps relative to no masking, without degrading average performance [heirarchical-transformer.pdf:3].
+- Variables: Masking ∈ {off, uncertainty-based}; hierarchy level(s) ∈ {L1,…}; seeds ∈ {1,…,20}.
+- Metrics: Mean rollout error per subgroup, worst-group rollout error, and gap (max−min) with cluster-bootstrap 95% CIs across episodes and seeds; final RL performance stratified by subgroup [heirarchical-transformer.pdf:3].
+- Expected outcome: A measurable reduction in worst-group error and in gap CIs for the masked condition; if not observed, masking may concentrate uncertainty in minority slices (to be diagnosed via subgroup calibration and ECE).
 
-Three+ concrete, falsifiable experiments
-1) Counterfactual identity-swap audit
-- Hypothesis: Swapping protected-attribute tokens in matched prompts does not materially change model outcomes (|Δ refusal rate| ≤ 2 percentage points; |Δ toxicity| ≤ 0.05 on a calibrated scale).
-- Design: Use counterfactual_handles to generate paired prompts and re-run model outputs. Compute outcome and harm differences per pair.
-- Variables: Independent—group identity tokens; Dependent—refusal/helpfulness, toxicity, sentiment, task correctness (from MST).
-- Metrics: Mean absolute disparity; proportion of pairs exceeding threshold; bootstrap CIs; Holm-Bonferroni correction across categories.
+2) Do conformal intervals equalize coverage across subgroups under label/calibration noise?
+- Hypothesis: Split conformal prediction will achieve near-nominal coverage 1−α per subgroup and smaller coverage gaps than temperature scaling or isotonic regression baselines; robustness persists under mild calibration-set contamination [P4].
+- Variables: Calibrator ∈ {split conformal, temperature scaling, isotonic}; contamination ∈ {0%, 5%} of calibration labels or subgroup tags; α ∈ {0.1, 0.2}.
+- Metrics: Subgroup coverage, coverage gap (max−min), interval width; report 95% bootstrap CIs. Conduct sensitivity to trimming/robust variants [P4].
+- Expected outcome: Split conformal shows coverage closer to nominal and smaller coverage gaps across subgroups; robust to small contamination.
 
-2) Subgroup equality-of-opportunity test
-- Hypothesis: Conditional on ground-truth correctness (MST labels), error rates are similar across subgroups (difference in false negative rates ≤ 2 pp).
-- Design: Stratify by sensitive_context categories; compare disaggregated error rates on the same task types.
-- Metrics: Equality-of-opportunity gap; standardized effect size (Cohen’s h); permutation tests; report by task family.
+3) Do multi-annotator aggregation and annotator-quality control change fairness conclusions?
+- Hypothesis: Aggregating subgroup tags with Dawid–Skene plus FDR-based annotator quality control will reduce annotator-induced bias, stabilizing fairness metrics relative to single-annotator tags [P5], and help disentangle annotator vs data bias [P2].
+- Variables: Tag source ∈ {single annotator, majority vote, Dawid–Skene+FDR}; sample fraction annotated ∈ {5%, 10%}.
+- Metrics: IAA (alpha/kappa), stability of fairness gaps (absolute change and CI across bootstrap resamples), number of flagged low-quality annotators; downstream change in worst-group performance with 95% CIs.
+- Expected outcome: Aggregated tags yield higher IAA and narrower CIs on fairness gaps; differences pinpoint whether prior conclusions were annotator-driven [P2].
 
-3) Representational harm prevalence vs. task family
-- Hypothesis: The rate of representational harms differs by MST failure category (e.g., certain failure types co-occur with higher harm incidence).
-- Design: Join fairness_overlay with MST failure taxonomy; model harm incidence with a logistic regression including task family and failure type as predictors.
-- Metrics: Odds ratios with CIs; likelihood-ratio tests; FDR-controlled multiple comparisons.
+Optional extension experiment
+4) Fairness-aware reweighting trade-offs
+- Hypothesis: Training-time subgroup reweighting (using audit sidecar, held out from baseline) reduces worst-group rollout error with bounded drop in average performance.
+- Variables: Reweighting strength λ ∈ {0, 0.25, 0.5}, constraint on average performance.
+- Metrics: Worst-group rollout error, average rollout error, Pareto frontier visualization with CIs.
+- Expected outcome: A tunable trade-off curve; report whether any λ strictly improves worst-group error at ≤1% average performance cost.
 
-4) Blinding effectiveness and non-contamination check (RCT)
-- Hypothesis: Visibility of correctness labels changes fairness judgments and/or IAA; strict blinding preserves independence.
-- Design: Randomize a small annotator subset into two conditions—blinded vs. (temporarily) unblinded pilot environment. Compare label distributions and κ.
-- Metrics: Difference in κ; distributional shift tests (e.g., Kolmogorov–Smirnov) on harm scores; confirm original MST labels remained bit-identical via hash checks.
-
-Why this preserves MST integrity
-- All fairness/ethics labels live in a separate overlay keyed by IDs; original labels remain read-only with hash verification. Blinded, permissioned annotation prevents accidental edits or leakage across streams [Why Do Multi-Agent LLM Systems Fail_ - 2503.13657v2.pdf:5].
-
-Literature anchors (for reporting and metrics)
-- Model Cards provide a structured way to report the new disaggregated and counterfactual fairness results alongside the original correctness metrics (supporting the overlay + reporting design).
-- Equality-of-opportunity/equalized odds formalize subgroup error parity targets for supervised tasks with ground truth.
+Practical next steps
+- Draft the audit codebook; define subgroup/slice taxonomy appropriate to your datasets.
+- Spin a read-only data copy; generate audit_v1 sidecar via blinded multi-annotator protocol.
+- Add slicing and CI computation to your eval: cluster bootstrap at episode level, per-subgroup ECE, and split conformal calibration for coverage checks.
+- Integrate fairness tables and CIs into your existing reporting alongside rollout error and RL performance [heirarchical-transformer.pdf:3]; publish seeds and scripts.
 
 Citations
-- [PDF] Why Do Multi-Agent LLM Systems Fail? — Development of Failure Taxonomy and Detection (used to justify strict separation and non-editing of the original failure taxonomy and labels) — https://arxiv.org/abs/2503.13657 [file:5]
-- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596
-- Hardt, Price, Srebro, 2016. Equality of Opportunity in Supervised Learning — https://proceedings.neurips.cc/paper_files/paper/2016/hash/9d2682367c3935defcb1f9e247a97c0d-Abstract.html
+- [P2] Characterizing Sources of Uncertainty to Proxy Calibration and Disambiguate Annotator and Data Bias — http://arxiv.org/abs/1909.09285v2
+- [P4] Split Conformal Prediction under Data Contamination — http://arxiv.org/abs/2407.07700v2
+- [P5] False Discovery Rate Control and Statistical Quality Assessment of Annotators in Crowdsourced Ranking — http://arxiv.org/abs/1605.05860v3
 
-Notes and limitations
-- If MST includes tasks with minimal or no sensitive context, ensure coverage by constructing matched counterfactual prompts or by sampling items where sensitive_context.present = true before drawing subgroup conclusions.
-- For open-ended outputs, calibrate toxicity/sentiment tools to the domain or rely on human ratings with demonstrated IAA.
-- Pre-register analysis thresholds and metrics to avoid researcher degrees of freedom.
+Additional anchors (optional)
+- [P1] Robust Conformal Outlier Detection under Contaminated Reference Data — http://arxiv.org/abs/2502.04807v2
+
+Notes on attachment grounding
+- Your planned evaluation already includes rollout error, final RL performance, and uncertainty-based masking/ablation, which the audit will slice and augment, not alter [heirarchical-transformer.pdf:3].
