@@ -127,6 +127,14 @@ ANNOTATION_COLUMNS: Sequence[str] = (
     "timeline_quality",
     "risk_mitigation",
     "additional_notes",
+    # Student-outcome judge metrics (style-agnostic)
+    "student_actionability_score",
+    "student_clarity_score",
+    "student_constraint_fit_score",
+    "student_confidence_gain_score",
+    "student_path_ready",
+    "student_failure_modes",
+    "student_outcome_score",
 )
 
 

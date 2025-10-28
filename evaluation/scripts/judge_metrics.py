@@ -233,6 +233,56 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         0.0,
         1.0,
     ),
+    # ---------------------- Student-outcome metrics (style-agnostic) ----------------------
+    "student_actionability": MetricSpec(
+        "student_actionability",
+        "2.0: three specific, sequenced steps executable in 1–3 days with concrete resources; 1.0: some concrete steps with gaps; 0.0: generic or unexecutable next steps.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
+    "student_clarity": MetricSpec(
+        "student_clarity",
+        "2.0: easy to follow; steps and rationale are unambiguous; 1.0: partly clear with missing links; 0.0: unclear or overwhelming.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
+    "student_constraint_fit": MetricSpec(
+        "student_constraint_fit",
+        "2.0: respects persona time/compute/skills constraints; 1.0: minor mismatches; 0.0: unrealistic for persona.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
+    "student_confidence_gain": MetricSpec(
+        "student_confidence_gain",
+        "2.0: clearly reduces uncertainty and increases confidence to proceed; 1.0: some reassurance; 0.0: no meaningful confidence change.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
+    "student_path_ready": MetricSpec(
+        "student_path_ready",
+        "Return 1 when a student could start immediately without major missing prerequisites; 0 otherwise.",
+        "binary",
+        0.0,
+        1.0,
+    ),
+    "student_failure_modes": MetricSpec(
+        "student_failure_modes",
+        "Return 1 when likely pitfalls or blockers are explicitly flagged; 0 otherwise.",
+        "binary",
+        0.0,
+        1.0,
+    ),
+    "student_outcome_score": MetricSpec(
+        "student_outcome_score",
+        "Composite outcome for students: 0.35*actionability + 0.25*clarity + 0.25*constraint_fit + 0.15*confidence_gain.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
 }
 
 
