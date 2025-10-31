@@ -521,15 +521,46 @@ def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> str:
 
 
 def parse_score(raw: str) -> Optional[Dict[str, Any]]:
-    try:
-        candidate = raw.strip()
-        if candidate.startswith("```"):
+    """Parse judge output into a dict with at least a numeric 'score' when possible.
+
+    Robust to code fences and partially truncated JSON by using a regex fallback
+    to extract a numeric score when full JSON parsing fails.
+    """
+    candidate = (raw or "").strip()
+    if not candidate:
+        return None
+    # Strip code fences if present
+    if candidate.startswith("```"):
+        try:
             candidate = candidate.split("\n", 1)[1]
             candidate = candidate.strip("`\n ")
+        except Exception:
+            pass
+    # Try strict JSON first
+    try:
         parsed = json.loads(candidate)
         return parsed if isinstance(parsed, dict) else None
     except Exception:
-        return None
+        # Fallback: extract minimal fields via regex (handles truncated JSON)
+        import re
+        out: Dict[str, Any] = {}
+        # score: accept numeric or quoted numeric
+        m = re.search(r'"score"\s*:\s*("(?P<qs>[0-9]+(?:\.[0-9]+)?)"|(?P<ns>[0-9]+(?:\.[0-9]+)?))', candidate)
+        if m:
+            sval = m.group("qs") or m.group("ns")
+            try:
+                out["score"] = float(sval)
+            except Exception:
+                pass
+        # rationale (best-effort, short capture up to next quote)
+        m = re.search(r'"rationale"\s*:\s*"(?P<rt>[^"\\]{0,800})', candidate)
+        if m:
+            out["rationale"] = m.group("rt")
+        # confidence (simple token)
+        m = re.search(r'"confidence"\s*:\s*"(?P<cf>high|medium|low)"', candidate, re.IGNORECASE)
+        if m:
+            out["confidence"] = m.group("cf")
+        return out if out else None
 
 
 def aggregate_scores(spec: MetricSpec, judge_results: Sequence[Dict[str, Any]]) -> Optional[float]:
