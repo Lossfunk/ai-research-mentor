@@ -31,7 +31,7 @@ JUDGES=(
 )
 
 if [[ "${STAGE_ARG}" == "all" ]]; then
-  STAGES=(stage_a stage_c stage_f)
+  STAGES=(stage_a stage_c stage_d stage_e stage_f)
 else
   STAGES=("${STAGE_ARG}")
 fi
@@ -88,4 +88,3 @@ for STAGE in "${STAGES[@]}"; do
 done
 
 echo "[ensemble] Done. Labels: expert=${LABEL_EXPERT}, student=${LABEL_STUDENT}"
-
