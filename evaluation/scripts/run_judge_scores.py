@@ -297,7 +297,10 @@ def run_judges(
         }
         save_judge_payload(output_dir / f"{prompt_id}_judges.json", payload)
         summaries.append(payload)
-        print_info(f"Scored {prompt_id} [{label}]: {sorted(metric_results.keys())}")
+        sys_id = meta.get("system_id") or meta.get("system") or "unknown"
+        print_info(
+            f"Scored {prompt_id} ({sys_id}) [{label}]: {sorted(metric_results.keys())}"
+        )
 
     return {
         "stage": stage_letter,

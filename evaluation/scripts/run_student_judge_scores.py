@@ -293,7 +293,8 @@ def run_student_judges(
         }
         save_judge_payload(out_dir / f"{prompt_id}_student_judges.json", payload)
         summaries.append(payload)
-        print_info(f"Student-judged {prompt_id} [{label}]")
+        sys_id = meta.get("system_id") or meta.get("system") or "unknown"
+        print_info(f"Student-judged {prompt_id} ({sys_id}) [{label}]")
 
     return {
         "stage": stage_letter,
