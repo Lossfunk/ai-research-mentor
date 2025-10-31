@@ -38,34 +38,32 @@ fi
 
 run_expert() {
   local stage="$1"
-  local extra=( )
-  if [[ -n "${SYSTEM_FILTER}" ]]; then
-    extra+=("--system" "${SYSTEM_FILTER}")
-  fi
-  uv run python -m evaluation.scripts.run_judge_scores \
+  local cmd=(uv run python -m evaluation.scripts.run_judge_scores \
     --stage "${stage}" \
     --judge "${JUDGES[0]}" \
     --judge "${JUDGES[1]}" \
     --judge "${JUDGES[2]}" \
     --annotator "${ANNOTATOR_EXPERT}" \
-    --label "${LABEL_EXPERT}" \
-    "${extra[@]}"
+    --label "${LABEL_EXPERT}")
+  if [[ -n "${SYSTEM_FILTER}" ]]; then
+    cmd+=(--system "${SYSTEM_FILTER}")
+  fi
+  "${cmd[@]}"
 }
 
 run_student() {
   local stage="$1"
-  local extra=( )
-  if [[ -n "${SYSTEM_FILTER}" ]]; then
-    extra+=("--system" "${SYSTEM_FILTER}")
-  fi
-  uv run python -m evaluation.scripts.run_student_judge_scores \
+  local cmd=(uv run python -m evaluation.scripts.run_student_judge_scores \
     --stage "${stage}" \
     --judge "${JUDGES[0]}" \
     --judge "${JUDGES[1]}" \
     --judge "${JUDGES[2]}" \
     --annotator "${ANNOTATOR_STUDENT}" \
-    --label "${LABEL_STUDENT}" \
-    "${extra[@]}"
+    --label "${LABEL_STUDENT}")
+  if [[ -n "${SYSTEM_FILTER}" ]]; then
+    cmd+=(--system "${SYSTEM_FILTER}")
+  fi
+  "${cmd[@]}"
 }
 
 run_lofo() {
