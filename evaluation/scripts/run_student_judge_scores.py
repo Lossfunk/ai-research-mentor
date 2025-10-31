@@ -123,10 +123,11 @@ def _parse_student_json(raw: str) -> Optional[Dict[str, Any]]:
         except Exception:
             return None
 
-    out["scores"]["clarity_for_student"] = _grab_float(r'"clarity_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
-    out["scores"]["actionability_for_student"] = _grab_float(r'"actionability_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
-    out["scores"]["constraint_fit_for_student"] = _grab_float(r'"constraint_fit_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
-    out["scores"]["confidence_gain_for_student"] = _grab_float(r'"confidence_gain_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    # Accept quoted or unquoted numerics with a single capture group (avoid duplicate named groups)
+    out["scores"]["clarity_for_student"] = _grab_float(r'"clarity_for_student"\s*:\s*"?(?P<val>[0-9]+(?:\.[0-9]+)?)"?')
+    out["scores"]["actionability_for_student"] = _grab_float(r'"actionability_for_student"\s*:\s*"?(?P<val>[0-9]+(?:\.[0-9]+)?)"?')
+    out["scores"]["constraint_fit_for_student"] = _grab_float(r'"constraint_fit_for_student"\s*:\s*"?(?P<val>[0-9]+(?:\.[0-9]+)?)"?')
+    out["scores"]["confidence_gain_for_student"] = _grab_float(r'"confidence_gain_for_student"\s*:\s*"?(?P<val>[0-9]+(?:\.[0-9]+)?)"?')
     # Binary checks (accept 0/1 or true/false)
     def _grab_bin(key: str) -> Optional[int]:
         m = re.search(rf'"{key}"\s*:\s*(?P<val>0|1|true|false)', txt, re.IGNORECASE)
@@ -137,7 +138,7 @@ def _parse_student_json(raw: str) -> Optional[Dict[str, Any]]:
     out["binary_checks"]["path_ready"] = _grab_bin("path_ready")
     out["binary_checks"]["failure_modes_flagged"] = _grab_bin("failure_modes_flagged")
     # Composite (optional)
-    comp = _grab_float(r'"student_outcome_score"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    comp = _grab_float(r'"student_outcome_score"\s*:\s*"?(?P<val>[0-9]+(?:\.[0-9]+)?)"?')
     if comp is not None:
         out["student_outcome_score"] = comp
     # Only return if we extracted at least one score/check

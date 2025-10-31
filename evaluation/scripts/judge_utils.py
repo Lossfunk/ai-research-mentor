@@ -434,15 +434,15 @@ def build_judge_clients(specs: Sequence[str]) -> List[Tuple[str, Any]]:
         if provider == "anthropic":
             if ChatAnthropic is None:
                 raise RuntimeError("langchain-anthropic not available")
-            client = ChatAnthropic(model=model, temperature=0.0, max_tokens=1024)
+            client = ChatAnthropic(model=model, temperature=0.0, max_tokens=1536)
         elif provider in {"google", "gemini"}:
             if ChatGoogleGenerativeAI is None:
                 raise RuntimeError("langchain-google-genai not available")
-            client = ChatGoogleGenerativeAI(model=model, temperature=0.0, max_output_tokens=1024)
+            client = ChatGoogleGenerativeAI(model=model, temperature=0.0, max_output_tokens=1536)
         elif provider in {"openai", "azure"}:
             if ChatOpenAI is None:
                 raise RuntimeError("langchain-openai not available")
-            client = ChatOpenAI(model=model, temperature=0.0, max_tokens=1024)
+            client = ChatOpenAI(model=model, temperature=0.0, max_tokens=1536)
         elif provider == "openrouter":
             if ChatOpenAI is None:
                 raise RuntimeError("langchain-openai not available")
@@ -462,7 +462,7 @@ def build_judge_clients(specs: Sequence[str]) -> List[Tuple[str, Any]]:
                 "api_key": api_key,
                 "base_url": base_url,
                 "temperature": 0.0,
-                "max_tokens": 1024,
+                "max_tokens": 1536,
             }
             if headers:
                 client_kwargs["default_headers"] = headers
@@ -473,7 +473,7 @@ def build_judge_clients(specs: Sequence[str]) -> List[Tuple[str, Any]]:
     return clients
 
 
-def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> str:
+def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     system_prompt = (
         "You are an evaluation assistant scoring AI mentor responses according to a rubric. "
         "Be strict, cite rubric criteria, and output only JSON."
@@ -517,7 +517,26 @@ def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> str:
             HumanMessage(content=user_prompt),
         ]
     )
-    return getattr(result, "content", None) or getattr(result, "text", None) or str(result)
+    text = getattr(result, "content", None) or getattr(result, "text", None) or str(result)
+    meta: Dict[str, Any] = {}
+    try:
+        resp_meta = getattr(result, "response_metadata", None)
+        addl = getattr(result, "additional_kwargs", None)
+        usage = getattr(result, "usage_metadata", None)
+        finish_reason = None
+        if isinstance(resp_meta, dict):
+            finish_reason = resp_meta.get("finish_reason") or resp_meta.get("finish_reasons") or resp_meta.get("finish_reason_message")
+            meta["response_metadata"] = resp_meta
+        if not finish_reason and isinstance(addl, dict):
+            finish_reason = addl.get("finish_reason") or addl.get("finish_details") or addl.get("finish_reason_message")
+            meta["additional_kwargs"] = addl
+        if usage is not None:
+            meta["usage"] = usage
+        if finish_reason:
+            meta["finish_reason"] = finish_reason
+    except Exception:  # pragma: no cover - metadata is best-effort
+        pass
+    return text, meta
 
 
 def parse_score(raw: str) -> Optional[Dict[str, Any]]:

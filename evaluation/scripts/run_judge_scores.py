@@ -76,7 +76,7 @@ def evaluate_metric(
     judge_outputs: List[Dict[str, Any]] = []
     for name, client in judge_clients:
         try:
-            raw = call_judge(client, spec, context)
+            raw, meta = call_judge(client, spec, context)
             parsed = parse_score(raw) or {}
             entry: Dict[str, Any] = {
                 "judge": name,
@@ -84,6 +84,13 @@ def evaluate_metric(
                 "rationale": parsed.get("rationale"),
                 "confidence": parsed.get("confidence"),
             }
+            if isinstance(meta, dict) and meta:
+                fr = meta.get("finish_reason")
+                if fr is not None:
+                    entry["finish_reason"] = fr
+                usage = meta.get("usage")
+                if usage is not None:
+                    entry["usage"] = usage
             score = parsed.get("score")
             if isinstance(score, str):
                 try:
@@ -105,6 +112,7 @@ def evaluate_metric(
                     "score": None,
                     "rationale": None,
                     "confidence": None,
+                    "finish_reason": None,
                     "error": str(exc),
                 }
             )

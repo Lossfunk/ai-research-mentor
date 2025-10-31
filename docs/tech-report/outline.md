@@ -33,7 +33,7 @@ References: evaluation/scripts/run_manual_stage.py:21, evaluation/data/evals_sin
 - Reproducibility commands and environment notes.
 
 Run: `uv run python -m evaluation.scripts.run_manual_stage --stage A --force`
-Then: `uv run python -m evaluation.scripts.run_judge_scores --stage stage_a --judge openrouter:anthropic/claude-4-sonnet --judge openrouter:google/gemini-2.5-pro --annotator auto --label baseline`
+Then: `uv run python -m evaluation.scripts.run_judge_scores --stage stage_a --judge openrouter:anthropic/claude-4-sonnet --judge openrouter:google/gemini-2.5-flash --annotator auto --label baseline`
 
 ## 6. Results (Milestone 1 — Stage A Baseline)
 - Tool routing pass rate, mean Actionability, mean Citation Quality.
