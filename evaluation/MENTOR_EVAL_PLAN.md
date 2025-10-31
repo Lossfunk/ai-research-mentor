@@ -73,6 +73,18 @@ References and scale anchors live in `evaluation/judges/aspect_rubrics.yaml`.
 - Style bias controls: anonymize system IDs, normalize format/length, randomized order, equal turn budgets.
 - Human calibration: 10–15% subset labeled by 2 humans; report judge–human correlation and IAA.
 
+Recommended ensemble (upgraded):
+- google/gemini-2.5-pro (stronger judge)
+- deepseek/deepseek-v3.2-exp
+- x-ai/grok-4-fast
+
+Leave-One-Family-Out (LOFO):
+- For any generator from provider family F (e.g., anthropic/openai/google), report both Overall (all judges) and LOFO(F) (excluding judges from F).
+- This mitigates family/style preference and strengthens claims.
+
+Student-outcome judge:
+- A separate style-agnostic student lens is available; see `evaluation/judges/student_outcome_judge.md` and `evaluation/scripts/run_student_judge_scores.py`.
+
 Judge prompts reside in `evaluation/judges/pairwise_judge_prompt.md`.
 
 ## 9. Study Matrix
@@ -101,6 +113,10 @@ Matrix and sampling spec in `evaluation/matrix.yaml`.
 - Report macro (per-topic/persona) and micro (overall) scores; cost/latency.
 - Human calibration subset: judge–human correlation; IAA (Cohen’s κ / Krippendorff’s α).
 - Multiple metrics correction via Holm–Bonferroni.
+- LOFO analysis: Use `evaluation/scripts/analyze_lofo.py` to compute All vs LOFO aggregates for expert or student metrics.
+  - Example:
+    - `uv run python -m evaluation.scripts.analyze_lofo --stage stage_a --label student_outcome_judge`
+    - `uv run python -m evaluation.scripts.analyze_lofo --stage stage_c --label expert_absolute_pro`
 
 ## 13. Reproducibility
 - Seed runs; pin models/providers in `.env` and `evaluation/matrix.yaml`.
@@ -129,4 +145,3 @@ Matrix and sampling spec in `evaluation/matrix.yaml`.
 - Statistically significant pairwise wins vs baselines on key mentoring and research-outcome aspects.
 - Demonstrated gains from guidelines/tools via ablations.
 - Transparent artifacts and reproducibility scripts with partial human validation.
-
