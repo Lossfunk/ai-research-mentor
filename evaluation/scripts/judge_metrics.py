@@ -291,5 +291,5 @@ def metric_instruction(spec: MetricSpec) -> str:
         return "Return JSON {\"score\": <0 or 1>, \"rationale\": <string>, \"confidence\": <high|medium|low>}"
     return (
         "Return JSON {\"score\": <float between "
-        f"{spec.min_score} and {spec.max_score}>, \"rationale\": <string>, \"confidence\": <high|medium|low>}}"
+        f"{spec.min_score} and {spec.max_score}>, \"rationale\": <string>, \"confidence\": <high|medium|low>}"
     )

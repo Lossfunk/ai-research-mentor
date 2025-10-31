@@ -93,14 +93,58 @@ def _call_student_judge(client: Any, system_prompt: str, user_prompt: str) -> st
 
 
 def _parse_student_json(raw: str) -> Optional[Dict[str, Any]]:
-    try:
-        txt = raw.strip()
-        if txt.startswith("```"):
+    """Parse student-judge JSON with robust fallbacks for code fences/truncation."""
+    txt = (raw or "").strip()
+    if not txt:
+        return None
+    # Strip code fences if present
+    if txt.startswith("```"):
+        try:
             txt = txt.split("\n", 1)[1].strip("`\n ")
+        except Exception:
+            pass
+    # Strict JSON first
+    try:
         data = json.loads(txt)
         return data if isinstance(data, dict) else None
     except Exception:
-        return None
+        pass
+    # Fallback: best-effort regex extraction
+    import re
+    out: Dict[str, Any] = {"scores": {}, "binary_checks": {}}
+    # Scaled scores
+    def _grab_float(key_pat: str) -> Optional[float]:
+        m = re.search(key_pat, txt, re.IGNORECASE)
+        if not m:
+            return None
+        sval = m.group("val")
+        try:
+            return float(sval)
+        except Exception:
+            return None
+
+    out["scores"]["clarity_for_student"] = _grab_float(r'"clarity_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    out["scores"]["actionability_for_student"] = _grab_float(r'"actionability_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    out["scores"]["constraint_fit_for_student"] = _grab_float(r'"constraint_fit_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    out["scores"]["confidence_gain_for_student"] = _grab_float(r'"confidence_gain_for_student"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    # Binary checks (accept 0/1 or true/false)
+    def _grab_bin(key: str) -> Optional[int]:
+        m = re.search(rf'"{key}"\s*:\s*(?P<val>0|1|true|false)', txt, re.IGNORECASE)
+        if not m:
+            return None
+        v = m.group("val").lower()
+        return 1 if v in {"1", "true"} else 0
+    out["binary_checks"]["path_ready"] = _grab_bin("path_ready")
+    out["binary_checks"]["failure_modes_flagged"] = _grab_bin("failure_modes_flagged")
+    # Composite (optional)
+    comp = _grab_float(r'"student_outcome_score"\s*:\s*(?:"(?P<val>[0-9]+(?:\.[0-9]+)?)"|(?P<val>[0-9]+(?:\.[0-9]+)?))')
+    if comp is not None:
+        out["student_outcome_score"] = comp
+    # Only return if we extracted at least one score/check
+    any_score = any(v is not None for v in out["scores"].values()) or any(
+        v is not None for v in out["binary_checks"].values()
+    )
+    return out if any_score else None
 
 
 def _aggregate_student(judge_outputs: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
