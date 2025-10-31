@@ -4,11 +4,11 @@ set -euo pipefail
 # Run expert and student judges with the upgraded ensemble and produce LOFO summaries.
 #
 # Usage:
-#   scripts/run_judges_ensemble.sh [stage_a|stage_c|stage_f|all] [system_id]
+#   scripts/run_judges_ensemble.sh [stage_a|stage_c|stage_d|stage_e|stage_f|all] [system_id] [prompt_ids]
 #
 # Examples:
 #   scripts/run_judges_ensemble.sh all mentor_manual
-#   scripts/run_judges_ensemble.sh stage_a
+#   scripts/run_judges_ensemble.sh stage_a mentor_manual "stage_a_01,stage_a_02"
 #
 # Environment (optional):
 #   LABEL_EXPERT=expert_absolute_pro
@@ -18,6 +18,7 @@ set -euo pipefail
 
 STAGE_ARG="${1:-all}"
 SYSTEM_FILTER="${2:-}"
+PROMPTS_ARG="${3:-}"
 
 LABEL_EXPERT="${LABEL_EXPERT:-expert_absolute_pro}"
 LABEL_STUDENT="${LABEL_STUDENT:-student_outcome_judge}"
@@ -48,6 +49,14 @@ run_expert() {
   if [[ -n "${SYSTEM_FILTER}" ]]; then
     cmd+=(--system "${SYSTEM_FILTER}")
   fi
+  if [[ -n "${PROMPTS_ARG}" ]]; then
+    # Accept comma-separated list; split into args
+    IFS=',' read -r -a PIDS <<< "${PROMPTS_ARG}"
+    for pid in "${PIDS[@]}"; do
+      pid_trimmed="${pid//[[:space:]]/}"
+      [[ -n "${pid_trimmed}" ]] && cmd+=(--prompt-id "${pid_trimmed}")
+    done
+  fi
   "${cmd[@]}"
 }
 
@@ -62,6 +71,13 @@ run_student() {
     --label "${LABEL_STUDENT}")
   if [[ -n "${SYSTEM_FILTER}" ]]; then
     cmd+=(--system "${SYSTEM_FILTER}")
+  fi
+  if [[ -n "${PROMPTS_ARG}" ]]; then
+    IFS=',' read -r -a PIDS <<< "${PROMPTS_ARG}"
+    for pid in "${PIDS[@]}"; do
+      pid_trimmed="${pid//[[:space:]]/}"
+      [[ -n "${pid_trimmed}" ]] && cmd+=(--prompt-id "${pid_trimmed}")
+    done
   fi
   "${cmd[@]}"
 }
