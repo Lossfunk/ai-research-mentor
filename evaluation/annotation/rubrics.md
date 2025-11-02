@@ -12,10 +12,10 @@ This reference defines scoring guidance for manual annotations and automated heu
 - **0.2–0.3** – Minimally actionable: vague advice with unclear steps.
 - **0.0–0.1** – Non-actionable: abstract guidance only.
 
-### Question Quality (0.0–2.0)
-- **2.0** – Targeted clarifying questions grounded in user context; directly improve recommendations.
-- **1.0** – Relevant but generic questions; limited personalization.
-- **0.0** – Irrelevant, missing, or counterproductive questions.
+### Clarification Quality (0.0–2.0)
+- **2.0** – Asks specific follow-ups tied to persona context or stated uncertainties; materially improves guidance.
+- **1.0** – Contains at least one clarifying probe but partially generic or low-impact.
+- **0.0** – No clarifying questions or purely boilerplate prompts.
 
 ### Citation Quality (0.0–2.0)
 - **2.0** – Citations real, recent, and directly support guidance.
@@ -24,8 +24,7 @@ This reference defines scoring guidance for manual annotations and automated heu
 
 ## Binary / Heuristic Metrics
 
-- **tool_routing** – Expected tools invoked and no disallowed tools used.
-- **constraint_handling** – Explicit acknowledgment of stated constraint plus tailored mitigation path.
+- **tool_routing** – Diagnostic: expected tools invoked; mark as N/A when no tools are required.
 - **timeline_guidance** – Provides schedule-aware plan with milestones within supplied deadline.
 - **expectation_management** – Sets realistic boundaries, flags infeasible goals, and proposes alternatives.
 - **novelty_assessment** – Distinguishes prior work vs. new contributions using literature evidence.

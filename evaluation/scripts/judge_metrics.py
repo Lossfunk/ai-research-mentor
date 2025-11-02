@@ -28,13 +28,6 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         0.0,
         2.0,
     ),
-    "citation_presence": MetricSpec(
-        "citation_presence",
-        "Return 1 when the final answer includes inline citations or a citations section; 0 otherwise.",
-        "binary",
-        0.0,
-        1.0,
-    ),
     "citation_validity": MetricSpec(
         "citation_validity",
         "Return 1 when cited sources are valid scholarly links/records (e.g., arXiv, DOI, publisher); 0 when clearly invalid or hallucinated.",
@@ -56,9 +49,9 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         0.0,
         2.0,
     ),
-    "question_quality": MetricSpec(
-        "question_quality",
-        "2.0: targeted clarifying questions grounded in context. 1.0: relevant but generic questions. 0.0: missing or counterproductive questions.",
+    "clarification_quality": MetricSpec(
+        "clarification_quality",
+        "2.0: probes specific uncertainties drawn from the user prompt or persona context, enabling materially better guidance; 1.0: asks at least one clarifying question but remains partially generic; 0.0: no clarifying probes or purely boilerplate questions.",
         "scaled",
         0.0,
         2.0,
@@ -78,16 +71,9 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         0.0,
         2.0,
     ),
-    "asks_questions": MetricSpec(
-        "asks_questions",
-        "Return 1 when the agent asks clarifying questions in ambiguous cases; 0 otherwise.",
-        "binary",
-        0.0,
-        1.0,
-    ),
     "tone_constructive": MetricSpec(
         "tone_constructive",
-        "2.0: constructive, motivating tone; 1.0: neutral; 0.0: discouraging or harsh.",
+        "2.0: constructive, motivating tone that reinforces progress without resorting to fluff; 1.0: neutral or mildly encouraging; 0.0: discouraging, dismissive, or fear-inducing language.",
         "scaled",
         0.0,
         2.0,
@@ -109,14 +95,7 @@ METRIC_SPECS: dict[str, MetricSpec] = {
     ),
     "tool_routing": MetricSpec(
         "tool_routing",
-        "Return 1 when every expected tool was invoked at least once. Return 0 when any expected tool is missing.",
-        "binary",
-        0.0,
-        1.0,
-    ),
-    "constraint_handling": MetricSpec(
-        "constraint_handling",
-        "Return 1 when the response acknowledges constraints and adapts advice. Return 0 otherwise.",
+        "Diagnostic only: return 1 when every expected tool was invoked at least once, 0 when an expected tool is missing. If no tools were expected, return null instead of forcing a score.",
         "binary",
         0.0,
         1.0,
@@ -236,28 +215,28 @@ METRIC_SPECS: dict[str, MetricSpec] = {
     # ---------------------- Student-outcome metrics (style-agnostic) ----------------------
     "student_actionability": MetricSpec(
         "student_actionability",
-        "2.0: three specific, sequenced steps executable in 1–3 days with concrete resources; 1.0: some concrete steps with gaps; 0.0: generic or unexecutable next steps.",
+        "2.0: at least three concrete, sequenced steps anchored in the response (datasets, tools, deliverables) that a student could start within a few days; 1.0: some concrete actions but gaps or missing anchors; 0.0: generic suggestions with no executable steps.",
         "scaled",
         0.0,
         2.0,
     ),
     "student_clarity": MetricSpec(
         "student_clarity",
-        "2.0: easy to follow; steps and rationale are unambiguous; 1.0: partly clear with missing links; 0.0: unclear or overwhelming.",
+        "2.0: instructions are easy to follow, explain why each step matters, and reference persona details; 1.0: partially clear but forces the student to infer rationale or ordering; 0.0: confusing, overwhelming, or contradictory guidance.",
         "scaled",
         0.0,
         2.0,
     ),
     "student_constraint_fit": MetricSpec(
         "student_constraint_fit",
-        "2.0: respects persona time/compute/skills constraints; 1.0: minor mismatches; 0.0: unrealistic for persona.",
+        "2.0: explicitly respects the persona's time, compute, and skill constraints using details from the prompt; 1.0: mostly aligned but overlooks at least one stated constraint; 0.0: unrealistic or dismissive of constraints.",
         "scaled",
         0.0,
         2.0,
     ),
     "student_confidence_gain": MetricSpec(
         "student_confidence_gain",
-        "2.0: clearly reduces uncertainty and increases confidence to proceed; 1.0: some reassurance; 0.0: no meaningful confidence change.",
+        "2.0: directly addresses likely anxieties, sets expectations, and explains why the plan will work; 1.0: some reassurance but limited specificity; 0.0: no meaningful confidence gain or introduces new doubt.",
         "scaled",
         0.0,
         2.0,

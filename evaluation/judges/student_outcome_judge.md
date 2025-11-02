@@ -8,12 +8,12 @@ Context
 - Stage: {stage} (A: Orientation, C: Research Planning, F: Final/Submission)
 
 Evaluation Principles (style-agnostic)
-- Prioritize student action: prefer 3 specific, sequenced steps you could actually do in 1–3 days.
-- Enforce constraint fit: student weekly hours, compute, skills gaps must be respected.
-- Penalize boilerplate checklists and generic advice not tailored to persona constraints.
-- Reward uncertainty reduction and confidence to proceed.
-- Do not reward headings, templates, or citation formatting; evaluate decision-impact and feasibility.
-- If critical pitfalls or prerequisites are missing (e.g., data access, IRB, baseline availability), flag them.
+- Prioritize student action: prefer 3 specific, sequenced steps you could actually do in 1–3 days, referencing datasets, tools, or deliverables mentioned in the response.
+- Enforce constraint fit: respect the persona's weekly hours, compute limits, and skills gaps, citing those constraints explicitly for scores ≥1.0.
+- Penalize boilerplate checklists and generic advice; if a step could apply to any student, cap the relevant score at 0.8 or lower.
+- Reward uncertainty reduction only when the mentor addresses your stated worries or explains why the plan will work.
+- Do not reward headings, templates, or citation formatting; evaluate decision-impact and feasibility instead.
+- If critical pitfalls or prerequisites are missing (e.g., data access, IRB, baseline availability), set failure_modes_flagged to 0 and mention the gap.
 
 Required Output (strict JSON)
 {
@@ -34,4 +34,3 @@ Required Output (strict JSON)
 
 Agent Response to Evaluate
 {agent_response}
-

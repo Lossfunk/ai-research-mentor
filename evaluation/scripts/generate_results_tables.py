@@ -344,7 +344,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 label: {
                     key: val
                     for key, val in data["metrics"].items()
-                    if key in {"tool_routing", "citation_presence", "citation_validity", "evidence_integrity"}
+                    if key in {"tool_routing", "citation_validity", "evidence_integrity"}
                 }
                 for label, data in system_results.items()
             },

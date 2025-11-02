@@ -24,8 +24,6 @@ from .judge_utils import (
     build_context,
     build_judge_clients,
     call_judge,
-    heuristic_asks_questions,
-    heuristic_citation_presence,
     heuristic_fallback_robustness,
     iso_timestamp,
     load_tool_runs,
@@ -217,16 +215,24 @@ def run_judges(
         metric_digests: Dict[str, Optional[str]] = {}
 
         if "tool_routing" in expected_checks:
-            routing = aggregate_tool_routing(metadata.get("expected_tools", []), tool_runs)
+            expected_tools = list(metadata.get("expected_tools", []))
+            if expected_tools:
+                routing = aggregate_tool_routing(expected_tools, tool_runs)
+                metric_scores["tool_routing"] = routing.get("score")
+            else:
+                routing = {
+                    "score": None,
+                    "details": {
+                        "expected": [],
+                        "observed": [run.get("tool_name") for run in tool_runs if run.get("tool_name")],
+                        "missing": [],
+                        "extra": [],
+                        "note": "no_expected_tools",
+                    },
+                }
+                metric_scores["tool_routing"] = None
             metric_results["tool_routing"] = routing
-            metric_scores["tool_routing"] = routing.get("score")
             metric_digests["tool_routing"] = None
-
-        if "citation_presence" in expected_checks:
-            val = heuristic_citation_presence(full_response_text)
-            metric_results["citation_presence"] = {"score": val}
-            metric_scores["citation_presence"] = val
-            metric_digests["citation_presence"] = None
 
         if "citation_validity" in expected_checks:
             validity = score_citation_validity(full_response_text)
@@ -240,16 +246,10 @@ def run_judges(
             metric_scores["fallback_robustness"] = val
             metric_digests["fallback_robustness"] = None
 
-        if "asks_questions" in expected_checks:
-            val = heuristic_asks_questions(full_response_text)
-            metric_results["asks_questions"] = {"score": val}
-            metric_scores["asks_questions"] = val
-            metric_digests["asks_questions"] = None
-
         for metric_key in expected_checks:
             if metric_key == "tool_routing":
                 continue
-            if metric_key in {"citation_presence", "citation_validity", "fallback_robustness", "asks_questions"}:
+            if metric_key in {"citation_validity", "fallback_robustness"}:
                 # Already scored by heuristic above
                 continue
             spec = METRIC_SPECS.get(metric_key)

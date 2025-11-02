@@ -19,21 +19,20 @@
 - Pairwise: all available system pairs per prompt/stage/seed
 
 **Metrics (absolute)**
-- Scaled: actionability, rag_fidelity, question_quality, persona_compliance, stage_awareness, tone_constructive, citation_relevance, source_fit, citation_quality
-- Binary: citation_presence, citation_validity, tool_routing, fallback_robustness, asks_questions, evidence_integrity, plus stage-specific checks
+- Scaled: actionability, rag_fidelity, clarification_quality, persona_compliance, stage_awareness, tone_constructive, citation_relevance, source_fit, citation_quality
+- Binary: citation_validity, fallback_robustness, evidence_integrity, plus stage-specific checks (timeline_guidance, expectation_management, etc. as applicable)
 
 **Expected Outcomes**
 - Overall: Mentor > Claude on weighted overall quality and pairwise win rate; competitive latency
 - By stage:
-  - A/B: higher question_quality, novelty_assessment, expectation_management
+  - A/B: higher clarification_quality, novelty_assessment, expectation_management
   - C: higher plan_completeness, experiment_design, resource_estimation
   - D/E: stronger methodology_critique, risk_analysis, evidence_gap_detection
-  - F: better constraint_handling and plan_completeness for submission readiness
-- Meta: higher citation_validity and evidence_integrity; better tool_routing where expected
+  - F: stronger plan_completeness and expectation_management for submission readiness
+- Meta: higher citation_validity and evidence_integrity; tool_routing monitored diagnostically where tools are expected
 
 **Reporting**
 - Per-stage CSV/Markdown tables, pairwise win rates, metric deltas, Pareto (quality vs latency)
 - Sensitivity: replicate headline with GPT‑5 baseline and second seed; report IAA when dual judge used
-
 
 

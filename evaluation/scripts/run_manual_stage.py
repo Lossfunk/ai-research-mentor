@@ -93,23 +93,20 @@ ANNOTATION_COLUMNS: Sequence[str] = (
     "tool_trace_path",
     "tool_routing",
     # Meta capability metrics (binary)
-    "citation_presence",
     "citation_validity",
     "fallback_robustness",
-    "asks_questions",
     "evidence_integrity",
     # Meta capability metrics (scaled)
     "rag_fidelity_score",
     "citation_relevance_score",
     "source_fit_score",
     "actionability_score",
-    "question_quality_score",
+    "clarification_quality_score",
     "citation_quality_score",
     # Mentorship capability metrics
     "persona_compliance_score",
     "stage_awareness_score",
     "tone_constructive_score",
-    "constraint_handling",
     "timeline_guidance",
     "expectation_management",
     "novelty_assessment",
@@ -418,18 +415,7 @@ def run_stage(
             print_error("Attachments support not available; skipping PDF attach")
     except Exception as exc:  # noqa: BLE001
         print_error(f"Failed to attach PDFs: {exc}")
-    prompt_overrides: Dict[str, Optional[str]] = {}
-    baseline_prompt_path = Path("baseline_prompt.md")
-    if baseline_prompt_path.exists():
-        prompt_overrides = {
-            "ARM_PROMPT_FILE": str(baseline_prompt_path.resolve()),
-            "ARM_PROMPT": "baseline",
-        }
-    else:
-        print_error("Warning: baseline_prompt.md not found; using default prompt variant")
-
-    with _temporary_env(prompt_overrides):
-        agent, loaded_variant = prepare_agent()
+    agent, loaded_variant = prepare_agent()
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
 
     run_started = datetime.utcnow().isoformat() + "Z"

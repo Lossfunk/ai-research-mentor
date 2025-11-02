@@ -142,19 +142,6 @@ def make_evidence_summary(runs: Sequence[Dict[str, Any]], limit: int = 8) -> str
     return "\n".join(lines)
 
 
-def heuristic_citation_presence(answer_text: str) -> float:
-    """Binary: 1 if inline citations or a 'Citations' section present."""
-    text = (answer_text or "").lower()
-    if not text:
-        return 0.0
-    # Inline patterns: [P1], [G2], [1], etc.
-    if re.search(r"\[(?:p\d+|g\d+|\d+)\]", text):
-        return 1.0
-    if "citations" in text and ("http://" in text or "https://" in text or "arxiv" in text or "doi" in text):
-        return 1.0
-    return 0.0
-
-
 _citation_validator = CitationValidator()
 
 

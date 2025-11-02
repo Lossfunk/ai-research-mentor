@@ -73,10 +73,13 @@ def prepare_agent(prompt_arg: Optional[str] = None, ascii_override: Optional[boo
         )
         loaded_variant = "fallback"
 
-    effective_instructions = f"{_compose_runtime_prelude()}\n\n{instructions}"
     baseline_mode = _is_truthy(os.environ.get("ARM_BASELINE_MODE"))
 
-    if not baseline_mode:
+    if baseline_mode:
+        effective_instructions = ""
+        print_info("Baseline mode active: running without mentor prompt or guidelines injection")
+    else:
+        effective_instructions = f"{_compose_runtime_prelude()}\n\n{instructions}"
         try:
             injector = create_guidelines_injector()
             stats = injector.get_stats()
@@ -94,8 +97,6 @@ def prepare_agent(prompt_arg: Optional[str] = None, ascii_override: Optional[boo
                 print_info("Guidelines: disabled")
         except Exception as exc:  # pragma: no cover - best effort diagnostics
             print_error(f"Guidelines injector error: {exc}")
-    else:
-        print_info("Baseline mode active: skipping guidelines injection")
 
     agent, offline_reason = build_agent(effective_instructions)
     return AgentPreparationResult(agent, offline_reason, loaded_variant, effective_instructions)

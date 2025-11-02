@@ -6,7 +6,6 @@ import contextlib
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from academic_research_mentor.core.transparency import get_transparency_store
@@ -117,15 +116,6 @@ class SingleTurnOrchestrator:
                 print(f"Provider '{system_spec}' unsupported for automatic orchestrator runs")
                 continue
 
-            baseline_prompt_path = Path("baseline_prompt.md")
-            if baseline_prompt_path.exists():
-                env_overrides["ARM_PROMPT_FILE"] = str(baseline_prompt_path.resolve())
-                env_overrides["ARM_PROMPT"] = "baseline"
-            else:
-                print(
-                    "Warning: baseline_prompt.md not found; falling back to default prompt"
-                )
-
             if self.baseline_mode:
                 env_overrides["ARM_BASELINE_MODE"] = "1"
                 env_overrides["ARM_GUIDELINES_MODE"] = "off"
@@ -133,15 +123,6 @@ class SingleTurnOrchestrator:
                     env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self.tool_whitelist)
                 else:
                     env_overrides["ARM_TOOL_WHITELIST"] = "attachments_search,web_search"
-
-                baseline_prompt_path = Path("baseline_prompt.md")
-                if baseline_prompt_path.exists():
-                    env_overrides["ARM_PROMPT_FILE"] = str(baseline_prompt_path.resolve())
-                    env_overrides["ARM_PROMPT"] = "baseline"
-                else:
-                    print(
-                        "Baseline mode warning: baseline_prompt.md not found; falling back to default prompt"
-                    )
             elif self.tool_whitelist:
                 env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self.tool_whitelist)
 

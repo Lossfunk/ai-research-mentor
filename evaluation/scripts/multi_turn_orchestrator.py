@@ -287,14 +287,6 @@ class MultiTurnOrchestrator:
                     env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self._tool_whitelist)
                 else:
                     env_overrides.setdefault("ARM_TOOL_WHITELIST", "attachments_search,web_search")
-                baseline_prompt_path = Path("baseline_prompt.md")
-                if baseline_prompt_path.exists():
-                    env_overrides["ARM_PROMPT_FILE"] = str(baseline_prompt_path.resolve())
-                    env_overrides["ARM_PROMPT"] = "baseline"
-                else:
-                    print(
-                        "Baseline mode warning: baseline_prompt.md not found; falling back to default prompt",
-                    )
             elif self._tool_whitelist:
                 env_overrides["ARM_TOOL_WHITELIST"] = ",".join(self._tool_whitelist)
             with _override_env(env_overrides):

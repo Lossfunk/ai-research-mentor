@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -80,6 +81,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     stages = [_normalize_stage_name(s) for s in (args.stages or ["stage_a"])]
 
     summaries: List[Dict[str, Any]] = []
+
+    os.environ.setdefault("ARM_BASELINE_MODE", "1")
+    os.environ.setdefault("ARM_GUIDELINES_MODE", "off")
+    os.environ.setdefault("ARM_TOOL_WHITELIST", "attachments_search,web_search")
+    for var in ("ARM_PROMPT_FILE", "ARM_PROMPT", "ARM_PROMPT_PATH"):
+        os.environ.pop(var, None)
+
     for stage in stages:
         # Generate artifacts for the stage
         stage_summary = run_stage(stage, prompt_ids=None, force=args.force)
