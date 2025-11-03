@@ -1,71 +1,88 @@
-**1. Problem framing and goals**  
-You can do meaningful zero-compute research by:
-- Re-analyzing existing public datasets with new hypotheses (≤1–2 week download, ≤5 GB RAM) — e.g. probing TinyStories, GLUE, or CIFAR-10.
-- Mining GitHub-released models/datasets and re-running authors’ inference notebooks on CPU-only (many finish in hours on a laptop, GPU optional).
-- Carving a reproducibility niche: pick 5–10 recently claimed papers and reproduce the exact experiment cards in the author repo under identical random seeds with provided data.  
-Target objective: deliver one fully reproducible paper + one fresh “no-compute” hypothesis within 6 months, publishable as a tiny-compute or survey track at ACL/ICLR/ICML workshops.
+1. Problem framing and goals
+Framing: With no local compute, focus on research contributions that rely on rigor over training: evaluation methodology, reproducibility audits, benchmark design/critique, and contamination analysis using public model outputs or small API calls. These areas are high-leverage, undersupplied, and publishable when done carefully [P10][G5]. Recent work shows impactful progress can come from better experimental design and robust evaluations (e.g., tiny-sample evaluation, benchmark agreement, contamination-limited test sets) without training any models [P1][P4][P5].
 
-**Intuition**: Most progress in ML comes from reframing problems, not bigger GPUs. You’re weaponizing rigor, not flops.  
-**Why this is principled**: Multiple meta-surveys show 30–50 % of empirical claims degrade under reproduction; your audit path is finite and gate-able [G1].
+Goals (6 months):
+- Deliver one reproducibility audit with strong negative/qualified claims (with CIs and ablations) [P2][G8].
+- Deliver one benchmark-method artifact (tiny-sample evaluation protocol or contamination audit toolkit) with public data/code [P1][P3].
+- Submit to a Datasets & Benchmarks/evaluation venue or workshop; release a reproducible toolkit and report [P10].
 
-**2. Experiments** (all CPU/laptop, ≤8 GB RAM, single-threaded OK)  
-**E1 TinyStories vs. Llama-2 scaling law**  
-Hypothesis: TinyStories (tiny models, curated data) achieves the same emergent behavior slope as Llama-2 if plotted along FLOPs-to-performance, implying emergence is not unique to scale.  
-Setup: Re-use authors’ released checkpoints (≤300 MB each) and loss traces; replicate scatter plot with identical token count normalization.  
-Evaluation: log-log Brier curve vs. compute; compute R² (goodness-of-fit) compared to Llama-2 scaling curve.  
-Baseline: Llama-2 scaling numbers as reported in Touvron et al. 2023.  
-Success metric: R² ≥0.80 with visually overlapping trend lines.  
-Interpretation: If curves align, emergence is scale-agnostic → supports tiny-data modeling narrative. If not, scale still matters → supports Chinchilla-style resource scaling.  
-Follow-up: Add Phi or Orca data to check if “tiny but curated” rewrites the curve.
+Intuition: You can substitute compute with careful design: small, statistically efficient samples; replication across seeds/prompts; and contamination-aware test sets reveal real signal without training new models [P1][P3][P5].
 
-**E2 Can a 2-layer MLP memorize 2-bit XOR on CPU?**  
-Hypothesis: Memorization without over-parameterization can occur if we feed exact one-hot representation of bits.  
-Setup: Generate synthetic 2-bit XOR dataset (4 samples, 2 classes). Train a MLP (2-10-10-1) with ReLU; record test accuracy, param count, and epochs to convergence.  
-Baseline: published “memorization threshold” claims by Zhang et al. 2017 showing >100k params are needed for random labels.  
-Evaluation: plot parameters vs. epochs to convergence; stop at 100% train + test accuracy.  
-Outcomes: If <50 params suffice, it falsifies the “massive needed” claim on tiny data; if not, confirms requirement scales with label noise, not data.  
-Follow-up: Swap from one-hot to raw float bits and observe whether smoothness helps.
+Why this is principled: Methodological rigor and problem selection drive impact even when resources are limited (Hamming; Schulman). Reproducibility work has repeatedly corrected over-claims in LLM prompting/“reasoning,” and robust benchmarking is an active frontier [P2][G5][G7].
 
-**E3 Re-run CIFAR-10 authors’ 93.5 % CNN by hand**  
-Hypothesis: Public code reproduces ≥90 % of claimed accuracy on CPU using only CPU inference.  
-Setup: Clone 3-line CNN repo; train for 10 epochs on CPU (should finish in ≤3 h).  
-Evaluation: accuracy ≥92 %, matching paper claim within ±1 %.  
-If gap exists, document ablation factors: data augmentation order, weight decay, scheduler difference.  
-Publish tiny-compute artifact + short technical note.  
-Follow-up: Extend to CIFAR-100 to test scalability.
+2. Experiments
+Experiment 1 — Tiny-sample evaluation replication and extension
+- Hypothesis: A tiny-sample protocol (e.g., 20–50 items per task with bootstrap CIs) preserves model rankings within τ ≥ 0.7 of full benchmarks, cutting evaluation cost by >80% [P1].
+- Setup: Select 3–4 public tasks with available items (e.g., subsets of LiveBench and classic tasks), and 3–5 public models via free/demo endpoints or existing outputs; evaluate with 3 seeds and report CIs [P1][P4].
+- Baselines: Full-sample leaderboard rankings where available; random ranking baseline.
+- Metrics: Kendall/Spearman rank correlations to full benchmarks, CI width, cost/runtime.
+- Expected outcomes: Tiny-sample ranks correlate highly with full sets; CI-based decision rules reduce overclaiming [P1]. If correlation is low, analyze item selection and task instability [P5].
 
-**E4 Repro survey of 50 arXiv “no-code” papers**  
-Hypothesis: ≥30 % lack sufficient detail for reproduction.  
-Setup: Pull last 12-month arXiv “transformers” papers that omit public repo. Create 10-point rubric (code link, hyper-params, data splits).  
-Evaluation: score papers; compute statistics with 95 % CI.  
-Outcome: Empirical estimate of reproducibility decline in era of LLM boom.  
-Follow-up: Propose “minimal reproducibility checklist” for workshop.
+Experiment 2 — Reproducibility audit of CoT/self-consistency claims
+- Hypothesis: Claimed gains from CoT/self-consistency shrink when controlling for sampling seeds, temperatures, and prompt templates; some effects are benchmark- or prompt-specific [P2].
+- Setup: For 2–3 small tasks (e.g., 50-item arithmetic/reasoning subsets), compare Direct Answer vs CoT with fixed and varied templates, 5–10 seeds, and temperature grid; use only public APIs or public outputs where possible.
+- Baselines: Majority-class/random; best non-CoT prompt per task.
+- Metrics: Absolute accuracy/EM; effect sizes with bootstrapped CIs; multiple-comparison correction.
+- Expected outcomes: Reduced, task-dependent CoT gains; clear reporting templates and stop rules. If gains persist, identify the conditions and publish as stability evidence [P2].
 
-**3. Timeline (6 months)**  
-Month 0–1: Literature sweep + confirm zero-compute feasibility; collect 5 candidate papers and 2 datasets.  
-Month 1–2: Run E1, finalize code, submit tiny-arXiv draft + tweetstorm.  
-Month 2–3: Parallel execution E2 + E3; assemble repo with clean README.  
-Month 3–4: Submit reproducibility workshop paper (ICLR, tiny-track, or ACL SRW).  
-Month 4–5: E4 survey; compile stats, draft short journal-style note.  
-Month 5–6: Polish drafts; submit to ACL findings or ML-Curious workshop; apply for travel grants if needed.
+Experiment 3 — Benchmark data contamination audit (lightweight)
+- Hypothesis: Older benchmarks show measurable overlap with public web sources; contamination-limited sets (e.g., LiveBench) reduce this exposure and yield different model orderings [P3][P4].
+- Setup: Choose 2 benchmarks (one older, one contamination-limited). For 200–500 items, run exact/fuzzy n-gram searches on the web/archives to flag potential leakage; stratify analyses by suspected overlap.
+- Baselines: Random web pages; null of no differential performance across overlap vs non-overlap items.
+- Metrics: Overlap rate; performance difference Δ across overlap strata; rank shifts; simple logistic regression of correctness ~ overlap flag.
+- Expected outcomes: Higher overlap in older sets; attenuated performance and/or different ranking on contamination-limited data [P3][P4]. If no effect, document methods and propose stronger tests.
 
-**4. Resources**  
-Compute: laptop with 8 GB RAM, 256 GB SSD (public clouds optional).  
-Tools: Jupyter, VS Code, GitHub, Colab free tier, GitHub Actions CI for notebooks (1000 min/mo free).  
-Datasets/models: TinyStories, GLUE, CIFAR-10, CIFAR-100, MNIST, all downloadable in minutes.  
-Expect 100–200 MB of storage per experiment, entirely offline doable.
+Experiment 4 — Do benchmarks agree? A meta-evaluation probe
+- Hypothesis: Different benchmarks disagree on model ranking more than expected; agreement improves after removing high-variance items and harmonizing scoring [P5][P10].
+- Setup: Aggregate small, public subsets from 3–4 benchmarks; use public model outputs or low-cost API calls with a unified scoring rubric.
+- Baselines: Unharmonized scoring; full-item versions without pruning.
+- Metrics: Inter-benchmark Kendall/Spearman correlations; instability indices (bootstrap); proportion of pairwise rank inversions.
+- Expected outcomes: Moderate disagreement that decreases with harmonization and item pruning; a compact protocol others can adopt [P5][P10].
 
-**5. Risks and mitigations**  
-Repro gap: run on same seeds; if not, flag and note.  
-CPU timeout: cap epochs to 10; profile speed.  
-Authorship: co-write with original paper authors for clarity.  
-Over-claims: pre-register hypotheses and direction with open-science framework.  
-Venue fit: target tiny-compute or survey tracks; else arXiv-only.
+3. Timeline for the next 6 months with milestones
+- Phase 0 (Weeks 1–2): Stand up repo; define experiment cards and stop rules; pilot tiny-sample evaluation on one task; produce a prediction log (≥14 entries) and one reproduced metric with ≤10% gap; 1 ablation or negative result write-up [G8][G9].
+- Month 1: Run Experiment 1 across 3 tasks and 3–5 models; pre-register analysis; draft short report section on statistical efficiency [P1].
+- Month 2: Run Experiment 2; build prompt-variance harness; write reproducibility checklist and reporting tables [P2].
+- Month 3: Run Experiment 3; release overlap-detection script and contamination notes; compare rank shifts [P3][P4].
+- Month 4: Run Experiment 4; synthesize cross-benchmark insights; draft overall paper skeleton [P5][P10].
+- Month 5: Polish: ablations, robustness checks, sensitivity analyses; external replication ask; prepare artifact and ethical statements.
+- Month 6: Submit to a Datasets & Benchmarks/evaluation venue or workshop; post preprint; open-source toolkit.
 
-**6. Stretch ideas**  
-- Replicate scaling laws on open-source Phi or Alpaca to probe instruction tuning at micro-scale (still CPU).  
-- Meta-analyze bias in no-code papers by demographic affiliation of first authors, using public metadata.  
-- Create “No-Compute-NLP” leaderboard with standardized CPU timing to encourage ecological resource usage.
+4. Resources (compute, tools, datasets)
+- Compute: None locally. Use free notebooks (Kaggle/Colab) for light scripting only; keep per-run <30 minutes and <1GB RAM. All core results should be reproducible via scripts + public outputs.
+- Tools: Python + pandas; bootstrap CI utilities; lm-eval-harness or minimal custom scorer; reproducibility templates; simple web/archival search for contamination; BenchBench-inspired correlation scripts [P5][P10].
+- Datasets/benchmarks: LiveBench (contamination-limited) [P4]; small, classic subsets (e.g., arithmetic, QA); your tiny-sample subsets per [P1].
+- Method references: tinyBenchmarks protocol [P1]; Sober Look reproducibility checklist [P2]; contamination audit guidance [P3]; benchmark agreement practices [P5]; best-practice checklists [P10].
 
-**Optional next step**  
-Clone the TinyStories repo today, create your first experiment card from the template we provided, then tweet the hypothesis and tag #LowComputeML — build in public to attract collaborators and reviewers.
+5. Risks and mitigations table
+- Risk: No API access or costs. Mitigation: Use public model outputs/leaderboards; focus on re-analysis and contamination audits; seek small academic credits later.
+- Risk: Tiny-sample instability. Mitigation: Predefine item sampling; use bootstrap CIs; report decision uncertainty; increase n only as needed [P1].
+- Risk: Non-replicable prompt results. Mitigation: Multi-seed, multi-template, temperature grids; preregister; share full prompts and seeds [P2].
+- Risk: Contamination detection false positives/negatives. Mitigation: Transparent heuristics; human adjudication on a sample; sensitivity analyses [P3].
+- Risk: Reviewer skepticism about “no training.” Mitigation: Position as methodology/meta-evaluation with rigorous stats, ablations, and public artifacts [P10][G5].
+- Risk: Scope creep. Mitigation: Phase-gated plan; stop rules tied to CI widths and replication thresholds [G9].
+
+6. Stretch ideas or follow-up directions
+- Build a contamination-limited, continuously refreshed micro-benchmark (monthly refresh pipeline) and show drift-resilient evaluation [P4].
+- Propose a benchmark agreement scorecard and release a lightweight tool others can run on any leaderboard [P5].
+- Domain application: adopt ELEVATE-AI-like evaluation frameworks for a specific field (e.g., HEOR) to demonstrate external validity and stakeholder-relevant metrics [P9].
+- Synthesize a best-practices report on benchmark construction pitfalls and fixes, aligned with BetterBench [P10].
+
+Intuition: This plan trades compute for rigor—small, carefully designed samples; multi-seed prompt audits; contamination-aware evaluation; and cross-benchmark meta-analyses provide real insight without training models [P1][P3][P5].
+
+Why this is principled: It aligns with strong research taste and methodology guidance: pick important, tractable problems; use clear hypotheses and falsifiers; report uncertainty; and make artifacts reusable [G5][G7][G8]. Recent evaluations have revealed over-claims and benchmark fragility, signaling fertile ground for careful, low-compute work [P2][P10].
+
+Citations
+- [P1] tinyBenchmarks: evaluating LLMs with fewer examples — https://arxiv.org/html/2402.14992v1
+- [P2] A Sober Look at Progress in Language Model Reasoning: Pitfalls and Paths to Reproducibility — https://arxiv.org/abs/2504.07086
+- [P3] The Emperor’s New Clothes in Benchmarking? A Rigorous Examination of Mitigation Strategies for LLM Benchmark Data Contamination — https://arxiv.org/html/2503.16402v1
+- [P4] LiveBench: A Challenging, Contamination-Limited LLM Benchmark — https://arxiv.org/abs/2406.19314
+- [P5] Do These LLM Benchmarks Agree? Fixing Benchmark Evaluation with BenchBench — https://arxiv.org/abs/2407.13696
+- [P10] BetterBench: Assessing AI Benchmarks, Uncovering Issues, and Establishing Best Practices — https://arxiv.org/html/2411.12990v1
+- [G5] Schulman, An Opinionated Guide to ML Research — http://joschu.net/blog/opinionated-guide-ml-research.html
+- [G7] Hamming, You and Your Research — https://gwern.net/doc/science/1986-hamming
+- [G8] Best Practices Research: A Methodological Guide — https://www.researchgate.net/publication/31052323_Best_Practices_Research_A_Methodological_Guide_for_the_Perplexed
+- [G9] Explore→Understand Research Process — https://www.alignmentforum.org/posts/hjMy4ZxS5ogA9cTYK/how-i-think-about-my-research-process-explore-understand
+
+Optional next step
+- Create a one-page experiment card for Experiment 1 (hypothesis, minimal test, variables, analysis plan, stop rule) and sample 30 items for your first tiny-sample evaluation run.

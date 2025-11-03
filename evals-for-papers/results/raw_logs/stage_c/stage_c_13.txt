@@ -1,152 +1,111 @@
+Stage: B – Idea moving to C – Research plan
+
 1. Problem framing and goals
-- Context: Small e-commerce stores in emerging markets often face sparse data, heavy long-tail and popularity bias, and cold-start sellers/items. The business needs to balance consumer utility (relevance, CTR/GMV) with provider-side fairness (ensuring small sellers are not systematically starved of exposure) under limited traffic/computing budgets.
-- Problem: Evaluate and benchmark fairness-aware recommendation methods that trade off accuracy with provider-side exposure fairness in ranking, with attention to cold-start dynamics and data scarcity. Treat the platform as a multi-stakeholder system (buyers and sellers) where fairness is measured primarily as fairness of exposure commensurate with estimated merit [P8], [5].
+- Problem: For small e-commerce stores in emerging markets, many sellers receive little to no exposure due to popularity bias and sparse data. We aim to evaluate and improve fairness-aware recommendation methods that increase equitable exposure for sellers without unacceptable losses in user relevance and business KPIs. Fairness will focus primarily on provider (seller) exposure, with optional user-side checks if demographic or region labels are available. Fairness of exposure is a well-established paradigm for ranking systems and aligns directly with seller equity goals [1].
 - Primary goals:
-  - Define, implement, and validate a reproducible offline and simulated-online evaluation framework for fairness-aware recommenders suitable for low-traffic settings.
-  - Quantify trade-offs between user utility and seller-side fairness using exposure-aware re-ranking and multi-objective optimization [P1], [5].
-  - Stress-test robustness in cold-start and long-tail regimes; assess counterfactual fairness constraints to avoid unfair pathways [P2], [P5].
+  - Quantify current exposure disparity and quality-adjusted exposure disparity across sellers (overall and by lifecycle: cold-start, low-inventory, rural/under-served regions).
+  - Benchmark re-ranking and training-time fairness methods on relevance–fairness trade-offs under realistic small-data constraints.
+  - Provide off-policy, statistically principled offline estimates of online impact to de-risk pilots using IPS/DR estimators [2].
 - Success criteria:
-  - Clear, statistically sound improvements on provider-side fairness metrics (exposure disparity, Gini/Atkinson of exposure, minimum seller exposure) with limited loss (<3–5% relative) in utility (NDCG/CTR proxy) on at least two datasets/simulators.
-  - Demonstrated reproducibility, with ablations and uncertainty quantification, and a small-scale online/simulator study showing similar trends [P3].
+  - Reduce seller exposure Gini by ≥20% with ≤2% relative drop in Recall@K on at least two datasets; uncertainty-bounded via bootstrap CIs.
+  - Demonstrate robust gains for cold-start sellers (≥30% increase in calibrated exposure share) with acceptable utility trade-off [P5].
+  - Deliver a reproducible pipeline with ≥3-seed variance reporting and clear ablation evidence for the dominant factor behind gains.
+
+Intuition
+- Small stores suffer from head–tail dynamics: a few popular items and sellers dominate exposure. Adding exposure constraints or penalties can redirect a portion of attention to qualified tail sellers while maintaining user utility, especially via lightweight re-ranking on top of strong baselines.
+Why this is principled
+- Exposure-based fairness provides a direct, interpretable link between ranking positions and provider outcomes [1]. Off-policy evaluation via IPS/doubly-robust estimators is the standard to estimate counterfactual policy performance from logs without running risky online tests [2]. Cold-start fairness leverages transfer/meta-learning to protect new providers from being starved by feedback loops [P5].
 
 2. Experiments
-All experiments are falsifiable and include setup, baselines, metrics, and expected outcomes. Implement a common pipeline: candidate generation (e.g., co-visitation/graph or MF/LightGCN) → scoring → optional fairness-aware re-ranking. Use position-based exposure models to compute exposure [5].
+Experiment 1: Exposure-constrained re-ranking (post-hoc)
+- Hypothesis: A re-ranking layer that enforces exposure constraints by seller reduces exposure disparity with minimal relevance loss [1].
+- Setup: Train a baseline recommender (e.g., BPR-MF, LightFM, SASRec). Apply Top-K re-ranking with exposure budgets per seller (proportional to estimated quality via predicted relevance) using constrained optimization (e.g., greedy with exposure caps). Datasets: Olist (Brazil), RetailRocket, Yoochoose; derive seller IDs from items.
+- Baselines: Pure utility ranking; diversity-focused MMR/xQuAD; uniform rotation without quality adjustments.
+- Evaluation metrics: Utility (Recall@K/NDCG@K), Fairness (exposure Gini/Theil across sellers; quality-adjusted exposure ratio vs predicted relevance), Coverage@K (sellers surfaced), Head–tail exposure ratio. Estimate CTR/GMV via IPS/DR with clipping and SNIPS variants, report CIs [2].
+- Expected outcomes: Pareto front showing 10–30% exposure disparity reduction at ≤2% utility loss; failure (large utility loss) indicates constraints too strict or poor quality estimates; follow-ups include adaptive budgets by lifecycle and position-weighted exposure modeling.
 
-Experiment 1: Exposure-aware re-ranking vs vanilla ranking
-- Hypothesis: Post-hoc exposure-aware re-ranking reduces provider exposure disparity at small cost to ranking utility [5].
-- Setup:
-  - Base ranker: BPR-MF or LightGCN trained on click/purchase logs.
-  - Re-ranking: apply a constrained or regularized re-ranking that minimizes exposure disparity subject to utility loss bounds (e.g., fairness-of-exposure objective using estimated position bias; can implement a greedy or linear assignment variant) [5].
-  - Data: one public e-commerce dataset (e.g., RetailRocket) and a second marketplace-like dataset or simulator (MARS-Gym) [P3].
-- Baselines:
-  - Vanilla top-k ranking (no fairness).
-  - Popularity-boosted ranking (to show a negative control for fairness).
-  - Multi-objective score blending (simple weighted sum of relevance and seller fairness score).
-- Evaluation metrics:
-  - Utility: NDCG@k, Recall@k.
-  - Provider fairness: exposure-disparity vs merit (e.g., mean absolute deviation of seller exposure from target proportional to seller quality), minimum exposure per seller, Gini/Atkinson on exposure [5].
-  - Aggregate trade-off: Pareto front of Utility vs Fairness (area-under-Pareto curve).
-- Expected outcomes:
-  - Re-ranking achieves ≥20–40% reduction in exposure disparity with ≤3–8% drop in NDCG@k relative to vanilla, under calibrated position bias. If results depend strongly on exposure estimation, sensitivity analysis reveals robustness boundaries [5], [2].
+Experiment 2: Training-time exposure regularization
+- Hypothesis: Incorporating an exposure disparity penalty during training yields smoother trade-offs than post-hoc re-ranking and improves calibration of exposure to item quality.
+- Setup: Add a regularizer to the ranking loss: L = L_rec + λ·ExposureDisparity(seller), where exposure is approximated from predicted scores and position bias. Train across λ∈{0,0.01,0.1,1}. Use same datasets, identical negatives, and hyperparameters across conditions.
+- Baselines: Experiment 1 utility-only and re-ranking-only policies.
+- Evaluation metrics: Same as E1 plus calibration error between predicted relevance share and realized exposure share per seller. Use DR OPE with an estimated logging policy to reduce variance [2].
+- Expected outcomes: For moderate λ, expect similar fairness to re-ranking with smaller utility drops; if unstable, diagnose sensitivity to position-bias modeling and switch to doubly robust estimation with better logging policy estimation [2].
 
-Experiment 2: Multi-objective training (Multi-FR) vs post-hoc re-ranking
-- Hypothesis: Joint multi-objective optimization during training (e.g., Multi-FR) yields better Pareto trade-offs than post-hoc re-ranking [P1].
-- Setup:
-  - Implement Multi-FR-style training where the loss includes both user utility and provider fairness terms (exposure- or outcome-based), optimizing for multiple objectives and selecting models on the Pareto front [P1].
-  - Datasets: same as Exp. 1 for comparability; also include a cold-start split to stress low data.
-- Baselines:
-  - Exp. 1 re-ranking approach.
-  - Simple reweighting of seller groups during training (naïve fairness regularizer).
-- Metrics:
-  - Same as Exp. 1; add calibration of exposure to merit; report Pareto frontier coverage (number of non-dominated points), and fairness at varying k.
-- Expected outcomes:
-  - Multi-objective training matches or exceeds re-ranking on Pareto efficiency and fairness stability under cold-start splits. If not, re-ranking may be preferable in low-data regimes due to simpler estimation [P1].
+Experiment 3: Cold-start seller fairness via transferable fairness
+- Hypothesis: Transfer/meta-learning that encodes seller-invariant priors improves cold-start exposure fairness without hurting overall utility [P5].
+- Setup: Split sellers by join time; treat newest 20% as cold-start. Pretrain user/item encoders on head sellers, adapt with few-shot updates or meta-learning to unseen sellers; optionally add a fairness-aware objective that boosts uncertainty-aware exposure for new sellers.
+- Baselines: Utility-only model; re-ranking from E1 applied to cold-start sellers; naive smoothing (add-k exposure).
+- Evaluation metrics: Cold-start segment utility (Recall@K), exposure share vs expected quality proxy (category-level click-through or item metadata), ramp-up time to reach 80% of mature-seller exposure; fairness–utility trade-off curves by seller age. OPE with stratified variance reporting [P5][2].
+- Expected outcomes: 30%+ improvement in cold-start calibrated exposure with ≤3% utility loss; if not, examine whether item metadata is too sparse and test auxiliary text/image features or hierarchical category priors.
 
-Experiment 3: Counterfactual fairness constraints in recommendation pathways
-- Hypothesis: Incorporating path-specific counterfactual fairness reduces unfair recommendations mediated by sensitive attributes while preserving utility [P2], [P5].
-- Setup:
-  - Define sensitive attributes (e.g., seller region or shop size category). Build a structural causal model for pathways (sensitive attribute → visibility/exposure → outcomes) and enforce constraints on path-specific effects [P2].
-  - Apply as a re-weighting or regularization on exposure or relevance scores to neutralize undesirable paths.
-- Baselines:
-  - No fairness constraint.
-  - Group fairness constraint (exposure parity at group level) without causal decomposition.
-- Metrics:
-  - Utility: NDCG@k, Recall@k.
-  - Fairness: difference-in-differences of exposure attributable to sensitive pathways; group exposure disparity before/after constraint [P2].
-  - Robustness: sensitivity to misspecified causal graphs via perturbation studies.
-- Expected outcomes:
-  - Reduced path-specific unfairness without over-correcting legitimate merit-based differences. If causal misspecification harms utility, document failure modes and fallback to group-level exposure constraints [P2], [P5].
-
-Experiment 4: Cold-start fairness with exploration in a marketplace simulator (MARS-Gym)
-- Hypothesis: Lightweight exploration (e.g., epsilon-greedy or Thompson sampling on top-k slates) improves small-seller exposure and long-term utility in low-traffic settings [P3].
-- Setup:
-  - Use MARS-Gym (marketplace simulator) to model buyer-seller interactions and long-term effects; simulate low-traffic, long-tail distributions [P3].
-  - Policies: pure exploitation (baseline), epsilon-greedy, and UCB/Thompson sampling integrated with exposure-aware constraints (combine fairness-aware re-ranking with stochastic exploration).
-- Baselines:
-  - Pure exploitation ranker; popularity-based ranker.
-- Metrics:
-  - Short-term: click/conversion proxies, utility.
-  - Long-term: seller churn proxy, exposure inequality, percentage of sellers achieving minimum viable exposure.
-  - Off-policy evaluation sanity check (if logs available), then on-policy in simulator [P3].
-- Expected outcomes:
-  - Exploration policies improve minimum exposure and reduce Gini of exposure while maintaining or improving long-term utility in the simulator. Validate trends with confidence intervals and report any instability due to reward sparsity [P3].
+Experiment 4: Counterfactual fairness analysis and guardrails
+- Hypothesis: Recommendations contain unfair pathways (e.g., region → shipping complexity → reduced exposure) that can be mitigated by path-specific constraints without blanket removal of useful signals [P1][P2].
+- Setup: Build a simple causal graph over features (region, price, shipping time, category) and predicted scores. Conduct path-specific counterfactual probes by intervening on sensitive or proxy attributes and measuring score/exposure changes. Implement a guardrail re-ranking that limits exposure changes attributable to sensitive paths while preserving permissible paths.
+- Baselines: No guardrails; naive feature removal (drop region).
+- Evaluation metrics: Counterfactual fairness gap (Δ exposure/score under interventions), utility and standard fairness metrics. Qualitative inspection of affected sellers to ensure plausible business rationales [P1][P2].
+- Expected outcomes: Guardrails reduce path-specific unfairness with smaller utility loss than naive feature removal; if unstable, simplify graph or limit to high-confidence paths.
 
 3. Timeline for the next 6 months with milestones
-- Month 1: Scoping and data readiness
-  - Finalize fairness definitions (exposure vs. outcome fairness), sensitive attributes, and target merit definition (e.g., predicted relevance or quality proxies) [5], [P8].
-  - Prepare datasets: historical logs preprocessing, train/val/test splits with cold-start protocol; set up MARS-Gym [P3].
-  - Implement baseline recommenders (BPR-MF/LightGCN) and metric suite (utility + exposure metrics).
-  - Milestone: Baseline reproducible pipeline and metric dashboards.
-- Month 2: Exposure modeling and Experiment 1
-  - Estimate position bias and exposure curves; validate with sensitivity analysis [5], [2].
-  - Implement exposure-aware re-ranking + baselines; run Exp. 1 on dataset A.
-  - Milestone: First Utility–Fairness Pareto plots; internal report.
-- Month 3: Multi-objective training (Exp. 2)
-  - Implement Multi-FR-style training; run on datasets A and B (or simulator logs) [P1].
-  - Milestone: Pareto front comparisons vs. re-ranking; cold-start split results.
-- Month 4: Causal fairness (Exp. 3)
-  - Define structural pathways; implement path-specific constraints; perform robustness studies [P2], [P5].
-  - Milestone: Causal fairness results with ablations of graph assumptions.
-- Month 5: Simulator and exploration (Exp. 4)
-  - Set up MARS-Gym scenarios; evaluate exploration + fairness vs pure exploitation [P3].
-  - Milestone: Long-term fairness and utility trends; uncertainty quantification.
-- Month 6: Consolidation and (optional) pilot online test
-  - Triangulate findings across offline, simulator, and any small online pilot with guardrails (traffic caps, stop-loss on CTR/GMV).
-  - Prepare paper artifacts: code, data cards, ablation tables, ethical considerations.
-  - Milestone: Submission-ready draft and reproducibility package.
+- Phase 0 (Weeks 1–2): Repro and gating
+  - Deliverables: (1) Prediction log with ≥14 entries; (2) Reproduce a baseline Recall@K on one dataset within 10% of reported benchmarks and one ablation or negative result with post-mortem; (3) Experiment card template finalized for E1–E3.
+- Month 2: Data audit and baselines
+  - Complete data prep for Olist, RetailRocket, Yoochoose; build seller mappings. Establish position-bias model. Baseline utility models trained with 3 seeds; initial logging policy estimation for OPE. Milestone: Baseline metrics dashboard + OPE sanity checks (SNIPS ≈ IPS when weights near 1).
+- Month 3: E1 re-ranking
+  - Implement exposure-constrained re-ranking; generate fairness–utility Pareto curves across K and budgets. Milestone: Achieve ≥10% exposure Gini reduction with ≤3% utility loss on 2 datasets; archive configs and seeds.
+- Month 4: E2 regularization
+  - Train exposure-regularized models across λ grid; DR OPE integrated. Milestone: Match or exceed E1 trade-off on at least one dataset; ablation shows λ explains ≥50% of observed fairness gains.
+- Month 5: E3 cold-start fairness
+  - Split by seller age; implement transfer/meta variant; evaluate ramp-up metrics. Milestone: 30% improvement in cold-start calibrated exposure with ≤3% utility loss on at least one dataset; uncertainty intervals reported.
+- Month 6: E4 counterfactual guardrails + synthesis
+  - Build causal probes; test guardrail re-ranking. Prepare paper: methods, ablations, limitations, and deployment checklist. Milestone: Draft with figures; reproducibility package (code, configs, data notes).
 
 4. Resources (compute, tools, datasets)
 - Compute
-  - Development: 1–2 GPUs (e.g., T4/A10) for MF/LightGCN and small transformers; CPU cores for candidate generation; 100–200 GB storage for logs and intermediate features.
-  - Simulation: modest GPU/CPU to run MARS-Gym episodes [P3].
+  - CPU: 16–32 vCPU; RAM: 64–128 GB for joins and OPE.
+  - GPU: 1×T4/3090-class optional for deep sequential models (SASRec, transformers).
+  - Storage: 200 GB for datasets, logs, artifacts; fast SSD recommended.
 - Tools
-  - Recommenders: RecBole or TensorFlow Recommenders for BPR/LightGCN.
-  - Fairness and ranking: custom exposure-aware re-ranking modules; pytrec_eval for ranking metrics; Pareto optimization utilities (e.g., Nevergrad) for weights [P1], [5].
-  - Simulation: MARS-Gym for marketplace dynamics and off-policy/online evaluation in silico [P3].
-  - Experiment management: MLflow/W&B; statistical analysis in Python (SciPy/ArviZ for uncertainty).
-- Datasets
-  - Public e-commerce logs (e.g., RetailRocket) for offline evaluation; a second dataset or synthetic via MARS-Gym to stress long-tail and cold-start [P3].
-  - If proprietary data exist, create privacy-preserving, de-identified splits; define sensitive attributes (e.g., seller region) carefully with stakeholder input.
-  - Note: For off-policy evaluation estimators (IPS/SNIPS/DR), authoritative recommendation-specific sources should be added; propose a focused literature scan on “off-policy evaluation ranking recommenders SNIPS doubly robust arXiv” to select estimators and logging-policy requirements with citations (limitation acknowledged).
+  - Modeling: RecBole or TensorFlow Recommenders; implicit/LightFM for MF; PyTorch Lightning for training loops.
+  - Re-ranking: Custom exposure constraint module; OR-Tools or greedy heuristics.
+  - OPE: Custom IPS/SNIPS/DR estimators with propensity clipping; bootstrap CI.
+  - Experiment tracking: Weights & Biases or MLflow; DVC for data versioning.
+- Datasets (public, seller-aware)
+  - Olist (Brazil) with sellers and orders; derive seller exposure targets (Kaggle).
+  - RetailRocket and Yoochoose (RecSys 2015); infer sellers via item–merchant mapping if available; if not, simulate provider groups by brand/category and note limitation.
+  - Diginetica; optional Taobao small sample. Note: If seller IDs are missing, use category/brand as provider proxy and document as a limitation to be improved via partnerships.
 
 5. Risks and mitigations table
-- Risk: Exposure estimation is misspecified (position bias wrong), leading to misleading fairness gains.
-  - Mitigation: Sensitivity analysis over exposure curves; compare click-model variants; use “incomplete exposure estimation” insights to bound conclusions [2], [5].
-- Risk: Over-correction harms high-merit small sellers or reduces overall utility.
-  - Mitigation: Enforce utility loss constraints; select points on Pareto front; monitor per-seller calibration of exposure-to-merit [P1], [5].
-- Risk: Causal fairness model is misspecified.
-  - Mitigation: Perform ablations on graph structure; report range of outcomes; fall back to group exposure constraints when unstable [P2], [P5].
-- Risk: Data sparsity/cold-start makes fairness metrics noisy.
-  - Mitigation: Use stratified bootstrapping and report confidence intervals; aggregate windows; incorporate simulator evidence to complement sparse offline logs [P3].
-- Risk: Feedback loops entrench popularity bias when deploying.
-  - Mitigation: Add controlled exploration; cap per-seller exposure; periodic re-initialization to prevent runaway effects [P3].
-- Risk: Seller gaming (e.g., attribute manipulation to gain exposure).
-  - Mitigation: Use robust merit estimation and anomaly detection; avoid direct dependence on easily manipulable features.
-- Risk: Limited traffic prevents robust online A/B tests.
-  - Mitigation: Use simulator pre-screening; run small, sequential tests with strict guardrails and sequential analysis; prioritize low-variance interventions [P3].
-- Risk: Ethical/legal concerns around sensitive attributes.
-  - Mitigation: Involve legal/ethics review; prefer causal path constraints to avoid direct disparate treatment [P2].
+- Sparse or missing seller IDs
+  - Mitigation: Use brand/category as provider proxy; run sensitivity analyses; seek a partner dataset with explicit seller fields.
+- Selection bias and MNAR logs
+  - Mitigation: Use IPS/SNIPS/DR with clipping, logging-policy estimation, and diagnostics; report variance and CIs [2].
+- Over-constraining harms utility
+  - Mitigation: Sweep constraint strength; report Pareto fronts; adopt quality-adjusted exposure so high-quality tail sellers get priority [1].
+- Cold-start metadata too weak
+  - Mitigation: Add text/image features; hierarchical category priors; uncertainty-aware exploration component in re-ranking [P5].
+- Metric gaming or mis-specification
+  - Mitigation: Triangulate fairness (Gini, Theil, head–tail ratios, calibrated exposure error); pre-register analysis plan; keep guardrail thresholds conservative.
+- Latency and engineering overhead
+  - Mitigation: Cache re-ranked slates; batch updates; keep training-time regularization as a no-latency alternative.
+- Ethical/regulatory concerns (user demographics)
+  - Mitigation: Prioritize provider fairness; if user fairness is explored, use coarse, consented region labels and aggregate reporting; apply path-specific guardrails rather than dropping predictive features [P1][P2].
 
 6. Stretch ideas or follow-up directions
-- Multi-sided fairness: Incorporate consumer-side fairness (e.g., equitable service across buyer regions or device types) alongside provider fairness, analyzing trade-offs [P8].
-- Explainability for fairness: Provide seller-facing explanations of exposure allocation and fairness constraints to improve trust and compliance [P6], [P7].
-- Dynamic quotas and learning-to-rerank: Fast online learning with fairness-of-exposure constraints for real-time adjustments under traffic volatility [4], [5].
-- Outcome fairness: Explore seller-side outcome fairness (e.g., conversion-adjusted exposure targets) and compare with exposure-based methods [P4].
-- Counterfactual audits: Periodically audit with path-specific counterfactual analysis to ensure fairness holds as data distribution shifts [P2].
+- Multi-objective constrained bandits for real-time fair exposure with OPE-safety checks before online rollout.
+- Path-specific causal audits and interactive dashboards for stakeholders to explore harms and trade-offs [P3].
+- Explainable fairness: counterfactual explanations to communicate why exposure changed for a seller [P6]; GNN-based fairness explanation for catalog graphs [P8].
+- Temporal fairness: enforce stability/equity over time to avoid oscillations in seller visibility [P7].
 
 Citations
-- [P1] Multi-FR: A Multi-objective Optimization Framework for Multi-stakeholder Fairness-aware Recommendation — http://arxiv.org/abs/2105.02951v3
-- [P2] Path-Specific Counterfactual Fairness for Recommender Systems — http://arxiv.org/abs/2306.02615v1
-- [P3] MARS-Gym: A Gym framework to model, train, and evaluate Recommender Systems for Marketplaces — http://arxiv.org/abs/2010.07035v1
-- [P4] Seller-side Outcome Fairness in Online Marketplaces — http://arxiv.org/abs/2312.03253v1
-- [P5] Personalized Counterfactual Fairness in Recommendation — http://arxiv.org/abs/2105.09829v3
-- [P6] Explainable Fairness in Recommendation — http://arxiv.org/abs/2204.11159v2
-- [P7] Counterfactual Explanation for Fairness in Recommendation — http://arxiv.org/abs/2307.04386v1
-- [P8] Multi-stakeholder Recommendation and its Connection to Multi-sided Fairness — http://arxiv.org/abs/1907.13158v1
-- [1] Fairness of Exposure in Rankings (ResearchGate mirror) — https://www.researchgate.net/publication/323335218_Fairness_of_Exposure_in_Rankings
-- [2] Fairness of Exposure in Light of Incomplete Exposure Estimation — https://dl.acm.org/doi/10.1145/3477495.3531977
-- [4] Fast online ranking with fairness of exposure — https://arxiv.org/pdf/2209.13019
-- [5] Fairness of Exposure in Rankings (arXiv) — https://arxiv.org/pdf/1802.07281
+- [P1] Path-Specific Counterfactual Fairness for Recommender Systems — http://arxiv.org/abs/2306.02615v1
+- [P2] Personalized Counterfactual Fairness in Recommendation — http://arxiv.org/abs/2105.09829v3
+- [P3] Interactive Counterfactual Exploration of Algorithmic Harms in Recommender Systems — http://arxiv.org/abs/2409.06916v1
+- [P5] Transferable Fairness for Cold-Start Recommendation — http://arxiv.org/abs/2301.10665v1
+- [P6] Counterfactual Explanation for Fairness in Recommendation — http://arxiv.org/abs/2307.04386v1
+- [P7] Recommendation Fairness in Social Networks Over Time — http://arxiv.org/abs/2402.03450v2
+- [P8] GNNUERS: Fairness Explanation in GNNs for Recommendation via Counterfactual Reasoning — http://arxiv.org/abs/2304.06182v4
+- [1] Fairness of Exposure in Rankings — https://arxiv.org/abs/1802.07281
+- [2] Doubly-Robust Off-Policy Evaluation with Estimated Logging Policy — https://arxiv.org/abs/2404.01830
 
 Optional next step
-- Stand up a minimal, end-to-end notebook that: (a) trains a LightGCN baseline, (b) estimates exposure curves, (c) runs the exposure-aware re-ranking (Exp. 1) on a small public dataset, and (d) plots the first Utility–Fairness Pareto front—this will de-risk the rest of the plan in one week.
+- Kick off Phase 0 by selecting two datasets (Olist + RetailRocket), standing up a simple BPR-MF baseline with 3 seeds, and drafting the experiment cards for E1–E3 so we can lock metrics, falsifiers, and stop rules before implementation.

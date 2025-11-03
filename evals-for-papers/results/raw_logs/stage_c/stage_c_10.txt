@@ -1,184 +1,105 @@
-1) Problem framing and goals
-- Objective: Build and evaluate an energy/bandwidth-efficient multimodal misinformation detector that runs on low-end Android devices and intermittently connected edge nodes. The detector should handle text-only, image-only, and text+image posts, degrade gracefully under modality drop, and minimize network usage.
-- Key constraints:
-  - Low bandwidth: 2G/3G and intermittent connectivity; prefer local inference, progressive/late fusion, and lightweight models.
-  - Low compute/energy: mid-tier phones or Raspberry Pi-class edge devices; target sub-300 ms P95 latency and <0.5 J/sample on-device inference.
-  - Low-resource languages: support cross-lingual transfer and noisy user-generated text.
-- Technical approach:
-  - Two-branch text+image architecture with lightweight encoders and late fusion to tolerate missing modalities and reduce cross-modal bandwidth requirements [P3], [P1].
-  - Distillation from strong teacher multimodal models to small student encoders (e.g., CLIP→MobileCLIP for vision, BERT→DistilBERT/TinyBERT for text) [4], [5].
-  - Robustness to modality drop and cross-modal inconsistencies emphasized in multimodal misinformation surveys and fusion literature [P3], [P4], [P5].
-- Success criteria:
-  - Accuracy: Within 3–5 F1 points of a server-grade multimodal baseline on public benchmarks (Fakeddit; out-of-context image–text) [1], [3].
-  - Efficiency: ≥50% reduction in data sent vs. client→server inference; on-device latency <300 ms P95 and energy <0.5 J/sample on a mid-tier phone.
-  - Robustness: <10% relative performance drop when one modality is missing; resilience to cross-modal mismatch [P3].
+1. Problem framing and goals
+- Problem: Build a robust, privacy-preserving multimodal misinformation detector that works in low-bandwidth regions on commodity Android devices. Prioritize on-device triage, minimal uplink, and resilience to out-of-context image reuse.
+- Scope: Image–text post pairs (e.g., social media posts); languages: English + one non-English (e.g., Chinese) for coverage; threat models include text-only falsehoods, image-only hoaxes, and image–text inconsistency.
+- Primary goals:
+  - Accuracy: ≥0.80 macro-F1 on public multimodal datasets (Fakeddit subsets, FakeNewsNet) and ≥0.75 on an out-of-context split. [W1][W3]
+  - Efficiency: ≤120 ms median inference on mid-range Android (Snapdragon 778G or similar), ≤25 MB app binary for models, ≤10 KB/post average uplink with triage.
+  - Robustness: ≤5% drop under 8-bit quantization; calibration ECE ≤0.08.
+- Approach: Distil from a CLIP-like teacher into a compact student (TinyCLIP/MobileCLIP-style visual encoder + DistilBERT/mBERT-lite text encoder) with late-fusion consistency head; progressive transmission sends only hashed/quantized embeddings for uncertain cases. [W4][W5][W6]; Use synthetic data augmentation to improve multimodal consistency learning [P1].
 
-2) Experiments
-Experiment 1: Late-fusion lightweight multimodal baseline under bandwidth constraints
-- Hypothesis: Late fusion with lightweight encoders (MobileCLIP image branch + DistilBERT text branch) will match most of the accuracy of heavier early-fusion models while using less bandwidth and being robust to missing modalities [P3], [4], [5].
-- Setup:
-  - Datasets: Fakeddit (image+text) for binary and fine-grained misinformation [1]; NewsCLIPpings (out-of-context image–text) for mismatch detection [3].
-  - Model: Two-branch architecture—image: MobileCLIP or a MobileNetV3+projection; text: DistilBERT; fusion: gated late fusion (concat+MLP with uncertainty gating) [P1], [P3], [4]. Quantize to 8-bit post-training.
-  - Bandwidth regime: Simulate posts with and without images; if bandwidth is limited, send only text; otherwise transmit compressed image (WebP, 224 px).
-- Baselines:
-  - Text-only DistilBERT.
-  - Image-only MobileNetV3.
-  - Heavy early-fusion model (ResNet50 + BERT) running server-side as an upper bound [P1], [P3].
-- Evaluation metrics:
-  - Accuracy/F1/AUROC; Modality-drop delta (F1 decrease with missing image or text).
-  - Latency P50/P95, energy per inference (J/sample) on device.
-  - Bandwidth per decision (KB/sample).
-- Expected outcomes:
-  - Late-fusion lightweight model within ~3–5 F1 points of heavy server model on Fakeddit; smaller drop with missing modality than early fusion [P3].
-  - ≥50% less bandwidth than server inference when operating text-only mode.
+Intuition
+- Most multimodal misinformation hinges on conflicts between image content and accompanying text. A compact student model can learn teacher-aligned cross-modal consistency signals and flag likely mismatches; when uncertain, send tiny, privacy-preserving signatures rather than raw media.
 
-Experiment 2: Teacher–student distillation for mobile multimodal detection
-- Hypothesis: Distilling from a strong teacher (CLIP-based multimodal or survey-recommended fusion models) to MobileCLIP+DistilBERT improves student accuracy without increasing runtime cost [4], [5].
-- Setup:
-  - Teacher: CLIP ViT-B/32 + BERT multimodal fusion (server-trained).
-  - Student: MobileCLIP (or MobileNetV3+projection)+DistilBERT with late fusion; loss includes cross-entropy + feature mimicry (MSE/KL on logits and intermediate embeddings).
-  - Datasets: Fakeddit train/val; NewsCLIPpings for mismatch.
-- Baselines:
-  - Student trained from scratch.
-  - Student with only logit distillation (no intermediate features).
-- Metrics: F1, AUROC; compute/latency/energy on device.
-- Expected outcomes:
-  - +1–3 F1 over from-scratch student at equal latency; consistent with benefits of distillation to compact text encoders [5] and efficient multimodal variants [4].
+Why this is principled
+- Synthetic and auxiliary signals can improve multimodal misinformation detection and consistency modeling [P1][P3]. Edge-deployed fake news detection is feasible with lightweight transformers at the network edge [P4], and CLIP distillation/efficient variants demonstrate strong accuracy–latency trade-offs on mobile hardware [W4][W5][W6].
 
-Experiment 3: Progressive transmission and decision-time deferral
-- Hypothesis: A progressive pipeline (text-first decision; transmit image only if text classifier is uncertain) yields similar accuracy to always multimodal while halving average bandwidth.
-- Setup:
-  - Text-first: DistilBERT classifies; if confidence <τ, request image; combine via late fusion and re-decision.
-  - Simulate bandwidth/latency (2G/3G) and intermittent connectivity; cache decisions until connectivity returns.
-- Baselines:
-  - Always multimodal (transmit image for all).
-  - Text-only.
-- Metrics: Bandwidth per decision, accuracy/F1, end-to-end decision latency (includes network RTT), fraction of cases requiring image.
-- Expected outcomes:
-  - 40–60% reduction in average bytes per decision with <2 F1 loss relative to always multimodal.
+2. Experiments
+Experiment 1: Distilled lightweight multimodal consistency model
+- Hypothesis: An 8-bit quantized student (≤25M params) distilled from a CLIP-like teacher retains ≥90% of teacher F1 while 3–5× faster on-device. [W4][W5][W6]
+- Setup: Teacher = CLIP ViT-B/16 fine-tuned for misinformation classification on Fakeddit and FakeNewsNet; Student = MobileCLIP/TinyCLIP-size visual backbone + DistilBERT/mBERT-small text encoder with late fusion; KD losses: feature, logit, and cross-modal agreement; int8 post-training quantization; deploy with TFLite/ONNX Runtime Mobile. [W4][W5][W6][W3][W1]
+- Baselines: (a) Text-only DistilBERT, (b) Image-only MobileNet/ViT-Tiny, (c) Server-side full CLIP, (d) Student without KD.
+- Metrics: Macro-F1, AUROC, ECE; latency (ms), energy (mJ/inference), model size (MB).
+- Expected outcomes: Student within 2–5 F1 points of teacher; ≥5–10 F1 over text-only on image–text inconsistency subset; ≤120 ms inference. If gap >5 F1, increase feature distillation weight or add intermediate-layer KD.
 
-Experiment 4: Robustness to cross-modal inconsistency and adversarial edits
-- Hypothesis: Contrastive pretraining (MobileCLIP) and late fusion improve detection of out-of-context or mismatched pairs compared to unimodal baselines [3], [4].
-- Setup:
-  - Evaluate on NewsCLIPpings OOD test; add synthetic mismatches by shuffling captions within topic.
-  - Add lightweight adversarial perturbations: JPEG artifacts, small text noise (diacritics, transliteration).
-- Baselines:
-  - Text-only DistilBERT.
-  - Image-only MobileNetV3.
-- Metrics: Out-of-context F1/AUROC; corruption robustness curves (accuracy vs JPEG quality/noise).
-- Expected outcomes:
-  - Late-fusion MobileCLIP+DistilBERT surpasses unimodal; graceful degradation under corruptions [3], [4].
+Experiment 2: Progressive transmission and triage under bandwidth constraints
+- Hypothesis: On-device uncertainty triage plus hashed/quantized embeddings cuts uplink by 60–80% with <2 F1 loss versus sending all media. [P4]
+- Setup: Confidence thresholding; if low confidence, upload 128–256D 8-bit embeddings + perceptual image hash (pHash) and short text (≤140 chars) only; simulate 2G/3G/4G uplinks; server teacher re-scores uncertain cases.
+- Baselines: (a) Always-send baseline, (b) Text-only upload, (c) Random 20% sampling.
+- Metrics: Macro-F1, recall at fixed bandwidth, average KB/post uplink, time-to-decision.
+- Expected outcomes: 60–80% bandwidth reduction at <2 F1 drop; if too much accuracy loss, adapt threshold by bandwidth or add Bloom-filter lookups against known hoaxes.
 
-Experiment 5: Cross-lingual transfer for low-resource languages
-- Hypothesis: Zero-shot or few-shot transfer using multilingual DistilBERT/LaBSE with language-adaptive fine-tuning achieves usable accuracy with small curated sets.
-- Setup:
-  - Replace DistilBERT with a compact multilingual encoder (e.g., DistilmBERT or MiniLM-multilingual); few-shot fine-tuning (100–1000 labeled examples per language).
-  - Evaluate on non-English slices of Fakeddit-style data or locally collected small sets (IRB/compliance).
-- Baselines:
-  - English-only model evaluated on translated text.
-- Metrics: F1 per language; label-efficiency curves.
-- Expected outcomes:
-  - Few-shot multilingual fine-tuning outperforms translate-test; minor latency increase.
+Experiment 3: Out-of-context (OOC) detection via caption bridging
+- Hypothesis: Adding a lightweight caption bridge improves OOC detection by ≥5 F1 vs. direct multimodal classification. [P3]
+- Setup: Generate compact captions (on-device shallow captioner or server-assist only for uncertain cases); concatenate with post text; train a consistency head to detect contradictions; evaluate on OOC splits (construct from Fakeddit and curated OOC pairs; if available, use public OOC benchmarks; if not, create a 3–5k OOC dev set).
+- Baselines: (a) Student from Exp.1, (b) Text-only, (c) Image-only.
+- Metrics: OOC subset F1, confusion rate on benign re-posts, calibration.
+- Expected outcomes: +5–8 F1 on OOC; if no gain, replace captioner with CLIP text prompts or add retrieval-based evidence (lightweight web search cache) and re-test. [P2][P3]
 
-Experiment 6: Human-in-the-loop triage on feature phones
-- Hypothesis: Thresholding low-confidence cases to human verifiers reduces false positives in sensitive contexts without overwhelming labelers.
-- Setup:
-  - Calibrate confidence with temperature scaling; send 5–10% lowest-confidence cases to a simple annotation UI (SMS/USSD/web-lite).
-- Baselines:
-  - Fully automated decisions.
-- Metrics: False positive rate at fixed recall; human workload (cases/day), end-to-end latency.
-- Expected outcomes:
-  - 30–50% relative reduction in false positives at similar recall; feasible reviewer load.
+Experiment 4: Multilingual adaptation (English↔Chinese)
+- Hypothesis: Translate-then-classify (compact En model) matches mBERT-small within 2 F1 while using less RAM on-device. [P5]
+- Setup: Weibo rumor dataset + English subsets; pipelines: (a) mBERT-small, (b) Translation (offline small MT where available or server-assist for uncertain cases) + DistilBERT; share visual backbone; same fusion head.
+- Baselines: Text-only per language; multilingual vs translate-then-classify.
+- Metrics: Per-language F1, latency, memory footprint.
+- Expected outcomes: Parity within 2 F1; if translation harms recall, add domain lexicon or language-specific adapters.
 
-Note: The multimodal misinformation literature supports two-branch architectures and late/attention-based fusion improving over unimodal baselines, and surveys cover robustness and fusion mechanisms but do not directly optimize for low-bandwidth; we adapt these insights to bandwidth/energy-constrained settings [P1], [P3], [P4], [P5].
+Experiment 5: Quantization/pruning–robustness sweep
+- Hypothesis: Int8 quantization + 20–30% structured pruning yields ≥2× speedup with ≤1 F1 drop; ternary for visual encoder may still retain acceptable accuracy. [W7]
+- Setup: Sweep int8 PTQ vs QAT; structured pruning on attention/MLP; optionally ternary quantization for visual backbone; measure on-device latency and accuracy drift.
+- Baselines: FP32 and FP16 models.
+- Metrics: F1, AUROC, ECE; latency; power; binary size.
+- Expected outcomes: 2–3× speedup at ≤1 F1 loss; if accuracy drops, switch to per-channel quantization or selectively keep first/last layers in higher precision. [W7]
 
-3) Timeline for the next 6 months with milestones
-Month 1:
-- Data curation: Obtain Fakeddit and NewsCLIPpings; partition into train/val/test [1], [3].
-- Baseline training: Text-only DistilBERT and image-only MobileNetV3; set up on-device evaluation harness (Android/ARM boards).
-- Milestone: Reproduce unimodal baselines; energy/latency measurement pipeline operational.
+Literature anchors: Multimodal Misinformation Detection by Learning from Synthetic Data (Findings of EMNLP 2024) [P1]; MobileCLIP: Fast Image-Text Models for mobile efficiency [W4].
 
-Month 2:
-- Implement two-branch late-fusion model; quantize to INT8; profile latency/energy.
-- Add modality-drop evaluation and corruption robustness.
-- Milestone: Lightweight late-fusion matches or exceeds best unimodal and runs <300 ms P95 on target device.
+3. Timeline for the next 6 months with milestones
+- Phase 0 (Weeks 1–2): Reproducibility and gating
+  - Replicate a text-only DistilBERT and image-only MobileNet baseline on Fakeddit; set up latency/power harness on one Android device. Deliverables: prediction log (≥14 entries) and one reproduced figure/metric; experiment card + one ablation or negative result.
+- Month 1: Teacher fine-tuning and student KD prototype
+  - Fine-tune CLIP teacher; implement student with KD; initial PTQ; Milestone: ≥0.75 F1 on Fakeddit dev; on-device ≤180 ms.
+- Month 2: Bandwidth triage pipeline
+  - Implement uncertainty thresholding + embedding/hash uplink; simulate networks; Milestone: ≥60% bandwidth reduction at <3 F1 drop.
+- Month 3: OOC detection and caption bridging
+  - Build OOC split; integrate caption bridge; Milestone: +5 F1 on OOC vs Exp.1 baseline.
+- Month 4: Multilingual track
+  - Add Weibo/Twitter15/16; compare translate-then-classify vs mBERT-small; Milestone: ≤2 F1 gap with lower memory.
+- Month 5: Compression sweeps and robustness
+  - QAT, pruning, selective higher precision; Milestone: ≤120 ms median, ≤25 MB total model(s), ≤1 F1 drop from Month 3.
+- Month 6: Hardening, evaluation, and draft
+  - Privacy review, error analysis, failure taxonomy, ablations; Milestone: camera-ready draft with open-source demo APK and reproducible scripts.
 
-Month 3:
-- Teacher–student distillation from CLIP+text teacher to MobileCLIP+DistilBERT student [4], [5].
-- Ablations: feature vs logit distillation; quantization-aware training vs post-training.
-- Milestone: +1–3 F1 improvement at same runtime; complete ablation report.
+4. Resources (compute, tools, datasets)
+- Compute: 1× mid-range GPU (e.g., RTX 4090 or A5000) or 2× T4/A10G; 2–3 Android test devices (mid/low tier).
+- Tools: PyTorch/Lightning; HuggingFace; ONNX Runtime Mobile or TFLite; TensorRT for server; quantization/pruning toolkit (e.g., PQV-Mobile ideas). [W7]
+- Datasets: Fakeddit (multimodal, fine-grained) [W1], FakeNewsNet (news + social context) [W3], Weibo rumor dataset (Chinese), Twitter15/16 rumor sets. If OOC benchmark is insufficient, construct a small OOC set following [P2][P3] labeling principles.
+- Privacy: pHash, CLIP-embedding L2 signatures; Bloom filters for known hoax media.
 
-Month 4:
-- Progressive transmission pipeline and text-first deferral experiment; network emulator integration (2G/3G RTT/throughput).
-- Milestone: ≥40% bandwidth reduction with minimal F1 loss.
+5. Risks and mitigations table
+- Dataset mismatch to target locales — Curate small local validation set; use translation + lexicons; run per-language error analyses.
+- OOC scarcity — Build a 3–5k OOC evaluation split; augment via synthetic caption shuffling; use evidence-grounded checks. [P2]
+- On-device accuracy loss from compression — Use QAT and per-channel int8; keep embeddings and first/last layers in higher precision; selective dequantization. [W7]
+- Bandwidth assumptions unrealistic — Evaluate across 2G/3G/4G profiles; adaptive thresholds tied to measured RTT/throughput.
+- Privacy leakage via embeddings — Use low-dim, quantized embeddings; add DP-noise on uploads for uncertain cases; avoid raw media unless consent.
+- Adversarial attacks (memes, OCR noise) — Add robustness training with common corruptions; include OCR-derived features when safe; fail closed to “uncertain.”
+- Legal/ethical concerns in moderation — Keep outputs as risk scores; provide explanations; human-in-the-loop escalation; document limitations.
 
-Month 5:
-- Cross-lingual compact text encoder; collect small labeled sets in 1–2 target languages (ethically sourced).
-- Human-in-the-loop calibration and triage thresholds.
-- Milestone: Few-shot multilingual performance within 5–8 F1 of English; triage reduces false positives.
-
-Month 6:
-- Robustness/adversarial stress tests; finalize evaluations; write paper (methods, efficiency metrics, ablations).
-- Milestone: Submission-ready package: code, on-device demo, dataset cards, and reproducibility checklist.
-
-4) Resources (compute, tools, datasets)
-- Compute:
-  - Training: 1–2× A100/L40 (or 2×3090) for 1–2 weeks total.
-  - On-device: 1–2 mid-tier Android phones (e.g., Snapdragon 6xx/7xx) and 1 Raspberry Pi 5 or Jetson Nano for edge tests.
-- Tools:
-  - PyTorch + TorchVision/TorchText; ONNX Runtime / TensorRT Mobile; TFLite for mobile inference.
-  - Quantization/distillation: PyTorch FX/PTQ/QAT; knowledge distillation utilities.
-  - Energy/latency: Android BatteryStats/Perfetto + external power monitor if available; Linux powercap.
-- Datasets:
-  - Fakeddit (image+text, fine-grained labels) [1].
-  - NewsCLIPpings (out-of-context image–text pairs) [3].
-  - Optional: Curate small local-language sets; ensure consent and compliance.
-- Base models:
-  - MobileCLIP (efficient image–text) [4].
-  - DistilBERT (compact text encoder) [5].
-  - Reference heavy models for teacher: CLIP ViT-B/32 and BERT [4], [P3].
-- Literature anchors:
-  - Text–image multimodal fusion improves over unimodal and supports late-fusion gains [P3].
-  - Two-branch multimodal design with attention/bilinear pooling represents a strong reference architecture [P1].
-  - Surveys summarizing multimodal misinformation approaches and fusion strategies [P4], [P5].
-
-5) Risks and mitigations table
-- Risk: Datasets don’t reflect local languages/cultures.
-  - Mitigation: Few-shot local data collection with clear consent; multilingual compact encoders; report per-language performance.
-- Risk: On-device energy/latency exceeds targets.
-  - Mitigation: Quantization-aware training; operator fusion; smaller backbones (MobileNetV3-Tiny); caching and batching when offline.
-- Risk: Modality missing or corrupted.
-  - Mitigation: Late fusion with modality dropout during training; text-first deferral strategy; imputation with confidence gating [P3].
-- Risk: Distillation underperforms.
-  - Mitigation: Add intermediate-feature losses; refine temperature and layer mapping; mixed hard/soft labels [5].
-- Risk: Bandwidth variability breaks progressive pipeline.
-  - Mitigation: Adaptive thresholds based on RTT/throughput; backoff to text-only mode; resumable image transfers.
-- Risk: Domain shift/out-of-context cases not captured by training.
-  - Mitigation: Include NewsCLIPpings; data augmentation with synthetic mismatches; periodic teacher updates [3].
-- Risk: Ethical and false positives in sensitive contexts.
-  - Mitigation: Human-in-the-loop review for low-confidence; calibrated confidence; transparent explanations and opt-outs.
-
-6) Stretch ideas or follow-up directions
-- Edge–server co-design: Opportunistic feature caching; transmit compact embeddings instead of images under privacy constraints.
-- Continual learning: On-device adapters updated with federated distillation when connectivity allows.
-- Social-context fusion: Lightweight metadata features (account age, reshare patterns) fused late; evaluate marginal gains vs cost [P4].
-- Robustness: Evaluate and defend against multimodal adversarial attacks specific to memes and low-quality images.
-- Explainability: Saliency over image regions + key text tokens to aid human reviewers.
+6. Stretch ideas or follow-up directions
+- Federated learning with periodic teacher refresh; evaluate against centralized KD for accuracy/privacy trade-offs.
+- Retrieval-augmented verification: cache fact-check snippets; lightweight on-device BM25/FAISS of vetted claims; only query server when uncertain. 
+- Community signals: incorporate lightweight propagation/structure features (without heavy GNNs) as additional inputs; explore learned priors from [P2] with edge-feasible proxies.
+- Ternary quantization for visual encoder and mixture-of-experts gating to keep most queries on-device, escalate only hard cases. [W7]
+- Synthetic counterfactuals: Generate adversarial image–text pairs to stress-test consistency learning, building on [P1].
 
 Citations
-- [P1] A two-branch multimodal fake news detection model based on multimodal bilinear pooling and attention mechanism — https://www.frontiersin.org/journals/computer-science/articles/10.3389/fcomp.2023.1159063/full
-- [P2] VMID: A Multimodal Fusion LLM Framework for Detecting Misinformation — https://arxiv.org/html/2411.10032v1
-- [P3] Text–image multimodal fusion model for enhanced fake news detection — https://pmc.ncbi.nlm.nih.gov/articles/PMC11500224/
-- [P4] Multi-modal Misinformation Detection: Approaches, Challenges and Future Directions — https://arxiv.org/html/2203.13883v5
-- [P5] Multi-modal Misinformation Detection: Approaches, Challenges and Techniques — https://dl.acm.org/doi/10.1145/3697349
-- [P6] A fake news detection model using the integration of multimodal deep learning — https://www.nature.com/articles/s41598-025-05702-w
-- [1] Fakeddit: A New Multimodal Benchmark Dataset for Fine-grained Fake News Detection — https://aclanthology.org/2020.lrec-1.755.pdf
-- [3] Automatic Generation of Out-of-Context Multimodal Media (NewsCLIPpings) — https://arxiv.org/abs/2104.05893
-- [4] MobileCLIP: Fast Image-Text Models through Multi-Modal Reinforced Training — https://arxiv.org/html/2311.17049v2
-- [5] DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter — https://arxiv.org/abs/1910.01108
-
-Limitations and how to improve evidence
-- Direct literature on “low-bandwidth multimodal misinformation detection on-device” is sparse; we adapted from fusion/detection surveys and efficient model literature [P3], [P4], [P5], [4], [5]. To strengthen citations, we would run targeted searches like “progressive transmission multimodal inference mobile arXiv,” “on-device fake news detection Android energy,” and “late fusion modality drop mobile vision-language” and incorporate any domain-specific studies that report bandwidth/energy metrics. If suitable sources are not found, we will empirically report these metrics in our work.
+- [P1] Multimodal Misinformation Detection by Learning from Synthetic Data — https://aclanthology.org/2024.findings-emnlp.613.pdf
+- [P2] Evidence-Grounded Multimodal Misinformation Detection with Attention-Based GNNs — https://arxiv.org/html/2505.18221v1
+- [P3] Multi-Modal Fake News Detection via Bridging the Gap between Text and Images — https://pmc.ncbi.nlm.nih.gov/articles/PMC10138105/
+- [P4] Smart Edge-based Fake News Detection using Pre-trained BERT — https://www.semanticscholar.org/paper/Smart-Edge-based-Fake-News-Detection-using-BERT-Guo-Lamaazi/ecd81d06f8bcba4658402ac62380ab802a7ebeb6
+- [W1] r/Fakeddit: A New Multimodal Benchmark Dataset for Fine-grained Fake News Detection — https://arxiv.org/abs/1911.03854
+- [W3] FakeNewsNet: A Data Repository with News Content, Social Context and Spatiotemporal Information — https://www.cs.emory.edu/~kshu5/files/FakeNewsNet_big_data.pdf
+- [W4] MobileCLIP: Fast Image-Text Models through Multi-Modal Reinforced Training — https://arxiv.org/abs/2311.17049
+- [W5] TinyCLIP: CLIP Distillation via Affinity Mimicking and Weight Inheritance — https://openaccess.thecvf.com/content/ICCV2023/papers/Wu_TinyCLIP_CLIP_Distillation_via_Affinity_Mimicking_and_Weight_Inheritance_ICCV_2023_paper.pdf
+- [W6] CLIP-KD: An Empirical Study of CLIP Model Distillation — https://arxiv.org/abs/2307.12732
+- [W7] PQV-Mobile: Pruning and Quantization Toolkit for Mobile Vision Transformers — https://arxiv.org/abs/2408.08437
 
 Optional next step
-- Greenlight Month 1: share device specs you can access (phone SoC, OS), so we can pin exact latency/energy targets and finalize the on-device evaluation harness.
+- Kick off Phase 0: fine-tune a text-only DistilBERT baseline on Fakeddit and stand up the Android latency harness; share the reproduced metric, the experiment card draft, and a 10-sample qualitative error analysis to de-risk the path.

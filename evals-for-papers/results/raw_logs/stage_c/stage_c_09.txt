@@ -1,181 +1,152 @@
-1. Problem framing and goals
-- Scope: Evaluate how well post-hoc interpretability tools for vision models used in autonomous driving (2D/3D object detection, semantic segmentation, and BEV detection) are faithful, reliable under shifts, and useful for governance and safety assurance.
-- Target models:
-  - 2D segmentation: Cityscapes/BDD100K backbones.
-  - BEV detection: BEVFormer on nuScenes [21].
-  - 3D LiDAR: CenterPoint on Waymo Open or nuScenes lidar [22].
-- Target explanation classes:
-  - Attribution and saliency: Grad-CAM, RISE, Integrated Gradients variants [2][3][4].
-  - Causal/probing: Meaningful Perturbations, Remove-and-Retrain (ROAR) [8][9].
-  - Concept-level: TCAV [5].
-  - Internal representation: Network Dissection [6].
-- Primary evaluation axes:
-  1) Faithfulness/causality: Does the explanation reflect features that truly affect predictions? Use sanity checks, deletion/insertion, remove-and-retrain, and causal interventions [1][8][9].
-  2) Robustness/stability: Sensitivity to parameter randomization, input perturbations, and dataset shifts (weather, location, OOD objects) [1][14][15].
-  3) Task alignment: Do explanations emphasize safety-relevant cues (pedestrians, lane markings, traffic lights) and suppress shortcuts [20]?
-  4) Governance utility: Can outputs be incorporated into model cards and risk controls aligned to NIST AI RMF and ISO 21448 SOTIF [16][17][18]?
-- Success criteria:
-  - At least one explanation method per task demonstrating (a) sanity-check sensitivity [1], (b) top-quartile deletion/insertion AUC vs baselines [8], (c) ROAR accuracy drop ≥ baseline perturbation controls [9], and (d) informative concept sensitivity consistent with subset performance (TCAV) [5].
-  - Governance artifacts: a risk register, SOTIF hazard linkages to explanation evidence, and model card updates for each model [16][17][18].
+Stage: B → C (shaping a concrete plan and evaluation protocol)
 
-2. Experiments
-Note: Each experiment includes ablations (model, data, method hyperparameters) to isolate causal factors.
+Intuition: Interpretability claims only matter if they’re faithful to model internals and decision use, not just visually plausible. For autonomous driving, robust evaluation requires pressure-testing explanations under perturbations (e.g., point or pixel dropping), sanity checks, and counterfactuals while tying results back to safety governance (model/data cards and risk checkpoints). Combining 2D detection, segmentation, and 3D lidar models gives a comprehensive picture of where interpretability helps— and where it fails—across sensing modalities. 
 
-E1. Saliency sanity checks on AV perception tasks
-- Hypothesis: Faithful explanation methods will meaningfully change when model parameters/labels are randomized and when inputs are perturbed; unfaithful ones will not [1].
-- Setup: Train standard segmentation and detection backbones on Cityscapes/nuScenes; generate Grad-CAM and RISE maps for 1000 images (balanced across classes) [2][3]. Perform model parameter randomization (layer-wise reinit) and label randomization as in Adebayo et al. [1]. Include Expected Grad-CAM variant as an additional method [23].
-- Baselines: Random heatmaps; edge detectors; blurred saliency maps; label- and weight-randomized models [1].
-- Metrics: Spearman/Kendall rank correlation of attribution maps across randomization levels; structural similarity vs random/edge baselines; “sanity-check pass” if correlations drop near random-level after randomization [1].
-- Expected outcomes: Some methods (e.g., Grad-CAM variants) should show low correlation after randomization; methods failing this gate are deprioritized in later phases [1][23].
+Why this is principled: Saliency methods can pass visual sniff tests while failing causal faithfulness; parameter randomization and data perturbation tests expose these failures [Adebayo et al., “Sanity Checks for Saliency Maps”][1]. Quantitative faithfulness metrics (infidelity/sensitivity) assess whether attributions align with model behavior under input perturbations [2]. Black-box evaluation for detectors (D-RISE) enables method comparisons when gradients are unreliable [3]. For 3D, point-dropping saliency validates whether attributions match performance impact [4]. Governance artifacts (Model Cards, Datasheets) and the NIST AI RMF ensure evidence is translated into risk-aware practice [9][10][11].
 
-E2. Deletion/insertion and meaningful perturbations for detection/segmentation faithfulness
-- Hypothesis: More faithful explanations produce larger performance drops under deletion of top-attributed regions and larger gains under insertion of top regions [8].
-- Setup: Use Meaningful Perturbations masking with smoothness priors on BEVFormer and segmentation backbones [8][21]. For object detection, measure detection confidence and mAP changes as pixels/patches ranked by explanation are deleted/inserted; compare with recent detector-specific attribution where available [24].
-- Baselines: Random masking; center-biased masking; uniform blur; RISE maps [2][8].
-- Metrics: Deletion and insertion AUC; pointing game/IoU between top-k attribution and ground-truth boxes/masks; changes in AP across IoU thresholds [8][2].
-- Expected outcomes: RISE and Meaningful Perturbations will outperform random/center baselines; detector-focused variants may offer gains on BEV/detection [2][8][24].
+1) Problem framing and goals
+- Scope: Build a one-year, publication-grade benchmark and governance workflow for evaluating interpretability tools on autonomous driving perception models across three tasks: (a) 2D object detection, (b) semantic segmentation, and (c) 3D lidar detection. 
+- Methods covered: Gradient-based (Grad-CAM variants), attribution (Integrated Gradients, SmoothGrad), black-box saliency for detectors (D-RISE) [3], concept-based (TCAV) [5], 3D saliency (point-dropping) [4], and object-aware counterfactuals (OCTET) [P1].
+- Core goals:
+  - Faithfulness: Do explanations causally track model behavior? Use infidelity/sensitivity, deletion/insertion curves, and retraining stress tests [2][12].
+  - Reliability: Do explanations survive sanity checks and are they robust to distributional shifts (weather, time of day, occlusions)? [1]
+  - Task relevance: Do method rankings transfer across 2D/3D/fusion baselines (e.g., CenterPoint, BEVFusion)? [6][8]
+  - Governance: Produce Model Cards and Datasheets, and run NIST AI RMF-aligned checkpoints at each milestone [9][10][11].
 
-E3. Remove-and-Retrain (ROAR) for causal validation
-- Hypothesis: If an attribution method ranks features causally, removing top-ranked features in the training data and retraining reduces test accuracy more than removing randomly selected features [9].
-- Setup: For Cityscapes and BDD100K, progressively ablate top p% pixels/regions per explanation ranking (p in {1,5,10,20}) in training images; retrain and evaluate mIoU/AP [11][12].
-- Baselines: Random ablation; bottom-ranked ablation; edge-based ablation [9].
-- Metrics: Performance drop vs p; area under the “accuracy drop” curve; confidence intervals over 3 seeds [9].
-- Expected outcomes: The most faithful method induces the largest accuracy drop under ROAR, significantly exceeding random controls [9].
+2) Experiments
+Each experiment includes hypothesis, setup/baselines, evaluation metrics, and expected outcomes, with follow-up variations.
 
-E4. Concept-level evaluation with TCAV on safety concepts
-- Hypothesis: TCAV scores for safety-critical concepts (crosswalks, lane markings, traffic lights) correlate with model performance on subsets where these concepts are determinative [5].
-- Setup: Create concept datasets from Cityscapes/BDD100K annotations and targeted crops; compute TCAV scores for each concept across class logits and detection heads [5][11][12]. Validate on nuScenes images for transfer [10].
-- Baselines: Random concept sets; shuffled labels; unrelated concepts (e.g., building textures) [5].
-- Metrics: TCAV score distributions; correlation with per-subset AP/mIoU; robustness to concept variation [5].
-- Expected outcomes: Higher TCAV for “crosswalk” relates to better pedestrian detection at crosswalk scenes; weak/null correlation indicates poor concept sensitivity [5].
+E1. Saliency sanity checks across modalities
+- Hypothesis: Methods that truly reflect model internals will fail (change drastically) under weight randomization or label shuffling; methods that remain visually similar are unfaithful [1].
+- Setup: Models: 2D detector (e.g., YOLO/RetinaNet), segmentation (Mask2Former or DeepLab), 3D detector (CenterPoint) on nuScenes and KITTI; run Grad-CAM/IG/SmoothGrad/GuidedBP and D-RISE for detectors [3][6]. Apply parameter randomization and data-label randomization (Adebayo tests) [1].
+- Baselines: Random and uniform attribution, edge detectors.
+- Metrics: Spearman/SSIM similarity of maps before/after randomization; change in explanation rank-order per pixel/point; pass/fail rate of sanity checks [1].
+- Expected outcomes: Faithful methods degrade under randomization; any near-invariance flags method unreliability. If a method passes for segmentation but fails for 3D, it motivates modality-specific guidance [1][4].
+- Follow-ups: Ablate normalization and smoothing; compare white-box vs black-box detectors (Grad-CAM vs D-RISE) [3].
 
-E5. Internal unit interpretability via Network Dissection
-- Hypothesis: Models with stronger generalization have more units aligned with meaningful scene concepts (lanes, signs, pedestrians) [6].
-- Setup: Apply Network Dissection to segmentation backbones trained on Cityscapes and BDD; measure unit alignment with driving-relevant concepts [6][11][12].
-- Baselines: Randomly initialized networks; networks trained with heavy label noise [6].
-- Metrics: Number and fraction of interpretable units; IoU between unit masks and concept masks; relation to robustness metrics from E7 [6].
-- Expected outcomes: More robust models show more interpretable units for road/lane/pedestrian categories [6].
+E2. Faithfulness via infidelity/sensitivity and deletion/insertion
+- Hypothesis: Methods with lower infidelity and higher sensitivity better capture causal importance [2]; deletion/insertion curves will correlate with infidelity metrics.
+- Setup: For each model/task, compute infidelity/sensitivity (Captum implementations for IG/Grad-CAM), and deletion/insertion AUC (progressive removal/insertion of top-attributed pixels/points). Include BEVFusion to test multi-sensor fusion [8].
+- Baselines: Random attribution; gradient magnitude.
+- Metrics: Infidelity (lower better), sensitivity (higher better), deletion AUC (lower better), insertion AUC (higher better) [2].
+- Expected outcomes: Convergent ranking (e.g., IG > Grad-CAM variants for segmentation), but detectors may favor D-RISE due to proposal-specific dynamics [3]. Divergences indicate metric-task mismatch.
+- Follow-ups: Robustness under noise/weather stratification; per-class analysis (pedestrian vs vehicle) on nuScenes [5][7].
 
-E6. Shortcut and underspecification stress tests with OOD/anomaly benchmarks
-- Hypothesis: Explanations will shift predictably under OOD objects/weather; methods that remain informative help detect “blind spots” [19][20].
-- Setup: Evaluate on Fishyscapes and SegmentMeIfYouCan; compare attribution maps and anomaly scores (if available) for OOD objects vs in-distribution [14][15].
-- Baselines: Random maps; center-biased maps; methods failing E1 sanity checks [1].
-- Metrics: Stability of explanations under benign perturbations vs OOD shifts; separation between ID and OOD explanation statistics; correlation with false positive rates [14][15].
-- Expected outcomes: Reliable methods show distinct OOD attribution signatures; shortcuts (e.g., sky texture reliance) are exposed by explanation shifts [20][14][15].
+E3. Black-box explanation for detectors (D-RISE) vs gradient methods
+- Hypothesis: For object detectors, black-box D-RISE saliency better predicts changes in detection scores under mask perturbations than gradient-based methods [3].
+- Setup: 2D detectors (RetinaNet, YOLOv5/7) and 3D detectors (CenterPoint) if extended with point-masking analog; compute D-RISE maps and Grad-CAM. Apply targeted mask perturbations to top-K salient regions and measure score/IoU drop [3][6].
+- Baselines: Random region masks; uniform masks.
+- Metrics: Δscore/ΔmAP per percent area/points removed; Kendall τ between attribution rank and score drop [3].
+- Expected outcomes: D-RISE exhibits stronger correlation between attribution and observed detector degradation than Grad-CAM (2D); mixed outcomes in 3D encourage specialized point-saliency approaches [3][4].
+- Follow-ups: Proposal-aware ablations and cross-sensor masking in BEVFusion (image vs lidar contributions) [8].
 
-E7. Human-in-the-loop governance utility study
-- Hypothesis: Engineers using explanations catch a higher fraction of safety-relevant failure modes in review tasks, and artifacts fit into model cards and risk controls [16][18].
-- Setup: Within-subject study with AV engineers labeling failure causes on a curated error set with/without explanations; compile governance artifacts (risk register entries, model cards) using findings [16][18].
-- Baselines: No-explanation control; random heatmaps [1].
-- Metrics: Failure mode detection rate; time-to-diagnosis; inter-rater agreement; completeness and clarity of model cards [18].
-- Expected outcomes: Explanations improve diagnostic yield and speed; artifacts integrate into NIST AI RMF risk identification and treatment steps [16][18].
+E4. 3D point-cloud saliency and point-dropping stress tests
+- Hypothesis: Point-saliency maps that the model depends on will show large performance drops when top-salient points are removed; non-salient removal will minimally affect metrics [4].
+- Setup: CenterPoint on nuScenes and Waymo Open; compute saliency via gradients or learned point-importance; progressively drop top-N% points globally and within instance boxes [4][7].
+- Baselines: Random point dropping; geometric heuristics (e.g., distance-based).
+- Metrics: mAP/NDS degradation trajectories vs %points removed; area under degradation curve [7].
+- Expected outcomes: Faithful 3D saliency exhibits steep degradation after a small fraction of salient points are removed; if degradation equals random, attribution is uninformative [4][7].
+- Follow-ups: Occlusion-specific tests (simulate LiDAR shadowing), sensor dropout to test BEVFusion attribution consistency [8].
 
-E8. Architecture and data ablation suite (cross-cutting)
-- Hypothesis: Explanation faithfulness varies with backbone (CNN vs transformer), training data diversity, and head type (segmentation vs BEV vs 3D) [21][22].
-- Setup: Repeat E1–E7 across backbones and data regimes: +/− heavy augmentations; smaller vs larger training sets; different cameras/weather splits (BDD100K) [12].
-- Baselines: Default backbone and training recipe.
-- Metrics: Differential in sanity, deletion/insertion, ROAR, TCAV, and governance utility metrics across conditions.
-- Expected outcomes: Specific combinations (e.g., BEVFormer with extensive augmentation) yield more stable and faithful explanations; results inform best-practice recommendations [21][22].
+E5. Concept-based explanations (TCAV) for driving factors
+- Hypothesis: TCAV scores for concepts (e.g., “night,” “rain,” “pedestrian clothing color”) will correlate with performance stratification; spurious concepts will not [5].
+- Setup: Curate concept datasets from nuScenes metadata (time-of-day, weather) and synthetic overlays; compute TCAV for segmentation and detection heads [5][7].
+- Baselines: Random concept vectors; non-semantic textures.
+- Metrics: TCAV directional derivatives; correlation with per-slice performance (mAP/NDS) across weather/time; statistically test via permutation [5][7].
+- Expected outcomes: Legitimate concepts (night, rain) show significant TCAV and align with performance drops; if not, either concepts are ill-posed or model is robust to that factor [5][7].
+- Follow-ups: Intervene via counterfactuals (style transfer/lighting augmentation) to validate causal effect; compare with OCTET object-aware counterfactuals [P1].
 
-3. Timeline for the next 6 months with milestones
-Month 1
-- Finalize tasks, models, datasets (Cityscapes, BDD100K, nuScenes; BEVFormer and CenterPoint) [10][11][12][21][22].
-- Reproduce baseline training and evaluation; set up attribution toolkits (Captum, pytorch-grad-cam, TCAV, NetDissect).
-- Governance checkpoint: Define risk taxonomy and preregister analysis plans (metrics, significance tests) aligned to NIST AI RMF Identify/Measure steps [16].
+E6. Object-aware counterfactuals for detectors (OCTET)
+- Hypothesis: Object-aware counterfactual edits that minimally alter the scene but flip detections give more faithful rationales than unconstrained perturbations [P1].
+- Setup: Implement or reproduce OCTET on 2D detectors (YOLO/RetinaNet) and extend to 3D via rendered point insertions/removals; measure success rate and minimality [P1].
+- Baselines: Patch-based counterfactuals; unconditional diffusion edits.
+- Metrics: Counterfactual success rate (target class score flip), edit distance (L2/LPIPS/point-count), realism checks; downstream effect on mAP/NDS [P1].
+- Expected outcomes: OCTET achieves higher success with smaller, object-localized edits than baselines; failures suggest missing object priors or over-regularization [P1].
+- Follow-ups: Video counterfactuals (e.g., LD‑ViCE) to test temporal consistency on short clips [P2] (note: video counterfactual methods are evolving rapidly; verify maturity before committing).
 
-Month 2
-- Implement and validate E1 sanity checks; gate out unfaithful methods [1].
-- Implement E2 deletion/insertion for segmentation; begin detector-specific evaluation [8][24].
-- Governance checkpoint: Initial SOTIF hazard analysis mapping safety scenarios to explanation needs [17].
+3) Timeline for the next 12 months with milestones (first 6 months detailed)
+- Phase 0 (Weeks 1–6) — Gates before scaling
+  - Deliverables: (1) Prediction log with ≥14 entries across models and explainers; (2) One reproduced figure/metric (infidelity or D-RISE Δscore curve) within ≤10% of reported numbers; (3) An experiment card and one ablation or negative result with post-mortem.
+  - Governance: Draft Dataset Card (nuScenes/KITTI datasets used) and Model Card templates; initialize NIST AI RMF “Map” and “Measure” activities [9][10][11].
+- Month 2
+  - Complete E1 sanity checks for segmentation and 2D detection on a 5k image slice; pre-register metrics and stop rules.
+  - Milestone: Sanity check report; go/no-go on method set (drop unfaithful).
+- Month 3
+  - Run E2 infidelity/deletion-insertion on 2D and segmentation; begin E3 D-RISE on detectors [2][3].
+  - Governance checkpoint: First risk review (data slices, failure taxonomies), update Model/Dataset Cards [9][10].
+- Month 4
+  - Extend to 3D: run E4 point-dropping saliency on CenterPoint (nuScenes); start E5 TCAV concept curation [4][6][7].
+  - Milestone: 3D saliency stress-test results with ablation curves; interim paper draft figures.
+- Month 5
+  - Complete E3 and E5; start E6 OCTET reproduction and pilot counterfactuals [P1].
+  - Governance checkpoint: NIST RMF “Manage”: define model change policy and monitoring KPIs [11].
+- Month 6
+  - Integrate cross-modality comparison; write up evaluation protocol and results for submission-ready draft sections.
+  - Milestone: Internal preprint + artifact repository; externalized Model/Dataset Cards v1 [9][10].
+- Months 7–9
+  - Scale to BEVFusion; cross-sensor attribution and dropout tests [8]. Add Waymo Open for 3D generalization [7]. Begin video counterfactual pilot on short sequences [P2].
+  - Governance: Perform shift and impact assessment (night/rain) and bias audit slices; update RMF “Measure/Manage” artifacts [11].
+- Months 10–12
+  - Consolidate benchmark: release code, standardized metrics, and governance templates; run ROAR-style remove-and-retrain stress tests where feasible (note caveats on DPI and compute) [12].
+  - Submission and camera-ready; plan industry-facing report on governance-ready interpretability workflows.
 
-Month 3
-- Run E3 ROAR on segmentation/detection; begin E4 TCAV concept sets [5][9].
-- Prepare interim model cards summarizing explainability metrics so far [18].
-- Milestone: Internal report on faithfulness rankings across methods and tasks.
+4) Resources (compute, tools, datasets)
+- Compute
+  - Recommended: 4×A100 40–80GB or 8×A6000; storage 5–10 TB; mixed precision to control costs. For ROAR retraining, budget additional GPU-weeks [12].
+- Tools
+  - Modeling: MMDetection/MMDetection3D; OpenPCDet; BEVFusion repo [8].
+  - Explainability: Captum (IG/infidelity/sensitivity) [2]; Grad-CAM libs; D-RISE implementation [3]; TCAV code [5]; Open3D for point ops; evaluation harness for deletion/insertion.
+  - Governance: Model Card and Datasheet templates [9][10]; NIST AI RMF worksheets [11].
+- Datasets and benchmarks
+  - nuScenes (multimodal; metrics mAP, NDS) [7]; KITTI for 2D/3D baselines; Waymo Open Dataset for scale and generalization [6][7].
 
-Month 4
-- Extend E2/E3 to BEVFormer and CenterPoint; run E5 Network Dissection on segmentation backbones [6][21][22].
-- Governance checkpoint: Update risk register with explanation-derived hazard linkages; plan mitigations [16][17].
+5) Risks and mitigations table
+- Method appears faithful but fails sanity checks — Require E1 before any downstream claims; drop methods that fail [1].
+- Metrics disagree (infidelity vs deletion/insertion) — Report multi-metric results; analyze disagreements per class/slice; pre-register tie-breakers [2].
+- Detector-specific artifacts (proposal dependence) — Use D-RISE for detectors; treat Grad-CAM results as exploratory [3].
+- 3D saliency unstable under sparsity — Use instance-local dropping and stratify by range; aggregate over seeds [4].
+- Counterfactuals look realistic but are out-of-distribution — Enforce realism constraints and quantify minimality (LPIPS/point-count); human-in-the-loop screening [P1].
+- Retraining compute for ROAR too high — Use scaled subsets and report DPI caveats; prioritize deletion/insertion and infidelity; document limits [12].
+- Governance drift (missed documentation) — Calendarized checkpoints tied to milestones; RMF “Govern/Manage” ownership and sign-off [11].
+- Dataset bias or slice undercoverage — Use Datasheets to document coverage; add targeted test slices (night/rain/rare classes) [10][7].
 
-Month 5
-- Run E6 OOD/anomaly stress tests (Fishyscapes, SegmentMeIfYouCan); quantify explanation shifts [14][15].
-- Conduct E7 human-in-the-loop study; iterate on model cards [18].
-- Milestone: Cross-model, cross-dataset comparison including OOD robustness.
+6) Stretch ideas or follow-up directions
+- Video counterfactuals for temporal faithfulness (e.g., LD‑ViCE—verify maturity; methods are evolving) [P2].
+- Closed-loop simulation: Drive scenario generation where attribution guides scene edits; measure planner safety metrics downstream.
+- Concept bottleneck or intermediate factor attribution in BEV space (lane boundaries, drivable area).
+- Human-grounded evaluation: Labeler studies comparing explanation utility for error triage; couple with time-to-diagnosis metrics.
+- Benchmark release: A standardized interpretability-for-AD suite with governance templates (Model Cards, Datasheets, RMF checklists) [9][10][11].
 
-Month 6
-- Complete E8 ablation suite (backbones, data diversity, augmentations).
-- Synthesize H1 results; draft conference-ready methods/benchmark section.
-- Governance checkpoint: Stage-gate review—evidence pack documenting risk controls, model changes, and planned deployment guardrails per NIST AI RMF Govern/Manage [16].
+Literature anchors
+- Adebayo et al., “Sanity Checks for Saliency Maps” (NeurIPS 2018) — https://arxiv.org/abs/1810.03292 [1]
+- Yeh et al., “On the (In)fidelity and Sensitivity of Explanations” (NeurIPS 2019) — https://arxiv.org/abs/1901.09392 [2]
+- Petsiuk et al., “Black-box Explanation of Object Detectors via Saliency Maps (D-RISE)” (CVPR 2021) — https://openaccess.thecvf.com/content/CVPR2021/html/Petsiuk_Black-Box_Explanation_of_Object_Detectors_via_Saliency_Maps_CVPR_2021_paper.html [3]
+- Zheng et al., “PointCloud Saliency Maps” (ICCV 2019) — https://openaccess.thecvf.com/content_ICCV_2019/papers/Zheng_PointCloud_Saliency_Maps_ICCV_2019_paper.pdf [4]
+- Kim et al., “TCAV: Testing with Concept Activation Vectors” (ICML 2018) — https://arxiv.org/abs/1711.11279 [5]
+- Yin et al., “CenterPoint” (2021) — https://arxiv.org/abs/2006.11275 [6]
+- Caesar et al., “nuScenes” (CVPR 2020) — https://openaccess.thecvf.com/content_CVPR_2020/papers/Caesar_nuScenes_A_Multimodal_Dataset_for_Autonomous_Driving_CVPR_2020_paper.pdf [7]
+- Liu et al., “BEVFusion” (2022) — https://ar5iv.labs.arxiv.org/html/2205.13542 [8]
+- Mitchell et al., “Model Cards for Model Reporting” (FAccT 2019) — https://arxiv.org/abs/1810.03993 [9]
+- Gebru et al., “Datasheets for Datasets” (CACM 2021; arXiv 2018) — https://arxiv.org/abs/1803.09010 [10]
+- NIST AI Risk Management Framework 1.0 — https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf [11]
+- ROAR benchmark and caveats — “A Benchmark for Interpretability Methods…” (NeurIPS 2019) + DPI caveats https://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf; DPI critique https://export.arxiv.org/pdf/2304.13836v3.pdf [12]
 
-Months 7–12 (high-level)
-- H2: Extend to 3D-LiDAR-only and multimodal fusion; integrate detector-focused explanation advances [21][22][24].
-- Broaden OOD scenarios (night/rain/snow subsets in BDD100K; unseen cities).
-- External preregistration and blinded confirmatory runs; package benchmark and data cards; submit to a venue (e.g., ICRA, NeurIPS Datasets and Benchmarks).
-- Governance: Independent audit of evidence vs SOTIF claims; finalize model cards and release reproducibility kit [17][18].
+Notes on evidence coverage: Our mentorship-guidelines tool did not surface domain-specific governance guidance for interpretability in autonomous driving; we therefore rely on general but authoritative frameworks (NIST AI RMF, Model/Dataset Cards) and peer-reviewed method papers for evaluation protocols. If deeper industry-specific standards are needed (e.g., ISO 34502/ISO 21448 SOTIF intersections with ML interpretability), we would run a targeted standards search and engage with OEM documentation.
 
-4. Resources (compute, tools, datasets)
-- Compute: 8× A100 40–80 GB or equivalent; 100–150 GPU-days for training, 50–80 GPU-days for attribution sweeps; 20 TB storage for datasets and checkpoints.
-- Tools:
-  - Explainability: Captum (IG variants, TCAV), pytorch-grad-cam (Grad-CAM, variants), RISE (re-implementation) [2][3][4][5].
-  - Causal/perturbation: Meaningful Perturbations, ROAR pipelines [8][9].
-  - Representation: NetDissect toolkit [6].
-  - Governance: Model card templates, risk register aligned to NIST AI RMF [16][18].
-- Datasets:
-  - Cityscapes (segmentation) [11], BDD100K (multitask; weather/time splits) [12], KITTI (detection) [13], nuScenes (multi-sensor; detection/BEV) [10], Waymo Open (large-scale lidar) [11 or Waymo site], Fishyscapes and SegmentMeIfYouCan for OOD/anomaly [14][15].
-- Models:
-  - Segmentation backbones (ResNet/ConvNeXt or ViT), BEVFormer [21], CenterPoint [22].
-
-5. Risks and mitigations
-- Metric misuse and false confidence
-  - Mitigation: Enforce E1 sanity checks as a hard gate; triangulate with deletion/insertion and ROAR (E2, E3); preregister metrics and thresholds [1][8][9].
-- Detector-specific explanation validity
-  - Mitigation: Include detector-focused methods and metrics; evaluate on AP changes, not just heatmap similarity [24].
-- Dataset shift and shortcuts confound results
-  - Mitigation: Include OOD/anomaly benchmarks and weather/time splits; analyze with shortcut learning lens [14][15][20].
-- Human study subjectivity
-  - Mitigation: Predefine tasks and scoring rubrics; measure inter-rater reliability; pilot and power analysis.
-- Compute and time overrun
-  - Mitigation: Stage-gate after E1–E3 to downselect methods; use subset and class-balanced sampling; cache features.
-- Governance misalignment
-  - Mitigation: Map evidence to NIST AI RMF functions and SOTIF claims at each checkpoint; maintain a living model card [16][17][18].
-- Reproducibility gaps
-  - Mitigation: Containerized pipelines, seeds and configs tracked; public release of code, configs, and evaluation scripts.
-
-6. Stretch ideas or follow-up directions
-- Training-time explanation alignment: Add “right-for-the-right-reasons” penalties using weak supervision from masks; verify gains via ROAR and OOD robustness [7][9].
-- Closed-loop safety triggers: Use explanation instability as a signal to trigger fallback policies in uncertain scenes; evaluate on nuScenes val [10].
-- Concept-bottleneck auxiliaries: Add concept heads (lanes, signals) to improve TCAV alignment; analyze with NetDissect [5][6].
-- Cross-modal explanations: Attribute joint camera–lidar features in BEV to scene concepts; examine alignment differences between modalities [21][22].
-- Benchmark release: A standardized “AV-XAI Eval” suite with sanity, deletion/insertion, ROAR, TCAV, OOD protocols and governance templates.
-
-Limitations and evidence plan
-- There is no single standardized AV-specific interpretability benchmark accepted across industry; most methods are adapted from general computer vision [1][2][3][5][8][9]. To address this, we propose releasing all protocols and results as a reproducible benchmark and engaging with external evaluators (H2) for confirmatory runs.
-
-Optional next step
-- Spin up a minimal slice: one segmentation model on Cityscapes and one BEV detector on nuScenes, run E1–E3 in two weeks to downselect explanation methods before scaling.
+Optional next step: Spin up Phase 0 on a 5k-image nuScenes slice: reproduce D-RISE Δscore-vs-area curves for a RetinaNet baseline and compute infidelity for IG on a segmentation model, then run parameter-randomization sanity checks; package these as your first Experiment Card and governance artifacts (Dataset/Model Card drafts). 
 
 Citations
-[1] Adebayo et al., Sanity Checks for Saliency Maps — https://arxiv.org/abs/1810.03292
-[2] Petsiuk et al., RISE: Randomized Input Sampling for Explanation of Black-box Models (BMVC 2018) — http://bmvc2018.org/contents/papers/1064.pdf
-[3] Selvaraju et al., Grad-CAM: Visual Explanations from Deep Networks — https://arxiv.org/abs/1611.07450
-[4] Kapishnikov et al., Generalized Integrated Gradients: A practical method for explaining — https://arxiv.org/abs/1909.01869
-[5] Kim et al., TCAV: Testing with Concept Activation Vectors — https://arxiv.org/abs/1711.11279
-[6] Bau et al., Network Dissection: Quantifying Interpretability of Deep Visual Representations — https://openaccess.thecvf.com/content_cvpr_2017/papers/Bau_Network_Dissection_Quantifying_CVPR_2017_paper.pdf
-[7] Ross et al., Right for the Right Reasons: Training Differentiable Models by Constraining Explanations — https://arxiv.org/abs/1703.03717
-[8] Fong and Vedaldi, Interpretable Explanations of Black Boxes by Meaningful Perturbation — https://openaccess.thecvf.com/content_ICCV_2017/papers/Fong_Interpretable_Explanations_of_ICCV_2017_paper.pdf
-[9] Hooker et al., Evaluating Feature Importance Estimates (ROAR) — https://www.researchgate.net/publication/326056976_Evaluating_Feature_Importance_Estimates
-[10] Caesar et al., nuScenes: A multimodal dataset for autonomous driving — https://arxiv.org/abs/1903.11027
-[11] Cordts et al., The Cityscapes Dataset for Semantic Urban Scene Understanding — https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Cordts_The_Cityscapes_Dataset_CVPR_2016_paper.pdf
-[12] Yu et al., BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning — https://arxiv.org/abs/1805.04687
-[13] KITTI Object Detection Benchmark — https://www.cvlibs.net/datasets/kitti/eval_object.php
-[14] Blum et al., The Fishyscapes Benchmark: Measuring Blind Spots in Semantic Segmentation — https://link.springer.com/article/10.1007/s11263-021-01511-6
-[15] SegmentMeIfYouCan: A Benchmark for Anomaly Segmentation — https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/file/d67d8ab4f4c10bf22aa353e27879133c-Paper-round2.pdf
-[16] NIST AI Risk Management Framework 1.0 — https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf
-[17] ISO 21448:2022 SOTIF (sample access) — https://cdn.standards.iteh.ai/samples/77490/d9843a45e11947e0aa79aaf2f00b65a8/ISO-21448-2022.pdf
-[18] Mitchell et al., Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
-[19] D’Amour et al., Underspecification Presents Challenges for Credibility in Modern ML — https://www.jmlr.org/papers/volume23/20-1335/20-1335.pdf
-[20] Geirhos et al., Shortcut Learning in Deep Neural Networks — https://arxiv.org/pdf/2004.07780
-[21] Li et al., BEVFormer: Learning Bird’s-Eye-View Representation from Multi-Camera — https://arxiv.org/abs/2203.17270
-[22] Yin et al., CenterPoint: Center-based 3D Object Detection and Tracking — https://arxiv.org/abs/2006.11275
-[23] Expected Grad-CAM: Towards gradient faithfulness — https://arxiv.org/html/2406.01274v1
-[24] Explaining Object Detectors via Collective Contribution of Pixels — https://arxiv.org/html/2412.00666v1
+[1] Sanity Checks for Saliency Maps — https://arxiv.org/abs/1810.03292
+[2] On the (In)fidelity and Sensitivity of Explanations — http://papers.neurips.cc/paper/9278-on-the-infidelity-and-sensitivity-of-explanations
+[3] Black-Box Explanation of Object Detectors via Saliency Maps (D-RISE) — https://openaccess.thecvf.com/content/CVPR2021/html/Petsiuk_Black-Box_Explanation_of_Object_Detectors_via_Saliency_Maps_CVPR_2021_paper.html
+[4] PointCloud Saliency Maps — https://openaccess.thecvf.com/content_ICCV_2019/papers/Zheng_PointCloud_Saliency_Maps_ICCV_2019_paper.pdf
+[P1] OCTET: Object-aware Counterfactual Explanations — http://arxiv.org/abs/2211.12380v2
+[P2] LD-ViCE: Latent Diffusion Model for Video Counterfactual Explanations — http://arxiv.org/abs/2509.08422v2
+[5] TCAV: Testing with Concept Activation Vectors — https://arxiv.org/abs/1711.11279
+[6] Center-based 3D Object Detection and Tracking (CenterPoint) — https://arxiv.org/abs/2006.11275
+[7] nuScenes: A Multimodal Dataset for Autonomous Driving — https://openaccess.thecvf.com/content_CVPR_2020/papers/Caesar_nuScenes_A_Multimodal_Dataset_for_Autonomous_Driving_CVPR_2020_paper.pdf
+[8] BEVFusion — https://ar5iv.labs.arxiv.org/html/2205.13542
+[9] Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
+[10] Datasheets for Datasets — https://arxiv.org/abs/1803.09010
+[11] NIST AI Risk Management Framework 1.0 — https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf
+[12] ROAR benchmark and DPI caveats — https://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf; https://export.arxiv.org/pdf/2304.13836v3.pdf

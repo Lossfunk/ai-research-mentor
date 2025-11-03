@@ -1,155 +1,162 @@
+Stage: B → C (we’re moving from a well-defined idea to a concrete research plan with gated Phase 0)
+
+Intuition: Multilingual fact-checking stresses both knowledge access (retrieval) and reasoning. Open-weight LLMs can be competitive with careful retrieval, prompting, and calibration, especially when evaluation controls for evidence grounding and cross-lingual retrieval quality. Leveraging compact retrievers and quantized 7–8B models lets you run credible experiments on limited GPUs.
+
+Why this is principled: RAG mitigates hallucinations but needs careful multilingual evaluation and bias control [P5]. X-FACT is a strong multilingual fact verification dataset; coupling FEVER-style metrics with evidence grounding and calibration provides robust assessment [P4][n]. Modern multilingual retrievers (e.g., MINERS, bge-m3) and language-agnostic embeddings (LaBSE) are effective and efficient for cross-lingual retrieval [P8][n][n].
+
 1) Problem framing and goals
-- Objective: Build a rigorous, compute-efficient benchmark to evaluate open-weight LLMs on multilingual fact-checking (claim verification with supporting evidence) across multiple languages, focusing on accuracy, evidence quality, justification faithfulness, and calibration/abstention behavior.
+- Problem: Benchmark open-weight LLMs for multilingual claim verification with evidence grounding. Compare direct zero-shot verification vs. retrieval-augmented verification across diverse languages under limited GPU.
 - Scope:
-  - Languages: target at least 5 spanning high- and mid-resource (e.g., English, Spanish, Turkish, Tamil) aligned with available multilingual fact-checking data [P1]. 
-  - Tasks: (a) claim label prediction (supports/refutes/NEI); (b) evidence passage retrieval; (c) justification generation; (d) selective prediction with abstention/calibration [P5].
-- Design principles:
-  - Start by replicating/aligning with recent multilingual fact-checking evaluations of LLMs and datasets derived from X-Fact and SemEval claim retrieval to ensure comparability [P1][P6].
-  - Include factuality metrics recently used for LLM evaluation (e.g., FactScore, SAFE) where feasible for reference-dependent assessment [P3].
-  - Optimize for low compute via quantized models, efficient serving (vLLM/llama.cpp), and retrieval-first pipelines.
-- Expected outputs:
-  - A reproducible benchmark suite with standardized prompts, inference scripts, and evaluation harness.
-  - Per-language leaderboard for open-weight models (7B–13B class) covering label accuracy/F1, evidence precision/recall, justification faithfulness, refusal/abstention rates, and calibration metrics [P2][P5].
-  - A technical report comparing zero-shot, RAG, and translation-pivot pipelines, plus ablations for quantization and retrieval quality.
-- Sanity checks:
-  - Verify consistent label mapping across datasets and languages; check inter-annotator agreement where available [P1].
-  - Confirm that improvements from RAG correlate with evidence precision/recall, not only verbalization [P3].
-  - Monitor refusal rates and harmful prompt side effects; normalize instructions cross-lingually to reduce refusal artifacts [P2].
-  - Translation-pivot diagnostics: compare native-language vs pivot-to-English pipelines to detect translation-induced label flips.
+  - Languages: prioritize 6–10 spanning high- and low-resource (e.g., en, es, de, ar, hi, tr, vi, sw).
+  - Tasks: claim label (Supported/Refuted/Not Enough Info), evidence sentence retrieval, calibrated confidence.
+  - Settings: zero-shot prompting, RAG with multilingual retrieval, translation-pivot vs native-language pipelines.
+- Goals:
+  - G1: Establish a reproducible, compute-efficient benchmark for multilingual fact-checking with open models (7–8B preferred).
+  - G2: Quantify retrieval’s impact on accuracy and calibration, especially in low-resource languages.
+  - G3: Provide an evidence-grounded evaluation suite: FEVER-style scoring, macro-F1, evidence precision/recall, MRR@k, ECE/Brier, and language-wise error analysis [n].
+  - G4: Release code, prompts, and per-language results with sanity checks for leakage and overfitting.
+- Deliverable outputs:
+  - For each claim: JSON with {claim_lang, label, confidence, evidence_ids, evidence_text, retrieval_scores, rationale}.
+  - For the benchmark: per-language metric tables, calibration curves, ablation figures (retriever/model/prompt/translation).
 
 2) Experiments
-Experiment 1: Zero-shot vs RAG across languages
-- Hypothesis: Retrieval-augmented prompting significantly improves evidence precision/recall and label F1 in mid/low-resource languages compared to zero-shot, because models benefit from grounded passages [P1][P6].
-- Setup:
-  - Models (quantized): Llama 3.x 8B/8B-Instruct, Mistral 7B/Mixtral-8x7B-instruct, Qwen2 7B/14B (as available), all in 4–8-bit (GGUF/GPTQ/AWQ) via vLLM or llama.cpp.
-  - Retrieval: multilingual dense retrievers (e.g., mE5-base, LaBSE, mContriever) to index Wikipedia/news per language; BM25 as lexical fallback. SemEval multilingual claim retrieval settings inform retrieval choices [P6].
-  - Prompts: standardized claim verification prompt with “think-then-decide” reasoning, then final JSON with {label, evidence_ids, justification, confidence}.
-  - Data: Multilingual fact-checking subsets as in [P1] (derived from X-Fact) and SemEval-2025 Task 7 retrieval testbeds for claim retrieval components [P6].
-- Baselines:
-  - Zero-shot, no retrieval.
-  - English-only pivot (translate claim to English, retrieve English evidence, translate back).
-  - Non-LLM: off-the-shelf multilingual NLI (XLM-R-large) for label-only baseline (inference-only; no fine-tuning).
-- Metrics:
-  - Label: macro-F1, accuracy (3-way).
-  - Evidence: precision@k, recall@k, FEVER-style joint score (label correct + evidence sufficient) where applicable.
-  - Justification: faithfulness via reference-dependent metrics (FactScore/SAFE where feasible) [P3].
-  - Operational: refusal rate, average tokens, latency.
-- Expected outcomes:
-  - RAG > zero-shot for evidence and joint score; improvements larger in lower-resource languages [P1][P6].
-  - Pivot-to-English helps label F1 for smaller models but may reduce evidence recall in non-English settings; native RAG expected to outperform pivot on evidence metrics [P2].
+Experiment 1: Does RAG improve multilingual verification and calibration?
+- Hypothesis: RAG improves FEVER score and reduces ECE vs. direct zero-shot prompting, with larger gains in lower-resource languages [P5][n].
+- Setup: Models: Qwen2.5-7B-Instruct, Llama-3.1-8B-Instruct (or closest open 8B), Mistral-7B-Instruct (4-bit quantized). Retrievers: bge-m3, LaBSE, BM25 (Pyserini) [n][n]. Corpora: Wikipedia per language (snapshot fixed date). Datasets: X-FACT (primary), MultiFC (English), CheckThat! tasks if claim-level available [P4][n][n]. Prompt: minimal chain-of-thought off + rationale-on-demand to control compute. Inference via vLLM or llama.cpp for quantized runs.
+- Baselines: Zero-shot no retrieval; BM25 + linear/LogReg verifier; Cross-encoder XLM-RoBERTa-base verifier; RAG with bge-m3 vs. BM25.
+- Evaluation metrics: FEVER score; macro-F1 on labels; evidence precision/recall@5, MRR@10; ECE and Brier score; latency per claim; per-language breakdown [n].
+- Expected outcomes: RAG yields +3–8 FEVER points on low-resource languages, smaller but positive gains on high-resource; ECE drops with RAG and further with temperature scaling. If no gains, indicates retrieval mismatch or prompt misalignment; analyze evidence recall vs. label accuracy.
 
-Experiment 2: Translation-pivot vs native-language pipelines
-- Hypothesis: For 7B-class models, translation-pivot to English improves label accuracy, but native-language retrieval yields higher evidence recall and justification faithfulness; for larger open models (13B+), native RAG narrows or reverses the label gap [P2].
-- Setup:
-  - Two pipelines: (A) Native-language retrieve→verify; (B) Translate claim→EN retrieve→verify→translate explanation back.
-  - Same models/retrievers as Exp.1; add quality control on machine translation with language-ID and perplexity filters.
-- Baselines: Zero-shot native; zero-shot EN pivot.
-- Metrics: As in Exp.1 + translation consistency checks (back-translation agreement).
-- Expected outcomes:
-  - Mixed results with small models (pivot better labels, worse evidence); native RAG best joint score. This aligns with observations of language-dependent variation and refusal behavior in multilingual LLM fact-checking analyses [P1][P2].
+Experiment 2: Retriever comparison and its effect on downstream verification
+- Hypothesis: Dense multilingual retrievers (bge-m3, LaBSE, MINERS-like setups) outperform BM25 for cross-lingual evidence, translating into better final verification, especially for non-English claims [P8][n][n].
+- Setup: Build FAISS IVF-PQ indices for each language’s Wiki (and a pooled multilingual index). Compare BM25 (Pyserini), LaBSE, bge-m3, and mContriever variants [n][n][n]. Fix the verifier (e.g., Qwen2.5-7B) and prompts; vary only retrieval.
+- Baselines: BM25; LaBSE; bge-m3; bge-m3 + cross-encoder rerank (XLM-R-base) limited to top-50.
+- Metrics: Evidence recall@5/10, precision@5; MRR@10; end-to-end FEVER score; compute cost (embedding time, index size).
+- Expected outcomes: bge-m3 ≥ LaBSE ≥ BM25 on cross-lingual recall, with moderate cost. If BM25 wins in some languages, likely due to tokenization/orthography; consider language-specific analyzers or hybrid dense+BM25.
 
-Experiment 3: Selective prediction and calibration
-- Hypothesis: Simple uncertainty proxies (self-reported confidence, entropy of label logits via log-likelihood prompts, and agreement under perturbations) enable selective abstention that improves risk-coverage curves and reduces false positives at matched coverage [P5].
-- Setup:
-  - For each prediction, collect: confidence, alternative-sampling agreement, and evidence retrieval margin (score gap). 
-  - Implement abstain when confidence < τ. Tune τ on dev per language.
-- Baselines: No abstention; fixed-top-k evidence.
-- Metrics: AURC (Area Under Risk-Coverage), ECE (Expected Calibration Error), selective accuracy, false positive rate at coverage 70/80/90%.
-- Expected outcomes:
-  - UQ-driven abstention improves AURC vs no abstention; calibration varies by language; evidence-margin is a strong abstention signal when retrieval is weak [P5].
+Experiment 3: Translation pivot vs. native-language pipelines
+- Hypothesis: Translating claims to English and retrieving from English Wikipedia gives competitive or superior performance for low-resource languages, but underperforms native retrieval in high-resource ones [P4][P5].
+- Setup: Two pipelines per non-English claim: (A) Native retrieval + native verification; (B) Translate claim to English (small open MT or LLM translation), retrieve English evidence, verify in English, optionally translate rationale back. Control translation quality via back-translation BLEU/chrF.
+- Baselines: Native-only RAG; Pivot-only RAG; Hybrid (retrieve in both and merge).
+- Metrics: FEVER score; evidence precision/recall; calibration (ECE); translation fidelity metrics (chrF or COMETkiwi-lite if available).
+- Expected outcomes: Pivot improves low-resource languages where native corpora sparse; native wins in high-resource. Hybrid often best but costlier. Divergences suggest translation brittleness or cultural domain gaps.
 
-Experiment 4: Prompt and refusal-control ablations
-- Hypothesis: Instruction normalization and chain-of-thought-lite (brief verification steps without sensitive content) reduce refusal rates and stabilize performance across languages [P2].
-- Setup:
-  - Compare prompts: direct classify vs structured “state evidence→decide” vs JSON-only. Add a refusal-neutralization instruction tuned on dev.
-- Baselines: Best prompt from Exp.1.
-- Metrics: Refusal rate, label F1, joint score; per-language deltas.
-- Expected outcomes:
-  - Reduced refusals and small improvements in macro-F1 for high-refusal languages; maintain evidence precision [P2].
+Experiment 4: Calibration without degrading accuracy (lightweight)
+- Hypothesis: Temperature scaling or vector scaling reduces ECE/Brier with ≤0.5 FEVER loss.
+- Setup: Fit calibrators on dev set predictions per language; apply at test.
+- Baselines: Uncalibrated; temperature scaling; Dirichlet calibration (if feasible).
+- Metrics: ECE, Brier, FEVER; NLL; reliability diagrams.
+- Expected outcomes: Material ECE reduction with negligible accuracy change; if not, confidence outputs may be poorly aligned and need re-prompting for probability elicitation.
 
-Experiment 5: Quantization effects and throughput
-- Hypothesis: 4–8 bit quantization yields ≤2–3 points drop in label macro-F1 and minimal drop in evidence metrics compared to BF16, while increasing throughput 2–4×, enabling practical multilingual evaluation on a single GPU.
-- Setup:
-  - Compare BF16 vs AWQ/GPTQ vs GGUF 4-bit across two models (e.g., Llama 3.x 8B and Mistral 7B).
-- Baselines: BF16 inference on a subset (if available).
-- Metrics: F1 deltas, evidence recall deltas; tokens/sec; memory footprint.
-- Expected outcomes:
-  - Minor performance degradation with substantial throughput gains, enabling broader language coverage. If BF16 unavailable, compare 4-bit vs 8-bit.
+Experiment 5: Evidence grounding checks and hallucination control
+- Hypothesis: Evidence-constrained prompting (require citation IDs) reduces unsupported rationales and yields higher evidence precision [P1][P5].
+- Setup: Require models to cite retrieved passage IDs in JSON schema; reject answers without valid citation and re-ask with narrower context. Compare free-form vs. citation-constrained prompts.
+- Metrics: Evidence precision/recall; fraction of unsupported rationales; FEVER; latency.
+- Expected outcomes: Higher evidence precision with minimal FEVER trade-off; if latency rises, prune context or top-k.
 
-3) Timeline (6 months)
-- Month 1: 
-  - Data acquisition and curation: obtain multilingual subsets (X-Fact-derived, SemEval claim retrieval) and define train/dev/test splits; harmonize labels [P1][P6].
-  - Index multilingual corpora (Wikipedia/news) with dense retrievers; set up BM25 fallback.
-  - Establish evaluation harness (label/evidence/justification/calibration) with reproducibility scaffold [P3][P5].
+3) Timeline for the next 6 months with milestones
+- Phase 0 (Weeks 1–2, gate): 
+  - Deliverables: (1) Prediction log with ≥14 entries; (2) Reproduce a baseline FEVER-style score on a 1k-claim multilingual slice from X-FACT with ≤10% relative gap across two seeds; (3) One ablation (BM25 vs bge-m3) with a one-page post-mortem.
+  - Artifacts: Experiment card templates; dataset cards; fixed Wikipedia snapshot; prompt registry.
 - Month 2:
-  - Implement zero-shot and RAG pipelines; finalize prompts and structured outputs.
-  - Run small dry-runs on 2 languages to validate metrics and sanity checks.
-  - Start quantized model serving (vLLM/llama.cpp).
+  - Build multilingual indices (BM25, LaBSE, bge-m3); run Experiment 1 on 3 languages (en/es/ar); draft calibration curves.
+  - Milestone: RAG vs zero-shot comparison report; decision on default retriever.
 - Month 3:
-  - Full Exp.1 runs across all languages and models; compute evidence metrics and joint scores.
-  - Begin Exp.2 translation-pivot vs native; add translation QA gates.
+  - Run Experiment 2 across all chosen languages; index optimization (IVF-PQ parameters); release interim retrieval metrics.
+  - Milestone: Retriever leaderboard with per-language recall and MRR.
 - Month 4:
-  - Exp.3 selective prediction and calibration; tune thresholds; compute AURC/ECE [P5].
-  - Exp.4 refusal-control ablations; select best prompt templates per language [P2].
+  - Run Experiment 3 (pivot vs native); add lightweight calibrations (Experiment 4).
+  - Milestone: Full ablation matrix; calibration results; initial draft figures.
 - Month 5:
-  - Exp.5 quantization study; throughput vs accuracy tradeoffs.
-  - Consolidate results into per-language leaderboards; error analyses (by claim type, source, language).
+  - Run Experiment 5 (evidence grounding); finalize prompt schemas; stress-test on CheckThat! topics.
+  - Milestone: End-to-end results with sanity checks; error taxonomy by language.
 - Month 6:
-  - Write and release benchmark package, reproducibility report, and artifact checklist.
-  - Prepare paper draft with tables/plots, ablations, and release indices/models/configs. If time, add a small human validation on a sample for justification faithfulness [P3].
-
-Milestones: M1 datasets/splits/indexes; M2 evaluation harness; M3 RAG baselines complete; M4 calibration + refusal-control results; M5 quantization tradeoff report; M6 paper + code release.
+  - Writing, reproducibility pack, and camera-ready materials: code release, Docker, model cards; submit to an appropriate venue or workshop.
+  - Milestone: Public repo and report with artifact badges.
 
 4) Resources (compute, tools, datasets)
 - Compute:
-  - Single 24–48 GB GPU (e.g., 3090/4090/A5000/A100-40GB) sufficient with 4–8 bit quantization and batch inference.
-  - CPU RAM 64–128 GB recommended for indexing and retrieval; SSD 1–2 TB for corpora and vector indexes.
+  - Minimal GPU: single 16–24 GB GPU (e.g., RTX 3090/4090) for 4-bit quantized 7–8B models via vLLM or llama.cpp; CPU fallback for indexing/embedding. Batch inference with KV-caching; context ≤4k tokens.
+  - Storage: ~200–400 GB for Wikipedia dumps (10 languages) + FAISS indices (IVF-PQ). 
+  - Time: Indexing a medium dump with bge-m3 on CPU ~12–24h per language; can be parallelized on CPUs.
 - Tools:
-  - Inference: vLLM (continuous batching), llama.cpp (GGUF), Text Generation Inference.
-  - Retrieval: FAISS/ScaNN; BM25 via Pyserini/Anserini.
-  - Embeddings: mE5, LaBSE, mContriever for multilingual retrieval; selection guided by SemEval multilingual claim retrieval practices [P6].
-  - Evaluation: custom harness for macro-F1, evidence P@k/R@k, FEVER-style joint score; optional FactScore/SAFE if references available [P3]. Calibration scripts for ECE/AURC [P5].
-- Datasets/corpora:
-  - Multilingual fact-checking sets derived from X-Fact (Spanish, Italian, Portuguese, Turkish, Tamil) as in [P1].
-  - SemEval-2025 Task 7 cross-/multilingual fact-checked claim retrieval benchmark for the retrieval stage [P6].
-  - Multilingual Wikipedia and news dumps aligned to dataset languages for evidence retrieval.
-  - Note: If gaps remain in specific languages, create diagnostic translated subsets; treat as auxiliary only to avoid translation bias in headline results.
+  - LLM inference: vLLM or llama.cpp (quantized); HuggingFace transformers.
+  - Retrieval: FAISS; Pyserini BM25; sentence-transformers (bge-m3, LaBSE).
+  - Evaluation: fever-score implementation; sklearn for F1; calibration libraries (netcal).
+  - Data processing: WikiExtractor; ftlangdetect or fastText for language ID sanity checks.
+- Datasets/Corpora:
+  - X-FACT (25 languages) for claim verification [P4].
+  - MultiFC (English; evidence-based fact-checking) [n].
+  - CheckThat! CLEF tasks for claim verification/check-worthiness (use claim-level subsets) [n].
+  - FEVER (English) for metric alignment and sanity checks [n].
+  - Wikipedia snapshots per language (fixed date); optionally CCNet or news for out-of-domain probing.
+- Models:
+  - Open LLMs: Qwen2.5-7B-Instruct (strong multilingual) [n]; Llama-3.x-8B-Instruct (or closest open multilingual); Mistral-7B-Instruct.
+  - Retrievers: bge-m3 [n]; LaBSE [n]; mContriever/variants [n].
+  - Re-ranker (optional): XLM-R-base cross-encoder if compute allows.
 
-5) Risks and mitigations
-- Data coverage gaps in some languages
-  - Mitigation: Prioritize languages with documented X-Fact coverage [P1]; add diagnostic translated sets clearly labeled as such.
-- Retrieval quality varies widely by language/domain
-  - Mitigation: Hybrid retrieval (dense + BM25); per-language tuning; domain-specific indexes; use claim-normalization heuristics [P6].
-- High refusal or safety-triggered abstentions
-  - Mitigation: Instruction normalization, refusal-control prompts; evaluate refusal rates and report alongside accuracy [P2].
-- Justification evaluation unreliability
-  - Mitigation: Prefer reference-dependent metrics and evidence-grounded checks (e.g., FactScore/SAFE) where feasible; small human audit sample [P3].
-- Calibration metrics sensitive to proxies
-  - Mitigation: Multiple UQ signals (self-confidence, entropy, agreement, evidence-margin); risk-coverage evaluation rather than single thresholds [P5].
-- Quantization-induced regressions
-  - Mitigation: Compare 4/8-bit against a small BF16 subset; report deltas and select best accuracy-throughput points.
-- Reproducibility threats (non-determinism, updates)
-  - Mitigation: Version-pin models, data snapshots, and prompts; seed control; release scripts and exact config hashes.
+5) Risks and mitigations table
+- Risk: Dataset mismatch or leakage (e.g., claims tied to post-snapshot content).
+  - Mitigation: Freeze a Wikipedia snapshot date; filter evidence by timestamp; run leakage probe by removing all retrieved evidence and checking residual accuracy.
+- Risk: Translation artifacts bias pivot pipeline.
+  - Mitigation: Back-translation checks; report translation fidelity (chrF/COMET-lite); ablate with native-only subset; manual spot checks per language.
+- Risk: Retrieval dominates performance; model differences obscured.
+  - Mitigation: Fix retriever to best-in-class and compare models; also fix model and vary retrievers (two-way ablation).
+- Risk: Calibration metrics unstable due to small per-language test sizes.
+  - Mitigation: Use bootstrapped CIs; aggregate across similar languages; predefine stop rules for reporting.
+- Risk: GPU scarcity slows runs.
+  - Mitigation: Prefer 4-bit inference; shard evaluation (100–500 claim batches); prioritize languages and run adaptive sampling.
+- Risk: Evidence hallucinations with plausible but uncited rationales.
+  - Mitigation: Enforce citation schema; reject and reprompt without citations; compute evidence precision; manual audit sample.
+- Risk: Generic or off-topic references.
+  - Mitigation: Maintain a living bibliography; if sources are preprints or tangential, flag and replicate claims on your data; seek task-specific shared tasks (CLEF) for anchoring [n].
 
 6) Stretch ideas or follow-up directions
-- Cross-lingual transfer: train tiny adapters (LoRA) on high-resource languages and evaluate zero-shot transfer to low-resource; report parameter- and energy-efficiency.
-- Evidence attribution training: lightweight preference optimization using evidence-anchored rationales to improve faithfulness (small-scale, language-balanced).
-- Adversarial robustness: introduce paraphrase/translation perturbations and entity swaps; evaluate error types by language.
-- Retrieval distillation: distill multilingual retriever from ensemble (mE5 + mContriever) into a compact student for faster indexing and query.
-- Dynamic benchmark integration: align with evolving factuality suites (e.g., FactBench) to compare to broader factuality metrics and evaluator frameworks [P3].
+- Cross-lingual RAG bias analysis: Measure cultural or regional bias in retrieval and answer selection; evaluate with culturally sensitive tasks [P5].
+- Long-context evidence chains: Test if models can reason over multi-hop multilingual evidence; adapt from long-context multilingual evaluations [P2].
+- Hallucination-oriented evaluation: Add Poly-FEVER-style hallucination tests for multilingual settings (note: recent preprint) [P3].
+- Knowledge editing stress tests: After editing model knowledge (MLaKE), re-evaluate verification to test robustness to updates [P7].
+- Semantic retrievers as LLMs: Explore MINERS-style LLM-as-retriever approaches in multilingual setups [P8].
 
-Citations in text
-- Replication/benchmark baselines and multilingual claim verification setups draw from Multilingual Fact-Checking using LLMs (X-Fact-derived) [P1] and a multilingual comparative analysis of LLM-based fact-checking (including open-weight models) [P2].
-- Evidence-grounded factuality metrics and LLM factuality evaluation frameworks motivate the use of FactScore/SAFE/FactCheck-GPT-style evaluators where feasible [P3].
-- Selective prediction and calibration protocol is guided by benchmarking of UQ methods for fact-checking with LLMs [P5].
-- Multilingual claim retrieval approaches and embedding choices are informed by SemEval multilingual/cross-lingual claim retrieval work [P6].
+Sanity checks (run continuously)
+- Label priors: Compare predicted label distribution to gold per language; large skews flag miscalibration.
+- Retrieval sanity: Oracle vs. no-retrieval bounds; if “no retrieval” is close to oracle, evidence signals aren’t used.
+- Evidence locality: Ensure cited evidence actually contains claim entities; compute entity overlap and lexical overlap.
+- Adversarial slices: Test time-shifted claims and OOD topics; expect graceful degradation.
+- Reproducibility: Two seeds or prompt variants per setting; ≤10% relative metric variance.
+
+Expected outputs (by end of Month 6)
+- Benchmark report with:
+  - Per-language tables: FEVER, macro-F1, evidence P/R, MRR@10, ECE, Brier.
+  - Plots: RAG gain by language resource level; calibration reliability diagrams; retriever recall vs. FEVER.
+  - Ablation matrix: model × retriever × prompt × pivot.
+- Open repository with:
+  - Docker, configs, prompt registry, experiment cards, and fixed Wikipedia snapshot hashes.
+  - JSONL predictions with evidence IDs and confidences.
+  - Reproducibility script to re-run on 1k-claim subset.
+
+Citations within plan
+- RAG benchmarking and multilingual evaluation framing [P1][P5].
+- X-FACT dataset [P4].
+- FEVER dataset/metric [n].
+- MultiFC [n]; CheckThat! CLEF [n].
+- Multilingual retrieval (MINERS), bge-m3, LaBSE, mContriever [P8][n][n][n].
+- Note: Some sources (e.g., P2, P3) are recent preprints; use as directional references and validate on your data.
+
+Optional next step: Start Phase 0 by indexing a single language (Arabic) with bge-m3 and BM25, run 1k-claim X-FACT slice through zero-shot vs. RAG with Qwen2.5-7B (4-bit), and produce a one-page ablation memo with FEVER, evidence recall, and ECE per setting.
 
 Citations
-- [P1] Multilingual Fact-Checking using LLMs — https://aclanthology.org/2024.nlp4pi-1.2/
-- [P2] A Multilingual, Comparative Analysis of LLM-Based Fact-Checking — https://arxiv.org/pdf/2506.03655
-- [P3] FactBench: A Dynamic Benchmark for In-the-Wild Language Model Factuality Evaluation — https://aclanthology.org/2025.acl-long.1587.pdf
-- [P5] Benchmarking Uncertainty Quantification Methods for Large Language Models — https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00737/128713/Benchmarking-Uncertainty-Quantification-Methods
-- [P6] RACAI at SemEval-2025 Task 7: Efficient adaptation of Large Language Models for Multilingual and Crosslingual Fact-Checked Claim Retrieval — https://aclanthology.org/2025.semeval-1.77/
-
-Optional next step
-- I can draft the initial evaluation harness skeleton (data loaders, retrieval API, prompt templates, and metric stubs) and a minimal config to run Exp.1 on two languages with a single 7B model this week.
+- [P1] MIRAGE-Bench: Automatic Multilingual Benchmark Arena for Retrieval-Augmented Generation Systems — http://arxiv.org/abs/2410.13716v2
+- [P2] Can LLMs reason over extended multilingual contexts? Towards long-context evaluation beyond retrieval and haystacks — http://arxiv.org/abs/2504.12845v1
+- [P3] Poly-FEVER: A Multilingual Fact Verification Benchmark for Hallucination Detection in Large Language Models — http://arxiv.org/abs/2503.16541v2
+- [P4] X-FACT: A New Benchmark Dataset for Multilingual Fact Checking — http://arxiv.org/abs/2106.09248v1
+- [P5] Multilingual Retrieval Augmented Generation for Culturally-Sensitive Tasks: A Benchmark for Cross-lingual Robustness — http://arxiv.org/abs/2410.01171v3
+- [P7] MLaKE: Multilingual Knowledge Editing Benchmark for Large Language Models — http://arxiv.org/abs/2404.04990v3
+- [P8] MINERS: Multilingual Language Models as Semantic Retrievers — http://arxiv.org/abs/2406.07424v3
+- [n] FEVER: a Large-scale Dataset for Fact Extraction and VERification — https://aclanthology.org/N18-1074/
+- [n] MultiFC: A Real-World Multi-Domain Dataset for Evidence-Based Fact Checking — https://arxiv.org/abs/1909.03242
+- [n] CLEF CheckThat! overview (2024–2025) — https://ceur-ws.org/Vol-3740/paper-64.pdf ; https://arxiv.org/abs/2503.14828
+- [n] bge-m3 embedding — https://arxiv.org/abs/2402.03216
+- [n] LaBSE — https://arxiv.org/abs/2007.01852
+- [n] mContriever — https://arxiv.org/pdf/2112.09118
+- [n] Qwen2.5 blog/tech report — https://qwenlm.github.io/blog/qwen2.5 ; https://arxiv.org/abs/2412.15115
