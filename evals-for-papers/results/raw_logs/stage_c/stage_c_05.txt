@@ -1,140 +1,103 @@
-1. Problem framing and goals
-- Problem: Create and evaluate a fully no-code/low-code methodology for building and testing prompt strategies and retrieval-augmented generation (RAG) systems using cloud-based evaluators and public benchmarks. The work targets reproducibility and accessibility for researchers without Python skills, focusing on truthfulness, reasoning, and grounding. Surveys of LLMs highlight the need for rigorous evaluation across tasks, prompting, and tool use [P2].
-- Research questions:
-  1) Do structured prompting strategies (few-shot, chain-of-thought) outperform zero-shot on reasoning and truthfulness benchmarks in no-code settings?
-  2) Does adding RAG improve factuality and reduce hallucinations compared with direct prompting across general QA tasks?
-  3) How reliable are built-in cloud evaluators (AWS Bedrock, Azure AI Foundry, Google Vertex AI) relative to human judgments and automatic metrics?
-  4) Can abstention/“refuse when unsure” prompts reduce false answers without sacrificing too much coverage? [P4]
-- Scope and constraints:
-  - No coding required; use vendor UIs and point-and-click tools for setup, evaluation, and exports [7][9][10].
-  - Public, easily accessible datasets/benchmarks: MMLU (general knowledge) [3], GSM8K (grade-school math) [4], TruthfulQA (truthfulness) [5], BBH (reasoning) [6]; RAG evaluation via RAGAS metrics where supported by tools/docs [2][8].
-- Primary goals:
-  - Deliver a reproducible, no-code evaluation harness and report for prompts and RAG variants on 3–4 benchmarks with transparent protocols, dataset splits, and reporting checklists [P2].
-  - Provide evidence on reliability and limitations of built-in evaluators vs. human evaluation and automated metrics [7][9][10][12].
-  - Produce reusable evaluation artifacts (prompt sheets, evaluation forms, exportable CSVs) and an ethics note on toxicity/harms measurement with cautions about black-box toxicity APIs [13][14].
+## 1. Problem framing and goals
 
-2. Experiments
-Experiment 1: Prompting strategies for reasoning and truthfulness (no-code)
-- Hypothesis: Few-shot and chain-of-thought (CoT) prompting will outperform zero-shot on reasoning (GSM8K, BBH) and maintain or improve truthfulness (TruthfulQA), with measurable gains in task accuracy. Also test abstention prompts to reduce false claims [5][6][4][P4].
-- Setup:
-  - Models: Use the same deployed LLM(s) across three cloud evaluators (one per platform if needed) using their UIs to control prompts and batch evaluations [7][9][10].
-  - Prompts: Zero-shot; Zero-shot + “abstain if unsure”; Few-shot; CoT; CoT + self-consistency (majority vote via multi-sample setting if available in UI).
-  - Datasets: GSM8K subset (200 items), BBH subset (≥200 items), TruthfulQA (MC and generation subsets where available) [4][6][5]. If the platforms limit dataset size, stratify by category.
-  - Procedure: Upload tasks via CSV/JSON UI; run each prompt condition with identical prompts across platforms; export results as CSV from each platform [7][9][10].
-- Baselines: Zero-shot prompt without abstention.
-- Evaluation metrics:
-  - GSM8K: exact match (EM) using answer key; platform evaluator accuracy if provided [4][9][10].
-  - BBH: accuracy via provided keys or majority human adjudication if no auto-key [6][12].
-  - TruthfulQA: truthfulness score (per answer key) and rate of confident falsehoods [5].
-  - Human evaluation: binary correctness and confidence on a 50–100 item stratified sample using Label Studio UI [12].
-- Expected outcomes: A measurable accuracy increase for few-shot and CoT over zero-shot on GSM8K and BBH; abstention expected to lower the rate of false claims on TruthfulQA with a modest drop in coverage [5][6][4][P4]. These are hypotheses to be confirmed empirically.
+**Research objective**: Evaluate the effectiveness of no-code AI platforms for democratizing machine learning research, focusing on comparative analysis across platforms and their ability to replicate traditional coding-based ML workflows.
 
-Experiment 2: RAG vs. direct prompting for factual QA (no-code knowledge bases)
-- Hypothesis: RAG improves factual accuracy and grounding while lowering hallucination rates vs. direct prompting on open-domain QA, as measured by RAGAS faithfulness/answer correctness and platform RAG evaluation reports [1][2][8].
-- Setup:
-  - Build a knowledge base in AWS Bedrock Knowledge Bases UI from a small, public corpus (e.g., Wikipedia slices for history/science categories or a domain-specific public corpus) [8].
-  - Create identical question sets (200–300 items) derived from or aligned with the corpus; if available, test NQ-like or curated QA sets.
-  - Conditions: Direct LLM prompting (no retrieval) vs. RAG (retrieval+prompting); vary chunking/window sizes as ablations.
-  - Run evaluations via Bedrock’s knowledge base evaluation job; also run RAGAS-like scoring if the UI exposes faithfulness and context precision metrics, or export responses/contexts for human rating [8][2].
-- Baselines: Direct prompting with best prompt from Experiment 1.
-- Evaluation metrics:
-  - Faithfulness/groundedness and context precision/recall (RAGAS-style) [2][8].
-  - QA accuracy (EM/F1) when answer keys exist.
-  - Human evaluation: “Is the answer supported by the retrieved context?” binary + confidence [12].
-- Expected outcomes: RAG shows higher faithfulness/grounding and equal or better QA accuracy versus direct prompting on corpus-derived questions [1][2][8].
+**Research goals**: 
+- Benchmark leading no-code platforms (Orange, Weka, RapidMiner, CreateML) against traditional Python-based ML
+- Assess platforms' ability to maintain model interpretability while reducing technical barriers
+- Establish best practices for non-programmers conducting rigorous AI research
 
-Experiment 3: Evaluator reliability study (cloud evaluators vs. human and automatic metrics)
-- Hypothesis: Built-in evaluators from AWS Bedrock, Azure AI Foundry, and Vertex AI correlate with human judgments on correctness and groundedness but can disagree in edge cases (e.g., subtle reasoning or adversarial wording) [7][9][10].
-- Setup:
-  - Take a 200-item stratified sample from Experiments 1–2 outputs (balanced across tasks and difficulty).
-  - Score with each platform’s evaluator; export scores [7][9][10].
-  - Human evaluation in Label Studio with a rubric for correctness, faithfulness (for RAG), and harmful/toxic content (binary + Likert severity) [12].
-  - Optional: Run Perspective API on the same sample to flag toxicity but treat as exploratory given known issues with black-box toxicity APIs [13][14].
-- Baselines: Human majority vote acts as reference.
-- Evaluation metrics:
-  - Agreement metrics (percent agreement; simple Cohen’s kappa for two raters; or platform-provided inter-rater guidance if available). Compute summaries in a spreadsheet from exported CSVs.
-  - Error analysis: categorize disagreements (reasoning, factuality, ambiguity).
-- Expected outcomes: Moderate-to-high correlation between platform evaluators and human judgments overall but noticeable failure modes in long reasoning and adversarial cases. Toxicity API flags do not perfectly align with human harm judgments; document limitations [14].
+## 2. Experiments
 
-Optional Experiment 4 (if time allows): Cross-benchmark generalization
-- Hypothesis: The best prompt/RAG settings identified on one dataset generalize partially but not fully to others; tuning per task remains beneficial [3][5][6][4].
-- Setup: Apply best configurations from Experiments 1–2 to MMLU subsets and TruthfulQA; record performance shifts [3][5].
-- Evaluation: Accuracy (MMLU), truthfulness score (TruthfulQA).
-- Expected outcomes: Mixed transfer; motivates task-aware prompt/RAG selection.
+**Experiment 1: Platform-to-platform consistency study**
+*Hypothesis*: No-code platforms will show statistically similar accuracy (±5%) across platforms for standard classification tasks using identical datasets and algorithm settings.
+*Setup*: Deploy 10 standard ML datasets (Iris, Wine, Breast Cancer) across Orange, Weka, and CreateML using identical algorithms (Decision Trees, Random Forest, SVM).
+*Baselines*: Python-based sci-kit-learn implementations as ground truth
+*Metrics*: Test accuracy, training time, hyperparameter sensitivity, interpretability score (using metrics from systematic review [P2])
+*Expected outcome*: Platforms within 5% accuracy range of each other and Python baselines
 
-3. Timeline for the next 6 months with milestones
-- Month 1:
-  - Accounts and governance: Set up AWS Bedrock, Azure AI Foundry, and Vertex AI Studio; enable evaluation features [7][9][10].
-  - Protocol preregistration and checklists (tasks, prompts, sample sizes, decision rules). Draft rubric for human evaluation and consent/instructions [12].
-  - Assemble datasets: subsets of GSM8K, BBH, TruthfulQA; curate RAG corpus and QA sets [4][6][5][8].
-- Month 2:
-  - Run Experiment 1 small pilots to finalize prompt variants and UI workflows; lock prompt templates.
-  - Begin full Experiment 1 runs; export CSVs and set up spreadsheets for metrics and figures.
-- Month 3:
-  - Build knowledge base(s) and run Experiment 2 pilots (tune chunk size, top-k retrieval) [8].
-  - Execute full Experiment 2; export RAG evaluation reports and human evaluation batches [8][2][12].
-- Month 4:
-  - Run Experiment 3 evaluator agreement study; complete human ratings; compile agreement metrics [7][9][10][12].
-  - Interim paper outline; register figures/tables to produce.
-- Month 5:
-  - Error analysis; ablations write-up (e.g., prompt length, RAG top-k).
-  - Draft Methods with reproducibility details (prompts, dataset splits, model and platform versions).
-- Month 6:
-  - Finalize results and discussion; limitations and ethics sections (toxicity evaluation caveats) [14].
-  - Prepare submission: choose venue (workshop on LLM evaluation/reproducibility), compile artifacts for a public repository (prompts, evaluation sheets, anonymized outputs).
+**Experiment 2: Non-expert validation study**
+*Hypothesis*: Domain experts with no coding background can achieve equivalent model performance (±3%) compared to programmers using the same platform.
+*Setup*: Recruit 30 domain experts (medicine, finance, agriculture), provide 2-hour training on Orange, compare to 30 programmers using Python
+*Baselines*: Performance difference between non-programmers vs programmers using same datasets
+*Metrics*: Model accuracy, feature engineering time, hyperparameter tuning effectiveness, user satisfaction
+*Expected outcome*: Non-programmers achieve 95% of coder performance in their domain expertise
 
-4. Resources (compute, tools, datasets)
-- Compute/platforms (no code):
-  - AWS Bedrock evaluation and knowledge base evaluation [7][8].
-  - Azure AI Foundry evaluators and datasets UI [9].
-  - Google Vertex AI model and app evaluation [10].
-- Human evaluation:
-  - Label Studio cloud or local UI for annotators [12].
-- Optional automated checks:
-  - Perspective API for toxicity (exploratory; document limitations) [13][14].
-- Datasets/benchmarks:
-  - MMLU subsets for general knowledge [3].
-  - GSM8K for math reasoning [4].
-  - TruthfulQA for truthfulness [5].
-  - BBH for challenging reasoning [6].
-  - RAG corpus: curated public Wikipedia slices or domain corpora compliant with licenses; store documents in Bedrock Knowledge Bases [8].
-- Tools for reliability and reporting:
-  - CSV exports and spreadsheets for statistics; templated reporting tables.
-  - RAG evaluation reports and RAGAS-style metrics where available [2][8].
+**Experiment 3: Reproducibility and robustness evaluation**
+*Hypothesis*: No-code platforms maintain reproducibility (≥90% accuracy consistency) across different data splits and configurations.
+*Setup*: Test each platform with 10-fold cross-validation on 5 benchmark datasets, evaluate reproducibility metrics
+*Baselines*: Industry-standard reproducibility benchmarks [P4]
+*Metrics*: Coefficient of variation in accuracy, parameter sensitivity, seed-dependent variance, interpretability drift
+*Expected outcome*: Coefficient of variation <5% across different training runs
 
-5. Risks and mitigations table
-- Platform changes to evaluators or models — Lock versions/dates in Methods; export timestamped reports; rerun a tiny verification subset at submission time [7][9][10].
-- Dataset licensing or TOS conflicts — Use public, well-known benchmarks with permissive licenses; cite sources; avoid scraping restricted content [3][4][5][6].
-- Evaluator bias or drift — Triangulate with human ratings and cross-platform evaluators; include error analysis; avoid overreliance on a single evaluator [7][9][10][12].
-- Toxicity measurement validity — Treat Perspective API as exploratory; validate with human harm ratings; discuss known issues of black-box toxicity evaluation [13][14].
-- Cost overruns — Pilot with small subsets; cap tokens/batch sizes; monitor platform usage dashboards; prioritize most informative conditions.
-- Ambiguity in ground truth — Prefer tasks with answer keys (GSM8K, MMLU); for generative tasks, use dual human adjudication and tie-break rules [3][4][12].
-- Reproducibility (no code) gaps — Archive prompts, evaluation configurations, CSV exports, and platform screenshots in a public repository with a README; include data statements [P2].
+**Intuition**: No-code platforms are designed to democratize access to ML, but we need systematic evaluation to establish reliability and identify best practices. The research aligns with growing evidence that these platforms can match traditional implementations [P2,P3].
 
-6. Stretch ideas or follow-up directions
-- Domain-specific RAG: Apply the methodology to a specific domain (e.g., healthcare policy or finance with public documents) and measure gains in groundedness and reduced hallucinations under strict abstention prompts [1][2][P4].
-- LLM-as-judge calibration: Compare platform evaluators to an LLM-judge with rubric prompts; measure calibration against human ratings and investigate failure modes.
-- Active evaluation design: Use disagreement-driven sampling (items where evaluators disagree) to focus expensive human evaluation effort.
-- Cross-vendor RAG: Replicate RAG experiments on Azure/AWS/Vertex-native knowledge base features to compare retrieval quality and grounding reports [7][8][9][10].
-- Transparency artifact: Publish a no-code evaluation cookbook (screenshots, CSV templates, prompts) as a companion resource.
+**Why this is principled**: Systematic evaluation studies are fundamental in ML research [G#], especially for emerging tools. By benchmarking multiple platforms against baselines, we establish empirical evidence rather than anecdotal claims.
 
-Optional next step
-- I can draft your preregistration template (objectives, hypotheses, datasets, prompts, metrics, analysis plan) and a Label Studio annotation guide you can use with reviewers or collaborators.
+## 3. Timeline for the next 6 months
 
-Citations
-- [P2] A Survey of Large Language Models — https://arxiv.org/pdf/2303.18223
-- [P4] Don't Hallucinate, Abstain: Identifying LLM Knowledge Gaps via Multi-LLM Collaboration — https://www.researchgate.net/publication/384216001_Don't_Hallucinate_Abstain_Identifying_LLM_Knowledge_Gaps_via_Multi-LLM_Collaboration
-- [1] Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks — https://arxiv.org/abs/2005.11401
-- [2] RAGAS: Automated Evaluation of Retrieval Augmented Generation — https://arxiv.org/abs/2309.15217
-- [3] MMLU (Measuring Massive Multitask Language Understanding) — https://github.com/hendrycks/test
-- [4] GSM8K: Training Verifiers to Solve Math Word Problems — https://arxiv.org/pdf/2110.14168
-- [5] TruthfulQA: Measuring How Models Mimic Human Falsehoods — https://arxiv.org/abs/2109.07958
-- [6] Challenging BIG-Bench Tasks and Whether Chain-of-Thought Can Help — https://arxiv.org/abs/2210.09261
-- [7] Evaluate the performance of Amazon Bedrock resources — https://docs.aws.amazon.com/bedrock/latest/userguide/evaluation.html
-- [8] Review RAG evaluation job reports and metrics (Bedrock Knowledge Bases) — https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-evaluation-report.html
-- [9] General purpose evaluators – Azure AI Foundry — https://learn.microsoft.com/en-us/azure/ai-foundry/concepts/evaluation-evaluators/general-purpose-evaluators
-- [10] Model evaluation in Vertex AI — https://cloud.google.com/vertex-ai/docs/evaluation/introduction
-- [11] Giskard UI quickstart — https://docs.giskard.ai/hub/ui/index.html
-- [12] Label Studio (open-source annotation UI) — https://labelstud.io/
-- [13] Perspective API research — https://perspectiveapi.com/research/
-- [14] On the Challenges of Using Black-Box APIs for Toxicity Evaluation (EMNLP 2023) — https://aclanthology.org/2023.emnlp-main.472.pdf
+**Month 1**: Platform setup and baseline establishment
+- Week 1-2: Install and configure Orange, Weka, RapidMiner
+- Week 3-4: Collect baseline accuracy metrics for standard datasets
+- Deliverable: Platform configuration documentation
+
+**Month 2**: Experimental infrastructure
+- Week 1-2: Implement reproducibility testing framework
+- Week 3-4: Validate datasets and baselines
+- Deliverable: Reproducibility testing suite [G#]
+
+**Month 3**: Experiment collection for reproducibility and robustness
+- Week 1-2: Run Experiment 3 across platforms
+- Week 3-4: Collect user validation data for reproducibility
+- Deliverable: Reproducibility framework implementation [P7]
+
+**Month 4**: Non-expert validation study
+- Week 1-2: Recruit and train domain experts
+- Week 3-4: Run Experiment 2 comparative study
+- Deliverable: Validation dataset with expert annotations
+
+**Month 5**: Platform comparison analysis
+- Week 1-2: Implement Experiment 1 comparative study
+- Week 3-4: Analyze technical differences across platforms
+- Deliverable: Platform performance comparison
+
+**Month 6**: Writing and dissemination
+- Week 1-2: Prepare main findings for publication
+- Week 3-4: Submit to ACM Digital Library or IEEE Access
+- Deliverable: Publication-ready paper
+
+## 4. Resources (compute, tools, datasets)
+
+**Compute**: Standard laptop/desktop (minimum 8GB RAM recommended), cloud access optional
+**No-code tools**: Orange, Weka, RapidMiner (all offer free versions)
+**Datasets**: Public benchmark sets from UCI repository
+**Expected cloud costs**: $0-100 if using Google Colab for comparative baselines
+**Time investment**: Most platforms can be learned within a weekend workshop due to intuitive interfaces [P5]
+
+## 5. Risks and mitigations table
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|-------|
+| Platform limitations for complex research | Medium | High | Maintain Python baseline for comparative purposes |
+| Non-expert validation study participation rates | Medium | Medium | Use snowball sampling to expand participant pool |
+| Accuracy differences across platforms | Low | High | Conduct comprehensive methodological alignment study [P4] |
+| Reproducibility issues with no-code tools | Low | Medium | Establish standardized evaluation protocols |
+
+## 6. Stretch ideas or follow-up directions
+
+- Consider extending to Computer Vision tasks using CreateML or Google AutoML Vision
+- Explore the role of no-code platforms in developing explainable AI workflows for medical image classification
+- Compare the impact of interpretable ML guidelines in high-stakes domains between no-code and traditional approaches
+- Evaluate scalability of no-code platforms for edge AI research applications
+
+**Citations**:
+- [P2] How Can No/Low Code Platforms Help End-Users Develop ML Applications? - A Systematic Review
+- [P3] Introducing HoNCAML: Holistic No-Code Auto Machine Learning  
+- [P4] Algorithms in Low-Code-No-Code for Research Applications: A Practical Review
+- [P5] End-User Development for Artificial Intelligence: A Systematic Literature Review
+- [P7] Study of Machine Learning No-Code Platform
+- [G#] Research methodology guidelines
+
+**Optional next step**: Begin by downloading Orange or Weka, run through their tutorials with a simple classification problem using the Iris dataset to gain hands-on experience.
+
+(Research stage: B-C)

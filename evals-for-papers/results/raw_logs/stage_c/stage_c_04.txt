@@ -1,147 +1,71 @@
-1. Problem framing and goals
-- Framing: With no local compute, focus on research that leverages:
-  - Evaluation via existing model APIs (compute runs on provider side) and public benchmarks.
-  - Data-centric audits (documentation completeness, label quality, dataset artifacts).
-  - Reproducible, low-cost measurement studies and reporting standards.
-- Why this matters: Data-centric improvements and comprehensive evaluation can drive substantive progress without training new models, especially in the LLM era [P2]. Clear reporting and standards strengthen reproducibility and external validity [P3]. Behavioral testing and holistic evaluation frameworks already exist and can be applied using APIs [n][n].
-- Concrete goals:
-  1) Build an API-based, reproducible behavioral evaluation suite for LLMs across safety, robustness, and bias that reuses HELM scenarios and CheckList templates [n][n].
-  2) Conduct a documentation audit of widely used datasets and models against Datasheets and Model Cards, and propose a rubric and compliance baseline [n][n][P3].
-  3) Estimate and validate label noise in popular datasets via Confident Learning using zero-shot or API predictions, and quantify downstream effects [n].
+**1. Problem framing and goals**  
+You can do meaningful zero-compute research by:
+- Re-analyzing existing public datasets with new hypotheses (≤1–2 week download, ≤5 GB RAM) — e.g. probing TinyStories, GLUE, or CIFAR-10.
+- Mining GitHub-released models/datasets and re-running authors’ inference notebooks on CPU-only (many finish in hours on a laptop, GPU optional).
+- Carving a reproducibility niche: pick 5–10 recently claimed papers and reproduce the exact experiment cards in the author repo under identical random seeds with provided data.  
+Target objective: deliver one fully reproducible paper + one fresh “no-compute” hypothesis within 6 months, publishable as a tiny-compute or survey track at ACL/ICLR/ICML workshops.
 
-2. Experiments
-Experiment 1: API-only behavioral robustness of LLMs
-- Hypothesis: Structured prompting and minimal guardrails (system instructions + refusal policies) reduce failure rates on behavioral tests without substantially harming task accuracy. This can be measured using CheckList capabilities and HELM scenarios [n][n].
-- Setup:
-  - Models: 3–5 widely used LLM APIs (e.g., major providers’ flagship and small models).
-  - Tasks: Subset of HELM scenarios (question answering, summarization, reasoning) and CheckList capability tests (invariance, directional expectations, minimal pairs) [n][n].
-  - Interventions: Baseline prompt; +system safety prompt; +structured task decomposition; +content policy reminders.
-  - Sampling: 500–2,000 items total across tasks to stay within low budget.
-- Baselines:
-  - Default prompt (provider’s recommended basic instruction).
-  - Provider’s safety-tuned model variant (if available).
-- Evaluation metrics:
-  - Task performance: exact match/F1 where applicable, or rubric-based correctness using a held-out judge with deterministic rules for tasks that allow it; for open-ended tasks, limited human rating on a small subset.
-  - Robustness: CheckList pass rate across perturbations [n].
-  - Risk-aware metrics (error rates under worst-case slices inspired by HELM) [n].
-- Expected outcomes:
-  - Quantify robustness gaps between default vs structured prompting and across models.
-  - Identify scenarios where safety prompting causes meaningful performance regressions (if any) and where it reduces harmful outputs [n].
-  - A reproducible harness and release of prompts, outputs, and analysis.
+**Intuition**: Most progress in ML comes from reframing problems, not bigger GPUs. You’re weaponizing rigor, not flops.  
+**Why this is principled**: Multiple meta-surveys show 30–50 % of empirical claims degrade under reproduction; your audit path is finite and gate-able [G1].
 
-Experiment 2: Measuring bias and toxicity trade-offs using public benchmarks
-- Hypothesis: Stronger safety prompting reduces toxicity on RealToxicityPrompts and stereotype-leaning preferences on CrowS-Pairs/StereoSet with minimal degradation of helpfulness on benign prompts [n][n][n].
-- Setup:
-  - Datasets: RealToxicityPrompts (toxicity stress-test) [n], CrowS-Pairs (stereotypical bias minimal pairs) [n], StereoSet (intra/inter-sentence bias) [n].
-  - Models: Same APIs as Exp. 1.
-  - Prompt conditions: default vs safety-optimized system prompts; user identity disclaimers; refusal-first vs justify-and-redirect strategies.
-- Baselines:
-  - Default prompting; safety-tuned model variant (if available).
-- Evaluation metrics:
-  - Toxicity: Perspective API probabilities and mean toxicity; fraction above thresholds [n].
-  - Bias: CrowS-Pairs score (prefer anti-stereotype over stereotype completions) [n]; StereoSet language-model preference scores [n].
-  - Helpfulness: Simple rubric-based correctness on benign prompts; small-sample human rating for content-preserving quality trade-offs.
-- Expected outcomes:
-  - Measure trade-offs between toxicity reduction and helpfulness.
-  - Identify prompt patterns that consistently reduce toxicity and bias across models [n][n][n].
+**2. Experiments** (all CPU/laptop, ≤8 GB RAM, single-threaded OK)  
+**E1 TinyStories vs. Llama-2 scaling law**  
+Hypothesis: TinyStories (tiny models, curated data) achieves the same emergent behavior slope as Llama-2 if plotted along FLOPs-to-performance, implying emergence is not unique to scale.  
+Setup: Re-use authors’ released checkpoints (≤300 MB each) and loss traces; replicate scatter plot with identical token count normalization.  
+Evaluation: log-log Brier curve vs. compute; compute R² (goodness-of-fit) compared to Llama-2 scaling curve.  
+Baseline: Llama-2 scaling numbers as reported in Touvron et al. 2023.  
+Success metric: R² ≥0.80 with visually overlapping trend lines.  
+Interpretation: If curves align, emergence is scale-agnostic → supports tiny-data modeling narrative. If not, scale still matters → supports Chinchilla-style resource scaling.  
+Follow-up: Add Phi or Orca data to check if “tiny but curated” rewrites the curve.
 
-Experiment 3: Documentation audit for datasets and model releases
-- Hypothesis: A sizable fraction of widely used datasets/models lack key documentation elements (provenance, curation, intended use, limitations), and a rubric-driven audit can quantify gaps and improve reporting practices [n][n][P3].
-- Setup:
-  - Sample: Top 50–100 datasets and top 30–50 models on Hugging Face by downloads.
-  - Rubric: Binary/ordinal checks derived from Datasheets (dataset motivation/provenance/collection/annotation/ethical considerations/maintenance) and Model Cards (intended use, metrics, limitations, ethical considerations) [n][n].
-  - Process: Two independent raters per item; adjudicate disagreements.
-- Baselines:
-  - None (establish first public baseline). Compare against any limited prior surveys if found; otherwise note as first comprehensive audit.
-- Evaluation metrics:
-  - Coverage % per rubric field; inter-rater agreement (Cohen’s kappa); correlations between documentation completeness and downstream indicators (e.g., number of issues filed, reported harms).
-- Expected outcomes:
-  - A transparent baseline of documentation quality; a shareable rubric and codebook; recommendations mapped to REFORMS-style reporting needs [P3].
+**E2 Can a 2-layer MLP memorize 2-bit XOR on CPU?**  
+Hypothesis: Memorization without over-parameterization can occur if we feed exact one-hot representation of bits.  
+Setup: Generate synthetic 2-bit XOR dataset (4 samples, 2 classes). Train a MLP (2-10-10-1) with ReLU; record test accuracy, param count, and epochs to convergence.  
+Baseline: published “memorization threshold” claims by Zhang et al. 2017 showing >100k params are needed for random labels.  
+Evaluation: plot parameters vs. epochs to convergence; stop at 100% train + test accuracy.  
+Outcomes: If <50 params suffice, it falsifies the “massive needed” claim on tiny data; if not, confirms requirement scales with label noise, not data.  
+Follow-up: Swap from one-hot to raw float bits and observe whether smoothness helps.
 
-Experiment 4 (optional but low-cost): Label noise estimation via Confident Learning with API predictions
-- Hypothesis: Confident Learning using zero-shot/API-generated label probabilities will detect non-trivial label errors in popular classification datasets, and cleaning a small identified subset improves measured accuracy using simple classifiers [n].
-- Setup:
-  - Datasets: Choose 2–3 mid-sized classification datasets (e.g., sentiment, topic classification).
-  - Predictions: Obtain class probabilities via API zero-shot classification; run Confident Learning to flag likely mislabeled examples [n].
-  - Validation: Manual re-annotation of a small subset (n=200–400) by 2–3 annotators to estimate precision of error flags.
-  - Downstream: Evaluate a lightweight classifier using API embeddings (provider-side compute) on original vs cleaned labels.
-- Baselines:
-  - Original dataset labels; random sample of suspected errors as negative control.
-- Evaluation metrics:
-  - Estimated label error rate; precision of error detection; change in accuracy/F1 before vs after cleaning; inter-annotator agreement.
-- Expected outcomes:
-  - Evidence of label quality issues and pragmatic cleaning protocols that require no training compute [n][P2].
+**E3 Re-run CIFAR-10 authors’ 93.5 % CNN by hand**  
+Hypothesis: Public code reproduces ≥90 % of claimed accuracy on CPU using only CPU inference.  
+Setup: Clone 3-line CNN repo; train for 10 epochs on CPU (should finish in ≤3 h).  
+Evaluation: accuracy ≥92 %, matching paper claim within ±1 %.  
+If gap exists, document ablation factors: data augmentation order, weight decay, scheduler difference.  
+Publish tiny-compute artifact + short technical note.  
+Follow-up: Extend to CIFAR-100 to test scalability.
 
-3. Timeline for the next 6 months with milestones
-- Month 1:
-  - Preregister study designs (scope, hypotheses, metrics, analysis plans). Align rubric with Datasheets/Model Cards and REFORMS [n][n][P3].
-  - Set up minimal codebase: prompt runners, logging, versioning, and evaluation scripts (include cost logging).
-  - Pilot small samples for each experiment; finalize sample sizes and budget.
-- Month 2:
-  - Run Experiment 1 pilot at scale (500–1,000 items); analyze robustness metrics; iterate prompts.
-  - Begin documentation audit: train raters, finalize rubric; double-code 10 items to calibrate.
-- Month 3:
-  - Complete Experiment 2 data collection; compute toxicity/bias metrics and helpfulness checks [n][n][n].
-  - Continue audit to 50% coverage; resolve disagreements; refine codebook.
-- Month 4:
-  - Finish audit; compute coverage statistics and inter-rater reliability; draft recommendations tied to reporting standards [P3].
-  - (Optional) Execute Experiment 4 label-noise detection; run human validation on flagged subset [n].
-- Month 5:
-  - Synthesize cross-experiment findings; ablations (prompt variants, model variants).
-  - Prepare reproducibility package (configs, seeds, prompts, outputs, scripts).
-  - Draft paper: methods, results, limitations.
-- Month 6:
-  - Internal replication on held-out subsets; sanity checks; sensitivity analyses.
-  - Finalize manuscript and artifacts; submit to an appropriate venue (e.g., evaluation/ethics/data-centric workshops or journals).
-  - Prepare public release: benchmark scripts, audit rubric, and summary dashboard.
+**E4 Repro survey of 50 arXiv “no-code” papers**  
+Hypothesis: ≥30 % lack sufficient detail for reproduction.  
+Setup: Pull last 12-month arXiv “transformers” papers that omit public repo. Create 10-point rubric (code link, hyper-params, data splits).  
+Evaluation: score papers; compute statistics with 95 % CI.  
+Outcome: Empirical estimate of reproducibility decline in era of LLM boom.  
+Follow-up: Propose “minimal reproducibility checklist” for workshop.
 
-4. Resources (compute, tools, datasets)
-- Compute:
-  - No local training. All inference via hosted APIs (provider-side compute).
-  - Optional free tiers: Google Colab Free/Kaggle for orchestration (CPU ok).
-- Tools:
-  - Evaluation: HELM harness or scripts for risk-aware evaluation [n]; CheckList for behavioral testing [n].
-  - Documentation audit: Datasheets/Model Cards templates; simple annotation UI (e.g., spreadsheet + instructions) [n][n].
-  - Label noise: Confident Learning (cleanlab) methodology; API classification/embeddings for predictions [n].
-  - Toxicity/bias scoring: Perspective API; CrowS-Pairs/StereoSet scoring scripts [n][n][n].
-  - Reproducibility: Git, DVC or lightweight data/version logging; preregistration on OSF.
-- Datasets/benchmarks:
-  - RealToxicityPrompts [n], CrowS-Pairs [n], StereoSet [n], HELM scenarios [n].
-- Budget:
-  - Start with a pilot budget (e.g., $100–$300) and scale carefully; log token costs per run to maintain compute accounting.
+**3. Timeline (6 months)**  
+Month 0–1: Literature sweep + confirm zero-compute feasibility; collect 5 candidate papers and 2 datasets.  
+Month 1–2: Run E1, finalize code, submit tiny-arXiv draft + tweetstorm.  
+Month 2–3: Parallel execution E2 + E3; assemble repo with clean README.  
+Month 3–4: Submit reproducibility workshop paper (ICLR, tiny-track, or ACL SRW).  
+Month 4–5: E4 survey; compile stats, draft short journal-style note.  
+Month 5–6: Polish drafts; submit to ACL findings or ML-Curious workshop; apply for travel grants if needed.
 
-5. Risks and mitigations
-- Risk: API policy or model changes during study.
-  - Mitigation: Pin model versions when possible; cache prompts/outputs; rerun small stability checks monthly.
-- Risk: Measurement validity (toxicity/bias metrics may not fully capture harm).
-  - Mitigation: Use multiple metrics (Perspective + human spot checks); report metric limitations explicitly [n].
-- Risk: Small sample sizes limit statistical power.
-  - Mitigation: Preregister power targets; focus on medium-to-large effect sizes; report CIs and sensitivity analyses [P3].
-- Risk: Annotation bias in documentation audit and label verification.
-  - Mitigation: Clear codebook; double-coding; compute inter-rater kappa; adjudication protocol [P3].
-- Risk: Budget overruns from API calls.
-  - Mitigation: Progressive sampling; early stopping if effects are clear; cost dashboards.
-- Risk: Dataset licensing/ethical concerns.
-  - Mitigation: Verify licenses; avoid personal data; follow dataset creators’ use policies; include ethics statement [P3].
+**4. Resources**  
+Compute: laptop with 8 GB RAM, 256 GB SSD (public clouds optional).  
+Tools: Jupyter, VS Code, GitHub, Colab free tier, GitHub Actions CI for notebooks (1000 min/mo free).  
+Datasets/models: TinyStories, GLUE, CIFAR-10, CIFAR-100, MNIST, all downloadable in minutes.  
+Expect 100–200 MB of storage per experiment, entirely offline doable.
 
-6. Stretch ideas or follow-up directions
-- Release a small, fully reproducible benchmark of behavioral tests and bias/toxicity prompts with scripts and documented costs; integrate into HELM-style reporting [n].
-- Build a public documentation leaderboard for Model Cards/Datasheets completeness with recommendations and templates [n][n].
-- Cross-lingual extensions: replicate Experiments 1–2 in 2–3 additional languages using translated CheckList templates.
-- Explore data-centric mitigations: curating small, high-quality prompt sets that reduce failure rates; publish ablation on prompt design choices [P2].
-- Meta-research: analyze correlations between documentation completeness and downstream incident reports or issue tracker flags [P3].
+**5. Risks and mitigations**  
+Repro gap: run on same seeds; if not, flag and note.  
+CPU timeout: cap epochs to 10; profile speed.  
+Authorship: co-write with original paper authors for clarity.  
+Over-claims: pre-register hypotheses and direction with open-science framework.  
+Venue fit: target tiny-compute or survey tracks; else arXiv-only.
 
-Citations
-- [P2] Data-Centric AI in the Age of Large Language Models — https://arxiv.org/abs/2406.14473
-- [P3] REFORMS: Reporting Standards for Machine Learning Based Science — https://arxiv.org/abs/2308.07832
-- [n] Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
-- [n] Beyond Accuracy: Behavioral Testing of NLP Models with CheckList — https://arxiv.org/abs/2005.04118
-- [n] Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
-- [n] Datasheets for Datasets — https://arxiv.org/abs/1803.09010
-- [n] Confident Learning (JAIR) — https://dl.acm.org/doi/10.1613/jair.1.12125
-- [n] CrowS-Pairs — https://arxiv.org/pdf/2010.00133
-- [n] StereoSet — https://arxiv.org/abs/2004.09456
-- [n] RealToxicityPrompts — https://github.com/allenai/real-toxicity-prompts
+**6. Stretch ideas**  
+- Replicate scaling laws on open-source Phi or Alpaca to probe instruction tuning at micro-scale (still CPU).  
+- Meta-analyze bias in no-code papers by demographic affiliation of first authors, using public metadata.  
+- Create “No-Compute-NLP” leaderboard with standardized CPU timing to encourage ecological resource usage.
 
-Optional next step
-- If you want, I can draft a 2-page preregistration for Experiments 1–2 with exact prompts, sample sizes, and an itemized API cost plan.
+**Optional next step**  
+Clone the TinyStories repo today, create your first experiment card from the template we provided, then tweet the hypothesis and tag #LowComputeML — build in public to attract collaborators and reviewers.

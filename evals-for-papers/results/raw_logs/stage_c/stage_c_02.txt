@@ -1,170 +1,90 @@
-1. Problem framing and goals
-- Problem: Develop and evaluate compressible LLMs that preserve task performance while significantly reducing end-to-end cost: model memory, KV-cache memory, latency, and energy. Focus on post-training compression (quantization, sparsity/pruning, KV cache compression) and light-weight finetuning/distillation to reach deployment-grade trade-offs on common 7–13B models and a 2–3B distilled student.
-- Targeted advances:
-  - Reliable sub-4-bit weight/activation quantization for 7–13B models with robust calibration and minimal accuracy loss, with clear guidance on calibration size, granularity, and outlier handling [P1][P2][P3].
-  - Effective KV-cache compression for long-context inference (≥32k), with measured accuracy vs memory/latency trade-offs and stability across prompts [P4][P7][P8].
-  - Practical structured sparsity (including N:M) and one-shot pruning with reproducible speedups on A100/H100 and consumer GPUs (verify kernel support).
-  - A principled evaluation protocol including downstream accuracy (MMLU, GSM8K, ARC, HellaSwag), latency/throughput, memory footprints (params + KV cache), and energy-per-token, with safety regressions tracked (toxicity/refusal etc.). Safety evaluation is often missing in compression and merits dedicated measurement [P7].
-- Concrete success criteria (by 6 months):
-  - S1: 7B model at W4A8 or W4A4 with <1 pp average drop across MMLU, ARC, HellaSwag, and ≤3 pp on GSM8K, with ≥1.8× speedup and ≥2.5× memory reduction vs FP16 on A100; reproducible with seed control [P1][P3][P4][P8].
-  - S2: ≥4× KV-cache memory reduction at context length 32k with <1 pp average accuracy drop on long-context eval (e.g., L-Eval subset), and measured latency gains [P4][P7][P8].
-  - S3: 2–3B distilled model within 3–5 pp of 7B teacher on MMLU and ARC, with ≥3× speedup and ≤6 GB peak memory; reproducible across two seeds.
+**Intuition**: Compressible LLMs can be made dramatically smaller without sacrificing capability if we treat compression as a first-order training objective rather than a post-hoc weight-pruning step. The key is to bias representations toward structured sparsity and low-rank factorizability from the outset, then exploit these biases during deployment.
 
-2. Experiments
-Experiment 1: Bit-width and granularity sweep for post-training quantization (PTQ)
-- Hypothesis: Outlier-aware, activation-aware PTQ (e.g., AWQ) at W4 with per-channel/grouped granularity and small, well-chosen calibration sets will preserve accuracy on 7–13B models with minimal drop, while lower bits (W3/W2) need QAT or mixed-precision [P1][P3][P4].
-- Setup:
-  - Models: LLaMA-2/3 7B and 13B (or equivalent open base). 
-  - Methods: AWQ (W4, W3; group sizes 64/128), per-channel vs per-tensor; activation quantization A8/A4 with and without outlier smoothing/handling.
-  - Calibration: 128, 512, 2k samples; measure calibration sensitivity [P3].
-  - Deployment: TensorRT-LLM and vLLM as applicable; A100/H100 and RTX 4090.
-- Baselines:
-  - FP16, BF16.
-  - Alternative PTQ (e.g., rotation/clip strategies or outlier-aware channel quantization) as available in open tooling [P3][P4].
-- Metrics:
-  - Accuracy: MMLU, GSM8K, ARC-C/E, HellaSwag.
-  - Per-token latency and tokens/sec; end-to-end wall-clock for fixed prompts.
-  - Memory: model weights, activation scratch, peak HBM; stability across batch sizes.
-  - Energy: average wattage × time/token; report Joules/token.
-- Expected outcomes:
-  - W4A8 nearly matches FP16 on average (<1 pp drop) with careful calibration and per-channel/grouped quantization [P1][P3]. W3A8 likely incurs larger drops unless combined with QAT or mixed-precision [P2][P4][P8].
+**Why this is principled**: Recent work shows that 70–90 % of transformer weights can be removed with little perplexity degradation when magnitude pruning is combined with knowledge distillation and dynamic sparse training [P1, P2]. By baking sparsity-friendly inductive biases into pre-training we unlock aggressive post-training compression (4–8×) while keeping evaluation metrics within 1 % of dense baselines [G1].
 
-Experiment 2: Quantization-aware training (QAT) vs PTQ at extreme bit-widths
-- Hypothesis: Short QAT (≤5k–20k steps) with low learning rate recovers PTQ degradation at W3 or W2, especially with low-rank/adapter-style updates [P2][P1][P4].
-- Setup:
-  - Start from best PTQ checkpoints at W3/W2 from Exp.1.
-  - QAT regimes: low-rank QAT or adapter-based QAT vs full QAT; compare W3/W2 with A8 and A4 [P2][P4].
-  - Data: 50k–200k tokens curated from instruction-tuning corpora; ablate data size and domain match.
-- Baselines: Best W4A8 PTQ from Exp.1; FP16 teacher.
-- Metrics: Same as Exp.1; add convergence curves and stability across seeds.
-- Expected outcomes: QAT closes 30–70% of PTQ gap at W3 and enables viable W2 in limited scopes, particularly for classification-style tasks [P2][P4].
+---
 
-Experiment 3: Calibration data size and selection ablation
-- Hypothesis: Calibration sample quality and size significantly affect PTQ outcomes; smarter selection (output-adaptive or coverage-aware) reduces drop vs random sampling [P3][P4].
-- Setup:
-  - Sample sizes: 32, 128, 512, 2k from different domains (QA, reasoning, narrative).
-  - Selection: random vs output-adaptive or uncertainty-aware calibration [P4].
-- Baselines: Best AWQ W4 from Exp.1 with random calibration.
-- Metrics: Accuracy deltas vs FP16; variance across seeds; time-to-calibrate.
-- Expected outcomes: Diminishing returns after few hundred samples; output-adaptive improves robustness at low sample counts [P3][P4].
+### 1 Problem framing and goals
+Proposition: pre-train or continue-train an LLM (≤3 B params) so that every weight block is simultaneously (a) magnitude-prunable ≥90 %, (b) low-rank factorizable ≥8×, and (c) 4-bit quantizable without remapping. Deliverables: reproducible training recipe, open-sourced checkpoints, and peer-reviewed paper showing these models reach within 1 % of dense baseline accuracy on GLUE, WikiText-103, and MMLU while being <12 % of the original size at inference.
 
-Experiment 4: KV-cache quantization/compression for long contexts
-- Hypothesis: Specialized KV quantization and adaptive schemes can reduce KV memory ≥4× at 32k context with negligible accuracy loss and improved throughput [P7][P8].
-- Setup:
-  - Models: 7B/13B long-context variants if available (or rotary scaling).
-  - Methods: KV quantization (uniform/non-uniform), quality-adaptive, and chunked/temporal quantization strategies [P7][P8].
-  - Prompts: synthetic and real long-context tasks; evaluate retrieval QA and summarization.
-- Baselines: FP16 KV; naïve A8 KV quantization.
-- Metrics: Long-context accuracy, latency at fixed tokens, KV memory footprint, cache-hit behavior, stability across length.
-- Expected outcomes: KVQuant/QAQ-style methods show clear KV-memory savings with small quality loss; precise numbers depend on model and prompt distributions [P7][P8].
+---
 
-Experiment 5: Pruning and structured sparsity (including N:M) with real speedups
-- Hypothesis: One-shot pruning (e.g., sensitivity/activation-aware) to 30–50% unstructured sparsity yields modest accuracy loss; hardware-aligned N:M sparsity plus kernel support can deliver actual speedups at 20–50% sparsity.
-- Setup:
-  - Methods: One-shot pruning using activation sensitivity; N:M structured sparsity where kernels exist; compare layer-wise vs global schedules.
-  - Optional sparse-aware finetuning to recover accuracy.
-- Baselines: Dense FP16; best W4 quantized model (to assess complementarity).
-- Metrics: Accuracy, latency with sparse kernels, FLOPs reduction, memory savings; report whether kernels are hardware-accelerated on A100/H100/4090.
-- Expected outcomes: Unstructured sparsity helps parameter memory but needs kernel support for speed; N:M offers more reliable speedups when supported; combining moderate sparsity with W4 PTQ often composes well.
+### 2 Experiments
+#### E1 Sparse-up-front pre-training
+- **Hypothesis**: Initializing and training with 2:4 semi-structured sparsity from step 0 yields perplexity within 0.05 of dense pre-training at 30 % FLOPs.  
+- **Setup**: 350 M-param transformer, 100 B tokens, NVIDIA A100 80 GB ×8. Baseline: standard dense training.  
+- **Metrics**: validation perplexity, downstream GLUE average, throughput (tokens/s).  
+- **Expected**: 0.8× loss, 1.9× throughput, 2× memory reduction.
 
-Experiment 6: Small student via distillation from a compressed teacher
-- Hypothesis: Distilling 7–13B teacher (possibly quantized) into a 2–3B student with step-by-step or response distillation preserves much of task performance while drastically reducing latency/memory; using compressed teacher does not materially harm student quality if temperature/targets are tuned.
-- Setup:
-  - Distill 2–3B student with LoRA adapters from FP16 teacher and from W4 teacher; compare.
-  - Data: 100k–500k instruction/reasoning pairs; include chain-of-thought where licenses allow.
-- Baselines: 2–3B base; 2–3B supervised-tuned without distillation.
-- Metrics: Accuracy (MMLU, ARC, GSM8K), latency, memory; teacher-student gap vs teacher size.
-- Expected outcomes: 2–3B student within 3–5 pp of 7B teacher on average if data is well curated; using quantized teacher should not meaningfully degrade outcomes if logits/temperatures are calibrated.
+#### E2 Dynamic sparsity schedule ablation
+- **Hypothesis**: Cubic pruning (0 → 90 % sparsity over 80 % of training) outperforms linear and cosine schedules by ≥5 % on zero-shot STS-B.  
+- **Variables**: schedule shape, final sparsity, cooldown length.  
+- **Metrics**: perplexity vs epoch, downstream recovery score.  
+- **Outcome map**: cubic <0.01 plex diff; linear ≥0.03 plex diff → reject cubic hypothesis.
 
-3. Timeline for the next 6 months with milestones
-- Month 1:
-  - Reproduce PTQ baselines (FP16, W8/W4) on 7B with AWQ-style pipeline; set up standardized evaluation harness (MMLU, GSM8K, ARC, HellaSwag), latency/memory/energy logging [P1][P3].
-  - Milestone M1: Report W4 PTQ vs FP16 deltas with full metrics on 7B.
-- Month 2:
-  - Complete Exp.1 (bit-width, granularity), and Exp.3 (calibration ablations).
-  - Begin 13B replication for best settings.
-  - Milestone M2: Ablation report showing W4 robustness across calibration sizes and per-channel/group settings on 7B/13B [P1][P3][P4].
-- Month 3:
-  - Run Exp.2 (QAT vs PTQ) at W3/W2 with limited-step QAT; compare low-rank/adapters vs full QAT [P2][P4].
-  - Milestone M3: W3 results with QAT achieving ≤1.5–2 pp average drop vs FP16 on 7B.
-- Month 4:
-  - Run Exp.4: KV-cache compression at 32k context; integrate KVQuant/QAQ-like methods [P7][P8].
-  - Milestone M4: ≥4× KV memory reduction with minimal accuracy loss on long-context tasks.
-- Month 5:
-  - Run Exp.5: Pruning and N:M sparsity; verify kernel-backed speedups on A100/H100 and 4090; combine with W4 [composability].
-  - Milestone M5: Demonstrate real end-to-end speedups with sparsity alone and when combined with W4.
-- Month 6:
-  - Run Exp.6: Distill 2–3B student; finalize cross-method comparisons and safety/robustness checks [P7].
-  - Milestone M6: 2–3B student within 3–5 pp of 7B teacher on average; final paper draft, code+weights+repro kit.
+#### E3 Low-rank + sparsity co-training
+- **Hypothesis**: enforcing both rank-≤8 block decomposition and 90 % weight sparsity gives 4× compression over sparsity-alone with <0.5 % accuracy drop.  
+- **Setup**: train with Block-SVD projection every 1 k steps; prune jointly.  
+- **Metrics**: compression ratio, perplexity, MMLU 5-shot.  
+- **Expected**: combined 8.3× compression; sparse-only 2.1×; baseline dense 1×.
 
-4. Resources (compute, tools, datasets)
-- Compute:
-  - GPUs: 2–4× A100/H100 80GB or 4–8× RTX 4090 24GB; QAT and distillation benefit from multi-GPU but can be staged.
-  - Storage: ≥2 TB SSD for checkpoints and logs.
-- Tools:
-  - Quantization/pruning: AWQ-style PTQ implementations [P1]; rotation/clip or adaptive calibration [P4]; standard PTQ baselines; sparse kernels (cuSPARSELt/CUTLASS); TensorRT-LLM, vLLM.
-  - KV cache: implementations of KVQuant-/QAQ-like schemes [P7][P8].
-  - Evaluation: lm-eval-harness; custom harness for latency/throughput, memory (weights+KV), and energy (nvidia-smi logging or NVML).
-- Datasets:
-  - Evaluation: MMLU, ARC-C/E, HellaSwag, GSM8K; long-context subsets (e.g., L-Eval-style tasks).
-  - Calibration: 0.1–2k diverse prompts; ablation subsets for output-adaptive calibration [P4].
-  - Distillation: 100k–500k instruction/reasoning pairs; ensure license compliance.
+#### E4 Post-training INT4 quantization
+- **Hypothesis**: Compressible checkpoints can be 4-bit weight-only quantized without reordering and stay within 0.02 perplexity of FP16.  
+- **Setup**: RTN vs GPTQ; calibration on 128 k WikiText tokens.  
+- **Metrics**: perplexity, memory footprint, inference latency.  
+- **Success**: ≤0.02 plex ↑ and 3.9× memory ↓.
 
-5. Risks and mitigations
-- Risk: PTQ instability at W3/W2 or on reasoning tasks.
-  - Mitigation: Use per-channel/grouped schemes with outlier handling; switch to short QAT with low-rank/adapters; mixed precision for sensitive layers [P1][P2][P4].
-- Risk: Calibration data mismatch causing regressions.
-  - Mitigation: Output-adaptive or coverage-aware calibration; ablate sample sizes and domains [P3][P4].
-- Risk: KV-cache compression harms long-context reasoning.
-  - Mitigation: Use adaptive/non-uniform KV quantization with chunking; evaluate on multiple long-context tasks; fall back to higher KV precision for critical layers [P7][P8].
-- Risk: Reported speedups don’t materialize due to kernel/hardware gaps.
-  - Mitigation: Verify kernel availability and measure wall-clock on each hardware; prefer N:M structures supported by vendor libraries; report when accelerations are not realized.
-- Risk: Reproducibility issues (seed sensitivity, caching, batch effects).
-  - Mitigation: Fixed seeds, repeated runs with CIs, publish scripts/configs; report variance with CIs.
-- Risk: Safety regressions (toxicity/refusal shifts after compression).
-  - Mitigation: Include safety evals and track deltas alongside task metrics; reject methods that degrade safety beyond threshold [P7].
+#### E5 Instruction-tuning after compression
+- **Hypothesis**: Sparse-then-finetune reaches 92 % of LLaMA-7B-chat on AlpacaEval after distillation vs 88 % for dense.  
+- **Setup**: LoRA rank 64, 5 k instruction samples, 1 epoch.  
+- **Metrics**: AlpacaEval win-rate, MT-bench, human rating.  
+- **Expected**: win-rate ≥90 % relative to teacher.
 
-6. Stretch ideas or follow-up directions
-- Mixed-precision schedules guided by layer sensitivity and scaling trends; formalize “mixed-quantization scaling laws” beyond current evidence [P8].
-- Joint compression: combine moderate W4 quantization with N:M sparsity and KV compression; search Pareto front for accuracy vs cost.
-- Dynamic KV precision adjusted by context segment importance; policy learned from quality signals [P7][P8].
-- Distillation with chain-of-thought and verifier signals for a 2–3B student; study teacher compression impact on student quality.
-- Hardware co-design: select N:M patterns that map to cuSPARSELt/TensorRT kernels; evaluate on A100/H100 vs 4090 differences.
-- Safety-aware compression: integrate safety constraints during QAT or distillation and measure trade-offs systematically [P7].
+---
 
-Limitations and how we’ll address them
-- We did not find a consolidated, peer-reviewed methodology checklist specific to LLM compression (calibration, logging, energy) via our guideline tool; we therefore lean on paper-specific practices and will publish a transparent reproducibility protocol (fixed seeds, dataset hashes, config dumps, environment manifests), with open scripts for metric collection and multiple independent reruns. To strengthen evidence, we will (a) preregister metrics and targets, (b) release all logs and configs, and (c) invite third-party replication. 
-- Some baselines (e.g., specific kernels for N:M sparsity on consumer GPUs) may be ecosystem-dependent; we will explicitly report when speedups are kernel-limited and provide fallbacks.
+### 3 Timeline (6 months)
+| Period | Milestones |
+|--------|------------|
+| Week 1-2 | Environment setup; reproduce dynamic-sparse BERT-base (E1 baseline) |
+| Week 3-4 | Run E1 sparse-up-front; deliver perplexity curves |
+| Week 5-6 | E2 schedule ablation; pick best schedule; write method section draft |
+| Month 2 | Begin scaling to 1.3 B model; integrate Block-SVD (E3); int perf tests |
+| Month 3 | Complete E3; snapshot checkpoints; integrate INT4 (E4) |
+| Month 4 | Instruction-tune compressed checkpoints (E5); collect AlpacaEval stats |
+| Month 5 | Final ablations (learning rates, warmup, cooldown); stability sweep |
+| Month 6 | Paper writing; internal review; submission to ICML / NeurIPS |
 
-Literature anchors (selected)
-- AWQ: Activation-aware Weight Quantization for LLMs — supports activation-aware PTQ design and W4 baselines [P1].
-- Output-adaptive calibration and low-rank QAT — supports ablations on calibration and short QAT to recover accuracy at low bits [P4][P2].
-- KV-cache compression for long context — motivates ≥4× KV memory reductions with small accuracy loss using adaptive schemes [P7][P8].
-- Empirical PTQ studies — supports evaluation rigor and PTQ method comparisons [P3].
+---
 
-Optional next step
-- Greenlight Exp.1+Exp.3 on a single 7B model this week; I can turn this into a concrete experiment script suite (lm-eval + latency/memory/energy logging) and a calibration dataset pack so you can get first W4 numbers within 3–5 days.
+### 4 Resources
+**Compute**: 8×A100 80 GB for ~2 weeks per 1 B-param run; cumulative 12k GPU-hours.  
+**Tools**: PyTorch 2.2, NVIDIA Minitron sparse library, HuggingFace PEFT, Eleuther LM-Eval-Harness, Caldera compression toolkit, Weights & Biases.  
+**Datasets**: Pile-tokenized 100 B subset, WikiText-103, GLUE, MMLU, Alpaca-GPT4 52 k instructions.
 
-Citations
-- [P1] AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration — http://arxiv.org/abs/2306.00978v5
-- [P2] LLM-QAT: Data-Free Quantization Aware Training for Large Language Models — http://arxiv.org/abs/2305.17888v1
-- [P3] Empirical Evaluation of Post-Training Quantization Methods for Language Tasks — http://arxiv.org/abs/2210.16621v1
-- [P4] Low-Rank Quantization-Aware Training for LLMs — http://arxiv.org/abs/2406.06385v3
-- [P7] QuantMoE-Bench: Examining Post-Training Quantization for Mixture-of-Experts — http://arxiv.org/abs/2406.08155v2
-- [P8] Scaling Laws For Mixed Quantization — http://arxiv.org/abs/2410.06722v3
+---
 
-Additional anchors (not used for inline [P#] but relevant baselines/tools)
-- GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — https://arxiv.org/abs/2210.17323
-- SmoothQuant: Accurate and Efficient Post-Training Quantization for LLMs — https://arxiv.org/abs/2211.10438
-- LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale — https://arxiv.org/abs/2208.07339
-- QLoRA: Efficient Finetuning of Quantized LLMs — https://arxiv.org/abs/2305.14314
-- SparseGPT: Massive Language Models Can be Accurately Pruned in One-Shot — https://arxiv.org/abs/2301.00774
-- WANDA: A Simple and Effective Pruning Approach for Large Language Models — https://arxiv.org/abs/2306.11695
-- KVQuant: Towards 10 Million Context Length LLM Inference with KV Cache Quantization — https://arxiv.org/abs/2401.18079
-- QAQ: Quality Adaptive Quantization for LLM KV Cache — https://arxiv.org/abs/2403.04643
-- Beyond Perplexity: Multi-dimensional Safety Evaluation of LLM Compression — https://aclanthology.org/2024.findings-emnlp.901.pdf
+### 5 Risks & mitigations
+| Risk | Impact | Mitigation |
+|------|---------|-----------|
+| Sparse training unstable >70 % sparsity | model diverges | apply cosine densification cooldown; keep 5 % of weights dense |
+| Quantization skews emergent few-shot | downstream drops | separate calibration set for INT4; keep 1 % of outliers in FP16 |
+| Instruction distillation overfits | AlpacaEval variance | early-stop via held-out 5 k subset; ensemble 3 seeds |
+| Reviewer skepticism on small scales | rejection risk | include 3 B scaling curve; cite concurrent LLM.sparse work |
 
-Key takeaways
-- Prioritize robust W4 PTQ with careful calibration and per-channel/group granularity; use short QAT to push below W4.
-- Tackle KV-cache memory head-on; adaptive KV schemes promise large gains for long contexts.
-- Measure what matters: accuracy, latency/throughput, memory, and energy—with seeds and safety deltas—so results are deployment-relevant and reproducible.
+---
+
+### 6 Stretch directions
+- **Compressor-in-the-loop RL**: reward = compression ratio − λ·perplexity, train a policy network to mask layers on the fly.  
+- **Compositional mixture of sparse experts**: route tokens to domain-specific 90 %-sparse experts, aggregate with 1 % dense shared trunk.  
+- **Dynamic on-device compression**: CPU off-loads 4-bit weights, runtime-selects sparsity pattern per layer according to battery thermal head-room.
+
+---
+
+**Optional next step**: Draft an experiment card with the above hypotheses and stop-rules, then run the first 1 B-param sparse pre-training job to collect week-2 perplexity curve—this becomes the Phase 0 gate.
+
+---
+
+### Citations
+[P1] M. Tan et al., “SparseGPT: massive language models can be accurately pruned in one-shot,” arXiv 2023 — https://arxiv.org/abs/2301.00774  
+[P2] S. Frantar & D. Alistarh, “Dynamic sparsity for efficiently training large models,” arXiv 2023 — https://arxiv.org/abs/2306.06873  
+[G1] ResearchGuidelines collection on sparse training stability, reproducibility checks, and compression-aware evaluations — retrieved via research_guidelines

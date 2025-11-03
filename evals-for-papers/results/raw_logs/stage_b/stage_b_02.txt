@@ -1,82 +1,44 @@
-Short answer
-“Compressible LLMs” is a good thesis if you make the model itself inherently resilient to strong compression rather than only applying post-hoc tricks. Novelty tends to come from compression-aware training objectives, predictive compressibility metrics that drive adaptive policies (bitwidth/sparsity per layer), and rigorous, hardware-grounded evaluation beyond perplexity. See recent surveys and benchmarks for gaps and baselines [P4][P6][P5]. Activation-aware methods (e.g., AWQ) show that respecting signal statistics matters; embedding that principle into training is a promising direction [P10].
+**Novelty check (score 11/15)**  
+- Importance 3: 10× storage/bandwidth savings unlock on-device & edge deployment.  
+- Tractability 2: You can get signal in ~3 wks on 1–2 B-param models with existing codebases [P1, P3].  
+- Surprise 2: Sparse + quantized LLMs already hit 90 % compression; the twist is *one model* that lets users dial *any* compression at inference time—still rarely demonstrated.  
+- Generality 3: If it works, every LLM owner benefits.  
+- Mechanistic payoff 1: We lack a crisp “why” for which weights stay important across compression levels.
 
-Where the novelty can be
-- Compression-aware training (not just post-training quantization/pruning): Inject quantization noise or STE-based fake quantization during pretraining/finetuning; add loss terms that penalize activation/weight sensitivity to discretization. This follows evidence that activation-aware decisions are key for PTQ (e.g., AWQ) and extends it into training-time objectives [P10][P4].
-- MDL/description-length objectives and weight clustering: Regularize towards fewer distinct weight values (soft weight sharing, k-means priors) and measure actual code length; evaluate whether this improves PTQ robustness vs. standard weight decay. Surveys document clustering/low-rank and their trade-offs but leave open whether MDL-style regularization at LLM scale helps compression without quality loss [P4][P6].
-- Predictive compressibility metrics: Learn or derive per-layer sensitivity scores (e.g., curvature/spectral norms/activation entropy) that predict post-compression loss, then allocate bitwidth/sparsity adaptively. Surveys cover sensitivity-based pruning but not principled, generalizable predictors for LLMs across families [P4][P1].
-- Hardware-aware co-design: Demonstrate Pareto gains in end-to-end throughput/latency and memory on real accelerators using structured sparsity (e.g., N:M) and weight-only 4-bit schemes versus unstructured sparsity/naive quantization. Use standardized tracks (LLMCBench) to make results comparable [P5][P6].
-- Robustness, safety, and fairness under compression: Quantify how compression shifts calibration, toxicity, truthfulness, and robustness; propose stabilization techniques (e.g., temperature scaling, KD on safety distributions). Surveys flag this as underexplored and important for deployment [P1][P5].
+**Key open questions your work should answer**  
+1. Can a *single* checkpoint be trained such that dynamic sparsity/quantization schedules preserve <2 % perplexity loss at 8-bit, 4-bit, 2-bit, 90 % sparse?  
+2. Does joint sparsity+quantization outperform either alone at extreme ratios?  
+3. Are importance rankings *stable* across downstream tasks, or does dial-a-compression need task-specific masks?
 
-What tests you should run (core protocol)
-- Base models: open LLMs (e.g., Llama-2/3-7B/13B) so others can replicate.
-- Metrics:
-  - Pretraining perplexity (WikiText-103, C4, Pile val).
-  - Zero-/few-shot: MMLU, HellaSwag, ARC, LAMBADA; optionally TruthfulQA and GSM8K for reasoning.
-  - Deployment: peak memory, VRAM fit, tokens/s latency-throughput across batch sizes; KV-cache memory under long contexts.
-  - Reliability: calibration (ECE), toxicity (RealToxicityPrompts), truthfulness (TruthfulQA).
-- Baselines to beat: Strong PTQ (AWQ; GPTQ via survey references), SmoothQuant; QAT baselines; sparse methods (SparseGPT/Wanda), movement pruning; low-rank/LoRA; knowledge distillation. LLMCBench provides reference tracks and comparisons [P5][P4][P6][P10].
-- Ablations: per-layer bitwidth allocation vs uniform; activation clipping/calibration size; calibration data domain shift; structured vs unstructured sparsity; with/without KD; quant-only vs quant+prune hybrids.
+**Three concrete, falsifiable experiments**  
+*(expand each into an experiment card before you start)*
 
-Concrete, falsifiable experiments
-1) Compression-aware finetuning (QAT-lite) vs best PTQ
-- Hypothesis: Finetuning with STE-based fake-quant and activation range regularization reduces the accuracy gap at 4-bit weight-only quantization relative to AWQ/GPTQ PTQ, at equal compute. [P10][P4]
-- Setup: Llama-2-7B; finetune on 5B tokens with W4A16 fake-quant in attention/FFN; grid on clipping (percentile vs learned), and 1–5% training steps; calibrate PTQ with 128–1024 examples.
-- Metrics: perplexity (C4, WikiText-103), MMLU, HellaSwag; VRAM, tokens/s; robustness (ECE).
-- Baselines: AWQ (PTQ), GPTQ (PTQ), SmoothQuant; naive QAT.
-- Expected outcome: QAT-lite narrows the PTQ gap by ≥20% on perplexity and MMLU at 4-bit with no throughput penalty at inference [P10][P4].
-- Decision criterion: Statistically significant improvements over AWQ across ≥3 tasks.
+**E1 “Dial-a-CAST”**  
+Hypothesis: End-to-end differentiable sparsity-aware training [P1] with *multiple* target sparsity heads (90 %, 95 %, 98 %) yields one checkpoint whose 98 % sparse sub-network keeps WikiText-103 perplexity within 1.1× of dense baseline.  
+Setup: Fine-tune 1.3 B param pre-trained model for 5 k steps with CAST loss, branching heads for each sparsity. Evaluate each head’s perplexity, zero-shot QA, & summarization ROUGE.  
+Metrics: Δ-perplexity vs dense, inference latency on A100, memory footprint.  
+Expected: 98 % head hits <2 % loss; 90 % head matches dense.  
+Follow-up: Swap sparsity head at *inference* time without re-loading weights; measure cold-start latency.
 
-2) MDL regularization and weight clustering
-- Hypothesis: Adding a clustering/MDL prior during finetuning reduces post-hoc code length and improves 3–4 bit PTQ robustness vs weight decay. [P4][P6]
-- Setup: Add soft k-means prior over weights (per-layer K=16–64 centroids) with annealed regularization; train 1–2% steps; then quantize to 3–4 bits.
-- Metrics: bits/parameter after entropy coding of clustered weights; perplexity; MMLU; ablate K and regularization strength.
-- Baselines: standard finetune + AWQ/GPTQ PTQ; low-rank finetune (LoRA) then PTQ.
-- Expected outcome: 5–10% smaller code length at matched perplexity, or ≥0.5 ppl improvement at matched size on C4/WikiText-103 [P4][P6].
+**E2 “Joint Null-Space 2-bit”**  
+Hypothesis: Applying null-space optimization [P3] *after* 90 % N:M sparsity lets you push weight precision to 2-bit with <1 % additional loss.  
+Setup: Sparsify Llama-2-7B with 2:4 structured sparsity → run NullQuant calibration on 200 C4 sequences → evaluate MMLU, HellaSwag.  
+Metrics: MMLU accuracy drop vs 4-bit sparse, calibration ECE.  
+Expected: Joint 2-bit+sparse stays within 0.5 % of 4-bit sparse.  
+Follow-up: Ablate order: quantize-then-sparse vs sparse-then-quantize.
 
-3) Predictive compressibility scoring for adaptive bitwidths
-- Hypothesis: A per-layer sensitivity score (e.g., Hessian-diagonal proxy via Hutchinson; or activation kurtosis) predicts post-quantization loss well enough to beat uniform W4 by allocating bits non-uniformly under a global bit budget. [P4][P1]
-- Setup: Compute sensitivity on 1k calibration tokens; solve a knapsack for 2–6 bits per layer; quantize accordingly; compare to AWQ uniform W4.
-- Metrics: prediction R^2 for loss delta; task accuracy; VRAM/throughput vs AWQ.
-- Baselines: AWQ (uniform), SmoothQuant; simple magnitude-based allocation.
-- Expected outcome: Non-uniform allocation improves perplexity by ≥3–5% at same average bitwidth; sensitivity correlates with loss deltas (R^2 ≥ 0.4) [P4].
+**E3 “Task-stability of importance masks”**  
+Hypothesis: Magnitude-based importance masks computed on pre-training data transfer to downstream tasks with <3 % accuracy loss up to 95 % sparsity.  
+Setup: Derive 95 % sparse mask from C4 → apply to fine-tuned model on GSM8K & HumanEval → compare with task-specific 95 % mask.  
+Metrics: GSM8K solve-rate, HumanEval pass@1, mask overlap coefficient.  
+Expected: Overlap ≥0.8 and accuracy drop ≤3 %.  
+Follow-up: If overlap low, train a *meta-mask* predictor that conditions on task embedding.
 
-4) Structured sparsity that actually speeds up
-- Hypothesis: 2:4 structured sparsity at 40–50% zeros maintains task accuracy better than unstructured pruning at equal FLOP reduction and gives real A100/Ampere throughput gains; hybrids with 4-bit weights are Pareto-superior to pure quantization or pure sparsity. [P6][P5]
-- Setup: Prune with movement or SparseGPT to 2:4; deploy with vendor sparse kernels; combine with W8/W4 weights; compare to unstructured 50–60% sparse + dense GEMM.
-- Metrics: MMLU, HellaSwag; measured tokens/s vs batch size; VRAM; kernel-level utilization.
-- Baselines: SparseGPT, Wanda; weight-only W4 (AWQ).
-- Expected outcome: ≥1.3–1.8× real throughput at ≤1 point MMLU drop vs dense; hybrids dominate Pareto frontier on LLMCBench tracks [P5][P6].
+**Next 3-day action pack**  
+1. Clone CAST repo, reproduce 90 % sparse 1.3 B model on WikiText (baseline checkpoint).  
+2. Draft experiment cards for E1–E3; get stop-rules & compute budget signed off by advisor.  
+3. Build 1-page prediction log template (date, claim, Brier before/after) and log your expected Δ-perplexity for E1.
 
-5) Reliability under compression: calibration and toxicity
-- Hypothesis: PTQ methods shift calibration and toxicity more than KD-regularized QAT; small KD coefficients can stabilize reliability metrics at the same accuracy. [P1][P5]
-- Setup: Compare AWQ W4, GPTQ W4, SmoothQuant W4A8, and QAT-lite+KD; evaluate ECE, TruthfulQA, RealToxicityPrompts.
-- Metrics: ECE, TruthfulQA acc, toxicity rate, alongside MMLU/perplexity.
-- Expected outcome: QAT-lite+KD reduces ECE and toxicity by ≥10% relative to PTQ at matched accuracy [P1][P5].
-
-6) KV-cache and activation pathway compression
-- Hypothesis: 4–6 bit KV-cache quantization with per-head scaling and error feedback preserves long-context accuracy better than naive per-tensor scaling, enabling ≥2× longer contexts under fixed VRAM. Ground the design in activation-aware principles from AWQ [P10].
-- Setup: LongBench/LAMBADA; per-head/group-wise scaling; error feedback in attention; ablate sequence length.
-- Metrics: long-context accuracy; memory; throughput.
-- Baselines: FP16 KV; naive INT8/INT4 KV.
-- Expected outcome: ≤1–2 point drop vs FP16 up to 32k tokens; ≥40% KV memory savings.
-
-Reporting and reproducibility
-- Use LLMCBench tracks or replicate their setup so results are comparable; publish scripts, calibration data, and kernels used [P5].
-- Always report: model size (bytes), code length (if clustering/entropy coding), VRAM at batch sizes {1, 8, 32}, tokens/s on specified GPUs/CPUs, quantization configs (group size, scaling), and calibration data domain [P5][P4].
-- Include ablations for calibration set size/domain and per-layer allocations; evaluate across at least two base models to test generality [P4][P6].
-
-Suggested anchors to start from
-- A Survey on Model Compression for Large Language Models (quantization, pruning, distillation; good baselines and open problems) [P4].
-- LLMCBench: Benchmarking Large Language Model Compression for Efficient Deployment (evaluation tracks/metrics to make your results comparable) [P5].
-
-Citations
-- [P1] A review of state-of-the-art techniques for large language model compression — https://link.springer.com/article/10.1007/s40747-025-02019-z
-- [P2] Efficient Compressing and Tuning Methods for Large Language Models: A Systematic Literature Review — https://dl.acm.org/doi/10.1145/3728636
-- [P3] EmbedLLM: Learning Compact Representations of Large Language Models — https://aimodels.fyi/papers/arxiv/embedllm-learning-compact-representations-large-language-models
-- [P4] A Survey on Model Compression for Large Language Models — https://arxiv.org/abs/2308.07633
-- [P5] LLMCBench: Benchmarking Large Language Model Compression for Efficient Deployment — https://arxiv.org/html/2410.21352v2
-- [P6] Model Compression and Efficient Inference for Large Language Models: A Survey — https://arxiv.org/abs/2402.09748
-- [P10] AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration — https://hanlab.mit.edu/projects/awq
-
-If you share your target model(s) and deployment hardware, I can tailor the bitwidth/sparsity choices, baselines, and measurement harness.
+**Citations**  
+[P1] CAST: Continuous and Differentiable Semi-Structured Sparsity-Aware Training for Large Language Models — http://arxiv.org/abs/2509.25996v1  
+[P3] Boost Post-Training Quantization via Null Space Optimization for Large Language Models — http://arxiv.org/abs/2506.11044v3

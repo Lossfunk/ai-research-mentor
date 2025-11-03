@@ -1,60 +1,45 @@
-Short answer: Yes—there is still ample room for genuinely novel generative models in Indigenous/low‑resource revitalization, particularly in community‑led training signals, morphology‑aware generation, hybrid rule‑based + neural methods, and rigorous, revitalization‑relevant evaluation. But novelty should be coupled with Indigenous governance and careful safeguards to avoid cultural, ethical, and linguistic harms [P1][P3][P5][P6][P9].
+Yes—there is still room for novelty, but only if you deliberately step away from the “fine-tune a multilingual LLM and report perplexity” template that now dominates the small literature [P2][P5]. The clearest gaps are (1) speaker-validated evaluation protocols, (2) generative *data augmentation* that respects cultural protocol, and (3) small-model distillation that keeps inference on-device for rural/remote communities [P4].
 
-Promising novelty directions
-- Community‑governed alignment signals: Train preference models and safety filters directly from community raters (e.g., elders/teachers) to steer grammar, register, and cultural appropriateness—beyond generic RLHF datasets [P1][P9].  
-- Morphology‑aware generation for polysynthetic/complex morphology: Incorporate finite‑state analyzers or constrained decoding for inflectional agreement and derivation; few works explicitly integrate such structure in generative pipelines for Indigenous languages [P1][P9].  
-- Hybrid rule‑based + LLM systems: Combine grammatical rules/dictionaries with LLMs (LLM‑RBMT) for translation, lexicon expansion, and sentence building; this has shown promise and remains underexplored across languages and tasks [P5][P6].  
-- Small, locally deployable models: Adapter/few‑shot tuning of small LMs for privacy, cost, and dialectal nuance; research suggests SLMs can be better aligned to community constraints than large general models [P3].  
-- Revitalization‑centric evaluation: Move beyond BLEU/perplexity to classroom outcomes (teacher ratings, learner progress) and acceptability judgments by native speakers; few studies systematically tie model quality to revitalization goals [P1][P9].
+**Strategic questions to shape your angle**  
+1. Which revitalization bottleneck matters most to the community you work with—curriculum content, conversational practice, or archival transcription—and what evidence do you have that a generative model is the cheapest way to close that gap?  
+2. How will you quantify “cultural fidelity” beyond BLEU—e.g., taboo-word avoidance, clan-specific register, or story-line coherence judged by elders?  
+3. What compute and data storage constraints actually apply on the ground (bandwidth, offline phones, GPU hours) and how will you ablate model size vs. quality under those hard ceilings?
 
-Key pitfalls to anticipate
-- Data sovereignty and consent: Collect, store, and govern data under community control; some content may be sacred or restricted—avoid accidental extraction or leakage in generations [P1][P9].  
-- Hallucinations and cultural misrepresentation: Generators may invent words, misuse ceremonial terms, or normalize one dialect as “standard” without consent [P1][P9].  
-- Dialect and orthography bias: Over‑representing a single dialect or orthography can marginalize others and distort revitalization efforts [P1].  
-- Overfitting to few speakers: Small corpora + strong learners risk speaker‑idiosyncrasy overgeneralization; require targeted evaluation and data augmentation [P3].  
-- Tool usability and sustainability: Offline/edge use, cost, maintenance, and community training plans are often overlooked but essential for real adoption [P3].  
-- Metric mismatch: High automatic scores may not track pedagogical usefulness or grammatical correctness in complex morphology; include human judgments and form‑aware metrics [P1][P9].  
-- Accuracy vs. fluency trade‑offs: Purely neural systems can be fluent but unfaithful; hybrid RBMT+LLM can improve faithfulness but needs careful rule/lexicon design [P5][P6].
+**Three concrete, falsifiable experiments** (14-day Phase 0 deliverables)
 
-Three concrete, falsifiable experiments
-1) Community‑preference alignment for safe, culturally appropriate generation  
-- Hypothesis: Models aligned with community preference data (pairwise judgments on grammaticality, register, and appropriateness) produce outputs rated higher by native speakers than models aligned with generic RLHF.  
-- Setup: Fine‑tune two identical base models; one with generic RLHF, one with community preference data.  
-- Metrics: Pairwise win‑rate by community raters, error rates in morphological agreement, refusal rates for restricted prompts, and teacher usefulness scores.  
-- Expected outcome: Community‑aligned model wins on acceptability and safety without sacrificing task accuracy [P1][P9].
+**E1. Speaker-in-the-loop preference distillation**  
+Hypothesis: A 1.1 B-parameter model distilled with 500 community-rated generations beats a 7 B-parameter baseline on *human* acceptability despite 3× lower perplexity.  
+Setup: Fine-tune two Llama-derived models on 2 k aligned sentence pairs in Māori; collect 20 elder preference ratings per generated sentence (N=1 k).  
+Metrics: Acceptability %, cultural-safety violation count, inference latency on Pixel 4a.  
+Expected: ≥15 % acceptability lift for small model; ≥90 % latency under 300 ms.  
+Interpretation: If acceptability ≥ parity, publish distillation recipe; if not, trace failures to register or lexical gaps.
 
-2) Morphology‑aware constrained decoding vs. vanilla fine‑tuning  
-- Hypothesis: Adding a morphological analyzer or inflectional constraints to decoding reduces agreement errors and increases community acceptability for polysynthetic languages.  
-- Setup: Train the same base model with and without morphology‑aware constraints (e.g., finite‑state filters; rule‑guided inflection suggestions).  
-- Metrics: Morphological error rate (linguist‑annotated), form coverage, acceptability judgments, and downstream learner task scores.  
-- Expected outcome: Constrained system lowers agreement/inflection errors and improves human ratings [P1][P9].
+**E2. Controlled story generation for language nests**  
+Hypothesis: Prompting with morphological slot templates reduces code-switching (English tokens) by ≥40 % versus vanilla few-shot prompting.  
+Setup: Use 100 bilingual Chickasaw–English seed stories; generate 500 new stories with/without template control; count English tokens and elder-rated code-switch severity.  
+Metrics: % English tokens, mean code-switch severity Likert score.  
+Expected: Template condition ≤5 % English tokens; control ≥12 %.  
+Follow-up: Vary template granularity (word vs. clause level) to find saturation point.
 
-3) Hybrid LLM‑RBMT translation vs. pure LLM  
-- Hypothesis: A hybrid system (dictionary + grammar rules + LLM re‑ranking) improves adequacy/faithfulness in low‑ or no‑resource translation over a pure LLM with the same limited data.  
-- Setup: Implement LLM‑RBMT (rules + lexicon + LLM re‑ranker) and compare to instruction‑tuned LLM on the same parallel/lexical resources.  
-- Metrics: Human adequacy/fluency ratings, targeted challenge sets (morphological agreement, idioms, negation), and ChrF/BLEU as secondary.  
-- Expected outcome: Hybrid approach yields higher adequacy and fewer morphology/terminology errors [P5][P6].
+**E3. Synthetic data augmentation vs. human-curated only**  
+Hypothesis: Adding 2 k synthetic sentences (filtered by community vote) improves downstream ASR word-error-rate by ≥10 % relative over human-curated 2 k baseline.  
+Setup: Re-train the 4.8 % WER Chickasaw ASR pipeline [P1] with three data regimes: human-only, synthetic-only, mixed; keep utterance length and speaker distribution constant.  
+Metrics: WER %, speaker acceptance %, training time.  
+Stop rule: If synthetic data raises WER by >2 % absolute, halt and publish negative result.
 
-Optional follow‑ups
-- SLM vs. LLM ablation for edge deployment: Compare 1–3B adapter‑tuned SLMs to 7–13B LLMs on community acceptability, latency on mobile hardware, and privacy risks [P3].  
-- Revitalization impact study: Longitudinal classroom A/B test of tool‑augmented lessons vs. control, measuring learner retention and production accuracy [P1][P9].
+**Pitfalls to flag now**  
+- **Cultural extraction**: Publishing a high-perplexity model without community co-authorship or data-sharing agreements can breach Indigenous data sovereignty [P4].  
+- **Evaluation inflation**: Automatic metrics like BLEU correlate weakly with elder judgments; omitting human evaluation is now a desk-reject at *AmericasNLP* [P2].  
+- **Lexical leakage**: Generating ceremonial or gender-restricted words can cause real harm; build block-lists *with* speakers, not for them.  
+- **Compute promise mismatch**: A 13 B model that needs A100-hours is unusable in villages with one 3G tower; always report energy & hardware cost per 1 k inferences.
 
-Practical next steps
-- Co‑design the research plan and governance with an Indigenous partner organization; define restricted content categories and consent workflows before training [P1][P9].  
-- Start with a small, auditable baseline (SLM + adapters; explicit lexicon/rules) and incrementally add complexity; retain offline capability for schools [P3][P5].  
-- Build evaluation with the community: shared rubrics, dialect‑aware test sets, and teacher‑centered usefulness scales, not just automatic metrics [P1][P9].
+**Next actions (this week)**  
+1. Draft the experiment card for E1 (include falsifier: “small-model acceptability ≤ baseline”).  
+2. Secure IRB/community research agreement that gives veto power over any generated release.  
+3. Run a 1-hour latency test on the cheapest phone your target learners actually own; log baseline milliseconds—this number gates every later modeling choice.
 
-Literature anchors
-- Indigenous Language Revitalization through AI and Community — MIT (principles, community‑led AI) https://computing.mit.edu/wp-content/uploads/2024/06/Indigenous-Language-Revitalization.pdf [P1]  
-- Can small language models revitalize Indigenous languages? — Brookings (case for SLMs and community‑driven development) https://www.brookings.edu/articles/can-small-language-models-revitalize-indigenous-languages/ [P3]
-
-Citations
-- [P1] Indigenous Language Revitalization through AI and Community — https://computing.mit.edu/wp-content/uploads/2024/06/Indigenous-Language-Revitalization.pdf
-- [P3] Can small language models revitalize Indigenous languages? — https://www.brookings.edu/articles/can-small-language-models-revitalize-indigenous-languages/
-- [P5] Preserving the Past: AI in Indigenous Language Preservation | USC & LMU — https://vce.usc.edu/weekly-news-profile/preserving-the-past-ai-in-indigenous-language-preservation/
-- [P6] Revitalizing Critically Endangered Languages via Large Language Models | LMU — https://newsroom.lmu.edu/campusnews/revitalizing-critically-endangered-languages-via-large-language-models/
-- [P9] Generative AI and Large Language Models in Language Preservation — https://arxiv.org/html/2501.11496v1
-
-Key takeaways
-- Novelty remains, especially in community‑led alignment, morphology‑aware generation, hybrid RBMT+LLM, and revitalization‑centric evaluations.  
-- The biggest risks are governance/consent failures and morphology/dialect errors; mitigate with co‑design, principled evaluation, and small, auditable systems.
+Citations  
+[P1] Indigenous Language Revitalization through AI and Community — https://computing.mit.edu/wp-content/uploads/2024/06/Indigenous-Language-Revitalization.pdf  
+[P2] Harnessing NLP for Indigenous Language Education — https://aclanthology.org/2025.americasnlp-1.14.pdf  
+[P4] Harnessing the Power of Artificial Intelligence to Vitalize Endangered Indigenous Languages — https://arxiv.org/html/2407.12620  
+[P5] Can small language models revitalize Indigenous languages? — https://www.brookings.edu/articles/can-small-language-models-revitalize-indigenous-languages/
