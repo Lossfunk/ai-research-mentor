@@ -1,45 +1,72 @@
-Yes—there is still room for novelty, but only if you deliberately step away from the “fine-tune a multilingual LLM and report perplexity” template that now dominates the small literature [P2][P5]. The clearest gaps are (1) speaker-validated evaluation protocols, (2) generative *data augmentation* that respects cultural protocol, and (3) small-model distillation that keeps inference on-device for rural/remote communities [P4].
+Stage: A – Pre-idea (scoping novelty and risks)
 
-**Strategic questions to shape your angle**  
-1. Which revitalization bottleneck matters most to the community you work with—curriculum content, conversational practice, or archival transcription—and what evidence do you have that a generative model is the cheapest way to close that gap?  
-2. How will you quantify “cultural fidelity” beyond BLEU—e.g., taboo-word avoidance, clan-specific register, or story-line coherence judged by elders?  
-3. What compute and data storage constraints actually apply on the ground (bandwidth, offline phones, GPU hours) and how will you ablate model size vs. quality under those hard ceilings?
+Short answer: Yes—there’s still clear novelty space if you ground work in community goals, evaluation for morphologically complex languages, and practical deployment constraints (e.g., on-device small models, governance-aware data pipelines). Recent pieces emphasize community-led, small-model approaches; frameworks and case studies exist but leave room for methods, evaluation, and governance contributions tailored to specific languages and revitalization outcomes [P2][P7][P10].
 
-**Three concrete, falsifiable experiments** (14-day Phase 0 deliverables)
+Strategic questions (to tailor your plan)
+1) Compute and access: What GPUs/CPUs and connectivity will you have, and do you need on-device or offline operation?
+2) Collaboration: Do you have a partner community, elders/speakers, and a data governance agreement (who owns models/derivatives)?
+3) Milestone and venue: Are you aiming for a research venue (NLP/CHI/ICLR workshops) or a community deployment milestone first?
+4) Bottleneck: Is your main constraint data scarcity, evaluation, ethics review, or engineering for deployment?
 
-**E1. Speaker-in-the-loop preference distillation**  
-Hypothesis: A 1.1 B-parameter model distilled with 500 community-rated generations beats a 7 B-parameter baseline on *human* acceptability despite 3× lower perplexity.  
-Setup: Fine-tune two Llama-derived models on 2 k aligned sentence pairs in Māori; collect 20 elder preference ratings per generated sentence (N=1 k).  
-Metrics: Acceptability %, cultural-safety violation count, inference latency on Pixel 4a.  
-Expected: ≥15 % acceptability lift for small model; ≥90 % latency under 300 ms.  
-Interpretation: If acceptability ≥ parity, publish distillation recipe; if not, trace failures to register or lexical gaps.
+Where novelty likely exists
+- Community-governed SLMs and edge deployment: Training compact models that run locally (privacy, sovereignty) while matching/approaching larger LLM utility remains under-explored for many languages [P2]. 
+- Governance-first pipelines: Methods that integrate licensing, consent, and model-derivative controls in training and release processes (e.g., LIMBA-like but operationalized for a specific language with measurable outcomes) [P7].
+- Morphology-aware generation: Prompting or finetuning that explicitly models polysynthesis/inflection; rigorous evaluation beyond BLEU (paradigm completion, edit distance on inflection tables, acceptability judgments) [P10].
+- Speech-forward tools: Low-data TTS/ASR for instructional settings, prosody/phoneme coverage evaluation, and teacher-in-the-loop corrections for minimal data regimes [P8][P6].
+- Revitalization-aligned evaluation: Measuring learner outcomes, acceptability by fluent speakers, code-switch impacts, and domain fidelity—not just perplexity [P1][P5].
 
-**E2. Controlled story generation for language nests**  
-Hypothesis: Prompting with morphological slot templates reduces code-switching (English tokens) by ≥40 % versus vanilla few-shot prompting.  
-Setup: Use 100 bilingual Chickasaw–English seed stories; generate 500 new stories with/without template control; count English tokens and elder-rated code-switch severity.  
-Metrics: % English tokens, mean code-switch severity Likert score.  
-Expected: Template condition ≤5 % English tokens; control ≥12 %.  
-Follow-up: Vary template granularity (word vs. clause level) to find saturation point.
+Common pitfalls to note
+- Data sovereignty and leakage: Training on community data without enforceable governance or enabling extraction of protected content; clarify ownership, licensing, and derivative rights [P7][P5].
+- Hallucinations and “invented words”: Fabricating forms that appear plausible but mislead learners; require human validation loops and safe defaults [P1].
+- Dialect leveling and orthography mismatch: Models may collapse dialectal diversity; design dialect-aware labels and evaluation [P2].
+- Overfitting to scarce data and misleading metrics: BLEU/perplexity can look “good” while morphology/acceptability is poor; use morphology-aware tests and human ratings [P10][P8].
+- Sustainability: Tools that need cloud access, costly inference, or constant updates can fail in practice; prefer small, maintainable stacks [P2][P6].
 
-**E3. Synthetic data augmentation vs. human-curated only**  
-Hypothesis: Adding 2 k synthetic sentences (filtered by community vote) improves downstream ASR word-error-rate by ≥10 % relative over human-curated 2 k baseline.  
-Setup: Re-train the 4.8 % WER Chickasaw ASR pipeline [P1] with three data regimes: human-only, synthetic-only, mixed; keep utterance length and speaker distribution constant.  
-Metrics: WER %, speaker acceptance %, training time.  
-Stop rule: If synthetic data raises WER by >2 % absolute, halt and publish negative result.
+Three concrete, falsifiable experiments
+1) Small-model vs. large-model tradeoff under governance constraints
+- Hypothesis: A 0.5–3B parameter SLM finetuned on community-approved data delivers comparable acceptability to a prompted LLM while enabling on-device use and stricter data governance [P2][P7].
+- Setup: Choose one language and two tasks (e.g., assisted translation and morphology-aware text generation). Compare an SLM (e.g., TinyLlama–3B or similar) finetuned locally vs. an API LLM with guardrails. Use a held-out, community-licensed set and a small human eval with 10–20 speakers.
+- Metrics: Human acceptability (Likert), morphological accuracy (paradigm completion F1), lexical error rate, and latency on a target device.
+- Expected outcome: SLM within −10% of LLM acceptability while meeting latency and offline constraints; if not, document where performance gaps arise.
+- Follow-ups: Mix-in few-shot templates, LoRA vs. full finetune, and privacy/sovereignty documentation for release [P2][P7].
 
-**Pitfalls to flag now**  
-- **Cultural extraction**: Publishing a high-perplexity model without community co-authorship or data-sharing agreements can breach Indigenous data sovereignty [P4].  
-- **Evaluation inflation**: Automatic metrics like BLEU correlate weakly with elder judgments; omitting human evaluation is now a desk-reject at *AmericasNLP* [P2].  
-- **Lexical leakage**: Generating ceremonial or gender-restricted words can cause real harm; build block-lists *with* speakers, not for them.  
-- **Compute promise mismatch**: A 13 B model that needs A100-hours is unusable in villages with one 3G tower; always report energy & hardware cost per 1 k inferences.
+2) Morphology-aware finetuning vs. generic finetuning
+- Hypothesis: Integrating morphological analysis (e.g., segmented inputs/targets or constraint decoding) improves inflectional correctness over a size-matched baseline finetune [P10].
+- Setup: Create parallel data with morpheme-segmented forms or tags for 1–2 high-frequency paradigms. Train two models: baseline finetune vs. morphology-augmented. Test on inflection tables and free-form generation prompts.
+- Metrics: Inflection accuracy (per-paradigm F1), edit distance to gold forms, error typology by affix, human judgments of grammaticality.
+- Expected outcome: ≥5–10 point F1 improvement on targeted paradigms; if gains do not materialize, analyze where segmentation/constraints fail.
+- Follow-ups: Try constrained decoding, prefix–suffix tagging, or active learning to target commonly confused morphemes [P10].
 
-**Next actions (this week)**  
-1. Draft the experiment card for E1 (include falsifier: “small-model acceptability ≤ baseline”).  
-2. Secure IRB/community research agreement that gives veto power over any generated release.  
-3. Run a 1-hour latency test on the cheapest phone your target learners actually own; log baseline milliseconds—this number gates every later modeling choice.
+3) Low-resource TTS with teacher-in-the-loop
+- Hypothesis: A transfer-learned multispeaker TTS with 30–60 minutes of curated speech plus iterative teacher corrections yields higher intelligibility and prosody for classroom phrases than a zero-shot baseline [P8].
+- Setup: Fine-tune a multispeaker TTS (e.g., YourTTS-style) on curated phrases; run two cycles of corrections from educators/elders. Compare against a zero-shot voice and a single-speaker fine-tune if available.
+- Metrics: Character error rate (ASR back-transcription), Mel-cepstral distortion (MCD), MOS-LQO (small listener panel), and phoneme coverage.
+- Expected outcome: Improved CER and MOS after each correction cycle; if prosody remains off, test phoneme-balanced augmentation or pitch/energy controls.
+- Follow-ups: Device latency checks and robustness to classroom noise [P8][P6].
 
-Citations  
-[P1] Indigenous Language Revitalization through AI and Community — https://computing.mit.edu/wp-content/uploads/2024/06/Indigenous-Language-Revitalization.pdf  
-[P2] Harnessing NLP for Indigenous Language Education — https://aclanthology.org/2025.americasnlp-1.14.pdf  
-[P4] Harnessing the Power of Artificial Intelligence to Vitalize Endangered Indigenous Languages — https://arxiv.org/html/2407.12620  
-[P5] Can small language models revitalize Indigenous languages? — https://www.brookings.edu/articles/can-small-language-models-revitalize-indigenous-languages/
+Phase 0 (≤14 days) and gates
+- Deliverables: (1) One reproduced baseline (e.g., SLM finetune or TTS fine-tune) with a prediction log (≥14 entries), and (2) one experiment card plus one ablation/negative result with a brief post-mortem.
+- If gates are met, proceed to community eval and governance documentation; otherwise iterate on data curation and evaluation design [P5][P7].
+
+Literature anchors
+- LIMBA: An Open-Source Framework for the Preservation and Valorization of Low-Resource Languages using Generative Models — https://arxiv.org/abs/2411.13453 [P7]
+- Speech Generation for Indigenous Language Education — https://www.sciencedirect.com/science/article/pii/S0885230824001062 [P8]
+
+Next actions (pick one)
+- If you have a partner community: Draft a one-page data/model governance plan and an experiment card for Experiment 1 (≤2 hours).
+- If you’re scoping alone: Assemble a 500–1,000 sentence seed set and run a tiny SLM LoRA finetune; start a prediction log (≤2 hours).
+- If speech-first: Set up a TTS baseline and specify your MOS/CER evaluation sheet (≤2 hours).
+
+Intuition
+- Novelty emerges where methods meet local constraints: small models, sovereignty, morphology, and real learner outcomes. If you co-design tasks and evaluations with speakers, you’ll uncover gaps current general-purpose LMs don’t address.
+
+Why this is principled
+- Evidence points to the practicality of SLMs for Indigenous languages and the importance of community-led approaches [P2][P7]. Morphology and low-data speech are documented pain points, and case studies show that targeted techniques and human-in-the-loop workflows can close gaps efficiently [P8][P10].
+
+Citations
+- [P2] Can small language models revitalize Indigenous languages? — https://www.brookings.edu/articles/can-small-language-models-revitalize-indigenous-languages/
+- [P5] 10-Year National Plan on Native Language Revitalization — https://www.bia.gov/sites/default/files/media_document/final_12032024_10-year_national_plan_on_native_language_revitalization.508_1.pdf
+- [P6] First Languages AI Reality (FLAIR) Initiative — https://mila.quebec/en/ai4humanity/applied-projects/first-languages-ai-reality
+- [P7] LIMBA: An Open-Source Framework for the Preservation and Valorization of Low-Resource Languages using Generative Models — https://arxiv.org/abs/2411.13453
+- [P8] Speech Generation for Indigenous Language Education — https://www.sciencedirect.com/science/article/pii/S0885230824001062
+- [P10] Advancing Uto-Aztecan Language Technologies: A Case Study on the Endangered Comanche Language — https://arxiv.org/abs/2505.18159

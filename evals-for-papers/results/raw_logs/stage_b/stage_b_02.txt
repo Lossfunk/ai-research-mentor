@@ -1,44 +1,58 @@
-**Novelty check (score 11/15)**  
-- Importance 3: 10× storage/bandwidth savings unlock on-device & edge deployment.  
-- Tractability 2: You can get signal in ~3 wks on 1–2 B-param models with existing codebases [P1, P3].  
-- Surprise 2: Sparse + quantized LLMs already hit 90 % compression; the twist is *one model* that lets users dial *any* compression at inference time—still rarely demonstrated.  
-- Generality 3: If it works, every LLM owner benefits.  
-- Mechanistic payoff 1: We lack a crisp “why” for which weights stay important across compression levels.
+Stage: A → B (sharpening the idea and scoping first experiments)
 
-**Key open questions your work should answer**  
-1. Can a *single* checkpoint be trained such that dynamic sparsity/quantization schedules preserve <2 % perplexity loss at 8-bit, 4-bit, 2-bit, 90 % sparse?  
-2. Does joint sparsity+quantization outperform either alone at extreme ratios?  
-3. Are importance rankings *stable* across downstream tasks, or does dial-a-compression need task-specific masks?
+Quick intake to tailor the plan
+- Compute/time: What GPUs/TPUs and weekly hours do you have for experiments?
+- Scope: Are you focusing on post-hoc compression (quantize/prune/distill) or training-for-compressibility from scratch/fine-tuning?
+- Mentorship/collab: Do you have a lab/partner for shared baselines/eval?
+- Target/Timeline: Which venue or demo timeline are you aiming for?
+- Biggest bottleneck now: datasets/eval harness, baselines, or method design?
 
-**Three concrete, falsifiable experiments**  
-*(expand each into an experiment card before you start)*
+What could be novel (pick 1–2 to lead with)
+- Compression-aware training objectives: Explicitly optimize a rate–distortion objective that trades size/latency against task utility using differentiable surrogates for quantization and sparsity during training. The novelty is moving from post-hoc compression to Pareto-frontier training. Prior compression work motivates composing quantization, pruning, and distillation but largely applies them after training [P2][P1]. Framing this as a rate–distortion problem gives a principled curve to target [P8].
+- Intrinsically low-dimensional LLMs: Constrain updates to low-rank subspaces (e.g., LoRA rank scheduling) or minimize a proxy for intrinsic dimension so the final model admits superior low-bit quantization and high sparsity without accuracy loss. This goes beyond “parameter-efficient fine-tuning” to “compression-efficient fine-tuning.”
+- Budgeted distillation curricula: Distil under an explicit bitrate/latency budget (e.g., quantized student with sparse structure) and adapt the teacher signal by block or layer as the budget tightens. Blockwise KD literature suggests structure-aware targets can help [P3].
+- Compressibility certificates: Define simple pre-quantization indicators (e.g., weight spectral decay, activation range entropy) that predict post-quantization loss, enabling early stopping or adaptive constraints.
 
-**E1 “Dial-a-CAST”**  
-Hypothesis: End-to-end differentiable sparsity-aware training [P1] with *multiple* target sparsity heads (90 %, 95 %, 98 %) yields one checkpoint whose 98 % sparse sub-network keeps WikiText-103 perplexity within 1.1× of dense baseline.  
-Setup: Fine-tune 1.3 B param pre-trained model for 5 k steps with CAST loss, branching heads for each sparsity. Evaluate each head’s perplexity, zero-shot QA, & summarization ROUGE.  
-Metrics: Δ-perplexity vs dense, inference latency on A100, memory footprint.  
-Expected: 98 % head hits <2 % loss; 90 % head matches dense.  
-Follow-up: Swap sparsity head at *inference* time without re-loading weights; measure cold-start latency.
+Three falsifiable Phase-0 experiments (≤14 days)
+1) Baseline rate–distortion frontier
+- Hypothesis: Your method shifts the model’s rate–distortion curve outward versus strong post-hoc baselines (higher accuracy at the same size/latency). 
+- Setup: Take an open LLM (e.g., LLaMA-2-7B or Mistral 7B). Produce families of models via 8/6/4-bit post-training quantization and structured/unstructured pruning; add a distilled student at the same budgets. 
+- Metrics: Accuracy on MMLU and GSM8K; perplexity on WikiText; latency and peak memory on single A100; footprint (bytes). Success: ≥1–2 pt MMLU or ≥2 pt GSM8K improvement at matched size/latency. 
+- Interpretation: If curves overlap, your gains aren’t beyond existing methods; if consistently better across budgets, that’s evidence of novelty. Follow-ups: test out-of-domain generalization (TruthfulQA/ARC). Motivation: compare combined pruning/quant/ KD frontiers as in classic compression stacks [P1][P2] and analyze as rate–distortion [P8].
 
-**E2 “Joint Null-Space 2-bit”**  
-Hypothesis: Applying null-space optimization [P3] *after* 90 % N:M sparsity lets you push weight precision to 2-bit with <1 % additional loss.  
-Setup: Sparsify Llama-2-7B with 2:4 structured sparsity → run NullQuant calibration on 200 C4 sequences → evaluate MMLU, HellaSwag.  
-Metrics: MMLU accuracy drop vs 4-bit sparse, calibration ECE.  
-Expected: Joint 2-bit+sparse stays within 0.5 % of 4-bit sparse.  
-Follow-up: Ablate order: quantize-then-sparse vs sparse-then-quantize.
+2) Train-for-compressibility vs post-hoc
+- Hypothesis: Injecting differentiable quantization noise and L0/L1 sparsity penalties during fine-tuning yields better low-bit/post-prune performance than compressing after standard fine-tuning. 
+- Setup: Fine-tune on a modest mixture (e.g., OpenOrca or Dolly) with fake quantization and sparsity; match training tokens with a standard fine-tune. Then quantize/prune both to identical budgets. 
+- Metrics: Same as above plus calibration (ECE). Success: ≥20% relative reduction in accuracy drop at 4-bit or 50% sparsity. 
+- Interpretation: If gains appear only at certain layers, ablate layer-wise penalties; consider blockwise distillation to reinforce fragile blocks [P3].
 
-**E3 “Task-stability of importance masks”**  
-Hypothesis: Magnitude-based importance masks computed on pre-training data transfer to downstream tasks with <3 % accuracy loss up to 95 % sparsity.  
-Setup: Derive 95 % sparse mask from C4 → apply to fine-tuned model on GSM8K & HumanEval → compare with task-specific 95 % mask.  
-Metrics: GSM8K solve-rate, HumanEval pass@1, mask overlap coefficient.  
-Expected: Overlap ≥0.8 and accuracy drop ≤3 %.  
-Follow-up: If overlap low, train a *meta-mask* predictor that conditions on task embedding.
+3) Low-rank schedule for intrinsic compressibility
+- Hypothesis: A decreasing LoRA-rank schedule (or subspace annealing) improves final compressibility at equal task performance vs fixed-rank adapters. 
+- Setup: Fine-tune identical models with fixed ranks r∈{8,16} vs a schedule r:32→4 across training. Then apply identical 4-bit quantization. 
+- Metrics: Task scores, post-quantization degradation, weight spectral norm/trace norm as proxies. Success: scheduled training yields smaller degradation at 4-bit with equal pre-quant accuracy. 
+- Interpretation: If only some modules benefit (e.g., attention vs MLP), adapt schedules per module.
 
-**Next 3-day action pack**  
-1. Clone CAST repo, reproduce 90 % sparse 1.3 B model on WikiText (baseline checkpoint).  
-2. Draft experiment cards for E1–E3; get stop-rules & compute budget signed off by advisor.  
-3. Build 1-page prediction log template (date, claim, Brier before/after) and log your expected Δ-perplexity for E1.
+Next actions (Phase 0 gates)
+- Reproduce: Implement the baseline frontier (quantization/pruning/distillation) and log a rate–distortion curve on one model and two tasks (deliverable). 
+- Prediction log: 14 daily predictions with confidence about which knobs shift the curve (deliverable; track Calibration and Reproduction fidelity). 
+- Draft one experiment card (above) and run at least one ablation or negative result with a short post-mortem before expanding.
 
-**Citations**  
-[P1] CAST: Continuous and Differentiable Semi-Structured Sparsity-Aware Training for Large Language Models — http://arxiv.org/abs/2509.25996v1  
-[P3] Boost Post-Training Quantization via Null Space Optimization for Large Language Models — http://arxiv.org/abs/2506.11044v3
+Intuition
+Compression works best when the model’s representations are already low-variance and robust to quantization/pruning noise; shaping these properties during training should move the Pareto frontier, not just a single operating point.
+
+Why this is principled
+Classical results show combining pruning, quantization, and distillation yields complementary gains [P1][P2]. Casting evaluation as a rate–distortion problem turns “compressible LLMs” into a measurable objective and supports ablations on quantization noise models [P8]. Structure-aware distillation (e.g., blockwise) motivates curricula aligned with the architecture [P3].
+
+Strategic questions
+- Which budget matters most to your use case: model size, VRAM, or latency? That choice will drive the rate term and the target frontier.
+- Do you want novelty in objective design (rate term/proxies), training schedule (rank/sparsity annealing), or evaluation methodology (new, multi-axis frontier and certificates)?
+
+Citations
+- [P1] PQK: Model Compression via Pruning, Quantization, and Knowledge Distillation — http://arxiv.org/abs/2106.14681v1
+- [P2] Model compression via distillation and quantization — http://arxiv.org/abs/1802.05668v1
+- [P3] Parallel Blockwise Knowledge Distillation for Deep Neural Network Compression — http://arxiv.org/abs/2012.03096v1
+- [P8] Universally Quantized Neural Compression — http://arxiv.org/abs/2006.09952v2
+
+Literature anchors (LLM-focused)
+- QLoRA: Efficient Finetuning of Quantized LLMs — https://arxiv.org/abs/2305.14314
+- SparseGPT: Massive Language Models Can Be Accurately Pruned in One-Shot — https://arxiv.org/abs/2301.00774

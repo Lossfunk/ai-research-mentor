@@ -217,8 +217,8 @@ def run_student_judges(
         raise ValueError("At least one --judge is required")
 
     stage_letter, stage_folder = normalize_stage(stage)
-    if stage_letter not in {"A", "C", "F"}:
-        print_error(f"Student judge is scoped to stages A/C/F; requested stage {stage_letter}")
+    if stage_letter not in {"A", "B", "C", "D", "E", "F"}:
+        print_error(f"Student judge only supports stages A–F; requested stage {stage_letter}")
 
     judge_clients = build_judge_clients(judge_specs)
     judge_models = [spec for spec, _ in judge_clients]
