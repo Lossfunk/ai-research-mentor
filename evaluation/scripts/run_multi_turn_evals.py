@@ -610,7 +610,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--scenarios", default=str(SCENARIO_PATH_DEFAULT), help="Path to scenario JSONL file")
     parser.add_argument("--mentors", nargs="+", required=True, help="Mentor system specs (e.g. openrouter:anthropic/claude-sonnet-4.5)")
     parser.add_argument("--user-model", default="openrouter:moonshot/kimi-k2", help="OpenRouter model id for the student persona")
-    parser.add_argument("--student-script", help="Optional JSON file with scripted student decisions (one object per turn)")
     parser.add_argument("--max-turns", type=int, default=12, help="Maximum mentor turns before forcing stop")
     parser.add_argument("--output-dir", required=True, help="Directory to store transcripts and summary")
     parser.add_argument("--killbox-dir", help="Optional directory for aborted conversations", default=None)
@@ -635,72 +634,6 @@ def build_mentor_adapters(args: argparse.Namespace) -> List[MentorAdapter]:
     return mentors
 
 
-def _load_student_script(path: Path) -> List[Dict[str, Any]]:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Failed to load student script {path}: {exc}") from exc
-
-    if not isinstance(raw, list):
-        raise ValueError("Student script must be a JSON array of decisions")
-
-    script: List[Dict[str, Any]] = []
-    for index, item in enumerate(raw):
-        if not isinstance(item, dict):
-            raise ValueError(f"Student script entry {index} is not an object")
-        entry = {
-            "continue": bool(item.get("continue", True)),
-            "message": item.get("message", ""),
-            "stop_reason": item.get("stop_reason"),
-            "notes": item.get("notes"),
-        }
-        if not entry["message"]:
-            raise ValueError(f"Student script entry {index} is missing a message")
-        script.append(entry)
-    return script
-
-
-class ScriptedUserSimulator(UserSimulator):
-    def __init__(
-        self,
-        model_id: str,
-        script: Sequence[Dict[str, Any]],
-        *,
-        temperature: float,
-        max_tokens: int,
-        template_path: Path,
-    ) -> None:
-        super().__init__(
-            model_id,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            template_path=template_path,
-        )
-        self._script = list(script)
-        self._cursor = 0
-
-    def generate(  # type: ignore[override]
-        self,
-        scenario: ScenarioSpec,
-        history: Sequence[Dict[str, str]],
-        mentor_reply: str,
-    ) -> UserDecision:
-        if self._cursor < len(self._script):
-            entry = self._script[self._cursor]
-            self._cursor += 1
-            decision = UserDecision(
-                continue_conversation=bool(entry.get("continue", True)),
-                message=str(entry.get("message", "")).strip(),
-                stop_reason=str(entry.get("stop_reason")) if entry.get("stop_reason") else None,
-                notes=str(entry.get("notes")) if entry.get("notes") else None,
-                raw={"script_index": self._cursor - 1, **entry},
-            )
-            if decision.continue_conversation and not decision.message:
-                raise ValueError("Scripted decision requires a message when continue=true")
-            return decision
-        return super().generate(scenario, history, mentor_reply)
-
-
 def build_user_simulator(args: argparse.Namespace) -> UserSimulator:
     if args.mock:
         return MockUserSimulator()
@@ -711,16 +644,6 @@ def build_user_simulator(args: argparse.Namespace) -> UserSimulator:
         if provider.strip().lower() != "openrouter":
             raise ValueError("Currently only openrouter:* user models are supported")
         model_id = model.strip()
-    if args.student_script:
-        script_path = Path(args.student_script)
-        script = _load_student_script(script_path)
-        return ScriptedUserSimulator(
-            model_id=model_id,
-            script=script,
-            temperature=args.temperature,
-            max_tokens=args.user_max_output,
-            template_path=USER_TEMPLATE_PATH,
-        )
     return UserSimulator(
         model_id=model_id,
         temperature=args.temperature,

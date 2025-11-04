@@ -7,9 +7,7 @@ from evaluation.scripts.run_multi_turn_evals import (  # noqa: E402
     MockMentorAdapter,
     MockUserSimulator,
     ScenarioSpec,
-    ScriptedUserSimulator,
     UserDecision,
-    USER_TEMPLATE_PATH,
     _parse_user_json,
     run_conversation,
 )
@@ -108,40 +106,3 @@ def test_user_stops_when_not_helpful(tmp_path):
     assert killbox_files, "killbox log should exist for student-initiated stop"
     killbox_payload = killbox_files[0].read_text(encoding="utf-8")
     assert "not_helpful" in killbox_payload
-
-
-def test_scripted_user_simulator_terminates(tmp_path):
-    scenario = ScenarioSpec(
-        scenario_id="scripted",
-        topic="gnn",
-        persona="student",
-        constraints="",
-    )
-    mentor = MockMentorAdapter("mock:mentor")
-    script = [
-        {"message": "Thanks, I'll try that.", "continue": True},
-        {"message": "Here are the results: accuracy 0.82.", "continue": False, "stop_reason": "results_ready"},
-    ]
-    student = ScriptedUserSimulator(
-        model_id="openrouter:stub/student",
-        script=script,
-        temperature=0.0,
-        max_tokens=128,
-        template_path=USER_TEMPLATE_PATH,
-    )
-
-    killbox_dir = tmp_path / "kill"
-    result = run_conversation(
-        scenario,
-        mentor,
-        student,
-        max_turns=5,
-        killbox_dir=killbox_dir,
-    )
-
-    assert result.stop_reason == "results_ready"
-    assert result.stopped_by_student is True
-    assert any(
-        entry["role"] == "user" and "accuracy" in entry["content"]
-        for entry in result.transcript
-    )
