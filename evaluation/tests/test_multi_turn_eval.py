@@ -7,6 +7,7 @@ from evaluation.scripts.run_multi_turn_evals import (  # noqa: E402
     MockMentorAdapter,
     MockUserSimulator,
     ScenarioSpec,
+    UserDecision,
     _parse_user_json,
     run_conversation,
 )
@@ -50,3 +51,58 @@ def test_run_conversation_with_mocks(tmp_path):
     assert killbox_files, "killbox log should be written when student terminates"
     content = killbox_files[0].read_text(encoding="utf-8")
     assert "plan_identified" in content
+
+
+def test_user_stops_when_not_helpful(tmp_path):
+    scenario = ScenarioSpec(
+        scenario_id="unit_test_not_helpful",
+        topic="graph ml",
+        persona="undergrad",
+        constraints="no gpu",
+    )
+    mentor = MockMentorAdapter("mock:mentor")
+
+    class NotHelpfulUser:
+        def __init__(self) -> None:
+            self._turn = 0
+
+        def generate(self, scenario, history, mentor_reply):  # noqa: D401
+            self._turn += 1
+            if self._turn == 1:
+                return UserDecision(
+                    continue_conversation=True,
+                    message="That helps a bit, do you have anything more concrete?",
+                    stop_reason=None,
+                    notes=None,
+                    raw={"mock": True, "turn": self._turn},
+                )
+            return UserDecision(
+                continue_conversation=False,
+                message="This isn't helpful anymore, let's stop.",
+                stop_reason="not_helpful",
+                notes=None,
+                raw={"mock": True, "turn": self._turn},
+            )
+
+    student = NotHelpfulUser()
+
+    killbox_dir = tmp_path / "kill"
+    result = run_conversation(
+        scenario,
+        mentor,
+        student,
+        max_turns=4,
+        killbox_dir=killbox_dir,
+    )
+
+    assert result.stopped_by_student is True
+    assert result.stop_reason == "not_helpful"
+    assert any(
+        entry["role"] == "user" and "isn't helpful anymore" in entry["content"]
+        for entry in result.transcript
+    )
+
+    killbox_files = list(killbox_dir.glob("*.json"))
+    assert killbox_files, "killbox log should exist for student-initiated stop"
+    killbox_payload = killbox_files[0].read_text(encoding="utf-8")
+    assert "not_helpful" in killbox_payload
