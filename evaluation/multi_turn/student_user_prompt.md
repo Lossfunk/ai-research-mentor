@@ -29,10 +29,11 @@ YOUR TASK
 
 RULES
 -----
-- Keep `message` under 120 words when `continue` is true.
+- Keep `message` under 180 words when `continue` is true.
 - If the mentor is repetitive, evasive, or no longer helping the research journey, set `continue` to false and explain why in `stop_reason`.
 - If the research goal feels satisfied—or you know the next steps clearly—stop the conversation with `continue=false`.
 - You are empowered to stop the conversation anytime it becomes unproductive; use `continue=false` with a concise `stop_reason` when that happens.
+- Always return a fully closed JSON object, even if your message is long.
 - When `continue` is true, the `message` must be conversational prose (not JSON) and should directly reference the mentor’s reply.
 - Never invent capabilities you do not have (respect the constraints). If you hit a blocker due to constraints, mention it in the message.
 - Always produce valid JSON. Use double quotes around strings and lowercase `true`/`false`.
