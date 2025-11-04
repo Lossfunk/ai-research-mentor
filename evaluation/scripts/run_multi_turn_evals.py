@@ -413,11 +413,49 @@ def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
+    decision = _heuristic_partial_parse(cleaned)
+    if decision is not None:
+        print_info("[warn] Heuristic parse recovered partial student JSON.")
+        return decision
+
     if last_error:
         print_info(f"[warn] Failed to parse student JSON: {last_error}")
         preview = cleaned if len(cleaned) < 200 else cleaned[:200] + "..."
         print_info(f"[warn] Raw student payload preview: {preview}")
     return None
+
+
+def _heuristic_partial_parse(text: str) -> Optional[Dict[str, Any]]:
+    continue_match = re.search(r'"continue"\s*:\s*(true|false)', text, re.IGNORECASE)
+    message_match = re.search(r'"message"\s*:\s*"(.*)', text, re.DOTALL)
+    if not message_match and not continue_match:
+        return None
+
+    decision: Dict[str, Any] = {}
+    if continue_match:
+        decision["continue"] = continue_match.group(1).lower() == "true"
+
+    if message_match:
+        fragment = message_match.group(1)
+        split_match = re.search(r'"\s*,\s*"(?:stop_reason|notes|continue|message)\s*":', fragment)
+        if split_match:
+            fragment = fragment[: split_match.start()]
+        brace_match = re.search(r'"\s*}', fragment)
+        if brace_match:
+            fragment = fragment[: brace_match.start()]
+        fragment = fragment.rstrip('"\n\r\t ,}')
+        fragment = fragment.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+        decision["message"] = fragment.strip()
+
+    stop_reason_match = re.search(r'"stop_reason"\s*:\s*"(.*?)"', text, re.DOTALL)
+    if stop_reason_match:
+        decision["stop_reason"] = stop_reason_match.group(1).strip()
+
+    notes_match = re.search(r'"notes"\s*:\s*"(.*?)"', text, re.DOTALL)
+    if notes_match:
+        decision["notes"] = notes_match.group(1).strip()
+
+    return decision if decision else None
 
 
 def _build_transcript_entry(role: str, content: str, turn: int) -> Dict[str, Any]:
