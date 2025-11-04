@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -283,11 +284,31 @@ class UserSimulator:
             {"role": "system", "content": "You must reply with JSON only."},
             {"role": "user", "content": prompt},
         ]
-        result = self._client.invoke(messages)
-        text = _extract_text(result)
+        raw_payload: Optional[str] = None
+        try:
+            result = self._client.invoke(messages)
+            text = _extract_text(result)
+        except Exception as exc:  # noqa: BLE001
+            raw_payload = " ".join(str(arg) for arg in exc.args if isinstance(arg, str)) or str(exc)
+            print_info(f"[warn] Student model invoke error: {exc!r}")
+            text = raw_payload
+            result = {"error": repr(exc)}
+
+        print_info(f"[debug] Student model raw output: {repr(text)[:200]}")
         decision = _parse_user_json(text)
         if decision is None:
-            raise RuntimeError("user_model_returned_invalid_json")
+            stop_reason = "invalid_student_json"
+            fallback_message = ""
+            if text:
+                fallback_message = text if len(text) <= 160 else text[:160] + "..."
+            print_info(f"[warn] Falling back due to unparsable student JSON (reason={stop_reason})")
+            return UserDecision(
+                continue_conversation=False,
+                message=fallback_message,
+                stop_reason=stop_reason,
+                notes=raw_payload,
+                raw=_json_safe({"raw_text": text, "error": raw_payload}),
+            )
         return UserDecision(
             continue_conversation=bool(decision.get("continue", False)),
             message=str(decision.get("message", "")).strip(),
@@ -323,25 +344,79 @@ class MockUserSimulator(UserSimulator):
         )
 
 
+def _escape_newlines_in_strings(payload: str) -> str:
+    out: List[str] = []
+    in_string = False
+    escape = False
+    for char in payload:
+        if escape:
+            out.append(char)
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            out.append(char)
+            continue
+        if char == '"':
+            in_string = not in_string
+            out.append(char)
+            continue
+        if in_string and char == "\n":
+            out.append("\\n")
+            continue
+        out.append(char)
+    return "".join(out)
+
+
 def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
     if not text:
         return None
-    stripped = text.strip()
-    # Accept pure JSON or JSON wrapped in code fences
-    if stripped.startswith("```") and "```" in stripped[3:]:
-        stripped = stripped.strip("`\n ")
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        # Attempt to salvage the first JSON object in the string
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            fragment = stripped[start : end + 1]
+
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+
+    if cleaned.startswith("```") and "```" in cleaned[3:]:
+        cleaned = cleaned.strip("`\n ")
+
+    # Some models prefix the fence with `json` or similar tokens.
+    cleaned = cleaned.lstrip()
+    cleaned = re.sub(r"^(json|JSON)\b[:\s]*", "", cleaned)
+
+    cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
+
+    candidates: List[str] = [cleaned, _escape_newlines_in_strings(cleaned)]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        fragment = cleaned[start : end + 1]
+        candidates.extend([fragment, _escape_newlines_in_strings(fragment)])
+
+    # Try parsing each candidate as JSON, falling back to YAML for lenient syntax.
+    last_error: Optional[Exception] = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+
+    try:  # pragma: no cover - optional dependency path
+        import yaml
+
+        for candidate in candidates:
             try:
-                return json.loads(fragment)
-            except json.JSONDecodeError:
-                return None
+                data = yaml.safe_load(candidate)
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+
+    if last_error:
+        print_info(f"[warn] Failed to parse student JSON: {last_error}")
+        preview = cleaned if len(cleaned) < 200 else cleaned[:200] + "..."
+        print_info(f"[warn] Raw student payload preview: {preview}")
     return None
 
 
@@ -405,6 +480,10 @@ def run_conversation(
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
         stop_reason = stop_reason or "error"
+        print_info(f"[warn] Conversation exception: {exc!r}")
+        import traceback
+
+        traceback.print_exc()
 
     elapsed = time.time() - start_time
 

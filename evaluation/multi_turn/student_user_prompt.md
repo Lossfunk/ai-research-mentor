@@ -20,12 +20,12 @@ YOUR TASK
 3. Decide whether it is still useful to continue the conversation.
 4. Output a single JSON object with the following shape (no extra commentary):
 
-{
+{{
   "continue": true | false,
   "message": "string",      // natural-language follow-up from the student persona
   "stop_reason": "string",  // required when continue=false; short phrase explaining why
   "notes": "string"         // optional extra observations for debugging (may be empty)
-}
+}}
 
 RULES
 -----
