@@ -188,8 +188,10 @@ def bar_with_points(ax: plt.Axes, df: pd.DataFrame, metric: str, ylabel: str, or
     ax.set_xticks(x)
     ax.set_xticklabels([AGENT_DISPLAY[a] for a in order])
     ax.set_ylabel(ylabel)
-    ax.grid(axis="y", alpha=0.2)
     ax.set_axisbelow(True)
+    ax.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
+    ax.xaxis.grid(False)
+    _remove_spines(ax)
     return counts
 
 
@@ -270,6 +272,9 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
     axes[1, 0].set_title("Final quality after conversation")
     add_panel_label(axes[1, 0], "C")
 
+    for ax in axes.flat:
+        _remove_spines(ax)
+
     traj_stats = (
         trajectory_df.dropna(subset=["overall_score"])
         .groupby(["agent_label", "turn_index"])["overall_score"]
@@ -282,16 +287,23 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
     )
 
     ax_traj = axes[1, 1]
+    max_turn = traj_stats["turn_index"].max() if not traj_stats.empty else 0
+    label_offsets = {
+        "multi_turn_eval_mentor": 0.0,
+        "multi_turn_eval_baseline_sonnet": 0.012,
+        "multi_turn_eval_baselines_gpt5": -0.012,
+    }
     for agent in order:
         stats = traj_stats.loc[traj_stats["agent_label"] == agent]
         if stats.empty:
             continue
+        linestyle = "-" if agent == "multi_turn_eval_mentor" else "--" if agent == "multi_turn_eval_baseline_sonnet" else "-."
         ax_traj.plot(
             stats["turn_index"],
             stats["mean"],
             color=OKABE_ITO[agent],
             linewidth=3.0,
-            linestyle="-" if agent == "multi_turn_eval_mentor" else "--" if agent == "multi_turn_eval_baseline_sonnet" else "-.",
+            linestyle=linestyle,
             label=AGENT_CAPTION[agent],
         )
         if stats["ci"].any():
@@ -300,25 +312,40 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
                 stats["mean"] - stats["ci"],
                 stats["mean"] + stats["ci"],
                 color=OKABE_ITO[agent],
-                alpha=0.25,
+                alpha=0.1,
             )
+        end_turn = stats["turn_index"].iloc[-1]
+        end_score = stats["mean"].iloc[-1]
+        ax_traj.text(
+            end_turn + 0.4,
+            end_score + label_offsets.get(agent, 0.0),
+            AGENT_DISPLAY[agent],
+            color=OKABE_ITO[agent],
+            fontsize=10,
+            fontweight="semibold",
+            va="center",
+            ha="left",
+        )
 
     ax_traj.axhline(threshold, color="gray", linestyle="--", linewidth=1)
     ax_traj.set_xlabel("Turn index")
     ax_traj.set_ylabel("Overall judge score (mean ± 95% CI)")
     ax_traj.set_ylim(1.4, 2.05)
-    ax_traj.set_xlim(left=1)
-    ax_traj.grid(alpha=0.2)
-    ax_traj.legend(loc="lower right")
+    ax_traj.set_xlim(1, max_turn + 1.2)
+    ax_traj.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
+    ax_traj.xaxis.grid(False)
+    ax_traj.legend_.remove() if ax_traj.legend_ else None
+    _remove_spines(ax_traj)
     ax_traj.set_title("Average score trajectory across scenarios")
     add_panel_label(ax_traj, "D")
 
     fig.suptitle("Multi-turn conversation quality and efficiency", y=0.99)
     fig.text(
-        0.01,
-        0.01,
-        "Error bars show 95% CI; dots mark individual scenarios (n=5 per agent). Success threshold (score ≥ 1.6) shown as dashed gray line.",
-        fontsize=10,
+        0.5,
+        0.012,
+        "Panels A–C: dots mark individual scenarios (n=5 per agent), bars show group means ±95% CI; success threshold (score ≥ 1.6) denoted by dashed gray line. Panel D: mean score trajectory across scenarios.",
+        fontsize=9,
+        ha="center",
     )
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
 
@@ -360,7 +387,7 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
                     score,
                     color="white",
                     edgecolor=OKABE_ITO[agent],
-                    s=140,
+                    s=160,
                     linewidth=2.0,
                     marker="o",
                     zorder=5,
@@ -370,7 +397,9 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
         ax.set_xlabel("Turn index")
         ax.set_ylim(1.5, 2.05)
         ax.set_xlim(left=1)
-        ax.grid(alpha=0.2)
+        ax.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
+        ax.xaxis.grid(False)
+        _remove_spines(ax)
         if idx % cols == 0:
             ax.set_ylabel("Judge score")
 
@@ -379,9 +408,15 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(AGENT_DISPLAY))
-    fig.text(0.01, 0.01, "Hollow markers denote the first turn where score ≥ 1.6.", fontsize=10)
+    fig.text(
+        0.5,
+        0.045,
+        "Each panel shows one scenario. Lines correspond to Mentor (solid), Claude baseline (dashed), and GPT-5 baseline (dash-dot). Hollow markers indicate the first turn where score ≥ 1.6.",
+        fontsize=9,
+        ha="center",
+    )
     fig.suptitle("Per-scenario multi-turn trajectories", y=0.99)
-    fig.tight_layout(rect=[0, 0.05, 1, 0.97])
+    fig.tight_layout(rect=[0, 0.08, 1, 0.97])
 
     png_path = out_dir / "multi_turn_scenarios_faceted.png"
     pdf_path = out_dir / "multi_turn_scenarios_faceted.pdf"
@@ -426,6 +461,11 @@ def stats_table(summary_df: pd.DataFrame, out_dir: Path) -> pd.DataFrame:
     stats_df = pd.concat(frames, ignore_index=True)
     stats_df.to_csv(out_dir / "multi_turn_stats_tests.csv", index=False)
     return stats_df
+
+
+def _remove_spines(ax: plt.Axes) -> None:
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
 
 def main() -> None:
