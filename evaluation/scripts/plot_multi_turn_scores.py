@@ -29,6 +29,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 
 # Use publication-friendly fonts (Type 42) and consistent styling.
@@ -52,7 +53,13 @@ OKABE_ITO = {
 }
 
 AGENT_DISPLAY = {
-    "multi_turn_eval_mentor": "Mentor (Kimi-k2)",
+    "multi_turn_eval_mentor": "Mentor",
+    "multi_turn_eval_baseline_sonnet": "Claude",
+    "multi_turn_eval_baselines_gpt5": "GPT-5",
+}
+
+AGENT_CAPTION = {
+    "multi_turn_eval_mentor": "Mentor (Kimi-k2-0905)",
     "multi_turn_eval_baseline_sonnet": "Baseline: Claude Sonnet 4.5",
     "multi_turn_eval_baselines_gpt5": "Baseline: GPT-5",
 }
@@ -93,6 +100,7 @@ def parse_args() -> argparse.Namespace:
 def load_summary_dataframe(summary_path: Path) -> pd.DataFrame:
     df = pd.read_csv(summary_path)
     df["agent_display"] = df["agent_label"].map(AGENT_DISPLAY)
+    df["agent_caption"] = df["agent_label"].map(AGENT_CAPTION)
     df["scenario_display"] = df["scenario_id"].apply(lambda s: s.replace("_", " ").title())
     df["success_minutes"] = df["success_elapsed_seconds"] / 60.0
     return df
@@ -147,7 +155,7 @@ def add_panel_label(ax: plt.Axes, label: str) -> None:
     ax.text(-0.12, 1.05, label, transform=ax.transAxes, fontweight="bold", fontsize=15)
 
 
-def bar_with_points(ax: plt.Axes, df: pd.DataFrame, metric: str, ylabel: str, order: List[str], colors: Dict[str, str]) -> None:
+def bar_with_points(ax: plt.Axes, df: pd.DataFrame, metric: str, ylabel: str, order: List[str], colors: Dict[str, str]) -> List[int]:
     means = []
     cis = []
     counts = []
@@ -178,11 +186,47 @@ def bar_with_points(ax: plt.Axes, df: pd.DataFrame, metric: str, ylabel: str, or
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels([AGENT_DISPLAY[a] for a in order], rotation=12, ha="right")
+    ax.set_xticklabels([AGENT_DISPLAY[a] for a in order])
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", alpha=0.2)
     ax.set_axisbelow(True)
     return counts
+
+
+def paired_stats(df: pd.DataFrame, metric: str, reference: str, comparators: List[str]) -> pd.DataFrame:
+    rows = []
+    ref_values = df.loc[df["agent_label"] == reference].set_index("scenario_id")[metric]
+    for agent in comparators:
+        comp_values = df.loc[df["agent_label"] == agent].set_index("scenario_id")[metric]
+        joined = pd.concat([ref_values, comp_values], axis=1, join="inner", keys=["ref", "comp"]).dropna()
+        if joined.empty:
+            continue
+        diff = joined["ref"] - joined["comp"]
+        if np.allclose(diff, 0):
+            p_value = 1.0
+            t_stat = 0.0
+            effect = 0.0
+        else:
+            try:
+                t_stat, p_value = stats.ttest_rel(joined["ref"], joined["comp"])
+            except Exception:
+                t_stat, p_value = (np.nan, np.nan)
+            if diff.std(ddof=1) == 0:
+                effect = np.nan
+            else:
+                effect = diff.mean() / diff.std(ddof=1)
+        rows.append(
+            {
+                "metric": metric,
+                "reference": reference,
+                "comparator": agent,
+                "n": len(joined),
+                "t_stat": t_stat,
+                "p_value": p_value,
+                "cohens_d_z": effect,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, threshold: float, out_dir: Path, dpi: int) -> None:
@@ -198,6 +242,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
         colors=OKABE_ITO,
     )
     axes[0, 0].set_ylim(bottom=0.5)
+    axes[0, 0].set_title("Conversation turns to success")
     add_panel_label(axes[0, 0], "A")
 
     bar_with_points(
@@ -209,6 +254,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
         colors=OKABE_ITO,
     )
     axes[0, 1].set_ylim(bottom=0)
+    axes[0, 1].set_title("Elapsed time to success")
     add_panel_label(axes[0, 1], "B")
 
     bar_with_points(
@@ -221,6 +267,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
     )
     axes[1, 0].axhline(threshold, color="gray", linestyle="--", linewidth=1)
     axes[1, 0].set_ylim(1.4, 2.05)
+    axes[1, 0].set_title("Final quality after conversation")
     add_panel_label(axes[1, 0], "C")
 
     traj_stats = (
@@ -243,8 +290,9 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
             stats["turn_index"],
             stats["mean"],
             color=OKABE_ITO[agent],
-            linewidth=2.5,
-            label=AGENT_DISPLAY[agent],
+            linewidth=3.0,
+            linestyle="-" if agent == "multi_turn_eval_mentor" else "--" if agent == "multi_turn_eval_baseline_sonnet" else "-.",
+            label=AGENT_CAPTION[agent],
         )
         if stats["ci"].any():
             ax_traj.fill_between(
@@ -252,7 +300,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
                 stats["mean"] - stats["ci"],
                 stats["mean"] + stats["ci"],
                 color=OKABE_ITO[agent],
-                alpha=0.15,
+                alpha=0.25,
             )
 
     ax_traj.axhline(threshold, color="gray", linestyle="--", linewidth=1)
@@ -262,13 +310,14 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
     ax_traj.set_xlim(left=1)
     ax_traj.grid(alpha=0.2)
     ax_traj.legend(loc="lower right")
+    ax_traj.set_title("Average score trajectory across scenarios")
     add_panel_label(ax_traj, "D")
 
-    fig.suptitle("Multi-turn mentor quality and efficiency summary", y=0.99)
+    fig.suptitle("Multi-turn conversation quality and efficiency", y=0.99)
     fig.text(
         0.01,
         0.01,
-        "Error bars show 95% CI; dots indicate individual scenarios (n=5 per agent).",
+        "Error bars show 95% CI; dots mark individual scenarios (n=5 per agent). Success threshold (score ≥ 1.6) shown as dashed gray line.",
         fontsize=10,
     )
     fig.tight_layout(rect=[0, 0.03, 1, 0.97])
@@ -296,10 +345,11 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
                 group["turn_index"],
                 group["overall_score"],
                 marker="o",
-                linewidth=2,
-                markersize=5,
+                linewidth=2.5,
+                markersize=6,
                 color=OKABE_ITO[agent],
-                label=AGENT_DISPLAY[agent],
+                linestyle="-" if agent == "multi_turn_eval_mentor" else "--" if agent == "multi_turn_eval_baseline_sonnet" else "-.",
+                label=AGENT_CAPTION[agent],
             )
             success_turns = group.loc[group["success_at_turn"], "turn_index"]
             if not success_turns.empty:
@@ -310,15 +360,15 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
                     score,
                     color="white",
                     edgecolor=OKABE_ITO[agent],
-                    s=90,
-                    linewidth=1.5,
+                    s=140,
+                    linewidth=2.0,
                     marker="o",
                     zorder=5,
                 )
         ax.axhline(threshold, color="gray", linestyle="--", linewidth=1)
         ax.set_title(scenario)
         ax.set_xlabel("Turn index")
-        ax.set_ylim(1.4, 2.05)
+        ax.set_ylim(1.5, 2.05)
         ax.set_xlim(left=1)
         ax.grid(alpha=0.2)
         if idx % cols == 0:
@@ -329,7 +379,7 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=len(AGENT_DISPLAY))
-    fig.text(0.01, 0.01, "Hollow markers denote first success turn (score ≥ threshold).", fontsize=10)
+    fig.text(0.01, 0.01, "Hollow markers denote the first turn where score ≥ 1.6.", fontsize=10)
     fig.suptitle("Per-scenario multi-turn trajectories", y=0.99)
     fig.tight_layout(rect=[0, 0.05, 1, 0.97])
 
@@ -338,6 +388,44 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
     fig.savefig(png_path, dpi=dpi)
     fig.savefig(pdf_path)
     plt.close(fig)
+
+
+def metrics_table(summary_df: pd.DataFrame, out_dir: Path) -> pd.DataFrame:
+    order = list(AGENT_DISPLAY.keys())
+    records = []
+    for agent in order:
+        subset = summary_df.loc[summary_df["agent_label"] == agent]
+        for metric, label in [
+            ("success_turn", "turns_to_success"),
+            ("success_minutes", "minutes_to_success"),
+            ("final_score", "final_score"),
+            ("net_gain", "net_gain"),
+        ]:
+            mean, ci = mean_and_ci(subset[metric])
+            records.append(
+                {
+                    "agent_label": agent,
+                    "agent": AGENT_CAPTION[agent],
+                    "metric": label,
+                    "mean": mean,
+                    "ci95": ci,
+                    "n": int(subset[metric].notna().sum()),
+                }
+            )
+    metrics_df = pd.DataFrame(records)
+    metrics_df.to_csv(out_dir / "multi_turn_metrics_summary.csv", index=False)
+    return metrics_df
+
+
+def stats_table(summary_df: pd.DataFrame, out_dir: Path) -> pd.DataFrame:
+    reference = "multi_turn_eval_mentor"
+    comparators = ["multi_turn_eval_baseline_sonnet", "multi_turn_eval_baselines_gpt5"]
+    frames = []
+    for metric in ["success_turn", "success_minutes", "final_score", "net_gain"]:
+        frames.append(paired_stats(summary_df, metric, reference, comparators))
+    stats_df = pd.concat(frames, ignore_index=True)
+    stats_df.to_csv(out_dir / "multi_turn_stats_tests.csv", index=False)
+    return stats_df
 
 
 def main() -> None:
@@ -351,6 +439,8 @@ def main() -> None:
 
     efficiency_panel(summary_df, turn_df, args.threshold, plots_dir, args.dpi)
     facet_scenarios(turn_df, args.threshold, plots_dir, args.dpi)
+    metrics_table(summary_df, plots_dir)
+    stats_table(summary_df, plots_dir)
 
 
 if __name__ == "__main__":
