@@ -1,57 +1,74 @@
-"""Plot multi-turn evaluation results.
+"""Publication-quality plots for multi-turn evaluation results.
 
-This script reads the aggregated scoring outputs produced by ``score_multi_turn.py``
-and generates the visualizations described in the multi-turn evaluation spec:
+This script reads the outputs of ``score_multi_turn.py`` and produces the
+figures recommended in the visualization review:
 
-* Scenario-level growth charts (overall score per turn) with success threshold
-  markers for each agent
-* Final score vs total turns scatter plot coloured by agent
-* Time-to-success distribution plots (turn count and elapsed seconds)
+* ``multi_turn_efficiency_panel`` – a 2×2 summary panel showing
+  turns-to-success, time-to-success, final scores, and the mean score trajectory
+  (with 95 % confidence intervals).
+* ``multi_turn_scenarios_faceted`` – small multiples (one per scenario) so the
+  reviewer can inspect individual conversations.
 
-Usage::
+Both PNG (for slides) and PDF (600 dpi, Type 42 fonts) versions are written to
+``<scoring-dir>/plots``.
+
+Example::
 
     uv run python -m evaluation.scripts.plot_multi_turn_scores \
-        --scoring-dir reports/multi_turn_eval_all5/scoring \
-        --threshold 1.6
-
-All plots are written to ``<scoring-dir>/plots``.
+        --scoring-dir reports/multi_turn_eval_all5/scoring --threshold 1.6
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 
-@dataclass
-class ConversationSummaryRow:
-    agent_label: str
-    system_id: str
-    scenario_id: str
-    total_turns: float
-    elapsed_seconds: float
-    final_score: float
-    net_gain: float
-    success_turn: Optional[float]
-    success_elapsed_seconds: Optional[float]
+# Use publication-friendly fonts (Type 42) and consistent styling.
+plt.rcParams.update(
+    {
+        "font.size": 12,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "figure.titlesize": 16,
+        "legend.fontsize": 11,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+)
+
+
+OKABE_ITO = {
+    "multi_turn_eval_mentor": "#0072B2",
+    "multi_turn_eval_baseline_sonnet": "#E69F00",
+    "multi_turn_eval_baselines_gpt5": "#CC79A7",
+}
+
+AGENT_DISPLAY = {
+    "multi_turn_eval_mentor": "Mentor (Kimi-k2)",
+    "multi_turn_eval_baseline_sonnet": "Baseline: Claude Sonnet 4.5",
+    "multi_turn_eval_baselines_gpt5": "Baseline: GPT-5",
+}
 
 
 @dataclass
 class ConversationTurn:
+    agent_label: str
+    scenario_id: str
     turn_index: int
     overall_score: Optional[float]
-    cumulative_avg: Optional[float]
     success_at_turn: bool
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot multi-turn evaluation results")
+    parser = argparse.ArgumentParser(description="Generate multi-turn evaluation plots")
     parser.add_argument(
         "--scoring-dir",
         type=Path,
@@ -62,240 +79,278 @@ def parse_args() -> argparse.Namespace:
         "--threshold",
         type=float,
         default=1.6,
-        help="Success threshold used when annotating the plots",
+        help="Success threshold used to mark reward crossings",
     )
     parser.add_argument(
-        "--figure-dpi",
+        "--dpi",
         type=int,
-        default=150,
-        help="DPI for saved figures (default: 150)",
+        default=600,
+        help="DPI for saved figures (PNG). PDF is always vector-based.",
     )
     return parser.parse_args()
 
 
-def load_summary_rows(path: Path) -> List[ConversationSummaryRow]:
-    rows: List[ConversationSummaryRow] = []
-    with path.open("r", encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        for rec in reader:
-            rows.append(
-                ConversationSummaryRow(
-                    agent_label=rec["agent_label"],
-                    system_id=rec["system_id"],
-                    scenario_id=rec["scenario_id"],
-                    total_turns=float(rec["total_turns"]),
-                    elapsed_seconds=float(rec["elapsed_seconds"]),
-                    final_score=float(rec["final_score"]),
-                    net_gain=float(rec["net_gain"]),
-                    success_turn=_optional_float(rec.get("success_turn")),
-                    success_elapsed_seconds=_optional_float(rec.get("success_elapsed_seconds")),
-                )
-            )
-    return rows
+def load_summary_dataframe(summary_path: Path) -> pd.DataFrame:
+    df = pd.read_csv(summary_path)
+    df["agent_display"] = df["agent_label"].map(AGENT_DISPLAY)
+    df["scenario_display"] = df["scenario_id"].apply(lambda s: s.replace("_", " ").title())
+    df["success_minutes"] = df["success_elapsed_seconds"] / 60.0
+    return df
 
 
-def _optional_float(value: Optional[str]) -> Optional[float]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if value == "" or str(value).lower() == "none":
-        return None
-    return float(value)
-
-
-def load_turns(scores_dir: Path) -> Dict[Tuple[str, str], List[ConversationTurn]]:
-    turns_by_key: Dict[Tuple[str, str], List[ConversationTurn]] = {}
+def load_turn_dataframe(scores_dir: Path) -> pd.DataFrame:
+    records: List[ConversationTurn] = []
     for path in sorted(scores_dir.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
-        agent_label = data["agent_label"]
-        scenario_id = data["scenario_id"]
-        key = (agent_label, scenario_id)
-        turns: List[ConversationTurn] = []
-        for item in data["turns"]:
-            turns.append(
+        agent = data["agent_label"]
+        scenario = data["scenario_id"]
+        for turn in data["turns"]:
+            records.append(
                 ConversationTurn(
-                    turn_index=int(item["turn_index"]),
-                    overall_score=_optional_float(item.get("overall_score")),
-                    cumulative_avg=_optional_float(item.get("cumulative_avg")),
-                    success_at_turn=bool(item.get("success_at_turn")),
+                    agent_label=agent,
+                    scenario_id=scenario,
+                    turn_index=int(turn["turn_index"]),
+                    overall_score=turn.get("overall_score"),
+                    success_at_turn=bool(turn.get("success_at_turn")),
                 )
             )
-        turns_by_key[key] = turns
-    return turns_by_key
+    df = pd.DataFrame([r.__dict__ for r in records])
+    df["agent_display"] = df["agent_label"].map(AGENT_DISPLAY)
+    df["scenario_display"] = df["scenario_id"].apply(lambda s: s.replace("_", " ").title())
+    return df
 
 
 def ensure_output_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def scenario_growth_plots(
-    output_dir: Path,
-    threshold: float,
-    turns_by_key: Dict[Tuple[str, str], List[ConversationTurn]],
-    agent_colors: Dict[str, str],
-) -> None:
-    scenarios = sorted({scenario for (_, scenario) in turns_by_key.keys()})
-    for scenario_id in scenarios:
-        fig, ax = plt.subplots(figsize=(7, 4))
-        for agent_label, color in agent_colors.items():
-            turns = turns_by_key.get((agent_label, scenario_id))
-            if not turns:
-                continue
-            xs = [t.turn_index for t in turns]
-            ys = [t.overall_score for t in turns]
-            ax.plot(xs, ys, marker="o", color=color, label=agent_label, linewidth=2)
-
-            success_turns = [t for t in turns if t.success_at_turn]
-            if success_turns:
-                first_success = success_turns[0]
-                ax.scatter(
-                    first_success.turn_index,
-                    first_success.overall_score,
-                    color=color,
-                    edgecolor="black",
-                    zorder=5,
-                    s=80,
-                )
-
-        ax.axhline(threshold, color="gray", linestyle="--", linewidth=1, label="threshold")
-        ax.set_title(f"Scenario: {scenario_id}")
-        ax.set_xlabel("Turn index")
-        ax.set_ylabel("Overall judge score")
-        ax.set_ylim(0, 2.05)
-        ax.set_xlim(left=1)
-        ax.legend(loc="lower right")
-        ax.grid(alpha=0.2)
-        fig.tight_layout()
-        out_path = output_dir / f"scenario_{scenario_id}_growth.png"
-        fig.savefig(out_path, dpi=150)
-        plt.close(fig)
+def t_multiplier(n: int) -> float:
+    if n <= 1:
+        return 0.0
+    lookup = {2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571, 7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262}
+    return lookup.get(n, 1.96)
 
 
-def final_score_vs_turns(
-    output_path: Path,
-    threshold: float,
-    rows: Iterable[ConversationSummaryRow],
-    agent_colors: Dict[str, str],
-) -> None:
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for row in rows:
-        color = agent_colors[row.agent_label]
-        filled = row.final_score >= threshold
+def mean_and_ci(values: Iterable[float]) -> Tuple[float, float]:
+    vals = np.asarray(list(values), dtype=float)
+    vals = vals[~np.isnan(vals)]
+    if vals.size == 0:
+        return np.nan, 0.0
+    mean = float(np.mean(vals))
+    if vals.size == 1:
+        return mean, 0.0
+    se = float(np.std(vals, ddof=1) / np.sqrt(vals.size))
+    return mean, t_multiplier(vals.size) * se
+
+
+def add_panel_label(ax: plt.Axes, label: str) -> None:
+    ax.text(-0.12, 1.05, label, transform=ax.transAxes, fontweight="bold", fontsize=15)
+
+
+def bar_with_points(ax: plt.Axes, df: pd.DataFrame, metric: str, ylabel: str, order: List[str], colors: Dict[str, str]) -> None:
+    means = []
+    cis = []
+    counts = []
+    for agent in order:
+        subset = df.loc[df["agent_label"] == agent, metric].dropna()
+        mean, ci = mean_and_ci(subset.values)
+        means.append(mean)
+        cis.append(ci)
+        counts.append(len(subset))
+
+    x = np.arange(len(order))
+    ax.bar(x, means, yerr=cis, color=[colors[a] for a in order], alpha=0.85, capsize=6, width=0.6)
+
+    rng = np.random.default_rng(42)
+    for idx, agent in enumerate(order):
+        subset = df.loc[df["agent_label"] == agent, metric].dropna()
+        if subset.empty:
+            continue
+        jitter = rng.uniform(-0.15, 0.15, size=len(subset))
         ax.scatter(
-            row.total_turns,
-            row.final_score,
-            color=color,
-            edgecolor="black",
-            s=80,
-            marker="o" if filled else "x",
-            label=row.agent_label,
+            np.full(len(subset), x[idx]) + jitter,
+            subset,
+            color="black",
+            s=35,
+            linewidth=0.3,
+            alpha=0.8,
+            zorder=5,
         )
 
-    handles, labels = ax.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))
-    ax.legend(unique.values(), unique.keys(), title="Agent", loc="lower right")
-    ax.axhline(threshold, color="gray", linestyle="--", linewidth=1)
-    ax.set_xlabel("Total turns")
-    ax.set_ylabel("Final score")
-    ax.set_ylim(0, 2.05)
-    ax.set_title("Final score vs. conversation length")
-    ax.grid(alpha=0.2)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
+    ax.set_xticks(x)
+    ax.set_xticklabels([AGENT_DISPLAY[a] for a in order], rotation=12, ha="right")
+    ax.set_ylabel(ylabel)
+    ax.grid(axis="y", alpha=0.2)
+    ax.set_axisbelow(True)
+    return counts
+
+
+def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, threshold: float, out_dir: Path, dpi: int) -> None:
+    order = list(AGENT_DISPLAY.keys())
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+    counts_turns = bar_with_points(
+        axes[0, 0],
+        summary_df,
+        metric="success_turn",
+        ylabel="Turns to success",
+        order=order,
+        colors=OKABE_ITO,
+    )
+    axes[0, 0].set_ylim(bottom=0.5)
+    add_panel_label(axes[0, 0], "A")
+
+    bar_with_points(
+        axes[0, 1],
+        summary_df,
+        metric="success_minutes",
+        ylabel="Minutes to success",
+        order=order,
+        colors=OKABE_ITO,
+    )
+    axes[0, 1].set_ylim(bottom=0)
+    add_panel_label(axes[0, 1], "B")
+
+    bar_with_points(
+        axes[1, 0],
+        summary_df,
+        metric="final_score",
+        ylabel="Final judge score",
+        order=order,
+        colors=OKABE_ITO,
+    )
+    axes[1, 0].axhline(threshold, color="gray", linestyle="--", linewidth=1)
+    axes[1, 0].set_ylim(1.4, 2.05)
+    add_panel_label(axes[1, 0], "C")
+
+    traj_stats = (
+        trajectory_df.dropna(subset=["overall_score"])
+        .groupby(["agent_label", "turn_index"])["overall_score"]
+        .agg(["mean", "count", "std"])
+        .reset_index()
+    )
+    traj_stats["ci"] = traj_stats.apply(
+        lambda row: t_multiplier(int(row["count"])) * (row["std"] / np.sqrt(row["count"])) if row["count"] > 1 else 0.0,
+        axis=1,
+    )
+
+    ax_traj = axes[1, 1]
+    for agent in order:
+        stats = traj_stats.loc[traj_stats["agent_label"] == agent]
+        if stats.empty:
+            continue
+        ax_traj.plot(
+            stats["turn_index"],
+            stats["mean"],
+            color=OKABE_ITO[agent],
+            linewidth=2.5,
+            label=AGENT_DISPLAY[agent],
+        )
+        if stats["ci"].any():
+            ax_traj.fill_between(
+                stats["turn_index"],
+                stats["mean"] - stats["ci"],
+                stats["mean"] + stats["ci"],
+                color=OKABE_ITO[agent],
+                alpha=0.15,
+            )
+
+    ax_traj.axhline(threshold, color="gray", linestyle="--", linewidth=1)
+    ax_traj.set_xlabel("Turn index")
+    ax_traj.set_ylabel("Overall judge score (mean ± 95% CI)")
+    ax_traj.set_ylim(1.4, 2.05)
+    ax_traj.set_xlim(left=1)
+    ax_traj.grid(alpha=0.2)
+    ax_traj.legend(loc="lower right")
+    add_panel_label(ax_traj, "D")
+
+    fig.suptitle("Multi-turn mentor quality and efficiency summary", y=0.99)
+    fig.text(
+        0.01,
+        0.01,
+        "Error bars show 95% CI; dots indicate individual scenarios (n=5 per agent).",
+        fontsize=10,
+    )
+    fig.tight_layout(rect=[0, 0.03, 1, 0.97])
+
+    png_path = out_dir / "multi_turn_efficiency_panel.png"
+    pdf_path = out_dir / "multi_turn_efficiency_panel.pdf"
+    fig.savefig(png_path, dpi=dpi)
+    fig.savefig(pdf_path)
     plt.close(fig)
 
 
-def time_to_success_plots(
-    output_path: Path,
-    rows: Iterable[ConversationSummaryRow],
-    agent_colors: Dict[str, str],
-) -> None:
-    data_turns: Dict[str, List[float]] = {}
-    data_elapsed: Dict[str, List[float]] = {}
-    for row in rows:
-        if row.success_turn is not None:
-            data_turns.setdefault(row.agent_label, []).append(row.success_turn)
-        if row.success_elapsed_seconds is not None:
-            data_elapsed.setdefault(row.agent_label, []).append(row.success_elapsed_seconds)
+def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi: int) -> None:
+    scenarios = sorted(turn_df["scenario_display"].unique())
+    num = len(scenarios)
+    cols = 3
+    rows = int(np.ceil(num / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(14, 6.5), sharey=True)
+    axes = np.array(axes).reshape(rows, cols)
 
-    agents = list(agent_colors.keys())
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=False)
+    for idx, scenario in enumerate(scenarios):
+        ax = axes[idx // cols, idx % cols]
+        subset = turn_df.loc[turn_df["scenario_display"] == scenario]
+        for agent, group in subset.groupby("agent_label"):
+            ax.plot(
+                group["turn_index"],
+                group["overall_score"],
+                marker="o",
+                linewidth=2,
+                markersize=5,
+                color=OKABE_ITO[agent],
+                label=AGENT_DISPLAY[agent],
+            )
+            success_turns = group.loc[group["success_at_turn"], "turn_index"]
+            if not success_turns.empty:
+                first_turn = success_turns.iloc[0]
+                score = float(group.loc[group["turn_index"] == first_turn, "overall_score"].iloc[0])
+                ax.scatter(
+                    first_turn,
+                    score,
+                    color="white",
+                    edgecolor=OKABE_ITO[agent],
+                    s=90,
+                    linewidth=1.5,
+                    marker="o",
+                    zorder=5,
+                )
+        ax.axhline(threshold, color="gray", linestyle="--", linewidth=1)
+        ax.set_title(scenario)
+        ax.set_xlabel("Turn index")
+        ax.set_ylim(1.4, 2.05)
+        ax.set_xlim(left=1)
+        ax.grid(alpha=0.2)
+        if idx % cols == 0:
+            ax.set_ylabel("Judge score")
 
-    # Success turns boxplot + strip overlay
-    turn_data = [data_turns.get(agent, []) for agent in agents]
-    axes[0].boxplot(turn_data, tick_labels=agents, patch_artist=True)
-    for idx, agent in enumerate(agents, start=1):
-        vals = data_turns.get(agent, [])
-        if not vals:
-            continue
-        axes[0].scatter(
-            [idx] * len(vals),
-            vals,
-            color=agent_colors[agent],
-            edgecolor="black",
-            s=50,
-            zorder=3,
-        )
-    axes[0].set_title("Success turn distribution")
-    axes[0].set_ylabel("Turn index")
-    axes[0].grid(alpha=0.2)
+    for empty_idx in range(num, rows * cols):
+        axes[empty_idx // cols, empty_idx % cols].axis("off")
 
-    # Success elapsed seconds boxplot + strip overlay
-    elapsed_data = [data_elapsed.get(agent, []) for agent in agents]
-    axes[1].boxplot(elapsed_data, tick_labels=agents, patch_artist=True)
-    for idx, agent in enumerate(agents, start=1):
-        vals = data_elapsed.get(agent, [])
-        if not vals:
-            continue
-        axes[1].scatter(
-            [idx] * len(vals),
-            vals,
-            color=agent_colors[agent],
-            edgecolor="black",
-            s=50,
-            zorder=3,
-        )
-    axes[1].set_title("Success time distribution")
-    axes[1].set_ylabel("Seconds")
-    axes[1].grid(alpha=0.2)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(AGENT_DISPLAY))
+    fig.text(0.01, 0.01, "Hollow markers denote first success turn (score ≥ threshold).", fontsize=10)
+    fig.suptitle("Per-scenario multi-turn trajectories", y=0.99)
+    fig.tight_layout(rect=[0, 0.05, 1, 0.97])
 
-    fig.suptitle("Time-to-success by agent")
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.88)
-    fig.savefig(output_path, dpi=150)
+    png_path = out_dir / "multi_turn_scenarios_faceted.png"
+    pdf_path = out_dir / "multi_turn_scenarios_faceted.pdf"
+    fig.savefig(png_path, dpi=dpi)
+    fig.savefig(pdf_path)
     plt.close(fig)
 
 
 def main() -> None:
     args = parse_args()
-    scoring_dir: Path = args.scoring_dir
+    scoring_dir = args.scoring_dir
     plots_dir = scoring_dir / "plots"
     ensure_output_dir(plots_dir)
 
-    summary_rows = load_summary_rows(scoring_dir / "summary_conversations.csv")
-    turns_by_key = load_turns(scoring_dir / "scores")
+    summary_df = load_summary_dataframe(scoring_dir / "summary_conversations.csv")
+    turn_df = load_turn_dataframe(scoring_dir / "scores")
 
-    agent_colors = {
-        "multi_turn_eval_mentor": "#1b9e77",
-        "multi_turn_eval_baseline_sonnet": "#d95f02",
-        "multi_turn_eval_baselines_gpt5": "#7570b3",
-    }
-
-    scenario_growth_plots(plots_dir, args.threshold, turns_by_key, agent_colors)
-
-    final_score_vs_turns(
-        plots_dir / "final_score_vs_turns.png",
-        args.threshold,
-        summary_rows,
-        agent_colors,
-    )
-
-    time_to_success_plots(
-        plots_dir / "time_to_success.png",
-        summary_rows,
-        agent_colors,
-    )
+    efficiency_panel(summary_df, turn_df, args.threshold, plots_dir, args.dpi)
+    facet_scenarios(turn_df, args.threshold, plots_dir, args.dpi)
 
 
 if __name__ == "__main__":
