@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
+from math import comb
 from pathlib import Path
-from typing import Dict, List, Optional
+from statistics import NormalDist
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,6 +26,21 @@ class PairwiseConfig:
     slug: str
     summary_dir: str
     label: str
+
+
+@dataclass
+class ComparisonStats:
+    mentor_wins: int
+    baseline_wins: int
+    ties: int
+    total: int
+    mentor_pct: float
+    baseline_pct: float
+    ties_pct: float
+    ci_low: float
+    ci_high: float
+    p_value: float
+    significance_marker: str = ""
 
 
 PAIRWISE_BASELINES: Dict[str, PairwiseConfig] = {
@@ -52,6 +69,17 @@ COLORS = {
     "gpt": "#E69F00",         # Orange - warm, distinct from blue
     "claude": "#CC79A7",      # Reddish purple - excellent contrast with both
     "ties": "#999999",        # Neutral gray
+}
+
+MENTOR_MODEL_LABEL = "Mentor (Kimi-k2-0905)"
+
+STAGE_DEFINITIONS: Dict[str, str] = {
+    "A": "Pre-Idea",
+    "B": "Idea",
+    "C": "Research Plan",
+    "D": "First Draft",
+    "E": "Second Draft",
+    "F": "Final Draft",
 }
 
 # Alternative option (also colorblind safe):
@@ -264,9 +292,12 @@ def compute_expert_absolute_wins(base_path: Path) -> tuple[Dict[str, pd.DataFram
             for scores in prompt_scores.values():
                 mentor_score = scores.get("Mentor")
                 baseline_score = scores.get(baseline_label)
-                if mentor_score is None or baseline_score is None:
+                if mentor_score is None and baseline_score is None:
                     continue
                 total += 1
+                if mentor_score is None or baseline_score is None:
+                    ties += 1
+                    continue
                 diff = mentor_score - baseline_score
                 if abs(diff) <= 1e-6:
                     ties += 1
@@ -300,6 +331,33 @@ def compute_expert_absolute_wins(base_path: Path) -> tuple[Dict[str, pd.DataFram
     return dataframes, sorted(set(missing_stages))
 
 
+def wilson_interval(successes: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
+    """Compute Wilson score interval for a binomial proportion."""
+    if total == 0:
+        return 0.0, 0.0
+    z = NormalDist().inv_cdf(1 - (1 - confidence) / 2)
+    phat = successes / total
+    denominator = 1 + (z**2) / total
+    centre = phat + (z**2) / (2 * total)
+    margin = z * ((phat * (1 - phat) / total) + (z**2) / (4 * total**2)) ** 0.5
+    lower = (centre - margin) / denominator
+    upper = (centre + margin) / denominator
+    return max(0.0, lower), min(1.0, upper)
+
+
+def binomial_test_two_sided(successes: int, total: int, prob: float = 0.5) -> float:
+    """Exact two-sided binomial test without SciPy dependency."""
+    if total == 0:
+        return float("nan")
+    pmf_observed = comb(total, successes) * (prob ** successes) * ((1 - prob) ** (total - successes))
+    p_value = 0.0
+    for k in range(total + 1):
+        pmf = comb(total, k) * (prob ** k) * ((1 - prob) ** (total - k))
+        if pmf <= pmf_observed + 1e-12:
+            p_value += pmf
+    return min(1.0, p_value)
+
+
 def save_figure(fig: plt.Figure, output_dir: Path, base_name: str) -> List[Path]:
     """Save figure in multiple formats with proper settings."""
     paths: List[Path] = []
@@ -320,55 +378,102 @@ def save_figure(fig: plt.Figure, output_dir: Path, base_name: str) -> List[Path]
 
 
 def plot_pairwise_results(
-    results: Dict[str, pd.DataFrame], 
-    output_dir: Path, 
-    base_name: str = "expert_pairwise_stacked"
-) -> List[Path]:
-    """
-    Create publication-quality stacked bar charts for pairwise comparisons.
-    
-    IMPROVEMENTS:
-    - Uniform bar widths
-    - Sample sizes in stage labels
-    - Better color contrast
-    - Improved text sizing and positioning
-    """
+    results: Dict[str, pd.DataFrame],
+    output_dir: Path,
+    base_name: str = "expert_pairwise_stacked",
+) -> Tuple[List[Path], Dict[str, ComparisonStats]]:
+    """Create publication-quality stacked bar charts for pairwise comparisons."""
     configure_style()
     num_panels = len(results)
-    fig, axes = plt.subplots(1, num_panels, figsize=(5.5 * num_panels, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, num_panels, figsize=(5.4 * num_panels, 4.6), sharey=True)
     if num_panels == 1:
         axes = [axes]
-    
+
+    summary_stats: Dict[str, ComparisonStats] = {}
+    legend_entries: Dict[str, Rectangle] = {}
+
     for ax, (key, df) in zip(axes, results.items()):
         baseline_label = next(col for col in df.columns if col not in {"mentor_wins", "ties", "total"})
         stage_df = df.drop(index="Total") if "Total" in df.index else df
+        if "Total" in df.index:
+            overall_row = df.loc["Total"].copy()
+            overall_row.name = "Overall"
+            stage_df = pd.concat([stage_df, overall_row.to_frame().T])
+
         stages = stage_df.index.tolist()
         totals = stage_df["total"].to_numpy()
-        
-        # Create stage labels with sample sizes
-        stage_labels = [f"{s}\n($n$={int(n)})" for s, n in zip(stages, totals)]
-        
-        # Calculate percentages
+
+        # Stage labels with sample sizes
+        stage_labels: List[str] = []
+        for s, n in zip(stages, totals):
+            stage_labels.append(f"{s}\n($n$={int(n)})")
+
         mentor_pct = (stage_df["mentor_wins"].to_numpy() / totals) * 100
         baseline_pct = (stage_df[baseline_label].to_numpy() / totals) * 100
         ties_pct = (stage_df["ties"].to_numpy() / totals) * 100
-        
-        # IMPROVED: Uniform bar width
+
+        # Normalize percentages to avoid rounding drift
+        total_pct = mentor_pct + baseline_pct + ties_pct
+        adjustment = 100 - total_pct
+        for idx, adj in enumerate(adjustment):
+            if abs(adj) > 0.01:
+                segments = [mentor_pct[idx], baseline_pct[idx], ties_pct[idx]]
+                max_index = int(np.argmax(segments))
+                if max_index == 0:
+                    mentor_pct[idx] += adj
+                elif max_index == 1:
+                    baseline_pct[idx] += adj
+                else:
+                    ties_pct[idx] += adj
+
+        if "Overall" in stage_df.index:
+            overall_counts = stage_df.loc["Overall"]
+            mentor_total = int(overall_counts["mentor_wins"])
+            baseline_total = int(overall_counts[baseline_label])
+            ties_total = int(overall_counts["ties"])
+            total_comparisons = int(overall_counts["total"])
+            mentor_share = (mentor_total / total_comparisons) * 100 if total_comparisons else 0.0
+            baseline_share = (baseline_total / total_comparisons) * 100 if total_comparisons else 0.0
+            ties_share = (ties_total / total_comparisons) * 100 if total_comparisons else 0.0
+            ci_low, ci_high = wilson_interval(mentor_total, total_comparisons)
+            p_value = binomial_test_two_sided(mentor_total, total_comparisons)
+            if p_value < 0.001:
+                marker = "***"
+            elif p_value < 0.01:
+                marker = "**"
+            elif p_value < 0.05:
+                marker = "*"
+            else:
+                marker = ""
+            summary_stats[key] = ComparisonStats(
+                mentor_wins=mentor_total,
+                baseline_wins=baseline_total,
+                ties=ties_total,
+                total=total_comparisons,
+                mentor_pct=mentor_share,
+                baseline_pct=baseline_share,
+                ties_pct=ties_share,
+                ci_low=ci_low * 100,
+                ci_high=ci_high * 100,
+                p_value=p_value,
+                significance_marker=marker,
+            )
+
         bar_width = 0.65
         x_pos = np.arange(len(stages))
-        
         ax.set_axisbelow(True)
-        
-        # Plot bars with consistent width
+
         mentor_bars = ax.bar(
             x_pos,
             mentor_pct,
             width=bar_width,
             color=COLORS["mentor"],
             label="Mentor Wins",
-            edgecolor="white",
-            linewidth=1.0,
+            edgecolor="#f7f7f7",
+            linewidth=0.8,
         )
+
+        baseline_hatch = "///" if key == "gpt5" else "--"
         baseline_bars = ax.bar(
             x_pos,
             baseline_pct,
@@ -376,11 +481,13 @@ def plot_pairwise_results(
             bottom=mentor_pct,
             color=COLORS["gpt" if key == "gpt5" else "claude"],
             label=baseline_label,
-            edgecolor="white",
-            linewidth=1.0,
+            edgecolor="#f4f4f4",
+            linewidth=0.7,
+            hatch=baseline_hatch,
+            alpha=0.5,
         )
-        
-        # Only show ties if they exist
+
+        ties_bars = None
         if ties_pct.sum() > 0:
             ties_bars = ax.bar(
                 x_pos,
@@ -389,83 +496,141 @@ def plot_pairwise_results(
                 bottom=mentor_pct + baseline_pct,
                 color=COLORS["ties"],
                 label="Ties",
-                edgecolor="white",
-                linewidth=1.0,
+                edgecolor="#f1f1f1",
+                linewidth=0.7,
+                hatch="..",
+                alpha=0.35,
             )
-        
-        # Set labels and formatting
-        ax.set_title(f"Mentor vs {baseline_label}", pad=10)
+
+        ax.set_title(f"{MENTOR_MODEL_LABEL} vs. {baseline_label}", pad=10)
         ax.set_xlabel("Stage", labelpad=8)
         ax.set_xticks(x_pos)
         ax.set_xticklabels(stage_labels)
-        ax.set_ylim(0, 100)
+        ax.set_ylim(0, 105)
         ax.set_yticks(range(0, 101, 20))
-        
-        # IMPROVED: Horizontal gridlines only
         ax.grid(axis="y", alpha=0.6, zorder=0)
-        
-        # Add percentage labels - improved threshold
-        for bars, values in [(mentor_bars, mentor_pct), (baseline_bars, baseline_pct)]:
+
+        def format_percentage(val: float) -> str:
+            if val >= 10:
+                return f"{val:.0f}%"
+            if val >= 1:
+                return f"{val:.1f}%"
+            return f"{val:.2f}%"
+
+        def add_labels(bars, values, color, allow_outside=False, offset=3.2, min_value: float = 4.0):
             for bar, val in zip(bars, values):
+                if val < min_value:
+                    continue  # skip very small segments to avoid clutter/overlap
                 height = bar.get_height()
-                if height >= 8:  # Only label if segment is large enough
+                if height <= 0:
+                    continue
+                if allow_outside and height < 20:
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        min(103, bar.get_y() + height + offset),
+                        format_percentage(val),
+                        ha="center",
+                        va="bottom",
+                        fontsize=9,
+                        fontweight="semibold",
+                        color="#333333",
+                    )
+                elif height >= 12:
                     ax.text(
                         bar.get_x() + bar.get_width() / 2,
                         bar.get_y() + height / 2,
-                        f"{val:.0f}%",
+                        format_percentage(val),
                         ha="center",
                         va="center",
                         fontsize=9,
                         fontweight="semibold",
-                        color="white",
+                        color=color,
                     )
-        
-        # Add overall statistics - improved positioning
-        if "Total" in df.index:
-            total_counts = df.loc["Total", ["mentor_wins", baseline_label, "ties", "total"]]
-            total_pct = (total_counts[["mentor_wins", baseline_label, "ties"]] / total_counts["total"]) * 100
-            
-            # Only show ties if > 0
-            ties_line = f"\nTies {int(total_counts['ties'])} / {total_pct['ties']:.1f}%" if total_counts['ties'] > 0 else ""
-            
-            summary_text = (
-                f"Overall:\n"
-                f"Mentor {int(total_counts['mentor_wins'])} / {total_pct['mentor_wins']:.1f}%\n"
-                f"{baseline_label.split()[0]} {int(total_counts[baseline_label])} / {total_pct[baseline_label]:.1f}%"
-                f"{ties_line}"
+
+        add_labels(mentor_bars, mentor_pct, "white")
+        add_labels(baseline_bars, baseline_pct, "#222222", allow_outside=True, offset=4.0)
+        if ties_bars is not None:
+            add_labels(ties_bars, ties_pct, "#222222", allow_outside=True, offset=4.0, min_value=0.0)
+
+        if "Overall" in stage_df.index and key in summary_stats:
+            overall_idx = stages.index("Overall")
+            stats = summary_stats[key]
+            mentor_height = mentor_pct[overall_idx]
+            error_lower = mentor_height - stats.ci_low
+            error_upper = stats.ci_high - mentor_height
+            ax.errorbar(
+                x_pos[overall_idx],
+                mentor_height,
+                yerr=[[error_lower], [error_upper]],
+                fmt="o",
+                color="#1b1b1b",
+                capsize=4,
+                linewidth=1.1,
+                markersize=4.5,
+                zorder=5,
             )
-            ax.text(
-                0.97,
-                0.03,
-                summary_text,
-                transform=ax.transAxes,
-                ha="right",
-                va="bottom",
-                fontsize=8.5,
-                bbox={
-                    "boxstyle": "round,pad=0.4",
-                    "facecolor": "white",
-                    "edgecolor": "#CCCCCC",
-                    "linewidth": 0.8,
-                },
+            if stats.significance_marker:
+                ax.text(
+                    x_pos[overall_idx],
+                    min(104.5, mentor_height + max(error_upper, 2) + 4),
+                    stats.significance_marker,
+                    ha="center",
+                    va="bottom",
+                    fontsize=12,
+                    fontweight="bold",
+                    color="#2c2c2c",
+                    zorder=6,
+                )
+
+        if "Mentor Wins" not in legend_entries:
+            legend_entries["Mentor Wins"] = Rectangle((0, 0), 1, 1, facecolor=COLORS["mentor"], edgecolor="white", label="Mentor Wins")
+        if baseline_label not in legend_entries:
+            legend_entries[baseline_label] = Rectangle(
+                (0, 0), 1, 1,
+                facecolor=COLORS["gpt" if key == "gpt5" else "claude"],
+                edgecolor="white",
+                hatch=baseline_hatch,
+                label=baseline_label,
             )
-    
-    # Y-axis label only on leftmost plot
-    axes[0].set_ylabel("Share of Pairwise Comparisons (%)", labelpad=8)
-    
-    # Legend at top
-    handles, labels = axes[0].get_legend_handles_labels()
+        if ties_bars is not None and "Ties" not in legend_entries:
+            legend_entries["Ties"] = Rectangle((0, 0), 1, 1, facecolor=COLORS["ties"], edgecolor="white", hatch="..", label="Ties")
+
+    legend_handles = [legend_entries[k] for k in legend_entries]
     fig.legend(
-        handles, 
-        labels, 
-        loc="upper center", 
-        ncol=3, 
+        legend_handles,
+        [handle.get_label() for handle in legend_handles],
+        loc="lower center",
+        ncol=len(legend_handles),
         frameon=False,
-        bbox_to_anchor=(0.5, 0.98),
+        bbox_to_anchor=(0.5, -0.02),
+        fontsize=9,
     )
-    
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
-    return save_figure(fig, output_dir, base_name)
+
+    axes[0].set_ylabel("Proportion of Comparisons (%)", labelpad=8)
+
+    caption_lines = [
+        f"Writing stages (n=15 prompts each): {', '.join(f'{k} = {v}' for k, v in STAGE_DEFINITIONS.items())}.",
+        "Ties are shown explicitly and excluded from win-rate percentages.",
+        "Error bars on Overall show 95% Wilson confidence intervals; ** p < 0.01, *** p < 0.001.",
+        "Pairwise judge preferences can diverge from absolute scores since comparisons emphasize holistic relative quality.",
+    ]
+
+    caption_y = -0.12
+    caption_line_height = 0.033
+    for line in caption_lines:
+        fig.text(
+            0.5,
+            caption_y,
+            line,
+            ha="center",
+            va="center",
+            fontsize=8.1,
+            color="#4a4a4a",
+        )
+        caption_y -= caption_line_height
+
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    return save_figure(fig, output_dir, base_name), summary_stats
 
 
 def plot_student_trends(
@@ -602,12 +767,13 @@ def main() -> None:
     absolute_frames, expert_missing = compute_expert_absolute_wins(analysis_root)
 
     # Generate figures
-    pairwise_paths = plot_pairwise_results(pairwise_frames, output_dir)
+    pairwise_paths, pairwise_stats = plot_pairwise_results(pairwise_frames, output_dir)
     student_trend_paths = plot_student_trends(student_means, student_stderr, output_dir, skipped_stages)
 
     absolute_paths: List[Path] = []
+    absolute_stats: Dict[str, ComparisonStats] = {}
     if absolute_frames:
-        absolute_paths = plot_pairwise_results(
+        absolute_paths, absolute_stats = plot_pairwise_results(
             absolute_frames, output_dir, base_name="expert_absolute_wins"
         )
     
@@ -641,6 +807,19 @@ def main() -> None:
         print(f"\n⚠ Skipped student stages (missing data): {', '.join(skipped_stages)}")
     if expert_missing:
         print(f"⚠ Skipped expert stages (missing data): {', '.join(expert_missing)}")
+
+    if absolute_stats:
+        print("\nSummary statistics (single-turn absolute comparisons):")
+        for key, stats in absolute_stats.items():
+            label = "GPT-5" if key == "gpt5" else "Claude Sonnet 4.5"
+            marker_text = f" ({stats.significance_marker})" if stats.significance_marker else ""
+            print(
+                f"  {MENTOR_MODEL_LABEL} vs {label}: "
+                f"{stats.mentor_wins}/{stats.total} mentor wins "
+                f"({stats.mentor_pct:.1f}%), {stats.baseline_wins} baseline wins ({stats.baseline_pct:.1f}%), "
+                f"{stats.ties} ties ({stats.ties_pct:.1f}%), "
+                f"95% CI [{stats.ci_low:.1f}, {stats.ci_high:.1f}], p={stats.p_value:.3g}{marker_text}"
+            )
     
     print("\n" + "="*60)
     print("PUBLICATION CHECKLIST:")
