@@ -577,8 +577,11 @@ def plot_pairwise_results(
         if "Overall" in stage_df.index and key in summary_stats:
             overall_idx = stages.index("Overall")
             stats = summary_stats[key]
+
             mentor_height = mentor_pct[overall_idx]
             baseline_height = baseline_pct[overall_idx]
+            ties_height = ties_pct[overall_idx]
+
             error_lower = mentor_height - stats.ci_low
             error_upper = stats.ci_high - mentor_height
             ax.errorbar(
@@ -592,18 +595,29 @@ def plot_pairwise_results(
                 markersize=4.5,
                 zorder=5,
             )
+
             if stats.significance_marker:
-                star_anchor = mentor_height + baseline_height
+                baseline_top = mentor_height + baseline_height
+
+                if ties_height <= 2.5:
+                    star_y = baseline_top - 1.2
+                elif ties_height <= 6:
+                    star_y = baseline_top + 0.8
+                else:
+                    star_y = baseline_top + min(2.5, 0.4 * ties_height)
+
+                star_y = max(mentor_height + 2, min(104.5, star_y))
+
                 ax.text(
                     x_pos[overall_idx],
-                    min(104.5, star_anchor + 2.5),
+                    star_y,
                     stats.significance_marker,
                     ha="center",
                     va="bottom",
                     fontsize=12,
                     fontweight="bold",
                     color="#2c2c2c",
-                    zorder=6,
+                    zorder=7,
                     clip_on=False,
                 )
 
