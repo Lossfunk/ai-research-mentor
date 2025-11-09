@@ -323,7 +323,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
             label_y,
             AGENT_CAPTION[agent],
             color=OKABE_ITO[agent],
-            fontsize=9,
+            fontsize=11,
             fontweight="semibold",
             va="center",
             ha="left",
@@ -343,14 +343,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
     add_panel_label(ax_traj, "D")
 
     fig.suptitle("Multi-turn conversation quality and efficiency", y=0.99)
-    fig.tight_layout(rect=[0, 0.12, 1, 0.97])
-    fig.text(
-        0.5,
-        0.04,
-        "Panels A–C: dots mark individual scenarios (n=5 per agent), bars show group means ±95% CI; success threshold (score ≥ 1.6) denoted by dashed gray line.\nPanel D: mean score trajectory across scenarios.",
-        fontsize=9,
-        ha="center",
-    )
+    fig.tight_layout(rect=[0, 0.06, 1, 0.97])
 
     png_path = out_dir / "multi_turn_efficiency_panel.png"
     pdf_path = out_dir / "multi_turn_efficiency_panel.pdf"
@@ -410,15 +403,16 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
         axes[empty_idx // cols, empty_idx % cols].axis("off")
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=len(AGENT_DISPLAY))
-    fig.tight_layout(rect=[0, 0.22, 1, 0.97])
-    fig.text(
-        0.5,
-        0.15,
-        "Each panel shows one scenario. Lines correspond to Mentor (solid), Claude baseline (dashed), and GPT-5 baseline (dash-dot). Hollow markers indicate the first turn where score ≥ 1.6.",
-        fontsize=9,
-        ha="center",
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=len(AGENT_DISPLAY),
+        fontsize=12,
+        handlelength=2.4,
+        columnspacing=1.4,
     )
+    fig.tight_layout(rect=[0, 0.12, 1, 0.96])
     fig.suptitle("Per-scenario multi-turn trajectories", y=0.99)
 
     png_path = out_dir / "multi_turn_scenarios_faceted.png"

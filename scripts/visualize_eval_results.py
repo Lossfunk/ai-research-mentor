@@ -619,33 +619,14 @@ def plot_pairwise_results(
         ncol=len(legend_handles),
         frameon=False,
         bbox_to_anchor=(0.5, -0.055),
-        fontsize=9,
+        fontsize=11,
+        handlelength=2.0,
+        columnspacing=1.2,
     )
 
     axes[0].set_ylabel("Proportion of Comparisons (%)", labelpad=8)
-
-    caption_lines = [
-        f"Writing stages (n=15 prompts each): {', '.join(f'{k} = {v}' for k, v in STAGE_DEFINITIONS.items())}.",
-        "Ties are shown explicitly and excluded from win-rate percentages. Error bars on Overall show 95% Wilson confidence intervals.",
-        "Pairwise judge preferences can diverge from absolute scores since comparisons emphasize holistic relative quality.",
-    ]
-
-    caption_y = -0.14
-    caption_line_height = 0.033
-    for line in caption_lines:
-        fig.text(
-            0.5,
-            caption_y,
-            line,
-            ha="center",
-            va="center",
-            fontsize=8.1,
-            color="#4a4a4a",
-        )
-        caption_y -= caption_line_height
-
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
-    fig.subplots_adjust(bottom=0.27)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.95))
+    fig.subplots_adjust(bottom=0.18)
     return save_figure(fig, output_dir, base_name), summary_stats
 
 
