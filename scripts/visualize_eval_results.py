@@ -19,6 +19,7 @@ from matplotlib.patches import Rectangle
 
 BASE_DIR = Path(__file__).resolve().parents[1] / "evals-for-papers" / "results" / "analysis_reports"
 STAGE_FOLDERS = [f"stage_{suffix}" for suffix in "abcdef"]
+PROMPTS_PER_STAGE = 15
 
 
 @dataclass
@@ -167,14 +168,21 @@ def load_pairwise_stage_results(base_path: Path, baseline: PairwiseConfig) -> pd
         )
         if not summary_path.exists():
             continue  # Skip missing stages gracefully
-            
+
         with summary_path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
+
         mentor_wins = data["wins"].get("mentor_manual", 0)
         baseline_key = next((k for k in data["wins"].keys() if k != "mentor_manual"), None)
         baseline_wins = data["wins"].get(baseline_key or "baseline", 0)
         ties = data.get("ties", 0)
         total = data.get("total_comparisons", mentor_wins + baseline_wins + ties)
+
+        if total < PROMPTS_PER_STAGE:
+            missing = PROMPTS_PER_STAGE - total
+            ties += missing
+            total = PROMPTS_PER_STAGE
+
         records.append(
             {
                 "stage": stage_label,
@@ -184,10 +192,10 @@ def load_pairwise_stage_results(base_path: Path, baseline: PairwiseConfig) -> pd
                 "total": total,
             }
         )
-    
+
     if not records:
         raise ValueError(f"No data found for {baseline.label}")
-        
+
     df = pd.DataFrame(records).set_index("stage")
     totals = df[["mentor_wins", baseline.label, "ties", "total"]].sum()
     totals.name = "Total"
@@ -618,8 +626,7 @@ def plot_pairwise_results(
 
     caption_lines = [
         f"Writing stages (n=15 prompts each): {', '.join(f'{k} = {v}' for k, v in STAGE_DEFINITIONS.items())}.",
-        "Ties are shown explicitly and excluded from win-rate percentages.",
-        "Error bars on Overall show 95% Wilson confidence intervals.",
+        "Ties are shown explicitly and excluded from win-rate percentages. Error bars on Overall show 95% Wilson confidence intervals.",
         "Pairwise judge preferences can diverge from absolute scores since comparisons emphasize holistic relative quality.",
     ]
 
