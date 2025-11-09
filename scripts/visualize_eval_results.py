@@ -460,14 +460,7 @@ def plot_pairwise_results(
             ties_share = (ties_total / total_comparisons) * 100 if total_comparisons else 0.0
             ci_low, ci_high = wilson_interval(mentor_total, total_comparisons)
             p_value = binomial_test_two_sided(mentor_total, total_comparisons)
-            if p_value < 0.001:
-                marker = "***"
-            elif p_value < 0.01:
-                marker = "**"
-            elif p_value < 0.05:
-                marker = "*"
-            else:
-                marker = ""
+            marker = ""
             summary_stats[key] = ComparisonStats(
                 mentor_wins=mentor_total,
                 baseline_wins=baseline_total,
@@ -596,30 +589,6 @@ def plot_pairwise_results(
                 zorder=5,
             )
 
-            if stats.significance_marker:
-                baseline_top = mentor_height + baseline_height
-
-                if ties_height <= 2.5:
-                    star_y = baseline_top - 1.2
-                elif ties_height <= 6:
-                    star_y = baseline_top + 0.8
-                else:
-                    star_y = baseline_top + min(2.5, 0.4 * ties_height)
-
-                star_y = max(mentor_height + 2, min(104.5, star_y))
-
-                ax.text(
-                    x_pos[overall_idx],
-                    star_y,
-                    stats.significance_marker,
-                    ha="center",
-                    va="bottom",
-                    fontsize=12,
-                    fontweight="bold",
-                    color="#2c2c2c",
-                    zorder=7,
-                    clip_on=False,
-                )
 
         if "Mentor Wins" not in legend_entries:
             legend_entries["Mentor Wins"] = Rectangle((0, 0), 1, 1, facecolor=COLORS["mentor"], edgecolor="white", label="Mentor Wins")
@@ -650,7 +619,7 @@ def plot_pairwise_results(
     caption_lines = [
         f"Writing stages (n=15 prompts each): {', '.join(f'{k} = {v}' for k, v in STAGE_DEFINITIONS.items())}.",
         "Ties are shown explicitly and excluded from win-rate percentages.",
-        "Error bars on Overall show 95% Wilson confidence intervals; ** p < 0.01, *** p < 0.001.",
+        "Error bars on Overall show 95% Wilson confidence intervals.",
         "Pairwise judge preferences can diverge from absolute scores since comparisons emphasize holistic relative quality.",
     ]
 
