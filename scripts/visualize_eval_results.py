@@ -331,6 +331,29 @@ def compute_expert_absolute_wins(base_path: Path) -> tuple[Dict[str, pd.DataFram
     return dataframes, sorted(set(missing_stages))
 
 
+def integerize_triplets(
+    a: np.ndarray, b: np.ndarray, c: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Round three arrays of percentages so per-position sums equal 100."""
+    A, B, C = a.copy(), b.copy(), c.copy()
+    outA = np.zeros_like(A, dtype=int)
+    outB = np.zeros_like(B, dtype=int)
+    outC = np.zeros_like(C, dtype=int)
+
+    for i in range(len(A)):
+        parts = np.array([A[i], B[i], C[i]], dtype=float)
+        floors = np.floor(parts).astype(int)
+        remainder = 100 - floors.sum()
+        if remainder > 0:
+            fracs = parts - floors
+            order = np.argsort(-fracs)
+            for j in range(remainder):
+                floors[order[j]] += 1
+        outA[i], outB[i], outC[i] = floors
+
+    return outA, outB, outC
+
+
 def wilson_interval(successes: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
     """Compute Wilson score interval for a binomial proportion."""
     if total == 0:
@@ -463,6 +486,8 @@ def plot_pairwise_results(
         x_pos = np.arange(len(stages))
         ax.set_axisbelow(True)
 
+        mentor_lbl, baseline_lbl, ties_lbl = integerize_triplets(mentor_pct, baseline_pct, ties_pct)
+
         mentor_bars = ax.bar(
             x_pos,
             mentor_pct,
@@ -511,24 +536,19 @@ def plot_pairwise_results(
         ax.grid(axis="y", alpha=0.6, zorder=0)
 
         def format_percentage(val: float) -> str:
-            if val >= 10:
-                return f"{val:.0f}%"
-            if val >= 1:
-                return f"{val:.1f}%"
-            return f"{val:.2f}%"
+            return f"{int(round(val))}%"
 
-        def add_labels(bars, values, color, allow_outside=False, offset=3.2, min_value: float = 4.0):
-            for bar, val in zip(bars, values):
-                if val < min_value:
+        def add_labels(bars, heights, labels, color, allow_outside=False, offset=3.2, min_value: float = 4.0):
+            for bar, height, label in zip(bars, heights, labels):
+                if height < min_value:
                     continue  # skip very small segments to avoid clutter/overlap
-                height = bar.get_height()
                 if height <= 0:
                     continue
                 if allow_outside and height < 20:
                     ax.text(
                         bar.get_x() + bar.get_width() / 2,
                         min(103, bar.get_y() + height + offset),
-                        format_percentage(val),
+                        format_percentage(label),
                         ha="center",
                         va="bottom",
                         fontsize=9,
@@ -539,7 +559,7 @@ def plot_pairwise_results(
                     ax.text(
                         bar.get_x() + bar.get_width() / 2,
                         bar.get_y() + height / 2,
-                        format_percentage(val),
+                        format_percentage(label),
                         ha="center",
                         va="center",
                         fontsize=9,
@@ -547,10 +567,12 @@ def plot_pairwise_results(
                         color=color,
                     )
 
-        add_labels(mentor_bars, mentor_pct, "white")
-        add_labels(baseline_bars, baseline_pct, "#222222", allow_outside=True, offset=4.0)
+        add_labels(mentor_bars, mentor_pct, mentor_lbl, "white")
+        # Baseline labels stay INSIDE their segment to avoid colliding with the 'ties' segment above
+        add_labels(baseline_bars, baseline_pct, baseline_lbl, "#222222", allow_outside=False)
+        # Only the TOP (ties) segment is allowed to place labels outside
         if ties_bars is not None:
-            add_labels(ties_bars, ties_pct, "#222222", allow_outside=True, offset=4.0, min_value=0.0)
+            add_labels(ties_bars, ties_pct, ties_lbl, "#222222", allow_outside=True, offset=4.0, min_value=1.0)
 
         if "Overall" in stage_df.index and key in summary_stats:
             overall_idx = stages.index("Overall")
@@ -572,7 +594,7 @@ def plot_pairwise_results(
             if stats.significance_marker:
                 ax.text(
                     x_pos[overall_idx],
-                    min(104.5, mentor_height + max(error_upper, 2) + 4),
+                    min(104.5, mentor_height + max(error_upper, 2) + 6),
                     stats.significance_marker,
                     ha="center",
                     va="bottom",
