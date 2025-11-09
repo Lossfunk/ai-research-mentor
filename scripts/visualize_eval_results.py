@@ -578,6 +578,7 @@ def plot_pairwise_results(
             overall_idx = stages.index("Overall")
             stats = summary_stats[key]
             mentor_height = mentor_pct[overall_idx]
+            baseline_height = baseline_pct[overall_idx]
             error_lower = mentor_height - stats.ci_low
             error_upper = stats.ci_high - mentor_height
             ax.errorbar(
@@ -592,9 +593,10 @@ def plot_pairwise_results(
                 zorder=5,
             )
             if stats.significance_marker:
+                star_anchor = mentor_height + baseline_height
                 ax.text(
                     x_pos[overall_idx],
-                    min(104.5, mentor_height + max(error_upper, 2) + 6),
+                    min(104.5, star_anchor + 2.5),
                     stats.significance_marker,
                     ha="center",
                     va="bottom",
@@ -602,6 +604,7 @@ def plot_pairwise_results(
                     fontweight="bold",
                     color="#2c2c2c",
                     zorder=6,
+                    clip_on=False,
                 )
 
         if "Mentor Wins" not in legend_entries:
@@ -624,7 +627,7 @@ def plot_pairwise_results(
         loc="lower center",
         ncol=len(legend_handles),
         frameon=False,
-        bbox_to_anchor=(0.5, -0.02),
+        bbox_to_anchor=(0.5, -0.055),
         fontsize=9,
     )
 
@@ -637,7 +640,7 @@ def plot_pairwise_results(
         "Pairwise judge preferences can diverge from absolute scores since comparisons emphasize holistic relative quality.",
     ]
 
-    caption_y = -0.12
+    caption_y = -0.14
     caption_line_height = 0.033
     for line in caption_lines:
         fig.text(
@@ -652,6 +655,7 @@ def plot_pairwise_results(
         caption_y -= caption_line_height
 
     fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.subplots_adjust(bottom=0.27)
     return save_figure(fig, output_dir, base_name), summary_stats
 
 
