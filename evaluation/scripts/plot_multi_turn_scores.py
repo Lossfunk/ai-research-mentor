@@ -263,7 +263,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
         axes[1, 0],
         summary_df,
         metric="final_score",
-        ylabel="Final judge score",
+        ylabel="Final student-judge score (0–2)",
         order=order,
         colors=OKABE_ITO,
     )
@@ -332,7 +332,7 @@ def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, thre
 
     ax_traj.axhline(threshold, color="gray", linestyle="--", linewidth=1)
     ax_traj.set_xlabel("Turn index")
-    ax_traj.set_ylabel("Overall judge score (mean ± 95% CI)")
+    ax_traj.set_ylabel("Overall student-judge score (0–2; mean ± 95% CI)")
     ax_traj.set_ylim(1.5, 2.05)
     ax_traj.set_xlim(1, max_turn + 2.0)
     ax_traj.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
@@ -397,7 +397,7 @@ def facet_scenarios(turn_df: pd.DataFrame, threshold: float, out_dir: Path, dpi:
         ax.xaxis.grid(False)
         _remove_spines(ax)
         if idx % cols == 0:
-            ax.set_ylabel("Judge score")
+            ax.set_ylabel("Judge score (0–2)")
 
     for empty_idx in range(num, rows * cols):
         axes[empty_idx // cols, empty_idx % cols].axis("off")

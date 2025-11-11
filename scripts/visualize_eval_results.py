@@ -694,7 +694,7 @@ def plot_student_trends(
     
     ax.set_title("Student-Perceived Outcome Score by Stage", pad=12)
     ax.set_xlabel("Stage", labelpad=8)
-    ax.set_ylabel("Average Student Outcome Score", labelpad=8)
+    ax.set_ylabel("Average student-judge score (0–2)", labelpad=8)
     ax.set_xticks(x_pos)
     ax.set_xticklabels(stages)
     
