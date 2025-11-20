@@ -414,6 +414,7 @@ def plot_pairwise_results(
     base_name: str = "expert_pairwise_stacked",
 ) -> Tuple[List[Path], Dict[str, ComparisonStats]]:
     """Create publication-quality stacked bar charts for pairwise comparisons."""
+    # Configure global style, then selectively bump fonts for this figure only.
     configure_style()
     num_panels = len(results)
     fig, axes = plt.subplots(1, num_panels, figsize=(5.4 * num_panels, 4.6), sharey=True)
@@ -529,12 +530,14 @@ def plot_pairwise_results(
             )
 
         ax.set_title(f"{MENTOR_MODEL_LABEL} vs. {baseline_label}", pad=10)
-        ax.set_xlabel("Stage", labelpad=8)
+        # Slightly larger axis labels and tick labels for better legibility in print.
+        ax.set_xlabel("Stage", labelpad=8, fontsize=11)
         ax.set_xticks(x_pos)
         ax.set_xticklabels(stage_labels)
         ax.set_ylim(0, 105)
         ax.set_yticks(range(0, 101, 20))
         ax.grid(axis="y", alpha=0.6, zorder=0)
+        ax.tick_params(axis="both", labelsize=10)
 
         def format_percentage(val: float) -> str:
             return f"{int(round(val))}%"
@@ -619,12 +622,12 @@ def plot_pairwise_results(
         ncol=len(legend_handles),
         frameon=False,
         bbox_to_anchor=(0.5, -0.055),
-        fontsize=11,
+        fontsize=12,
         handlelength=2.0,
         columnspacing=1.2,
     )
 
-    axes[0].set_ylabel("Proportion of Comparisons (%)", labelpad=8)
+    axes[0].set_ylabel("Proportion of Comparisons (%)", labelpad=8, fontsize=12)
     fig.tight_layout(rect=(0, 0.02, 1, 0.95))
     fig.subplots_adjust(bottom=0.18)
     return save_figure(fig, output_dir, base_name), summary_stats
@@ -637,94 +640,72 @@ def plot_student_trends(
     skipped: List[str],
     base_name: str = "student_judge_trends",
 ) -> List[Path]:
-    """
-    Create publication-quality line plot with confidence intervals.
-    
-    IMPROVEMENTS:
-    - Added error bars (95% CI)
-    - Better grid styling
-    - Improved marker visibility
-    - Sample size annotations
-    """
+    """Render grouped bar charts with 95% confidence intervals for student outcomes."""
+
     configure_style()
-    
-    # Markers must be distinct in black & white
-    markers = {
-        "Mentor": "o",                          # Circle
-        "GPT-5 Baseline": "s",                  # Square
-        "Claude Sonnet 4.5 Baseline": "^"       # Triangle
-    }
-    
-    fig, ax = plt.subplots(figsize=(8, 5))
+
     stages = means_df.index.tolist()
-    x_pos = np.arange(len(stages))
-    
-    for label in means_df.columns:
+    models = list(means_df.columns)
+    num_stages = len(stages)
+    num_models = len(models)
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.2))
+
+    x_indices = np.arange(num_stages)
+    bar_width = 0.7 / max(num_models, 1)
+    offset_start = -bar_width * (num_models - 1) / 2
+
+    for idx, label in enumerate(models):
         color_key = "mentor" if label == "Mentor" else ("gpt" if "GPT-5" in label else "claude")
         means = means_df[label].to_numpy()
         stderr = stderr_df[label].to_numpy()
-        
-        # 95% confidence interval (1.96 * SE)
         ci = 1.96 * stderr
-        
-        # Plot line with markers
-        ax.plot(
-            x_pos,
+        x_positions = x_indices + offset_start + idx * bar_width
+
+        ax.bar(
+            x_positions,
             means,
-            marker=markers[label],
+            width=bar_width,
             color=COLORS[color_key],
-            linewidth=2.2,
-            markersize=8,
+            edgecolor="white",
+            linewidth=0.8,
+            alpha=0.9,
+            yerr=ci,
+            capsize=4,
             label=label,
-            markeredgewidth=0.5,
-            markeredgecolor="white",
             zorder=3,
         )
-        
-        # Add confidence interval as shaded region
-        ax.fill_between(
-            x_pos,
-            means - ci,
-            means + ci,
-            color=COLORS[color_key],
-            alpha=0.15,
-            linewidth=0,
-            zorder=1,
-        )
-    
+
     ax.set_title("Student-Perceived Outcome Score by Stage", pad=12)
     ax.set_xlabel("Stage", labelpad=8)
     ax.set_ylabel("Average student-judge score (0–2)", labelpad=8)
-    ax.set_xticks(x_pos)
+    ax.set_xticks(x_indices)
     ax.set_xticklabels(stages)
-    
-    # IMPROVED: Set sensible y-limits with padding
+
     y_min = max(1.0, means_df.min().min() - 0.1)
-    y_max = means_df.max().max() + 0.1
+    y_max = means_df.max().max() + 0.15
     ax.set_ylim(y_min, y_max)
-    
-    # IMPROVED: Horizontal grid only
-    ax.grid(True, axis="y", alpha=0.6, zorder=0)
-    
-    ax.legend(frameon=True, fancybox=False, edgecolor="#CCCCCC", loc="best")
-    
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
-    
-    # Add note about missing stages
+
+    ax.yaxis.grid(True, alpha=0.6, color="#BBBBBB", linewidth=0.6, zorder=0)
+    ax.xaxis.grid(False)
+
+    ax.legend(frameon=True, fancybox=False, edgecolor="#CCCCCC", loc="upper right")
+
+    fig.tight_layout(rect=(0, 0.06, 1, 0.98))
+
     if skipped:
         note = ", ".join(skipped)
         fig.text(
             0.5,
             0.02,
-            f"Note: Student judge data unavailable for stage(s): {note}. "
-            f"Error bands show 95% confidence intervals.",
+            f"Note: Student judge data unavailable for stage(s): {note}. Bars show mean ±95% CI.",
             ha="center",
             va="bottom",
             fontsize=8.5,
             color="#555555",
             style="italic",
         )
-    
+
     return save_figure(fig, output_dir, base_name)
 
 

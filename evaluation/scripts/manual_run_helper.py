@@ -4,9 +4,9 @@ from pathlib import Path
 
 
 STAGES = [
-    ("stage_a", "Orientation and idea shaping"),
-    ("stage_b", "Novelty and hypothesis evaluation"),
-    ("stage_c", "Research plan development"),
+    ("stage_a", "Pre idea"),
+    ("stage_b", "Idea"),
+    ("stage_c", "Research plan"),
 ]
 
 

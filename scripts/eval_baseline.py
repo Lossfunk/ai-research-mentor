@@ -9,7 +9,7 @@ Usage examples:
   # Run Stage A artifacts and judges with default label
   uv run python scripts/eval_baseline.py --stage stage_a \
       --judge openrouter:anthropic/claude-4-sonnet \
-      --judge openrouter:google/gemini-2.5-flash \
+      --judge openrouter:google/gemini-2.5-pro \
       --annotator auto --label baseline --force
 
   # Only generate artifacts, skip judges
@@ -55,7 +55,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="append",
         help=(
             "Judge spec provider:model (repeat). Examples: "
-            "openrouter:anthropic/claude-4-sonnet, openrouter:google/gemini-2.5-flash"
+            "openrouter:anthropic/claude-4-sonnet, openrouter:google/gemini-2.5-pro"
         ),
     )
     p.add_argument("--annotator", default="auto", help="Annotator name recorded in CSVs")

@@ -27,7 +27,7 @@ DEFAULT_TEMPLATE = Path("evaluation/judges/student_outcome_judge.md")
 DEFAULT_THRESHOLD = 1.6
 DEFAULT_STAGE = "C"
 DEFAULT_JUDGES: Tuple[str, ...] = (
-    "openrouter:google/gemini-2.5-flash",
+    "openrouter:google/gemini-2.5-pro",
     "openrouter:deepseek/deepseek-v3.2-exp",
     "openrouter:x-ai/grok-4-fast",
 )

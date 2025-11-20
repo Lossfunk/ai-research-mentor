@@ -16,7 +16,7 @@ uv run python -m evaluation.scripts.run_single_turn_batch \
   --baseline-mode \
   --output-label ${STAGE}_gpt5_baseline_oct21 \
   --skip-judge \
-  --judge openrouter:google/gemini-2.5-flash-lite
+  --judge openrouter:google/gemini-2.5-pro
 STAGE=stage_c
 echo "== Claude baseline :: ${STAGE} =="
 uv run python -m evaluation.scripts.run_single_turn_batch \
@@ -26,4 +26,4 @@ uv run python -m evaluation.scripts.run_single_turn_batch \
   --baseline-mode \
   --output-label ${STAGE}_claude_baseline_oct21 \
   --skip-judge \
-  --judge openrouter:google/gemini-2.5-flash-lite
+  --judge openrouter:google/gemini-2.5-pro

@@ -6,7 +6,7 @@ STAGE=stage_f
 echo "== Absolute judging (mentor) :: ${STAGE} =="
 uv run python -m evaluation.scripts.run_judge_scores \
   --stage ${STAGE} \
-  --judge openrouter:google/gemini-2.5-flash-lite \
+  --judge openrouter:google/gemini-2.5-pro \
   --judge openrouter:deepseek/deepseek-v3.2-exp \
   --judge openrouter:x-ai/grok-4-fast \
   --annotator single_turn_oct21 \
@@ -16,7 +16,7 @@ uv run python -m evaluation.scripts.run_judge_scores \
 echo "== Absolute judging (gpt-5 baseline) :: ${STAGE} =="
 uv run python -m evaluation.scripts.run_judge_scores \
   --stage ${STAGE} \
-  --judge openrouter:google/gemini-2.5-flash-lite \
+  --judge openrouter:google/gemini-2.5-pro \
   --judge openrouter:deepseek/deepseek-v3.2-exp \
   --judge openrouter:x-ai/grok-4-fast \
   --annotator single_turn_oct21 \
@@ -26,7 +26,7 @@ uv run python -m evaluation.scripts.run_judge_scores \
 echo "== Absolute judging (claude baseline) :: ${STAGE} =="
 uv run python -m evaluation.scripts.run_judge_scores \
   --stage ${STAGE} \
-  --judge openrouter:google/gemini-2.5-flash-lite \
+  --judge openrouter:google/gemini-2.5-pro \
   --judge openrouter:deepseek/deepseek-v3.2-exp \
   --judge openrouter:x-ai/grok-4-fast \
   --annotator single_turn_oct21 \

@@ -3,9 +3,10 @@
 This script reads the outputs of ``score_multi_turn.py`` and produces the
 figures recommended in the visualization review:
 
-* ``multi_turn_efficiency_panel`` – a 2×2 summary panel showing
-  turns-to-success, time-to-success, final scores, and the mean score trajectory
-  (with 95 % confidence intervals).
+* ``multi_turn_quality_focus`` – a two-panel summary showing final
+  conversation quality and a representative per-scenario trajectory
+  (student judge scores with success markers).
+
 * ``multi_turn_scenarios_faceted`` – small multiples (one per scenario) so the
   reviewer can inspect individual conversations.
 
@@ -30,6 +31,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+
+FOCUS_SCENARIO_ID = "civictech_nlp_volunteer"
 
 
 # Use publication-friendly fonts (Type 42) and consistent styling.
@@ -233,120 +237,80 @@ def paired_stats(df: pd.DataFrame, metric: str, reference: str, comparators: Lis
 
 def efficiency_panel(summary_df: pd.DataFrame, trajectory_df: pd.DataFrame, threshold: float, out_dir: Path, dpi: int) -> None:
     order = list(AGENT_DISPLAY.keys())
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 5.5), sharey=False)
 
-    counts_turns = bar_with_points(
-        axes[0, 0],
-        summary_df,
-        metric="success_turn",
-        ylabel="Turns to success",
-        order=order,
-        colors=OKABE_ITO,
-    )
-    axes[0, 0].set_ylim(bottom=0.5)
-    axes[0, 0].set_title("Conversation turns to success")
-    add_panel_label(axes[0, 0], "A")
-
+    ax_quality = axes[0]
     bar_with_points(
-        axes[0, 1],
-        summary_df,
-        metric="success_minutes",
-        ylabel="Minutes to success",
-        order=order,
-        colors=OKABE_ITO,
-    )
-    axes[0, 1].set_ylim(bottom=0)
-    axes[0, 1].set_title("Elapsed time to success")
-    add_panel_label(axes[0, 1], "B")
-
-    bar_with_points(
-        axes[1, 0],
+        ax_quality,
         summary_df,
         metric="final_score",
         ylabel="Final student-judge score (0–2)",
         order=order,
         colors=OKABE_ITO,
     )
-    axes[1, 0].axhline(threshold, color="gray", linestyle="--", linewidth=1)
-    axes[1, 0].set_ylim(1.5, 2.05)
-    axes[1, 0].set_title("Final quality after conversation")
-    add_panel_label(axes[1, 0], "C")
+    ax_quality.axhline(threshold, color="gray", linestyle="--", linewidth=1)
+    ax_quality.set_ylim(1.5, 2.05)
+    ax_quality.set_title("Final quality after conversation")
+    # Make axis label and ticks larger for legibility at 100\% zoom.
+    ax_quality.set_ylabel("Final student-judge score (0–2)", fontsize=14)
+    ax_quality.tick_params(axis="both", labelsize=12)
+    add_panel_label(ax_quality, "A")
+    _remove_spines(ax_quality)
 
-    for ax in axes.flat:
-        _remove_spines(ax)
+    focus_df = trajectory_df.loc[trajectory_df["scenario_id"] == FOCUS_SCENARIO_ID].copy()
+    if focus_df.empty:
+        raise ValueError(f"No trajectory data found for scenario '{FOCUS_SCENARIO_ID}'")
 
-    traj_stats = (
-        trajectory_df.dropna(subset=["overall_score"])
-        .groupby(["agent_label", "turn_index"])["overall_score"]
-        .agg(["mean", "count", "std"])
-        .reset_index()
-    )
-    traj_stats["ci"] = traj_stats.apply(
-        lambda row: t_multiplier(int(row["count"])) * (row["std"] / np.sqrt(row["count"])) if row["count"] > 1 else 0.0,
-        axis=1,
-    )
+    focus_display = focus_df["scenario_display"].iloc[0]
+    ax_focus = axes[1]
+    max_turn = int(focus_df["turn_index"].max()) if not focus_df.empty else 0
 
-    ax_traj = axes[1, 1]
-    max_turn = traj_stats["turn_index"].max() if not traj_stats.empty else 0
-    final_values: Dict[str, float] = {}
-    for agent in order:
-        stats = traj_stats.loc[traj_stats["agent_label"] == agent]
-        if stats.empty:
-            continue
+    for agent, group in focus_df.groupby("agent_label"):
         linestyle = "-" if agent == "multi_turn_eval_mentor" else "--" if agent == "multi_turn_eval_baseline_sonnet" else "-."
-        ax_traj.plot(
-            stats["turn_index"],
-            stats["mean"],
+        ax_focus.plot(
+            group["turn_index"],
+            group["overall_score"],
+            marker="o",
+            linewidth=2.5,
+            markersize=6,
             color=OKABE_ITO[agent],
-            linewidth=3.0,
             linestyle=linestyle,
             label=AGENT_CAPTION[agent],
         )
-        if stats["ci"].any():
-            ax_traj.fill_between(
-                stats["turn_index"],
-                stats["mean"] - stats["ci"],
-                stats["mean"] + stats["ci"],
-                color=OKABE_ITO[agent],
-                alpha=0.1,
+
+        success_turns = group.loc[group["success_at_turn"], "turn_index"]
+        if not success_turns.empty:
+            first_turn = success_turns.iloc[0]
+            score = float(group.loc[group["turn_index"] == first_turn, "overall_score"].iloc[0])
+            ax_focus.scatter(
+                first_turn,
+                score,
+                color="white",
+                edgecolor=OKABE_ITO[agent],
+                s=160,
+                linewidth=2.0,
+                marker="o",
+                zorder=5,
             )
-        final_values[agent] = float(stats["mean"].iloc[-1])
 
-    label_x = max_turn + 0.6
-    spacing = 0.05
-    sorted_agents = sorted(final_values.items(), key=lambda item: item[1], reverse=True)
-    last_y: Optional[float] = None
-    for agent, final_y in sorted_agents:
-        label_y = final_y if last_y is None else min(final_y, last_y - spacing)
-        ax_traj.text(
-            label_x,
-            label_y,
-            AGENT_CAPTION[agent],
-            color=OKABE_ITO[agent],
-            fontsize=11,
-            fontweight="semibold",
-            va="center",
-            ha="left",
-        )
-        last_y = label_y
+    ax_focus.axhline(threshold, color="gray", linestyle="--", linewidth=1)
+    ax_focus.set_xlabel("Turn index", fontsize=13)
+    ax_focus.set_ylabel("Student-judge score (0–2)", fontsize=14)
+    ax_focus.set_ylim(1.5, 2.05)
+    if max_turn:
+        ax_focus.set_xlim(1, max_turn + 0.5)
+    ax_focus.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
+    ax_focus.xaxis.grid(False)
+    ax_focus.set_title(focus_display)
+    add_panel_label(ax_focus, "B")
+    ax_focus.legend(loc="lower right", frameon=False, fontsize=11)
+    _remove_spines(ax_focus)
 
-    ax_traj.axhline(threshold, color="gray", linestyle="--", linewidth=1)
-    ax_traj.set_xlabel("Turn index")
-    ax_traj.set_ylabel("Overall student-judge score (0–2; mean ± 95% CI)")
-    ax_traj.set_ylim(1.5, 2.05)
-    ax_traj.set_xlim(1, max_turn + 2.0)
-    ax_traj.yaxis.grid(True, alpha=0.1, color="gray", linewidth=0.6)
-    ax_traj.xaxis.grid(False)
-    ax_traj.legend_.remove() if ax_traj.legend_ else None
-    _remove_spines(ax_traj)
-    ax_traj.set_title("Average score trajectory across scenarios")
-    add_panel_label(ax_traj, "D")
+    fig.suptitle("Multi-turn conversation quality (student judge only)", y=0.98)
+    fig.tight_layout(rect=[0, 0.05, 1, 0.97], w_pad=2.8)
 
-    fig.suptitle("Multi-turn conversation quality and efficiency", y=0.99)
-    fig.tight_layout(rect=[0, 0.06, 1, 0.97])
-
-    png_path = out_dir / "multi_turn_efficiency_panel.png"
-    pdf_path = out_dir / "multi_turn_efficiency_panel.pdf"
+    png_path = out_dir / "multi_turn_quality_focus.png"
+    pdf_path = out_dir / "multi_turn_quality_focus.pdf"
     fig.savefig(png_path, dpi=dpi)
     fig.savefig(pdf_path)
     plt.close(fig)

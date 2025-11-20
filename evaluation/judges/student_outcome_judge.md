@@ -5,7 +5,7 @@ Context
 {persona_card}
 - Task:
 {task_card}
-- Stage: {stage} (A: Orientation, C: Research Planning, F: Final/Submission)
+- Stage: {stage} (A: Pre idea, B: Idea, C: Research plan, D: First draft, E: Second draft, F: Final)
 
 Evaluation Principles (style-agnostic)
 - Prioritize student action: prefer 3 specific, sequenced steps you could actually do in 1–3 days, referencing datasets, tools, or deliverables mentioned in the response.
