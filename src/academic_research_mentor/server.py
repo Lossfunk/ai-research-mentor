@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .runtime.context import prepare_agent
-from .session import load_env_file
+from academic_research_mentor.runtime.context import prepare_agent
+from academic_research_mentor.session import load_env_file
 
 app = FastAPI(title="Academic Research Mentor API")
 
