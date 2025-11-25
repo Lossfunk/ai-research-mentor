@@ -137,16 +137,19 @@ class LangChainReActAgentWrapper:
 
     def run(self, user_text: str) -> Any:
         class _Reply:
-            def __init__(self, text: str) -> None:
+            def __init__(self, text: str, reasoning: Optional[str] = None) -> None:
                 self.content = text
                 self.text = text
+                self.reasoning = reasoning
 
         result = self._agent_executor.invoke({"messages": self._build_messages(user_text)})
         messages = result.get("messages", []) if isinstance(result, dict) else []
         content = ""
+        reasoning = None
         if messages:
             last_msg = messages[-1]
             content = getattr(last_msg, "content", None) or getattr(last_msg, "text", None) or str(last_msg)
+            reasoning = getattr(last_msg, "reasoning", None) or getattr(last_msg, "reasoning_details", None)
         cleaned = self._clean_for_display(content, user_text)
         cleaned = enforce_citation_schema(cleaned)
         cleaned = self._apply_citation_lint(cleaned)
@@ -160,7 +163,55 @@ class LangChainReActAgentWrapper:
                     self._history = self._history[-self._max_history_messages :]
             except Exception:
                 pass
-        return _Reply(cleaned)
+        return _Reply(cleaned, reasoning)
+
+    async def stream_tokens(self, user_text: str):
+        """Asynchronously stream tokens for faster UI rendering.
+
+        Note: streaming bypasses tool calls; it streams directly from the LLM with the same system instructions and history.
+        """
+        def extract_text_from_content(content: Any) -> str:
+            """Extract plain text from various LangChain content formats."""
+            if content is None:
+                return ""
+            if callable(content):
+                content = content()
+            # Handle list of content blocks (OpenRouter Responses API format)
+            if isinstance(content, list):
+                texts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        # Format: {'type': 'text', 'text': '...', 'index': N}
+                        if block.get("type") == "text" and "text" in block:
+                            texts.append(block["text"])
+                    elif isinstance(block, str):
+                        texts.append(block)
+                return "".join(texts)
+            # Plain string
+            if isinstance(content, str):
+                return content
+            # Fallback: stringify
+            return str(content) if content else ""
+
+        try:
+            messages = self._build_messages(user_text)
+            # Prefer async stream if available
+            if hasattr(self._llm, "astream"):
+                async for chunk in self._llm.astream(messages):
+                    raw_content = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+                    text = extract_text_from_content(raw_content)
+                    if text:
+                        yield text
+            else:
+                # Fallback to sync stream in thread (rare)
+                for chunk in self._llm.stream(messages):  # type: ignore[attr-defined]
+                    raw_content = getattr(chunk, "content", None) or getattr(chunk, "text", None)
+                    text = extract_text_from_content(raw_content)
+                    if text:
+                        yield text
+        except Exception as exc:
+            print_error(f"Streaming failed: {exc}")
+            return
 
     def reset_history(self) -> None:
         """Clear the in-memory conversation history for this agent instance."""

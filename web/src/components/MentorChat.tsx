@@ -1,7 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
 import { Rnd } from 'react-rnd';
-import { X, Send, Sparkles, Bot, User, ChevronRight, ChevronDown, PanelRightClose, PanelRightOpen, SidebarClose, Maximize2, Minimize2, GripHorizontal } from 'lucide-react';
+import {
+  X,
+  Send,
+  Sparkles,
+  Bot,
+  User,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  PanelRightClose,
+  PanelRightOpen,
+  SidebarClose,
+  Maximize2,
+  Minimize2,
+  GripHorizontal,
+} from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { useChatStore } from '@/store/useChatStore';
+import { useDocumentStore } from '@/store/useDocumentStore';
 
 interface Message {
   role: 'user' | 'ai';
@@ -9,23 +26,58 @@ interface Message {
   thinking?: string;
 }
 
-const ThinkingBlock = ({ content }: { content: string }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const ThinkingBlock = ({ content, defaultExpanded = false }: { content: string; defaultExpanded?: boolean }) => {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   if (!content) return null;
 
   return (
-    <div className="mb-2 rounded-lg border border-stone-200 bg-stone-50 overflow-hidden">
+    <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50/70 overflow-hidden shadow-[0_1px_0_rgba(255,193,7,0.25)]">
       <button 
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-medium text-stone-500 hover:bg-stone-100 transition-colors"
+        className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100/70 transition-colors"
       >
         {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Mentor's Thinking Process
+        <span className="text-[10px] uppercase tracking-[0.08em] bg-white/70 border border-amber-200 px-2 py-0.5 rounded-full text-amber-700">Thinking</span>
+        <span className="text-amber-900">Mentor's scratchpad</span>
       </button>
       {isExpanded && (
-        <div className="px-3 py-2 text-xs text-stone-600 border-t border-stone-200 bg-white font-mono whitespace-pre-wrap">
+        <div className="px-3 py-2 text-xs text-amber-900 border-t border-amber-200 bg-white font-mono whitespace-pre-wrap">
           {content}
         </div>
+      )}
+    </div>
+  );
+};
+
+const CollapsibleMessage = ({ content }: { content: string }) => {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content && content.length > 900;
+
+  return (
+    <div className="text-[15px] leading-relaxed text-stone-900">
+      <div className={`relative ${expanded ? '' : 'max-h-64 overflow-hidden'}`}>
+        <MarkdownRenderer content={content} />
+        {!expanded && isLong && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white via-white/85 to-transparent" />
+        )}
+      </div>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 inline-flex items-center gap-1 rounded-full bg-stone-100 px-3 py-1 text-[11px] font-semibold text-stone-600 hover:bg-stone-200 transition-colors"
+        >
+          {expanded ? (
+            <>
+              <ChevronUp size={12} />
+              Collapse
+            </>
+          ) : (
+            <>
+              <ChevronDown size={12} />
+              Show full reply
+            </>
+          )}
+        </button>
       )}
     </div>
   );
@@ -47,17 +99,28 @@ export const MentorChat = ({
     onToggleFullscreen?: () => void;
 }) => {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', content: "Hello! I'm your research mentor. How can I help you refine your hypothesis today?" }
-  ]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { 
+    messages, 
+    addUserMessage, 
+    addAiMessage, 
+    isLoading, 
+    setLoading, 
+    isStreaming, 
+    setStreaming, 
+    streamingContent, 
+    streamingReasoning,
+    appendContent,
+    appendReasoning,
+    finalizeStream,
+  } = useChatStore();
+  const { getSelectedContent } = useDocumentStore();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, streamingContent, streamingReasoning]);
 
   // Robust regex that handles newlines and whitespace attributes in thinking tags
   const parseResponse = (fullResponse: string): { thinking?: string, content: string } => {
@@ -77,26 +140,97 @@ export const MentorChat = ({
 
     const userMsg = input;
     setInput("");
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-    setIsLoading(true);
+    addUserMessage(userMsg);
+    setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:8000/api/chat', {
+      // Get document context from selected documents
+      const documentContext = getSelectedContent();
+      
+      // Use SSE streaming endpoint for real-time reasoning + content
+      const streamRes = await fetch('http://localhost:8000/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userMsg }),
+        body: JSON.stringify({ 
+          prompt: userMsg,
+          document_context: documentContext || undefined,
+        }),
       });
+
+      if (!streamRes.ok || !streamRes.body) {
+        throw new Error('Streaming unavailable');
+      }
+
+      setStreaming(true);
+      setLoading(false);
       
-      if (!res.ok) throw new Error('Failed to fetch');
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
       
-      const json = await res.json();
-      const { thinking, content } = parseResponse(json.response);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process SSE events (format: "data: {...}\n\n")
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || ""; // Keep incomplete event in buffer
+        
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          
+          try {
+            const event = JSON.parse(line.slice(6)); // Remove "data: " prefix
+            
+            if (event.type === 'reasoning' && event.content) {
+              appendReasoning(event.content);
+            } else if (event.type === 'content' && event.content) {
+              appendContent(event.content);
+            } else if (event.type === 'done') {
+              finalizeStream();
+            } else if (event.type === 'error') {
+              console.error('Stream error:', event.content);
+              addAiMessage(`Error: ${event.content}`);
+              setStreaming(false);
+            }
+          } catch (parseErr) {
+            // Skip malformed events
+            console.warn('Failed to parse SSE event:', line);
+          }
+        }
+      }
       
-      setMessages(prev => [...prev, { role: 'ai', content, thinking }]);
+      // Finalize any remaining content
+      finalizeStream();
+      
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'ai', content: "Sorry, I encountered an error connecting to the backend." }]);
-    } finally {
-      setIsLoading(false);
+      console.error('Streaming failed:', error);
+      // Fallback to non-streaming endpoint
+      try {
+        const res = await fetch('http://localhost:8000/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: userMsg }),
+        });
+        
+        if (!res.ok) throw new Error('Failed to fetch');
+        
+        const json = await res.json();
+        console.log("Raw LLM Response:", json);
+
+        const explicitThinking = json.reasoning as string | undefined;
+        const { thinking: parsedThinking, content } = parseResponse(json.response);
+        const thinking = explicitThinking || parsedThinking;
+
+        addAiMessage(content, thinking);
+      } catch (fallbackError) {
+        addAiMessage("Sorry, I encountered an error connecting to the backend.");
+      } finally {
+        setStreaming(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -145,13 +279,15 @@ export const MentorChat = ({
               {msg.role === 'ai' ? <Bot size={16} /> : <User size={16} />}
             </div>
             <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                {msg.role === 'ai' && msg.thinking && <ThinkingBlock content={msg.thinking} />}
+                {msg.role === 'ai' && msg.thinking && (
+                  <ThinkingBlock content={msg.thinking} defaultExpanded={idx === messages.length - 1} />
+                )}
                 <div className={`
-                  rounded-2xl px-4 py-3 text-sm shadow-sm
-                  ${msg.role === 'ai' ? 'bg-white border border-stone-100 text-stone-700' : 'bg-stone-800 text-white'}
+                  rounded-2xl px-4 py-3 shadow-sm min-w-0
+                  ${msg.role === 'ai' ? 'bg-white border border-stone-200 text-stone-900' : 'bg-stone-800 text-white text-sm'}
                 `}>
                   {msg.role === 'ai' ? (
-                    <MarkdownRenderer content={msg.content} />
+                    <CollapsibleMessage content={msg.content} />
                   ) : (
                     msg.content
                   )}
@@ -159,13 +295,50 @@ export const MentorChat = ({
             </div>
           </div>
         ))}
-        {isLoading && (
+        {/* Streaming in-progress bubble with separate reasoning and content */}
+        {isStreaming && (streamingReasoning || streamingContent) && (
+          <div className="flex gap-3">
+             <div className="w-8 h-8 rounded-full bg-white border border-stone-100 flex items-center justify-center shadow-sm shrink-0">
+                <Bot size={16} className="text-indigo-500 animate-pulse" />
+             </div>
+             <div className="flex flex-col max-w-[85%]">
+                {/* Live reasoning stream */}
+                {streamingReasoning && (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50/70 overflow-hidden shadow-[0_1px_0_rgba(255,193,7,0.25)]">
+                    <div className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.08em] bg-white/70 border border-amber-200 px-2 py-0.5 rounded-full text-amber-700">Thinking</span>
+                      <span className="text-amber-900">Reasoning in progress...</span>
+                    </div>
+                    <div className="px-3 py-2 text-xs text-amber-900 border-t border-amber-200 bg-white font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                      {streamingReasoning}
+                    </div>
+                  </div>
+                )}
+                {/* Live content stream */}
+                {streamingContent && (
+                  <div className="bg-white border border-stone-200 px-4 py-3 rounded-2xl text-[15px] leading-relaxed text-stone-900 shadow-sm min-w-0">
+                    <MarkdownRenderer content={streamingContent} />
+                  </div>
+                )}
+             </div>
+          </div>
+        )}
+        {/* Loading indicator when waiting for first token */}
+        {isLoading && !isStreaming && (
           <div className="flex gap-3">
              <div className="w-8 h-8 rounded-full bg-white border border-stone-100 flex items-center justify-center shadow-sm">
                 <Bot size={16} className="text-indigo-500 animate-pulse" />
              </div>
-             <div className="bg-white border border-stone-100 px-4 py-3 rounded-2xl text-sm text-stone-400 shadow-sm">
-                Thinking...
+             <div className="bg-white border border-stone-100 px-4 py-3 rounded-2xl text-sm text-stone-500 shadow-sm flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                </span>
+                Connecting to mentor...
              </div>
           </div>
         )}
@@ -183,7 +356,7 @@ export const MentorChat = ({
           />
           <button 
             type="submit"
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || isStreaming}
             className="absolute right-2 top-2 p-1.5 bg-stone-800 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:hover:bg-stone-800 transition-colors shadow-sm"
           >
             <Send size={14} />
@@ -219,4 +392,3 @@ export const MentorChat = ({
 
   return <div className="h-full w-full">{ChatContent}</div>;
 };
-

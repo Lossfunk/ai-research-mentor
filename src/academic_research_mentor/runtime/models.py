@@ -33,11 +33,16 @@ def resolve_model() -> Tuple[Optional[Any], Optional[str]]:
         model_id = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
         base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
         max_tokens = _resolve_openrouter_max_tokens(model_id)
+        effort = os.environ.get("OPENROUTER_REASONING_EFFORT", "medium")
+
         llm_kwargs: dict[str, Any] = {
             "model": model_id,
             "api_key": api_key,
             "base_url": base_url,
             "temperature": 0,
+            # Request reasoning traces using unified OpenRouter schema (expects an object, not a boolean)
+            # See https://openrouter.ai/docs/use-cases/reasoning-tokens
+            "extra_body": {"reasoning": {"enabled": True, "effort": effort}},
         }
         use_responses_env = os.environ.get("OPENROUTER_USE_RESPONSES_API")
         if use_responses_env is not None:
