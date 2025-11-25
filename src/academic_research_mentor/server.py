@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supermemory import Supermemory
 
-from academic_research_mentor.agent import MentorAgent
+from academic_research_mentor.agent import MentorAgent, ToolRegistry, create_default_tools
 from academic_research_mentor.llm import create_client
 from academic_research_mentor.llm.types import StreamChunk
 
@@ -143,18 +143,57 @@ async def startup():
     except Exception as e:
         print(f"Failed to load prompt: {e}")
     
-    # Create agent
+    # Initialize tools
+    tool_registry = ToolRegistry()
+    tools_initialized = []
+    try:
+        for tool in create_default_tools():
+            tool_registry.register(tool)
+            tools_initialized.append(tool.name)
+        print(f"Tools initialized: {', '.join(tools_initialized)}")
+    except Exception as e:
+        print(f"Tool init warning: {e}")
+    
+    # Create agent with tools
     try:
         client = create_client(provider="openrouter")
-        mentor_agent = MentorAgent(system_prompt=system_prompt, client=client)
-        print("Mentor agent initialized")
+        mentor_agent = MentorAgent(
+            system_prompt=system_prompt,
+            client=client,
+            tools=tool_registry if len(tool_registry) > 0 else None
+        )
+        print(f"Mentor agent initialized with {len(tool_registry)} tools")
     except Exception as e:
         print(f"Agent init failed: {e}")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy" if mentor_agent else "degraded", "agent_loaded": mentor_agent is not None}
+    tools_count = len(mentor_agent.tools) if mentor_agent and mentor_agent.tools else 0
+    tool_names = [t.name for t in mentor_agent.tools.tools] if mentor_agent and mentor_agent.tools else []
+    return {
+        "status": "healthy" if mentor_agent else "degraded",
+        "agent_loaded": mentor_agent is not None,
+        "tools_count": tools_count,
+        "tools": tool_names
+    }
+
+
+@app.get("/api/tools")
+async def list_tools():
+    """List available tools."""
+    if not mentor_agent or not mentor_agent.tools:
+        return {"tools": [], "count": 0}
+    
+    tools_info = []
+    for tool in mentor_agent.tools.tools:
+        tools_info.append({
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters
+        })
+    
+    return {"tools": tools_info, "count": len(tools_info)}
 
 
 @app.post("/api/chat", response_model=ChatResponse)

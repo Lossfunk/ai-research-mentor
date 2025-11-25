@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from academic_research_mentor.agent import MentorAgent
+from academic_research_mentor.agent import MentorAgent, ToolRegistry, create_default_tools
 from academic_research_mentor.llm import create_client
 
 
@@ -114,13 +114,27 @@ def main() -> None:
         console.print("Set OPENROUTER_API_KEY or OPENAI_API_KEY in your .env file")
         sys.exit(1)
     
+    # Initialize tools
+    tool_registry = ToolRegistry()
+    tools_loaded = []
+    try:
+        for tool in create_default_tools():
+            tool_registry.register(tool)
+            tools_loaded.append(tool.name)
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not load some tools: {e}[/yellow]")
+    
     # Create agent
     try:
         system_prompt = load_system_prompt()
         provider = "openrouter" if os.environ.get("OPENROUTER_API_KEY") else "openai"
         client = create_client(provider=provider)
-        agent = MentorAgent(system_prompt=system_prompt, client=client)
-        console.print(f"[dim]Using provider: {provider}[/dim]")
+        agent = MentorAgent(
+            system_prompt=system_prompt,
+            client=client,
+            tools=tool_registry if len(tool_registry) > 0 else None
+        )
+        console.print(f"[dim]Using provider: {provider} | Tools: {', '.join(tools_loaded) or 'none'}[/dim]")
     except Exception as e:
         console.print(f"[red]Failed to initialize: {e}[/red]")
         sys.exit(1)

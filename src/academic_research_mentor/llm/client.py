@@ -164,7 +164,7 @@ def create_client(
         return LLMClient(LLMConfig(
             api_key=key,
             base_url="https://openrouter.ai/api/v1",
-            model=model or os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o")
+            model=model or os.environ.get("OPENROUTER_MODEL", "openai/gpt-4.1")
         ))
     elif provider == "openai":
         key = api_key or os.environ.get("OPENAI_API_KEY")
@@ -172,7 +172,7 @@ def create_client(
             raise ValueError("OPENAI_API_KEY not set")
         return LLMClient(LLMConfig(
             api_key=key,
-            model=model or "gpt-4o"
+            model=model or "gpt-4.1"
         ))
     else:
         raise ValueError(f"Unknown provider: {provider}")
