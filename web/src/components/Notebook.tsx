@@ -27,7 +27,9 @@ export const Notebook = () => {
   }
 
   return (
-    <div className="mx-auto max-w-4xl py-12 px-8 min-h-screen bg-white shadow-sm border-x border-stone-200/50">
+    <div className="mx-auto max-w-4xl py-16 px-12 min-h-[calc(100vh-6rem)] mt-6 bg-white shadow-[0_2px_40px_-12px_rgba(0,0,0,0.08)] border border-stone-200/60 rounded-t-xl relative">
+        {/* Top Accent Line */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-300 via-red-300 to-indigo-300 rounded-t-xl opacity-80" />
       <EditorContent editor={editor} />
     </div>
   );

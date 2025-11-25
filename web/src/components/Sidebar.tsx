@@ -7,22 +7,22 @@ export const Sidebar = () => {
   const { papers, threads } = useLibraryStore();
 
   return (
-    <aside className="flex h-screen w-72 flex-col border-r border-stone-200 bg-stone-50">
+    <aside className="flex h-screen w-72 flex-col border-r border-stone-200/60 bg-[#F7F6F3]">
       {/* Header */}
       <div className="p-4">
         <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-stone-800 font-serif font-semibold">
-                <div className="w-3 h-3 rounded-full bg-stone-800" />
+            <div className="flex items-center gap-2 text-stone-700 font-medium tracking-tight">
+                <div className="w-4 h-4 rounded-md bg-gradient-to-br from-orange-400 to-red-500 shadow-sm" />
                 Research OS
             </div>
-            <button className="p-1 hover:bg-stone-200 rounded text-stone-500">
-                <Plus size={16} />
+            <button className="p-1 hover:bg-stone-200/60 rounded text-stone-400 hover:text-stone-600 transition-colors">
+                <Plus size={14} />
             </button>
         </div>
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-2.5 text-stone-400" />
+        <div className="relative group">
+          <Search size={13} className="absolute left-2.5 top-2.5 text-stone-400 group-focus-within:text-stone-600 transition-colors" />
           <input 
-            className="w-full rounded-lg bg-white border border-stone-200 py-2 pl-9 pr-3 text-xs text-stone-700 placeholder-stone-400 outline-none focus:border-stone-400 focus:ring-1 focus:ring-stone-400"
+            className="w-full rounded-md bg-white border border-stone-200/60 py-1.5 pl-8 pr-3 text-xs text-stone-700 placeholder-stone-400 outline-none focus:border-stone-300 focus:ring-2 focus:ring-stone-100 transition-all shadow-sm"
             placeholder="Search knowledge..."
           />
         </div>
@@ -82,8 +82,8 @@ const SidebarTab = ({ label, icon, active, onClick }: any) => (
     <button 
         onClick={onClick}
         className={`
-            flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 text-xs font-medium transition-all
-            ${active ? 'bg-white text-stone-800 shadow-sm border border-stone-200' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/50'}
+            flex flex-1 items-center justify-center gap-2 rounded-md py-1.5 text-xs font-medium transition-all duration-200
+            ${active ? 'bg-white text-stone-800 shadow-[0_1px_2px_rgba(0,0,0,0.04)] border border-stone-200/60' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/40'}
         `}
     >
         {icon}

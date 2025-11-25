@@ -23,18 +23,18 @@ export default function Home() {
        
        <div className="flex-1 flex flex-col relative min-w-0">
           {/* View Switcher & Toolbar */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-stone-200 bg-white">
-             <div className="flex items-center gap-1 p-1 bg-stone-100 rounded-lg border border-stone-200">
+          <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-stone-200/60 bg-white/80 backdrop-blur-md">
+             <div className="flex items-center gap-1 p-1 bg-stone-100/50 rounded-lg border border-stone-200/60">
                 <button 
                     onClick={() => setView('notebook')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${view === 'notebook' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${view === 'notebook' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-black/5' : 'text-stone-500 hover:text-stone-700'}`}
                 >
                     <PenTool size={14} />
                     Write
                 </button>
                 <button 
                     onClick={() => setView('whiteboard')}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${view === 'whiteboard' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-stone-200' : 'text-stone-500 hover:text-stone-700'}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${view === 'whiteboard' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-black/5' : 'text-stone-500 hover:text-stone-700'}`}
                 >
                     <Layout size={14} />
                     Canvas
@@ -44,13 +44,13 @@ export default function Home() {
              <div className="flex items-center gap-2">
                 <button 
                     onClick={() => setIsChatOpen(!isChatOpen)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all shadow-sm border ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all shadow-sm border active:scale-95 duration-200 ${
                         isChatOpen 
                         ? 'bg-stone-100 border-stone-200 text-stone-800' 
-                        : 'bg-stone-900 border-transparent text-white hover:bg-stone-800'
+                        : 'bg-stone-900 border-transparent text-white hover:bg-stone-800 hover:shadow-md'
                     }`}
                 >
-                    <Sparkles size={14} className="text-yellow-400" />
+                    <Sparkles size={14} className={isChatOpen ? "text-stone-600" : "text-yellow-400"} />
                     {isChatOpen ? 'Close Mentor' : 'Ask Mentor'}
                 </button>
              </div>
