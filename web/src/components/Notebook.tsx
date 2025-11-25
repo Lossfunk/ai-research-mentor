@@ -4,6 +4,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 
 export const Notebook = () => {
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit,
       Placeholder.configure({
