@@ -185,18 +185,18 @@ export const Sidebar = ({
       <div className={`p-4 ${effectiveCollapsed ? 'items-center' : ''} flex flex-col transition-all`}>
         <div className={`flex items-center justify-between ${effectiveCollapsed ? 'justify-center mb-4' : 'mb-4'}`}>
           {!effectiveCollapsed && (
-            <div className="flex items-center gap-2 text-stone-700 font-medium tracking-tight">
-              <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 shadow-sm" />
-              <span className="text-base">Research OS</span>
+            <div className="flex items-center gap-2 text-stone-800 font-mono font-semibold tracking-tight">
+              <div className="w-4 h-4 rounded-sm bg-stone-900 shadow-sm" />
+              <span className="text-sm">RESEARCH_OS</span>
             </div>
           )}
           {effectiveCollapsed && (
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 shadow-sm mb-2" />
+            <div className="w-4 h-4 rounded-sm bg-stone-900 shadow-sm mb-2" />
           )}
           {!effectiveCollapsed && (
             <button 
               onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 hover:bg-stone-200/60 rounded-lg text-stone-400 hover:text-stone-600 transition-colors touch-target"
+              className="p-1.5 hover:bg-stone-200/60 rounded text-stone-500 hover:text-stone-800 transition-colors touch-target"
               title="Upload document"
             >
               <Plus size={16} />
@@ -206,10 +206,10 @@ export const Sidebar = ({
         
         {!effectiveCollapsed && (
           <div className="relative group">
-            <Search size={14} className="absolute left-3 top-2.5 text-stone-400 group-focus-within:text-stone-600 transition-colors" />
+            <Search size={13} className="absolute left-3 top-2.5 text-stone-400 group-focus-within:text-stone-600 transition-colors" />
             <input 
-              className="w-full rounded-xl bg-white border border-stone-200/60 py-2 pl-9 pr-3 text-sm text-stone-700 placeholder-stone-400 outline-none focus:border-stone-300 focus:ring-2 focus:ring-stone-100 transition-all shadow-sm"
-              placeholder="Search documents..."
+              className="w-full rounded bg-white border border-stone-200 py-1.5 pl-9 pr-3 text-xs font-mono text-stone-700 placeholder-stone-400 outline-none focus:border-stone-400 transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,0.1)]"
+              placeholder="SEARCH_FILES..."
             />
           </div>
         )}
@@ -378,9 +378,9 @@ const DocumentItem = ({
   return (
     <div 
       className={`
-        group flex cursor-pointer items-center gap-3 rounded-lg p-2.5
-        hover:bg-white hover:shadow-sm border transition-all duration-200
-        ${isSelected ? 'bg-blue-50 border-blue-200' : 'border-transparent hover:border-stone-200/60'}
+        group flex cursor-pointer items-center gap-3 rounded p-2
+        hover:bg-white hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] border transition-all duration-200
+        ${isSelected ? 'bg-stone-100 border-stone-300 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.1)]' : 'border-transparent hover:border-stone-200'}
         ${isCollapsed ? 'justify-center' : ''}
       `}
       title={isCollapsed ? doc.filename : undefined}
@@ -393,8 +393,8 @@ const DocumentItem = ({
           onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
         >
           {isSelected 
-            ? <CheckSquare size={16} className="text-blue-500" /> 
-            : <Square size={16} className="text-stone-300 group-hover:text-stone-400" />
+            ? <CheckSquare size={14} className="text-stone-800" /> 
+            : <Square size={14} className="text-stone-300 group-hover:text-stone-400" />
           }
         </button>
       )}
@@ -407,11 +407,11 @@ const DocumentItem = ({
       {/* File info */}
       {!isCollapsed && (
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-stone-700 line-clamp-1">
+          <div className={`text-xs font-mono ${isSelected ? 'text-stone-900 font-semibold' : 'text-stone-600'} line-clamp-1`}>
             {doc.filename}
           </div>
-          <div className="text-[10px] text-stone-400 flex items-center gap-2 mt-0.5">
-            <span className="uppercase bg-stone-100 px-1 rounded">{doc.type}</span>
+          <div className="text-[10px] text-stone-400 flex items-center gap-2 mt-0.5 font-mono">
+            <span className="uppercase bg-stone-100 px-1 rounded text-[9px]">{doc.type}</span>
             <span>{formatFileSize(doc.size)}</span>
             {doc.status === 'error' && (
               <span className="text-red-500">{doc.error}</span>
@@ -424,9 +424,9 @@ const DocumentItem = ({
       {!isCollapsed && (
         <button 
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="flex-shrink-0 p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-50 rounded-md text-stone-400 hover:text-red-500 transition-all"
+          className="flex-shrink-0 p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-50 rounded text-stone-400 hover:text-red-500 transition-all"
         >
-          <Trash2 size={14} />
+          <Trash2 size={12} />
         </button>
       )}
     </div>
@@ -443,8 +443,8 @@ const SidebarTab = ({ label, icon, active, collapsed, onClick }: {
   <button 
     onClick={onClick}
     className={`
-      flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-all duration-200 touch-target h-auto
-      ${active ? 'bg-white text-stone-800 shadow-sm border border-stone-200/60' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/40'}
+      flex items-center justify-center gap-2 rounded py-1.5 text-xs font-mono uppercase tracking-wide transition-all duration-200 touch-target h-auto
+      ${active ? 'bg-stone-100 text-stone-900 border border-stone-300 shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)]' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-200/40'}
       ${collapsed ? 'aspect-square w-full' : 'flex-1'}
     `}
     title={collapsed ? label : undefined}

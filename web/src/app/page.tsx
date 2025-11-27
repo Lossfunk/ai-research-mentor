@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Sidebar } from "@/components/Sidebar";
 import { Notebook } from "@/components/Notebook";
 import { MentorChat } from "@/components/MentorChat";
-import { PenTool, Layout, Sparkles, PanelRightClose, PanelRightOpen, Menu } from "lucide-react";
+import { PenTool, Layout, Sparkles, Menu } from "lucide-react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 // Dynamically import Tldraw with SSR disabled
@@ -21,58 +21,62 @@ export default function Home() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const ToolbarContent = () => (
-    <>
-      <div className="flex items-center gap-1 p-1 bg-stone-100/50 rounded-xl border border-stone-200/60">
+    <div className="flex items-center gap-3 p-2 bg-white/90 backdrop-blur-xl rounded-full border border-stone-200 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+      <div className="flex items-center gap-1 p-1 bg-stone-100/50 rounded-full border border-stone-200/50">
           <button 
               onClick={() => setView('notebook')}
-              className={`flex items-center gap-2 px-3 py-2 md:py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${view === 'notebook' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-black/5' : 'text-stone-500 hover:text-stone-700'}`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-mono transition-all duration-300 ${view === 'notebook' ? 'bg-stone-900 text-white shadow-md scale-105' : 'text-stone-500 hover:text-stone-900 hover:bg-stone-200/50'}`}
           >
-              <PenTool size={16} className="md:w-[14px] md:h-[14px]" />
-              <span className="hidden sm:inline">Write</span>
+              <PenTool size={14} />
+              <span className="hidden sm:inline">WRITE</span>
           </button>
           <button 
               onClick={() => setView('whiteboard')}
-              className={`flex items-center gap-2 px-3 py-2 md:py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${view === 'whiteboard' ? 'bg-white text-stone-800 shadow-sm ring-1 ring-black/5' : 'text-stone-500 hover:text-stone-700'}`}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-mono transition-all duration-300 ${view === 'whiteboard' ? 'bg-stone-900 text-white shadow-md scale-105' : 'text-stone-500 hover:text-stone-900 hover:bg-stone-200/50'}`}
           >
-              <Layout size={16} className="md:w-[14px] md:h-[14px]" />
-              <span className="hidden sm:inline">Canvas</span>
+              <Layout size={14} />
+              <span className="hidden sm:inline">CANVAS</span>
           </button>
       </div>
 
-      <div className="flex items-center gap-2">
-          <button 
-              onClick={() => setIsChatOpen(!isChatOpen)}
-              className={`flex items-center gap-2 px-4 py-2.5 md:px-3 md:py-1.5 rounded-full text-sm font-medium transition-all shadow-sm border duration-200 ${
-                  isChatOpen 
-                  ? 'bg-stone-100 border-stone-200 text-stone-800' 
-                  : 'bg-stone-900 border-transparent text-white hover:bg-stone-800 hover:shadow-md'
-              }`}
-          >
-              <Sparkles size={16} className={`md:w-[14px] md:h-[14px] ${isChatOpen ? "text-stone-600" : "text-yellow-400"}`} />
-              <span className="hidden sm:inline">{isChatOpen ? 'Close Mentor' : 'Ask Mentor'}</span>
-              <span className="sm:hidden">{isChatOpen ? 'Close' : 'Mentor'}</span>
-          </button>
-      </div>
-    </>
+      <div className="h-6 w-px bg-stone-200" />
+
+      <button 
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-mono transition-all duration-300 border ${
+              isChatOpen 
+              ? 'bg-stone-100 border-stone-300 text-stone-900' 
+              : 'bg-white border-stone-200 text-stone-600 hover:border-stone-400 hover:text-stone-900 shadow-sm'
+          }`}
+      >
+          <Sparkles size={14} className={isChatOpen ? "text-stone-900" : "text-amber-500"} />
+          <span className="hidden sm:inline">{isChatOpen ? 'CLOSE_MENTOR' : 'ASK_MENTOR'}</span>
+          <span className="sm:hidden">{isChatOpen ? 'CLOSE' : 'MENTOR'}</span>
+      </button>
+    </div>
   );
 
   return (
-    <main className="h-screen w-screen overflow-hidden bg-stone-50 flex flex-col md:block">
+    <main className="h-screen w-screen overflow-hidden bg-[#F7F6F3] flex flex-col md:block font-sans selection:bg-amber-100 selection:text-amber-900">
        {/* Mobile Header */}
-       <div className="md:hidden flex items-center justify-between px-4 py-3 pt-safe border-b border-stone-200/60 bg-white/90 backdrop-blur-lg z-30 sticky top-0">
+       <div className="md:hidden flex items-center justify-between px-4 py-3 pt-safe z-30 fixed top-0 left-0 right-0 pointer-events-none">
          <button 
            onClick={() => setIsMobileSidebarOpen(true)}
-           className="p-2.5 -ml-2 text-stone-500 hover:bg-stone-100 rounded-xl transition-colors"
+           className="pointer-events-auto p-2.5 bg-white/90 backdrop-blur border border-stone-200 rounded-full text-stone-500 shadow-sm hover:scale-105 transition-all"
          >
-           <Menu size={22} />
+           <Menu size={20} />
          </button>
-         <ToolbarContent />
+       </div>
+
+       {/* Floating Dock (Desktop & Mobile) */}
+       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-slide-up">
+          <ToolbarContent />
        </div>
 
        {/* Mobile Content Area */}
-       <div className="md:hidden flex-1 relative overflow-hidden">
+       <div className="md:hidden flex-1 relative overflow-hidden h-full pt-safe">
           {view === 'notebook' ? (
-              <div className="h-full overflow-y-auto scrollbar-hide">
+              <div className="h-full overflow-y-auto scrollbar-hide pt-12 pb-24">
                   <Notebook />
               </div>
           ) : (
@@ -109,16 +113,11 @@ export default function Home() {
 
             {/* Main Content Panel */}
             <ResizablePanel defaultSize={isChatOpen && chatMode === 'docked' ? 50 : 80} minSize={30}>
-               <div className="flex flex-col h-full relative bg-stone-50/50">
-                  {/* Desktop Toolbar */}
-                  <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 border-b border-stone-200/60 bg-white/80 backdrop-blur-md">
-                     <ToolbarContent />
-                  </div>
-
+               <div className="flex flex-col h-full relative bg-[#F7F6F3]">
                   {/* View Content */}
                   <div className="flex-1 relative overflow-hidden">
                       {view === 'notebook' ? (
-                          <div className="h-full overflow-y-auto scrollbar-hide">
+                          <div className="h-full overflow-y-auto scrollbar-hide p-8 pb-24 max-w-3xl mx-auto">
                               <Notebook />
                           </div>
                       ) : (

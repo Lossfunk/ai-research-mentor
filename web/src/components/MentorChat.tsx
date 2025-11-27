@@ -29,17 +29,17 @@ const ThinkingBlock = ({ content, defaultExpanded = false }: { content: string; 
   if (!content) return null;
 
   return (
-    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 overflow-hidden shadow-[0_1px_0_rgba(255,193,7,0.25)]">
+    <div className="mb-4 pl-3 border-l-2 border-stone-300">
       <button 
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-semibold text-amber-800 hover:bg-amber-100/70 transition-colors touch-target h-auto"
+        className="flex items-center gap-2 w-full text-xs font-mono text-stone-500 hover:text-stone-800 transition-colors"
       >
-        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span className="text-[10px] uppercase tracking-[0.08em] bg-white/70 border border-amber-200 px-2 py-0.5 rounded-full text-amber-700">Thinking</span>
-        <span className="text-amber-900">Mentor's scratchpad</span>
+        <span className="text-[10px] uppercase tracking-wider font-bold">
+          {isExpanded ? '▼ SYSTEM_LOG' : '▶ SYSTEM_LOG'}
+        </span>
       </button>
       {isExpanded && (
-        <div className="px-4 py-3 text-xs text-amber-900 border-t border-amber-200 bg-white font-mono whitespace-pre-wrap leading-relaxed">
+        <div className="mt-2 text-xs font-mono text-stone-600 whitespace-pre-wrap leading-relaxed bg-stone-50 p-3 rounded border border-stone-100">
           {content}
         </div>
       )}
@@ -208,68 +208,68 @@ export const MentorChat = ({
 
   const ChatContent = (
     <div className={`
-      h-full w-full bg-white flex flex-col overflow-hidden shadow-xl border border-stone-200
-      ${isMobile && mode === 'floating' ? 'fixed inset-0 z-[60] rounded-none border-0' : 'rounded-2xl'}
+      h-full w-full bg-white flex flex-col overflow-hidden shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)] border border-stone-800
+      ${isMobile && mode === 'floating' ? 'fixed inset-0 z-[60] rounded-none border-0' : 'rounded-xl'}
     `}>
       {/* Header */}
       <div className={`
-        flex items-center justify-between p-4 border-b border-stone-100 bg-stone-50/80 backdrop-blur-sm h-16
+        flex items-center justify-between p-4 border-b border-stone-200 bg-stone-50/80 backdrop-blur-sm h-14
         ${mode === 'floating' && !isMobile ? 'cursor-move drag-handle' : ''}
       `}>
-        <div className="flex items-center gap-2.5 font-medium text-stone-700 select-none">
-          <div className="bg-yellow-100 p-1.5 rounded-lg">
-            <Sparkles size={16} className="text-yellow-600" />
+        <div className="flex items-center gap-2.5 font-mono text-stone-900 select-none">
+          <div className="bg-stone-900 p-1 rounded-sm">
+            <Sparkles size={12} className="text-white" />
           </div>
-          <span className="text-base tracking-tight">Research Mentor</span>
+          <span className="text-sm font-bold tracking-tight uppercase">Research_Mentor</span>
           {mode === 'floating' && !isMobile && <GripHorizontal size={14} className="text-stone-300 ml-2" />}
         </div>
         <div className="flex items-center gap-1.5">
             {mode === 'docked' && onToggleFullscreen && !isMobile && (
                <button 
                  onClick={onToggleFullscreen}
-                 className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 rounded-lg transition-colors touch-target h-auto w-auto"
+                 className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-200/50 rounded transition-colors touch-target h-auto w-auto"
                  title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
                >
-                 {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                 {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                </button>
             )}
             {!isMobile && (
               <button 
                   onClick={onToggleMode} 
-                  className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 rounded-lg transition-colors touch-target h-auto w-auto"
+                  className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-200/50 rounded transition-colors touch-target h-auto w-auto"
                   title={mode === 'floating' ? "Dock to side" : "Float window"}
               >
-                  {mode === 'floating' ? <PanelRightOpen size={18} /> : <SidebarClose size={18} />}
+                  {mode === 'floating' ? <PanelRightOpen size={16} /> : <SidebarClose size={16} />}
               </button>
             )}
             <button 
               onClick={onClose} 
-              className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200/50 rounded-lg transition-colors touch-target h-auto w-auto"
+              className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-200/50 rounded transition-colors touch-target h-auto w-auto"
             >
-                <X size={20} />
+                <X size={18} />
             </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-stone-50/30" ref={scrollRef}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-[#FAFAF9]" ref={scrollRef}>
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex gap-3 animate-slide-up ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div className={`
-              w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm mt-1
-              ${msg.role === 'ai' ? 'bg-white text-indigo-500 border border-stone-100' : 'bg-stone-800 text-white'}
+              w-8 h-8 rounded-sm flex items-center justify-center shrink-0 border
+              ${msg.role === 'ai' ? 'bg-white border-stone-800 text-stone-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-stone-900 border-stone-900 text-white'}
             `}>
-              {msg.role === 'ai' ? <Bot size={18} /> : <User size={18} />}
+              {msg.role === 'ai' ? <Bot size={16} /> : <User size={16} />}
             </div>
             <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                 {msg.role === 'ai' && msg.thinking && (
                   <ThinkingBlock content={msg.thinking} defaultExpanded={idx === messages.length - 1} />
                 )}
                 <div className={`
-                  rounded-2xl px-5 py-3.5 shadow-sm min-w-0 text-[15px] leading-relaxed
+                  rounded-lg px-5 py-3.5 min-w-0 text-[15px] leading-relaxed border
                   ${msg.role === 'ai' 
-                    ? 'bg-white border border-stone-200 text-stone-900 rounded-tl-none' 
-                    : 'bg-stone-800 text-white rounded-tr-none'
+                    ? 'bg-white border-stone-200 text-stone-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)]' 
+                    : 'bg-stone-100 border-stone-200 text-stone-800'
                   }
                 `}>
                   {msg.role === 'ai' ? (
@@ -285,27 +285,23 @@ export const MentorChat = ({
         {/* Streaming Indicator */}
         {isStreaming && (streamingReasoning || streamingContent) && (
           <div className="flex gap-3 animate-slide-up">
-             <div className="w-9 h-9 rounded-full bg-white border border-stone-100 flex items-center justify-center shadow-sm shrink-0 mt-1">
-                <Bot size={18} className="text-indigo-500 animate-pulse" />
+             <div className="w-8 h-8 rounded-sm bg-white border border-stone-800 text-stone-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
+                <Bot size={16} className="animate-pulse" />
              </div>
              <div className="flex flex-col max-w-[85%]">
                 {streamingReasoning && (
-                  <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 overflow-hidden shadow-sm">
-                    <div className="flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-amber-800">
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.08em] bg-white/70 border border-amber-200 px-2 py-0.5 rounded-full text-amber-700">Thinking</span>
-                      <span className="text-amber-900">Reasoning in progress...</span>
+                  <div className="mb-4 pl-3 border-l-2 border-amber-400">
+                    <div className="flex items-center gap-2 text-xs font-mono text-amber-600 animate-pulse mb-1">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full" />
+                      PROCESSING...
                     </div>
-                    <div className="px-4 py-3 text-xs text-amber-900 border-t border-amber-200 bg-white font-mono whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
+                    <div className="text-xs font-mono text-stone-600 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed bg-stone-50 p-3 rounded border border-stone-100">
                       {streamingReasoning}
                     </div>
                   </div>
                 )}
                 {streamingContent && (
-                  <div className="bg-white border border-stone-200 px-5 py-3.5 rounded-2xl rounded-tl-none text-[15px] leading-relaxed text-stone-900 shadow-sm min-w-0">
+                  <div className="bg-white border border-stone-200 px-5 py-3.5 rounded-lg text-[15px] leading-relaxed text-stone-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] min-w-0">
                     <MarkdownRenderer content={streamingContent} />
                   </div>
                 )}
@@ -316,36 +312,33 @@ export const MentorChat = ({
         {/* Loading Indicator */}
         {isLoading && !isStreaming && (
           <div className="flex gap-3 animate-slide-up">
-             <div className="w-9 h-9 rounded-full bg-white border border-stone-100 flex items-center justify-center shadow-sm mt-1">
-                <Bot size={18} className="text-indigo-500 animate-pulse" />
+             <div className="w-8 h-8 rounded-sm bg-white border border-stone-800 text-stone-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
+                <Bot size={16} className="animate-pulse" />
              </div>
-             <div className="bg-white border border-stone-100 px-5 py-3.5 rounded-2xl rounded-tl-none text-sm text-stone-500 shadow-sm flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                </span>
-                Connecting to mentor...
+             <div className="bg-white border border-stone-200 px-4 py-2 rounded text-xs font-mono text-stone-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,0.05)] flex items-center gap-2">
+                <span className="animate-pulse">●</span>
+                ESTABLISHING_UPLINK...
              </div>
           </div>
         )}
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-white border-t border-stone-100 pb-safe">
+      <div className="p-4 bg-white border-t border-stone-200 pb-safe">
         <form onSubmit={handleSubmit} className="relative">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask follow-up questions..."
-            className="w-full bg-stone-50 border border-stone-200 rounded-xl py-3.5 pl-5 pr-14 text-[15px] outline-none focus:ring-2 focus:ring-stone-200 transition-all placeholder-stone-400 focus:bg-white"
+            placeholder="> Enter command or query..."
+            className="w-full bg-stone-50 border border-stone-200 rounded py-3.5 pl-4 pr-14 text-[14px] font-mono outline-none focus:border-stone-400 focus:bg-white transition-all placeholder-stone-400 shadow-inner"
             onMouseDown={(e) => e.stopPropagation()}
           />
           <button 
             type="submit"
             disabled={!input.trim() || isLoading || isStreaming}
-            className="absolute right-2.5 top-2.5 p-2 bg-stone-800 text-white rounded-lg hover:bg-stone-700 disabled:opacity-50 disabled:hover:bg-stone-800 transition-colors shadow-sm touch-target h-auto w-auto"
+            className="absolute right-2 top-2 p-1.5 bg-stone-900 text-white rounded hover:bg-stone-700 disabled:opacity-50 disabled:hover:bg-stone-900 transition-colors shadow-sm touch-target h-auto w-auto"
           >
-            <Send size={16} />
+            <Send size={14} />
           </button>
         </form>
       </div>
