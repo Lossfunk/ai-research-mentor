@@ -20,6 +20,7 @@ export const Sidebar = ({
   onClose?: () => void;
 }) => {
   const [activeTab, setActiveTab] = useState<'context' | 'notes'>('context');
+  const [isDragOver, setIsDragOver] = useState(false);
   // Only relevant for mobile drawer mode
   const isMobile = !!onClose;
   
