@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+import Joyride, { ACTIONS, CallBackProps, EVENTS, STATUS, Step } from 'react-joyride';
 
 const TOUR_KEY = 'tour_seen_v1';
 
 export const OnboardingTour = () => {
   const [run, setRun] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -19,19 +20,42 @@ export const OnboardingTour = () => {
     // Listen for manual trigger
     const handleManualTrigger = () => {
       setRun(true);
+      setStepIndex(0);
     };
     window.addEventListener('trigger-onboarding-tour', handleManualTrigger);
 
+    // Listen for mentor chat open
+    const handleMentorOpen = () => {
+      setRun((prev) => {
+         // Only advance if we are currently on the relevant step (index 5: chat-toolcalls)
+         // Actually, step 0 is "Ask Mentor" button. Step 5 is inside the chat.
+         // If we are at step 0 ("activity-ask-mentor"), clicking it should advance us.
+         if (prev && stepIndex === 0) {
+             setTimeout(() => setStepIndex(1), 500); // Small delay to allow UI to settle
+             return true;
+         }
+         return prev;
+      });
+    };
+    window.addEventListener('mentor-chat-opened', handleMentorOpen);
+
+
     return () => {
       window.removeEventListener('trigger-onboarding-tour', handleManualTrigger);
+      window.removeEventListener('mentor-chat-opened', handleMentorOpen);
     };
-  }, []);
+  }, [stepIndex]);
 
   const handleCallback = (data: CallBackProps) => {
-    const { status } = data;
+    const { status, action, type, index } = data;
+    
     if ([STATUS.FINISHED, STATUS.SKIPPED].includes(status)) {
       setRun(false);
       localStorage.setItem(TOUR_KEY, 'true');
+    } else if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
+        // Update internal step index to match joyride's
+        const nextIndex = index + (action === ACTIONS.PREV ? -1 : 1);
+        setStepIndex(nextIndex);
     }
   };
 
@@ -41,11 +65,13 @@ export const OnboardingTour = () => {
       content: 'Click the sparkles to open your AI research mentor. Ask questions, search papers, and get help.',
       placement: 'right',
       disableBeacon: true,
+      spotlightClicks: true, // Allow user to click the element
     },
     {
       target: '[data-tour-id="view-notebook"]',
       content: 'Switch to the Notebook view to write your paper. It supports Markdown, rich text, and exports.',
       placement: 'right',
+      spotlightClicks: true,
     },
     {
       target: '[data-tour-id="notebook-toolbar"]',
@@ -67,6 +93,11 @@ export const OnboardingTour = () => {
       content: 'Your mentor needs to be open for this one! Chat responses and tool outputs (like search results) appear here.',
       placement: 'left',
     },
+    {
+      target: '[data-tour-id="help-trigger"]',
+      content: "Need a refresher? Click the '?' button here anytime to take this tour again.",
+      placement: 'top',
+    },
   ];
 
   if (!isMounted) return null;
@@ -75,6 +106,7 @@ export const OnboardingTour = () => {
     <Joyride
       steps={steps}
       run={run}
+      stepIndex={stepIndex}
       continuous
       showProgress
       showSkipButton

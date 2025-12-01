@@ -368,6 +368,7 @@ export const Sidebar = ({
               {memoryConnected ? 'Online' : 'Offline'}
             </span>
             <button 
+              data-tour-id="help-trigger"
               onClick={() => window.dispatchEvent(new Event('trigger-onboarding-tour'))}
               className="text-stone-400 hover:text-stone-600 transition-colors p-1"
               title="Start Tour"

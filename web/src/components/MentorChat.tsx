@@ -380,6 +380,13 @@ export const MentorChat = ({
   }, []);
 
   useEffect(() => {
+    if (isOpen) {
+      // Dispatch custom event when chat opens (for onboarding tour)
+      window.dispatchEvent(new Event('mentor-chat-opened'));
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
