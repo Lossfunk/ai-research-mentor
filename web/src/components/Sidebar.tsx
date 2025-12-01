@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   FileText, Search, FolderOpen, Plus, PanelLeftClose, PanelLeftOpen,
-  Upload, File, Trash2, CheckSquare, Square, Loader2, AlertCircle, Brain, X
+  Upload, File, Trash2, CheckSquare, Square, Loader2, AlertCircle, Brain, X, HelpCircle
 } from 'lucide-react';
 import { useDocumentStore, UploadedDocument } from '@/store/useDocumentStore';
 import { useNotebookStore } from '@/store/useNotebookStore';
@@ -207,7 +207,7 @@ export const Sidebar = ({
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 px-3 pb-3 border-b border-stone-200/60">
+      <div className="flex gap-1 px-3 pb-3 border-b border-stone-200/60" data-tour-id="sidebar-tabs">
         <SidebarTab 
           label="Context" 
           icon={<FolderOpen size={16} />} 
@@ -281,6 +281,7 @@ export const Sidebar = ({
               
               {/* Persistent "Add Source" Button */}
               <button
+                data-tour-id="upload-dropzone"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2.5 border border-dashed border-stone-300 rounded-lg text-stone-500 hover:text-stone-800 hover:border-stone-400 hover:bg-white transition-all group"
               >
@@ -366,6 +367,13 @@ export const Sidebar = ({
               <Brain size={12} />
               {memoryConnected ? 'Online' : 'Offline'}
             </span>
+            <button 
+              onClick={() => window.dispatchEvent(new Event('trigger-onboarding-tour'))}
+              className="text-stone-400 hover:text-stone-600 transition-colors p-1"
+              title="Start Tour"
+            >
+              <HelpCircle size={14} />
+            </button>
           </div>
         </div>
       </div>

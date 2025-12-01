@@ -8,6 +8,8 @@ import { MentorChat } from "@/components/MentorChat";
 import { PenTool, Layout, Sparkles, Menu } from "lucide-react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
+import { OnboardingTour } from "@/components/OnboardingTour";
+
 // Dynamically import Tldraw with SSR disabled
 const Whiteboard = dynamic(() => import("@/components/Whiteboard").then(mod => mod.Whiteboard), { 
   ssr: false,
@@ -22,6 +24,7 @@ export default function Home() {
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-[#F7F6F3] flex flex-col md:block font-sans selection:bg-amber-100 selection:text-amber-900">
+       <OnboardingTour />
        {/* Mobile Header */}
        <div className="md:hidden flex items-center justify-between px-4 py-3 pt-safe z-30 fixed top-0 left-0 right-0 pointer-events-none">
          <button 
@@ -66,6 +69,7 @@ export default function Home() {
             {/* Primary Controls (Top) */}
             <div className="flex flex-col gap-4">
                <button 
+                 data-tour-id="activity-ask-mentor"
                  onClick={() => setIsChatOpen(!isChatOpen)}
                  className={`p-3 rounded-xl transition-all duration-200 ${isChatOpen ? 'bg-stone-800 text-white shadow-md' : 'text-amber-500 hover:text-stone-300 hover:bg-stone-800/50'}`}
                  title="Ask Mentor"
@@ -73,6 +77,7 @@ export default function Home() {
                  <Sparkles size={20} />
                </button>
                <button 
+                 data-tour-id="view-notebook"
                  onClick={() => setView('notebook')}
                  className={`p-3 rounded-xl transition-all duration-200 ${view === 'notebook' ? 'bg-stone-800 text-white shadow-md' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'}`}
                  title="Write"

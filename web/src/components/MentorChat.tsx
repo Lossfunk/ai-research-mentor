@@ -765,7 +765,11 @@ export const MentorChat = ({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-6 bg-[#FAFAF9]" ref={scrollRef}>
+      <div 
+        data-tour-id="chat-toolcalls"
+        className="flex-1 overflow-y-auto p-4 md:p-5 space-y-6 bg-[#FAFAF9]" 
+        ref={scrollRef}
+      >
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex gap-5 animate-slide-up ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div className={`
