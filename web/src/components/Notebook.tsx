@@ -234,7 +234,10 @@ export const Notebook = () => {
 
           {/* Floating Sticky Pill Toolbar */}
           {editor && (
-            <div className="sticky top-6 z-20 mx-auto w-fit mb-4 transition-all duration-300 animate-fade-in">
+            <div 
+              data-tour-id="notebook-toolbar"
+              className="sticky top-6 z-20 mx-auto w-fit mb-4 transition-all duration-300 animate-fade-in"
+            >
               <div className="flex items-center gap-1 px-3 py-1.5 bg-white/90 backdrop-blur-md border border-stone-200 rounded-full shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)]">
                 
                 <ToolbarButton 
