@@ -12,10 +12,13 @@ export const OnboardingTour = () => {
 
   useEffect(() => {
     setIsMounted(true);
-    const seen = localStorage.getItem(TOUR_KEY);
-    if (!seen) {
-      setRun(true);
-    }
+    // Delay the initial check to allow Workspace to fully mount and animate in
+    const timer = setTimeout(() => {
+      const seen = localStorage.getItem(TOUR_KEY);
+      if (!seen) {
+        setRun(true);
+      }
+    }, 500); // Reduced to 500ms for quicker start
 
     // Listen for manual trigger
     const handleManualTrigger = () => {
@@ -24,27 +27,22 @@ export const OnboardingTour = () => {
     };
     window.addEventListener('trigger-onboarding-tour', handleManualTrigger);
 
-    // Listen for mentor chat open
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('trigger-onboarding-tour', handleManualTrigger);
+    };
+  }, []);
+
+  // Separate effect for Mentor Interaction to avoid re-setting the timer
+  useEffect(() => {
     const handleMentorOpen = () => {
-      setRun((prev) => {
-         // Only advance if we are currently on the relevant step (index 5: chat-toolcalls)
-         // Actually, step 0 is "Ask Mentor" button. Step 5 is inside the chat.
-         // If we are at step 0 ("activity-ask-mentor"), clicking it should advance us.
-         if (prev && stepIndex === 0) {
-             setTimeout(() => setStepIndex(1), 500); // Small delay to allow UI to settle
-             return true;
-         }
-         return prev;
-      });
+      if (run && stepIndex === 0) {
+         setTimeout(() => setStepIndex(1), 500); 
+      }
     };
     window.addEventListener('mentor-chat-opened', handleMentorOpen);
-
-
-    return () => {
-      window.removeEventListener('trigger-onboarding-tour', handleManualTrigger);
-      window.removeEventListener('mentor-chat-opened', handleMentorOpen);
-    };
-  }, [stepIndex]);
+    return () => window.removeEventListener('mentor-chat-opened', handleMentorOpen);
+  }, [run, stepIndex]);
 
   const handleCallback = (data: CallBackProps) => {
     const { status, action, type, index } = data;
