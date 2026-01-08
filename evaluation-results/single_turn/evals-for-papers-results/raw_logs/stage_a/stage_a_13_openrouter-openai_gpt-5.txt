@@ -1,0 +1,48 @@
+You can contribute to AI-for-health without private datasets by focusing on synthetic data, open aggregate data, simulation, and careful evaluation/documentation. This lets you do useful, publishable work safely and for free.
+
+Safe data you can use today
+- Synthetic EHR: Synthea generates realistic, fully synthetic patient records you can model without PHI risk [1].
+- De-identified EHR (with credentialing): MIMIC‑IV is widely used, de-identified, and available after a short training and data use agreement [2].
+- Lightweight medical imaging: MedMNIST v2 provides many small 2D/3D biomedical image datasets for benchmarking and prototyping [3].
+- Public health aggregates: WHO’s Global Health Observatory and IHME’s Global Health Data Exchange host open, country-level indicators; use them for epidemiology, forecasting, and fairness audits across regions [4][5]. For time series examples, Our World in Data’s COVID‑19 data is a clean, documented resource [6].
+- Privacy norms: When you do work that touches health data, follow HIPAA/HHS privacy guidance on de-identification and documentation, and avoid uploading sensitive data to unvetted services [9].
+
+Three beginner-friendly, falsifiable projects (privacy-preserving)
+1) Differential privacy on synthetic EHR
+- Hypothesis: On a Synthea cohort predicting 30‑day readmission, DP‑SGD with ε ≤ 5 reduces AUROC by ≤3 percentage points vs non‑DP training at fixed compute.
+- Setup: Generate ~50k synthetic patients with features/labels from Synthea [1]. Train a simple MLP or logistic regression with and without DP‑SGD (e.g., Opacus), 5 seeds. Target ε≈3–5 at δ=1e‑5 and report your privacy accounting (noise multiplier, steps) with seed/configs. Evaluate on a held-out patient split.
+- Metrics and decision: AUROC/AUPRC and calibration (ECE) mean ± std across seeds. Reject hypothesis if AUROC drop >3 pp. Rationale: DP is a standard tool for medical data privacy; surveys summarize its trade-offs and settings in healthcare contexts [7].
+
+2) Federated learning simulation (no data sharing)
+- Hypothesis: FedAvg across 5 “virtual hospitals” (non‑IID splits by demographics or sites) on MedMNIST achieves AUROC within 2 pp of centralized training while never sharing raw data.
+- Setup: Pick one MedMNIST dataset (e.g., PathMNIST) [3]. Partition images into 5 clients with label/feature skew. Compare centralized training to FedAvg for the same model, 5 seeds. Log communication cost (rounds × bytes of model updates).
+- Metrics and decision: AUROC/AUPRC overall and per client; fairness gap (max‑min client AUROC). Reject if global AUROC gap >2 pp or fairness worsens materially. Rationale: FL is actively used in medical imaging and is well-surveyed [8].
+
+3) Public-health nowcasting/forecasting from open aggregates
+- Hypothesis: A simple, regularized baseline (7‑day moving average + ridge regression with country fixed effects) reduces mean absolute error by ≥10% vs naïve persistence for 7‑day-ahead COVID‑19 case forecasts on OWID data.
+- Setup: Use Our World in Data’s country-level time series [6]. Train on 2020–2022, validate on a rolling window; compare persistence (ŷt+7 = yt) vs your baseline with country indicators and seasonality. 5 rolling seeds/windows.
+- Metrics and decision: MAE/RMSE (mean ± std across windows); Diebold‑Mariano test for significance. Reject if improvement <10%. Extend by checking robustness across income groups using WHO/IHME indicators [4][5].
+
+A simple 4‑week plan
+- Week 1: Pick one project above. Lock a small, end-to-end baseline you can run in 30–60 minutes. Write a short README (task, data source/license, intended use, metric, seeds, hardware).
+- Week 2: Run your main comparison across 3–5 seeds; log configs and results to a CSV.
+- Week 3: Add one ablation (e.g., stronger DP noise, more non‑IID skew, alternate forecast horizon) and one robustness check (calibration, per‑client or per‑country breakdown).
+- Week 4: Write a 2–3 page note (hypothesis, setup, results with mean ± std and a simple significance test, limitations, privacy considerations). Open-source the notebook.
+
+Ways to add value without private data
+- Reproducibility: Create clean evaluation scripts and small baselines for a MedMNIST task, or OWID forecasting, with pinned versions and seeds [3][6].
+- Benchmark gaps: Run cross-region or cross-income generalization checks on public aggregates (e.g., train on high-income countries, test on lower-income), and document failures with clear caveats [4][5].
+- Privacy tooling: Share DP/FL starter repos with working configs and privacy accounting summaries; these are in high demand in health contexts [7][8].
+
+If you share whether you prefer tabular EHR, imaging, or public-health time series, I can suggest a ready-to-run notebook and exact configs for one of the projects above.
+
+Citations
+[1] Synthea—Novel coronavirus (COVID‑19) model and synthetic data set — https://pmc.ncbi.nlm.nih.gov/articles/PMC7531559/  
+[2] MIMIC‑IV, a freely accessible electronic health record dataset (Nature Sci Data) — https://www.nature.com/articles/s41597-022-01899-x  
+[3] MedMNIST v2: A large-scale lightweight benchmark for 2D and 3D biomedical images — https://arxiv.org/abs/2110.14795  
+[4] WHO Global Health Observatory Data Repository — https://pubmed.ncbi.nlm.nih.gov/32069199/  
+[5] Global Health Data Exchange (GHDx) — https://ghdx.healthdata.org/countries  
+[6] Our World in Data — COVID‑19 dataset (GitHub) — https://github.com/owid/covid-19-data  
+[7] A Survey on Differential Privacy for Medical Data Analysis — https://pmc.ncbi.nlm.nih.gov/articles/PMC10257172/  
+[8] Federated Learning for Medical Image Analysis: A Survey — https://arxiv.org/abs/2306.05980  
+[9] HHS — HIPAA Privacy Guidance (overview) — https://www.hhs.gov/hipaa/for-professionals/privacy/guidance/index.html

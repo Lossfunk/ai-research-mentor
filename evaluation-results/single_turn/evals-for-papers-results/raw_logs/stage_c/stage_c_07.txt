@@ -1,0 +1,126 @@
+Stage: A → B (pre-idea to concrete experiments). The plan below is turnkey and gated with a short Phase 0.
+
+Intuition
+Edge AI on diver-carried devices is constrained by power and optics: underwater color shifts and haze degrade model reliability, and compute budgets favor small models. If we (1) normalize imagery with robust underwater color/contrast correction, (2) compress models via distillation/quantization for EdgeTPU/Jetson, and (3) standardize diver capture protocols, we can get reliable bleaching and cover estimates with citizen-science scale. Underwater enhancement plus small, hardware-aligned CNNs should move the accuracy–energy frontier significantly [1][6][8][9][P1].
+
+Why this is principled
+Physics- and learning-based underwater restoration (Sea-Thru, DeepSeeColor) reduce backscatter and color cast, improving downstream recognition [1][6]. Edge-optimized architectures and QAT/distillation maintain accuracy under low-bit inference on Coral/Jetson-class devices [8][P1]. Protocol standardization from Reef Check/CoralNet provides interoperable labels and QA, enabling valid ecological metrics (percent cover, bleaching prevalence) from images [3][4]. Citizen science programs have demonstrated scalable reef reconnaissance when paired with deep learning, supporting feasibility at scale [7].
+
+1) Problem framing and goals
+Objective: Design, validate, and field a low-power computer vision toolkit that volunteer divers can use to monitor coral reef health, focusing on bleaching status and benthic cover.
+
+Primary tasks
+- Image pre-processing: robust, real-time underwater enhancement and color correction to stabilize features across sites and conditions [1][6][2].
+- Classification and estimation: (a) bleaching detection at the colony/patch level, (b) benthic cover composition estimates using standardized labels compatible with CoralNet and Reef Check [3][4][10].
+- Edge deployment: run-time on Coral USB TPU and/or Jetson Nano/Orin at ≥10 FPS with ≤3 W accelerator draw (Coral) or ≤10 W system budget (Jetson), preserving ≥85–90% of desktop baseline accuracy [8][9][P1].
+- Citizen-science workflow: protocol-aligned capture (quadrat/framing, standoff distance, lighting) and QA pipelines consistent with CoralNet SOPs and Reef Check methods [3][4].
+
+Success criteria (6 months)
+- Technical: Field-validated, on-device pipeline achieving ≥0.80 F1 for bleaching vs. healthy on test sites; benthic cover MAE ≤8% against expert annotations; ≥10 FPS; energy per inference ≤100 mJ (EdgeTPU) or ≤400 mJ (Jetson) [8][9].
+- Operational: Volunteer capture compliance ≥85% (checklist adherence); inter-annotator agreement κ ≥0.7 with expert adjudication for 10% audit subsample [3][7].
+
+2) Experiments
+Experiment 1: Underwater enhancement → downstream accuracy
+- Hypothesis: Learned restoration (DeepSeeColor) or physics-based (Sea-Thru) improves bleaching detection and cover estimation accuracy over simple white balance by ≥5–8 F1/points due to reduced backscatter and spectral bias [1][6].
+- Setup: Use CoralNet quadrat images (train/val/test) with site stratification; augment with synthetic degradations (haze, color shift) via WaterGAN for robustness [2][3]. Implement four pre-processors: None, Gray-world WB, Sea-Thru (offline), DeepSeeColor (real-time).
+- Baselines: No enhancement; Gray-world white balance. Advanced: Sea-Thru [1]; DeepSeeColor [6].
+- Evaluation metrics: Bleaching F1, accuracy; benthic cover MAE vs. expert labels; UIQM/UCIQE for image quality; per-condition slice metrics (depth, turbidity); inference latency (ms) [3].
+- Expected outcomes: DeepSeeColor yields the best real-time trade-off; Sea-Thru may maximize accuracy offline but is slower. If no gain, pivot to domain-specific color charts and exposure protocols. Follow-ups: test lightweight variants or knowledge-distilled enhancement models.
+
+Experiment 2: Edge model compression with quantization-aware training and distillation
+- Hypothesis: QAT + feature distillation from a larger teacher preserves ≥90% of full-precision accuracy at 8-bit on Coral/Jetson with ≥2–4× energy efficiency [8][P1].
+- Setup: Teacher: ResNet50/ViT on workstation. Students: MobileNetV3-Small/Large, EfficientNet-Lite, MobileNet-EdgeTPU; train for bleaching and cover tasks. Apply quantization-aware training and feature distillation (e.g., QFD) [P1]. Compile to EdgeTPU and TensorRT INT8 [8][9].
+- Baselines: FP32 student; post-training quantization (PTQ) only. Ablations: KD-only, QAT-only, QAT+KD [P1].
+- Evaluation metrics: Accuracy/F1; per-class F1; energy/inference (J), average power (W), FPS on Coral USB TPU and Jetson Nano; accuracy–energy Pareto curves [8][9].
+- Expected outcomes: QAT+KD narrows the accuracy gap to ≤2–3 points vs. FP32 and outperforms PTQ by ≥3 points, with energy reductions meeting targets. If EdgeTPU model lags, try operator-compatible backbones (MobileNet-EdgeTPU) and layer fusions [8].
+
+Experiment 3: Protocol standardization and label reliability study with volunteers
+- Hypothesis: A minimal capture protocol (fixed standoff, angle, quadrat framing, lighting) reduces model error variance by ≥25% and raises inter-annotator agreement to κ ≥0.7 [3][4][7].
+- Setup: Two volunteer cohorts collect image sets with and without the protocol checklist; experts annotate a gold subset; remaining labels via CoralNet consensus [3]. Train/evaluate the same model across cohorts.
+- Baselines: Unstandardized captures; expert-only labels on a subset.
+- Evaluation metrics: Variance of prediction error; κ (Cohen’s/Fleiss’); percent cover MAE; checklist compliance rate; time-to-train model with/without noisy labels [3][4].
+- Expected outcomes: Protocol raises consistency and accuracy; if not, introduce in-app overlays and color cards to enforce geometry/exposure and re-test.
+
+Experiment 4: End-to-end field pilot with energy/throughput instrumentation
+- Hypothesis: The full pipeline sustains ≥10 FPS and ≤3 W (EdgeTPU accel) or ≤10 W (Jetson system) while maintaining ≥0.80 F1 in situ [8][9].
+- Setup: Mount Coral USB TPU on Raspberry Pi 4 and Jetson Nano dev kit in dive housing; instrument with USB power meter and INA219 sensor. Run enhanced → model → on-device soft-labeling; log per-inference timing and power [8][9].
+- Baselines: Cloud-only inference (post-dive); Pi CPU-only baseline.
+- Evaluation metrics: FPS; energy/inference; thermal throttling events; failure rates (drops/crashes); alignment of on-device predictions vs. offline expert labels for audit subsample.
+- Expected outcomes: EdgeTPU variant gives best energy/throughput; Jetson offers flexibility but higher draw. If thermal limits occur, add duty-cycling and batch capture.
+
+Experiment 5: Generalization across sites using semi-automated bleaching classifier references
+- Hypothesis: Site-agnostic performance can be improved via site-aware fine-tuning and domain augmentations, reducing cross-site drop by ≥5 F1 points [10].
+- Setup: Train on Site A/B, test on Site C; apply color/texture augmentations and modest site-specific fine-tuning. Use NOAA semi-automated CoralNet bleaching guidance for label schema alignment [10][3].
+- Baselines: Pooled training without site tags; no augmentations.
+- Evaluation metrics: Cross-site F1; calibration (ECE); error analyses by substrate type.
+- Expected outcomes: Augmentations + brief fine-tune narrow cross-site gaps; if not, consider domain adaptation or stratified sampling.
+
+3) Timeline for the next 6 months with milestones
+Phase 0 (Weeks 1–2) — Gate to proceed
+- Deliverables: (1) Prediction log with ≥14 entries comparing 2 preliminary models and 2 enhancement options; (2) One reproduced metric (e.g., UIQM and bleaching F1) and one ablation; (3) Experiment card templates finalized (hypothesis, falsifier, minimal test, variables, analysis, stop rule). If unmet, extend Phase 0.
+- Milestones: Data access set up (CoralNet export), protocol draft, hardware ordered [3][4].
+
+Month 1
+- Implement Experiment 1 offline pipelines (Sea-Thru, DeepSeeColor, WB) and baseline classifier; run small-scope evaluation. Milestone: Choose enhancement for on-device port [1][6].
+
+Month 2
+- Implement Experiment 2 with QAT+KD; compile to EdgeTPU and TensorRT INT8; produce accuracy–energy Pareto curves. Milestone: Select student backbone per device [8][9][P1].
+
+Month 3
+- Conduct Experiment 3 with two volunteer cohorts; integrate CoralNet SOP-based QA; analyze reliability. Milestone: Finalize capture checklist and training materials [3][4][7].
+
+Month 4
+- Field pilot (Experiment 4); instrument power/throughput; iterate thermal and duty-cycling strategies. Milestone: Meet FPS and energy targets on at least one platform [8][9].
+
+Month 5
+- Cross-site generalization study (Experiment 5); site-aware fine-tuning; error analysis by substrate. Milestone: Demonstrate ≤10% relative performance drop across new site [10].
+
+Month 6
+- Consolidation and paper: ablations, failure cases, calibration curves, ecological metrics; preregister analysis, prep submission with open protocols, code, and model cards.
+
+4) Resources (compute, tools, datasets)
+- Hardware: 2× Coral USB TPU + Raspberry Pi 4; 2× Jetson Nano or Orin Nano dev kits; waterproof housings; dual video lights; color calibration card; USB power meters; INA219 sensors [8][9].
+- Software: TensorFlow Lite/EdgeTPU compiler, PyTorch + QAT, TensorRT INT8, OpenCV; CoralNet API for labels; DeepSeeColor implementation [6][8].
+- Datasets: CoralNet labeled quadrats and SOPs [3]; NOAA semi-automated bleaching classifier report for schema alignment [10]; Reef Check protocols for ecologically meaningful targets [4]; Sea-Thru sample sets for validation; WaterGAN for synthetic augmentation [1][2].
+- Human resources: 10–20 trained volunteer divers; 1–2 expert annotators for audits; one embedded systems engineer; one ML engineer.
+- Compute: Single workstation with GPU for teacher training; cloud optional for training only.
+
+5) Risks and mitigations table
+- Risk: Enhancement adds artifacts that mislead detectors. | Mitigation: Compare multiple methods; include “no enhancement” baseline; measure effect sizes with UIQM/UCIQE and downstream F1 before deployment [1][6]. | Evidence: Sea-Thru/DeepSeeColor trade-offs [1][6].
+- Risk: Edge incompatibilities (ops unsupported on EdgeTPU). | Mitigation: Use EdgeTPU-friendly backbones (MobileNet-EdgeTPU), operator fusions, fall back to TensorRT INT8 on Jetson [8][9]. | Evidence: Coral docs/benchmarks [8].
+- Risk: Power/thermal failures underwater. | Mitigation: Duty cycling, lower resolution, thermal pads; validate with instrumented pilot [9]. | Evidence: Jetson power profiling [9].
+- Risk: Noisy volunteer labels and inconsistent capture. | Mitigation: SOP-aligned training and QA, consensus labels, expert audits (10%), in-app overlays and checklists [3][4][7]. | Evidence: CoralNet SOP, citizen science studies [3][7].
+- Risk: Poor cross-site generalization. | Mitigation: Site-aware fine-tuning, domain augmentation, calibration and stratified sampling; report site-level metrics [10]. | Evidence: NOAA classifier guidance [10].
+- Risk: Regulatory/permit constraints. | Mitigation: Engage local authorities early; restrict to non-invasive imaging per Reef Check norms [4]. | Evidence: Reef Check manuals [4].
+
+6) Stretch ideas or follow-up directions
+- Active learning on-device: subset selection for upload based on uncertainty to maximize expert labeling efficiency, tied to consensus workflows in CoralNet [3].
+- Dataset distillation to speed retraining when sites change (exploratory; domain shift may limit gains) [P3].
+- Simple fish-abundance by size bin as a secondary task using quantized detectors; useful if power budget allows; evaluate multi-task interference.
+- Physics-guided augmentation: parameterized water column models to synthesize depth/turbidity shifts alongside WaterGAN [2].
+- Vision-language reporting: auto-generate Reef Check-compatible summaries; human-in-the-loop verification by survey leaders.
+
+Literature anchors (1–2)
+- Sea-Thru (CVPR 2019) for physics-based underwater restoration [1].
+- Quantized Feature Distillation for Network Quantization (QFD) for small, accurate edge models [P1].
+
+Optional next step
+Commit to Phase 0: run a 2×2 pilot comparing (No enhancement vs. DeepSeeColor) × (FP32 MobileNetV3 vs. QAT+KD MobileNet-EdgeTPU) on CoralNet, log 14 predictions with UIQM and F1, and decide which enhancement and backbone to carry forward [6][8][P1][3].
+
+Citations
+[P1] Quantized Feature Distillation for Network Quantization — http://arxiv.org/abs/2307.10638v1
+[P2] Vision Mamba Distillation for Low-resolution Fine-grained Image Classification — http://arxiv.org/abs/2411.17980v1
+[P3] Dataset Distillation for Histopathology Image Classification — http://arxiv.org/abs/2408.09709v1
+[1] Sea-Thru: A Method for Removing Water From Underwater Images (CVPR 2019) — https://openaccess.thecvf.com/content_CVPR_2019/papers/Akkaynak_Sea-Thru_A_Method_for_Removing_Water_From_Underwater_Images_CVPR_2019_paper.pdf
+[2] WaterGAN: Unsupervised Generative Network to Enable Real-time Color Correction of Monocular Underwater Images — https://arxiv.org/abs/1702.07392
+[3] Analysis of Benthic Survey Images via CoralNet: SOPs and Guidelines — https://repository.library.noaa.gov/view/noaa/42469
+[4] Reef Check Instruction Manual (Tropical Monitoring) — https://www.reefcheck.org/wp-content/uploads/2020/07/monitoring2.pdf
+[5] DeepSeeColor: Realtime Adaptive Color Correction for AUVs — https://arxiv.org/abs/2303.04025
+[6] Broadscale reconnaissance of coral reefs from citizen science and deep learning — https://pmc.ncbi.nlm.nih.gov/articles/PMC12202624/
+[7] Introducing MobileNetV3 and MobileNet-EdgeTPU — https://research.google/blog/introducing-the-next-generation-of-on-device-vision-models-mobilenetv3-and-mobilenetedgetpu/
+[8] Edge TPU performance benchmarks — https://www.coral.ai/docs/edgetpu/benchmarks/
+[9] Profiling Energy Consumption of Deep Neural Networks on NVIDIA Jetson Nano — https://publik.tuwien.ac.at/files/publik_293778.pdf
+[10] Development of a Semi-automated Coral Bleaching Classifier in CoralNet — https://repository.library.noaa.gov/view/noaa/47285/noaa_47285_DS1.pdf
+
+Note on evidence coverage
+Edge-compute and underwater restoration sources are strong [1][5][7][8][9][P1], but peer-reviewed, task-specific benchmarks for on-device coral bleaching at dive conditions are sparse. We address this by (a) adopting CoralNet/NOAA/RC protocols, (b) running instrumented pilots, and (c) publishing open datasets/protocols to create authoritative evidence moving forward [3][4][10].

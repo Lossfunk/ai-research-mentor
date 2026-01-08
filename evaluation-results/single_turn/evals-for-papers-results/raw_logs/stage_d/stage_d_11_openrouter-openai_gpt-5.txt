@@ -1,0 +1,105 @@
+Below is a user-study plan to test whether the paper’s hierarchical representations align with human-perceived structure in long documents. I keep claims tied to the paper’s method/evaluation framing—hierarchical masking, uncertainty/causal guidance, and reporting of efficiency/stability metrics—and mark domain-specific choices as Conjecture. The study evaluates alignment between model-produced hierarchical boundaries/saliency and human judgments; it also reports efficiency context to mirror the paper’s emphasis on compute and stability [heirarchical-transformer.pdf:2–3].
+
+Goal and hypothesis
+- Goal: Determine whether the model’s hierarchical structure (boundaries, levels, and retained-token saliency) correlates with human-perceived document structure and importance.
+- Hypothesis: The paper’s Sparse Hierarchical Imagination (SHI) and hierarchical masking produce boundary placements and saliency that agree with human segmentations and highlights above strong text-structure baselines, without degrading the method’s compute/stability profile [heirarchical-transformer.pdf:2–3]. Conjecture.
+
+Stimuli and conditions
+- Documents: 60 long documents (2–8k tokens) sampled from Wikipedia, GovReport-like government reports, and long technical blog posts. Balance topics and lengths; reserve 10 docs for a pilot (power/variance estimation) and 50 for the main study. Conjecture.
+- Model conditions:
+  1) Hierarchical model (full: hierarchy + uncertainty/causal guidance) [heirarchical-transformer.pdf:3].
+  2) Ablations: hierarchy-off (flat attention), uncertainty-off, causal-off (to mirror the paper’s ablations) [heirarchical-transformer.pdf:3].
+- External baselines: TextTiling segmentation (Hearst, 1997) and a discourse parser (Rhetorical Structure Theory; Mann & Thompson, 1988) for structure-only comparisons.
+
+Participants and sample size (power-driven; Conjecture)
+- Participants: N = 36 proficient English readers recruited online; each annotates 10 documents; each document receives 3 independent annotators (crossed design).
+- Power targets:
+  - Boundary alignment (primary): Detect ΔPk = 0.05 (lower is better) or ΔWindowDiff = 0.05 between hierarchical model and TextTiling with within-document SD ≈ 0.10 at α=0.05, 1−β=0.8. Paired t-test yields n_docs ≈ ((1.96+0.84)×0.10/0.05)^2 ≈ 32; target 50 docs to allow FDR and dropouts.
+  - Saliency alignment: Detect ΔNDCG@20 = 0.06 with SD ≈ 0.12; paired t-test suggests ≈ 25 docs; 50 provides margin for multiple contrasts.
+  - Preference tasks: McNemar to detect 65% vs 50% success split with power ≈ 0.8 needs ~36–40 paired trials per participant; each participant completes 24 trials, aggregated across participants yields >800 pairs.
+
+Annotation instruments
+- I1. Boundary segmentation: Annotators place section/subsection boundaries in a document-view UI. Provide training examples; instructions emphasize topic and rhetorical shifts (with examples from Wikipedia-style sections). Output: binary boundary vector per token/sentence.
+- I2. Saliency highlighting: Annotators highlight up to K=20 sentences most critical for “keeping the document’s structure coherent” and for “answering a set of factual questions” (2 prompts counterbalanced). Output: sentence-importance ranks (ties allowed).
+- I3. Hierarchy map rating: Show a collapsed tree (max depth 2–3) produced by each method (only headings/summaries, no model name). Annotators rate on 7-point Likert scales: coherence, coverage, and helpfulness for navigation; and pick the tree they prefer for a timed navigation task (locate specified facts).
+- I4. Comprehension/navigation tasks: Timed retrieval of 3–5 facts with either the method’s hierarchy map or no map (within-subject crossover). Collect accuracy and time-on-task.
+- I5. Cognitive load: NASA-TLX short form after each block to contextualize performance differences.
+
+Mapping model outputs to instruments (Conjecture)
+- Model boundaries: Use the model’s selected “coarse level” token boundaries (e.g., retained summary/segment boundaries) as predicted section/subsection splits; for flat models, derive segments via attention-based affinity clustering.
+- Model saliency: Use retained-token probabilities or attention centrality from the last layer as sentence-level saliency; normalize to ranks.
+- Hierarchy maps: Build trees by grouping tokens between predicted boundaries; produce one-sentence summaries per group using the model’s pooled summary tokens (no external data).
+
+Primary outcome metrics
+- Boundary alignment
+  - Pk and WindowDiff vs human boundaries (lower is better); Boundary F1 at a ±3-sentence tolerance.
+- Saliency alignment
+  - Rank correlation (Kendall’s τ) and NDCG@{10,20} comparing model sentence ranks to human highlight frequency.
+- Tree alignment and usability
+  - Tree Edit Distance (TED) between model tree (depth ≤ 3) and human majority tree (constructed by greedy consensus of boundaries and subgrouping).
+  - Preference rate in pairwise blind comparisons vs TextTiling/RST trees; navigation task accuracy and time.
+- Efficiency/stability (context, mirroring the paper)
+  - Compute and latency for hierarchy generation and boundary inference, reported alongside accuracy (not a replacement) [heirarchical-transformer.pdf:3].
+
+Analysis plan
+- Preprocessing and reliability
+  - Aggregate human boundaries by probability per position; compute inter-annotator agreement: Krippendorff’s α for boundaries, Fleiss’ κ for sentence-importance selections. Report reliability CIs.
+- Primary tests (paired, document-level)
+  - Boundary metrics: Wilcoxon signed-rank on Pk/WindowDiff and Boundary F1 (hierarchical vs baselines); Benjamini–Hochberg FDR across metrics and domains.
+  - Saliency: Wilcoxon on NDCG@{10,20} and Kendall’s τ.
+  - Trees: Wilcoxon on TED; McNemar on pairwise preference (hierarchical vs TextTiling/RST); paired t/Wilcoxon on navigation time, McNemar on accuracy.
+- Mixed-effects modeling
+  - Metric ~ β0 + β1·Method + β2·Domain + β3·Length + (1|Document) + (1|Annotator); report β1 with 95% CIs to estimate method effect, controlling for document length/domain.
+- Equivalence/non-inferiority (pre-registered; Conjecture)
+  - If the goal is “aligns at least as well as strongest baseline,” use TOST with margins: ΔPk ≤ +0.02, ΔNDCG ≥ −0.02.
+- Uncertainty
+  - Clustered bootstrap (resample documents, then annotators within documents) to get BCa 95% CIs for all metrics.
+- Multiple comparisons
+  - FDR correction across 3 families: boundary, saliency, and tree/usability.
+
+Procedure
+- Pilot (n=10 docs; 6 participants): refine instructions; estimate variance for power updates.
+- Main study:
+  - Each participant completes: 4 boundary docs, 4 saliency docs, 2 tree/usability blocks (counterbalanced method order).
+  - Debrief to collect qualitative feedback on where hierarchies help/hurt.
+
+Controls to maintain comparability with the paper’s evaluation mindset
+- Report compute/latency for hierarchy extraction next to alignment metrics to mirror the paper’s efficiency/stability reporting [heirarchical-transformer.pdf:3].
+- Evaluate the same ablations as in the paper—hierarchical masking, causal guidance, uncertainty-based masking—so improvements can be attributed to specific components [heirarchical-transformer.pdf:3].
+- Keep model capacity constant across conditions; do not tune on the study documents; all outputs are from fixed checkpoints (no training with human labels), preserving an evaluation-only setting aligned with the paper’s methodology [heirarchical-transformer.pdf:2–3]. Conjecture.
+
+Three concrete, falsifiable experiments
+1) Boundary alignment versus strong baselines
+- Setup: Compare hierarchical model to TextTiling and RST on 50 documents; compute Pk/WindowDiff and Boundary F1 against human consensus.
+- Hypothesis: Hierarchical model achieves lower Pk and higher F1 than both baselines by at least Δ=0.05. Conjecture.
+- Pass/fail: Wilcoxon p < 0.05 (FDR-adjusted) for Pk decrease and F1 increase; bootstrap 95% CIs exclude 0.
+
+2) Saliency alignment and navigation
+- Setup: Compare NDCG@20 and Kendall’s τ between model saliency and human highlights; run timed fact-retrieval with model tree vs no tree.
+- Hypothesis: Hierarchical saliency shows NDCG@20 improvement ≥ 0.06 over flat model; navigation with the hierarchy reduces median time by ≥ 10% with no accuracy loss. Conjecture.
+- Pass/fail: Wilcoxon on NDCG/τ; paired t/Wilcoxon on time; McNemar on accuracy; all FDR-controlled.
+
+3) Component attribution via ablations
+- Setup: Evaluate hierarchy-on/off, uncertainty-on/off, causal-on/off; compare boundary and saliency metrics.
+- Hypothesis: Uncertainty guidance improves boundary F1 and NDCG@20 without added time cost; causal guidance yields domain-specific gains. Conjecture.
+- Pass/fail: Mixed-effects β1 for each component significantly > 0 for F1/NDCG; efficiency metrics unchanged or improved [heirarchical-transformer.pdf:3].
+
+Quality and risk management
+- Training and attention checks: Include seeded obvious boundaries to detect inattentive annotators; pre-register exclusion criteria.
+- Counterbalancing: Randomize document-method order; blind annotators to method identities.
+- Data release: Share anonymized annotations, model hierarchies, and code to compute metrics.
+
+Ethics and IRB (Conjecture)
+- Public documents only; no sensitive content. Obtain IRB or exemption determination for minimal-risk user studies.
+- Informed consent, fair compensation, and anonymized storage of responses; no collection of PII beyond consent logs.
+
+Why this is aligned with the paper
+- The study probes whether the hierarchical masking/representations (and their ablations) produce structure humans perceive as coherent, while still reporting efficiency context in the spirit of the paper’s compute/stability focus [heirarchical-transformer.pdf:2–3].
+
+Literature anchors
+- Hearst, 1997. TextTiling: Segmenting Text into Multi-paragraph Subtopic Passages. A classic baseline and evaluation metrics (Pk/WindowDiff) for topic segmentation. https://www.aclweb.org/anthology/J97-1003
+- Mann and Thompson, 1988. Rhetorical Structure Theory: Toward a functional theory of text organization. Foundation for hierarchical discourse structure comparisons. https://www.sfu.ca/rst/Resources/ (overview)
+
+Citations
+- [heirarchical-transformer.pdf:2] 3. Method — Sparse Hierarchical Imagination (SHI) and hierarchical masking are core components of the approach — User-provided PDF
+- [heirarchical-transformer.pdf:3] 4. Hypotheses and Evaluation: report rollout compute cost, rollout error, final performance; ablations include hierarchical masking, causal guidance, and uncertainty-based masking — User-provided PDF

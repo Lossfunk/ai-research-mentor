@@ -1,0 +1,91 @@
+Below is a concise, reproduction-oriented checklist based on the attached paper’s description of Sparse Hierarchical Imagination (SHI) with a Transformer world model. Where the paper is precise, I cite it; when details are missing, I mark them as Conjecture and suggest defensible defaults you can adopt until author code or a supplement is available.
+
+Key components to implement
+
+Data preprocessing and tokens
+- Input/encoding: Encode each observation x_t into a token set z_t; rollout starts from x0 → z0 and an initialized Transformer hidden state [heirarchical-transformer.pdf:3]. 
+- Hierarchical token organization: Arrange latent tokens into semantic levels (e.g., coarse-to-fine or semantic groups), which supports level-specific masking [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): image resolution, frame stacking, tokenizer type (e.g., ViT patches vs. VQ token codes), normalization, action-repeat, and reward preprocessing. Conjecture: choose a standard vision tokenizer (e.g., ViT-patch tokens for 84×84 RGB frames with 4-frame stack) and document it for comparability.
+
+Model architecture and hierarchical blocks
+- World model backbone: A Transformer operating over “large, structured token spaces” rather than compact latent imagination as in Dreamer; model p(z_{t+1} | z_{≤t}, a_{≤t}) autoregressively [heirarchical-transformer.pdf:2].
+- Hierarchical masking: At rollout step t and level l, apply a binary mask m_t^(l) over tokens to retain a subset ẑ_t^(l) = z_t^(l) ⊙ m_t^(l); the rollout distribution is then p(ẑ_{t+1} | ẑ_{≤t}, a_{≤t}) [heirarchical-transformer.pdf:3].
+- Masking controller: A small network per level outputs m_t^(l) = σ(f^(l)(h_t, u_t, c_t)), where h_t summarizes imagination context (e.g., via a memory token as in DART), u_t is a timestep embedding, and c_t carries auxiliary signals [heirarchical-transformer.pdf:3].
+- Auxiliary signals c_t: 
+  - Token relevance scores from a SPARTAN-style causal graph over tokens [heirarchical-transformer.pdf:2–3].
+  - Token-level uncertainty estimates following a stochastic Transformer approach (STORM-like) [heirarchical-transformer.pdf:3].
+  - Attention scores to a memory token (DART-like) [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): exact Transformer depth/width, attention pattern, memory token implementation, controller architecture, uncertainty mechanism details. Conjecture: start from a GPT-style decoder with a single learnable memory token per layer, small per-level MLP for masks, and uncertainty via dropout ensembles or latent noise, then ablate.
+
+Training schedule
+- Two-stage pretraining:
+  1) Autoregressive world model pretraining on full token sequences with no sparsification, learning p(z_{t+1} | z_{≤t}, a_{≤t}) [heirarchical-transformer.pdf:2].
+  2) In parallel, train a SPARTAN-style causal graph over token sequences to learn directed edges and token influence; this graph informs masking decisions [heirarchical-transformer.pdf:2].
+- Rollout/imagination pipeline at evaluation or planning time:
+  - Encode x0 → z0; initialize hidden state; at each step t apply level-specific, temporally adaptive masks via the controller, then generate next tokens autoregressively over the retained subset [heirarchical-transformer.pdf:3].
+- Metrics and benchmarks:
+  - Report rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+  - Benchmarks: Atari 100k and Crafter; baselines include DART, IRIS, STORM, and Sparse Imagination [heirarchical-transformer.pdf:3].
+- Ablations to run: isolate the effects of hierarchical masking, causal-graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3].
+- Gaps to resolve (not specified): optimizer, LR schedule, batch size, number of tokens/levels, warmup, stopping criteria, rollout horizon. Conjecture: AdamW with cosine decay and linear warmup; tune rollout horizon to match baselines; early-stop on validation NLL.
+
+Comparability requirements (to ensure fair, apples-to-apples results)
+- Equal rollout depth and budgets when comparing SHI to flat token dropout (Sparse Imagination) [heirarchical-transformer.pdf:3].
+- Report identical metrics across methods: per-step FLOPs or wall-clock, token- and image-level rollout error, final RL performance (e.g., median human-normalized score) on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Use the same training data, environment wrappers, observation preprocessing, action-repeat, frame stacking, and evaluation seeds across methods. Conjecture.
+- Match model capacity and compute: parameter count, context length, and training steps across methods; also constrain the retained token budget per step when comparing masking strategies. Conjecture.
+- Run the paper’s recommended ablations (turn off hierarchical masking, remove causal guidance, remove uncertainty) under identical conditions [heirarchical-transformer.pdf:3].
+- Baselines: DART, IRIS, STORM, Sparse Imagination; re-train under the same setup if author numbers are not directly comparable [heirarchical-transformer.pdf:3]. Conjecture: lock seeds and report mean ± 95% CI over ≥5 seeds.
+
+Leakage risks between pretraining and evaluation (and how to avoid them)
+- Using evaluation/holdout trajectories in world-model pretraining or in training the SPARTAN causal graph. Avoid by a strict train/val/test split at the environment-seed level; build the causal graph only from training data. Conjecture.
+- Lookahead in masking/controller: computing masks with features that leak future tokens or rewards (e.g., teacher-forced future context or test-time reward). Ensure the controller and auxiliary signals use only past/present information available at step t [heirarchical-transformer.pdf:3]. Conjecture for the risk; the paper’s rollout description is causal.
+- Reward leakage into the world model: keep world-model pretraining purely self-supervised on tokens/actions (no reward), as described for autoregressive modeling without sparsification [heirarchical-transformer.pdf:2]. If learning a value head, train it only on training rollouts and evaluate on held-out seeds. Conjecture.
+- Tuning on test seeds: hyperparameter search or early stopping using test performance inflates results. Use a validation split distinct from test. Conjecture.
+- Environment or benchmark contamination: pretraining the world model on out-of-distribution data that overlaps future evaluation environments (e.g., using Atari test-game trajectories). Keep pretraining limited to the designated training set for Atari 100k/Crafter. Conjecture.
+
+Concrete, falsifiable experiments to validate your reproduction
+1) Equal-depth masking vs. flat dropout
+- Setup: Compare SHI vs. Sparse Imagination-style flat token dropout at the same rollout depth and retained-token budget [heirarchical-transformer.pdf:3].
+- Metrics: per-step FLOPs, token- and image-level rollout error at horizons H ∈ {50, 100}, and final median human-normalized score on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Hypothesis: SHI uses fewer FLOPs per step than flat dropout at equal depth and achieves lower long-horizon reconstruction error [heirarchical-transformer.pdf:3].
+- Pass/fail: Statistically significant reduction in FLOPs and error; non-decreasing RL performance.
+
+2) Ablation: hierarchical masking, causal graph, uncertainty
+- Conditions: (a) full SHI, (b) no hierarchical masking (retain a fixed flat subset), (c) no causal-graph guidance, (d) no uncertainty signal [heirarchical-transformer.pdf:3].
+- Metrics: compute cost, rollout error, RL performance, stability (variance across seeds).
+- Hypothesis: Removing any component degrades efficiency and/or stability vs. full SHI [heirarchical-transformer.pdf:3].
+- Pass/fail: Each ablation shows a statistically significant drop on at least one primary metric.
+
+3) Controller policy vs. random/heuristic masks
+- Conditions: learned controller vs. random masks vs. heuristics based on static token saliency (no learned controller).
+- Metrics: retained-token fraction, rollout error, compute, RL performance.
+- Hypothesis: The learned controller yields better error-compute trade-offs than random/heuristic masks under the same token budget [heirarchical-transformer.pdf:3].
+- Pass/fail: Pareto improvement in error vs. FLOPs.
+
+Optional fourth experiment
+4) Transfer/stability test across seeds and small environment shifts
+- Train on one set of seeds; evaluate rollout error and RL performance on disjoint seeds. 
+- Hypothesis: SHI maintains rollout stability better than baselines across seeds due to semantically informed retention [heirarchical-transformer.pdf:3].
+- Pass/fail: Less degradation in error and performance vs. baselines.
+
+Practical training recipe (fill in missing choices explicitly in your repo)
+- Data: define observation resolution, frame stacking, tokenization (e.g., ViT patches vs. VQ tokenizer), and action-repeat. Conjecture.
+- World model pretraining: autoregressive loss on tokens conditioned on actions; no masking during pretraining [heirarchical-transformer.pdf:2].
+- Causal graph training: SPARTAN-style edge learning on token sequences in parallel; snapshot the graph for use in masking [heirarchical-transformer.pdf:2].
+- Masking controller training: train to optimize rollout efficiency/stability using auxiliary signals (SPARTAN relevance, uncertainty, memory-token attention) without peeking into future tokens [heirarchical-transformer.pdf:3]. Conjecture: use a mixture of supervised targets (keep tokens with high predicted influence/uncertainty) and RL-style objectives for compute-accuracy trade-offs.
+- Policy learning: evaluate on Atari 100k and Crafter; compare to DART, IRIS, STORM, and Sparse Imagination; report compute, rollout error, final scores; run ablations [heirarchical-transformer.pdf:3].
+
+Literature anchors for implementation details
+- Learning to play atari in a world of tokens (DART). Useful for memory-token design and tokenized Atari pipelines. https://arxiv.org/abs/2406.01361 [heirarchical-transformer.pdf:4]
+- Sparse imagination for efficient visual world model planning. Useful for flat token dropout baseline and equal-depth comparisons. https://arxiv.org/abs/2506.01392 [heirarchical-transformer.pdf:4]
+
+Sources
+- Sparse Hierarchical Imagination for Efficient Transformer World Models — [heirarchical-transformer.pdf:2–3]
+- Agarwal et al., 2024. Learning to play atari in a world of tokens — https://arxiv.org/abs/2406.01361 [heirarchical-transformer.pdf:4]
+- Chun et al., 2025. Sparse imagination for efficient visual world model planning — https://arxiv.org/abs/2506.01392 [heirarchical-transformer.pdf:4]
+
+Key takeaways
+- The pipeline has two clear pretraining components: an autoregressive Transformer trained on full token sequences and a SPARTAN-style causal graph trained in parallel; rollout then uses a learned, level-specific, adaptive mask informed by causal relevance, uncertainty, and memory attention [heirarchical-transformer.pdf:2–3].
+- For fair comparisons, fix rollout depth, compute budgets, and metrics; run the specified ablations and evaluate on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Prevent leakage by strict data splits and causal, stepwise masking; fill missing engineering details explicitly and document them as part of your reproducible protocol. Conjecture.

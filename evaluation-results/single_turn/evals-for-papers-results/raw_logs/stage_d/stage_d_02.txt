@@ -1,0 +1,93 @@
+Below is a controlled, evidence-based ablation plan that replaces the model’s hierarchical pooling/aggregation with flat mean pooling, while holding other factors constant. It aligns evaluation with the paper’s stated metrics: rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3], and respects the model’s level-specific sparsification policies [heirarchical-transformer.pdf:2].
+
+Intervention
+- What to replace: Wherever the hierarchical Transformer aggregates child tokens into a higher-level node (e.g., level k → k+1 merge or readout), replace the learned/attention-based aggregation with a simple arithmetic mean across the child token set. Preserve dimensionality with an optional linear projection.
+- Flat-mean operator:
+  - Given child token set C = {t1,…,tn} ∈ Rn×d feeding a parent node p ∈ Rd:
+    - p = LN(W(mean(C))) or p = mean(C) if dimensions match.
+    - Keep the number of parameters matched (if W is used) across variants to avoid confounds due to capacity differences.
+- Scope: Apply the same replacement at every hierarchical merge/readout site. Do not alter the sparsification/masking policy itself to isolate the pooling effect (since level-specific sparsification is core to the method [heirarchical-transformer.pdf:2]).
+
+Model Variants and Baselines
+- V1: Original Hierarchical Pooling (as in the hierarchical Transformer; unchanged). Baseline.
+- V2: Flat Mean Pooling (the proposed intervention).
+- V3: CLS-token Readout control (single learned global token attending to children; no mean pooling), to check whether any simple, non-hierarchical aggregator suffices.
+- V4: Flat Mean + Gated Residual (p = mean(C) + σ(g) ⊙ mean(C)), capacity-matched to V1, testing whether minimal gating restores any lost capacity.
+- Optional robustness control: V2 w/o projection (pure mean), to check whether projection is the sole contributor.
+
+Datasets/Tasks
+- Use standard world-model control tasks so results map to common practice in the literature:
+  - Atari 100k subset (image-based RL) and/or DMC (e.g., walker, cheetah) as in Dreamer-style evaluations [heirarchical-transformer.pdf:4]. These benchmark families are commonly used to report final RL performance and sample efficiency in world models [heirarchical-transformer.pdf:4].
+- If your original study already specifies tasks, reuse them exactly to maximize comparability with reported “rollout compute cost, rollout error, and final RL performance” [heirarchical-transformer.pdf:3].
+
+Primary Metrics (aligned to the paper)
+- Rollout compute cost: per-episode or per-step compute (e.g., attention FLOPs, wall-clock time on a fixed hardware target), reported alongside memory footprint [heirarchical-transformer.pdf:3].
+- Rollout error: prediction error of imagined trajectories vs. ground truth (e.g., MSE in observation space or latent-space reconstruction error) [heirarchical-transformer.pdf:3].
+- Final RL performance: average episodic return after a fixed interaction budget (e.g., 100k steps for Atari), as suggested by the evaluation focus in the attached paper [heirarchical-transformer.pdf:3].
+
+Secondary Metrics
+- Sample efficiency: area under the learning-curve (return vs. environment steps).
+- Stability: interquartile range of returns across seeds; number of training instabilities (divergences).
+- Calibration (if uncertainty-based masking is part of the stack): ECE or NLL on rollout predictions, to ensure the pooling change does not degrade uncertainty estimates the method relies on [heirarchical-transformer.pdf:3].
+- Throughput: tokens/sec processed during imagination and training.
+
+Controls and Protocol
+- Seeds: 10 independent seeds per variant per task. If compute-constrained, 5 seeds minimum, but report wider CIs.
+- Budget parity: identical environment interaction budgets, optimizer settings, batch sizes, augmentations, masks, and sparsification policies [heirarchical-transformer.pdf:2].
+- Capacity parity: match parameter counts across V1–V4 within ±1%. If the hierarchical aggregator uses projections, include equivalent projections in flat-mean variants (or add a no-projection control explicitly).
+- Early stopping: fixed training horizon; do not early stop on validation reward to avoid biasing RL returns.
+- Logging: store rollout error at fixed checkpoints, compute/memory counters, and per-seed learning curves.
+
+Statistical Tests and Reporting
+- Final RL returns (per task):
+  - Two-group comparisons: Welch’s t-test (unequal variances) on mean return; also report nonparametric Mann–Whitney U for robustness.
+  - Multi-variant: one-way ANOVA with Welch correction or Kruskal–Wallis; post hoc pairwise with Holm–Bonferroni correction.
+  - Effect sizes: Hedges’ g (parametric) and Cliff’s delta (nonparametric). 95% CIs via bootstrap (10k resamples).
+- Learning curves:
+  - Compare AUCs via nonparametric bootstrap; report 95% CI and p-value (per-pair with Holm–Bonferroni across games).
+- Rollout error and compute cost:
+  - If measured per-run across identical training checkpoints, use paired tests across seeds (paired t-test or Wilcoxon signed-rank) to improve power.
+- Multiple tasks:
+  - Report per-task stats and an aggregate win/loss/tie table across tasks with sign tests (per-variant) and a Holm–Bonferroni correction for multiple tasks.
+- Pre-register primary endpoints: final return and rollout error at the end of training, plus compute cost as defined above [heirarchical-transformer.pdf:3].
+
+Three (plus) concrete, falsifiable experiments
+1) Flat vs. Hierarchical on Atari-100k
+- Hypothesis: Flat mean pooling reduces compute cost but may increase rollout error and lower final returns relative to hierarchical pooling (conjecture).
+- Setup: Train V1–V3 on 5–10 Atari 100k games. Use identical world model, sparsification, and training horizons [heirarchical-transformer.pdf:2–3].
+- Variables: Independent: pooling variant. Dependent: final return, rollout error, compute cost.
+- Metrics: Primary metrics above; AUC of learning curves as secondary.
+- Expected outcome: If hierarchical structure aids representation, V1 ≥ V2/V3 in returns and rollout error; V2 ≤ V1 in compute cost (conjecture). Test with Welch’s t-test and Mann–Whitney; Holm–Bonferroni over games.
+
+2) Scaling children-per-parent ablation on DMC
+- Hypothesis: As the number of child tokens per parent increases, flat mean pooling degrades more (signal averaging) whereas hierarchical pooling remains stable (conjecture).
+- Setup: Choose 3 DMC tasks; vary children-per-parent (e.g., 4, 8, 16) while holding parameter count constant. Compare V1 vs. V2.
+- Variables: Independent: pooling and fan-in. Dependent: final return, rollout error, compute.
+- Metrics: Same primaries; two-way ANOVA (or aligned ranks ANOVA) with interaction term; post hoc tests corrected.
+
+3) Uncertainty-sensitive ablation
+- Hypothesis: With uncertainty-based masking enabled, hierarchical pooling better preserves calibrated uncertainty than flat mean pooling (conjecture), which can affect imagination quality [heirarchical-transformer.pdf:3].
+- Setup: Enable the same uncertainty-based masking policy used in the base model; compare V1 vs. V2 on 3 Atari games.
+- Variables: Independent: pooling. Dependent: ECE/NLL of rollout predictions, final return under the same masking.
+- Metrics: ECE (bootstrap CI), NLL, returns; Mann–Whitney U and Cliff’s delta for non-normal calibration metrics.
+
+4) Throughput vs. quality trade-off
+- Hypothesis: Flat mean pooling increases throughput (tokens/sec) but exhibits a return/rollout-error trade-off relative to hierarchical pooling (conjecture).
+- Setup: Fixed hardware, measure tokens/sec and wall-clock time/episode. Compare V1–V3 on 2 Atari and 2 DMC tasks.
+- Metrics: Throughput and memory; paired tests across seeds; report Pareto front.
+
+Reporting Checklist
+- Provide per-task tables for the three primary metrics with 95% CIs and corrected p-values [heirarchical-transformer.pdf:3].
+- Publish training curves and rollout error curves; share seeds and config files.
+- Release FLOP estimates and wall-clock timing scripts for reproducibility.
+- Clearly state any deviations from the base sparsification policy [heirarchical-transformer.pdf:2] and whether causal graph guidance or uncertainty-based masking are enabled [heirarchical-transformer.pdf:3].
+
+Notes on relevance and prior art
+- The attached paper frames its evaluation around rollout compute cost, rollout error, and final RL performance, and recommends ablations on hierarchical masking and uncertainty mechanisms [heirarchical-transformer.pdf:3]. Your pooling ablation fits that ablation philosophy directly.
+- Dreamer-style world-model evaluations on Atari/DMC are widely used to measure final returns and sample efficiency, providing established baselines and protocols [heirarchical-transformer.pdf:4].
+
+Citations
+- [heirarchical-transformer.pdf:2] 3. Method — level-specific sparsification policies and related background.
+- [heirarchical-transformer.pdf:3] 4. Hypotheses and Evaluation — report rollout compute cost, rollout error, and final RL performance; ablation dimensions including hierarchical masking and uncertainty-based masking.
+- [Hafner et al., 2021] Mastering Atari with Discrete World Models — https://openreview.net/forum?id=1ikK0kHjvjG
+- [Hafner et al., 2020] Dream to Control: Learning Behaviors by Latent Imagination — https://openreview.net/forum?id=S1lOTC4tDS

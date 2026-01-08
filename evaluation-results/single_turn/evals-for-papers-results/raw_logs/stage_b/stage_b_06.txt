@@ -1,0 +1,57 @@
+Short answer: yes—transformers have shown clear wins in several bio domains (genomics, protein, single-cell), but viability hinges on your data regime, leakage controls, and whether you can leverage pretraining rather than train from scratch. Two strong anchors: DNABERT showed that k-mer tokenized transformers learn useful genomic representations even in modest data regimes (Bioinformatics 2021), and Enformer demonstrated long-range sequence modeling for gene regulation using attention over 200kb contexts (Nat Methods 2021). See Citations.
+
+Stage: A – Pre idea. I’ll help you pressure-test and scope to a viable Phase 0.
+
+Strategic questions
+- What data do you actually have rights to use now (genomic sequences/annotations, protein sequences/DMS assays, single-cell RNA-seq) and at what scale?
+- Compute/time: how many GPUs (VRAM) and weekly hours can you commit for the next 2–4 weeks?
+- Primary downstream task and metric: variant effect prediction (auROC/auPRC), protein mutational effect (Spearman), cell type label transfer (macro-F1), or something else?
+- What’s your target milestone/venue and the biggest bottleneck you feel right now (data pipelines, modeling, or evaluation)?
+
+Recommendations (branching by typical constraints)
+- Low/medium compute or small labeled sets: start from pretrained models and fine-tune linear heads or adapters; avoid full-from-scratch training.
+- Guard against leakage with biologically meaningful splits: chromosomes or loci (genomics), ≤30% sequence identity (proteins), donor/batch or tissue-out splits (single-cell).
+- Always beat strong non-transformer baselines first (DeepSEA/Basset for sequence; scVI for single-cell) before architectural novelty.
+
+Three concrete, falsifiable experiments
+1) Genomic regulatory prediction: DNABERT vs CNN baseline
+- Hypothesis: a k-mer transformer (DNABERT-style) will outperform a CNN (Basset/DeepSEA-style) on held-out chromosomes for enhancer/promoter activity, especially for longer (>1 kb) inputs. Grounding: DNABERT established effective sequence representations with k-mer tokenization; Enformer highlights value of long-range context.
+- Setup: Use public datasets (e.g., ENCODE peaks). Splits by chromosome. Compare DNABERT fine-tuning vs a tuned CNN baseline. Control for sequence length and class balance.
+- Metrics: auPRC primary, auROC secondary; report calibration (ECE). Success: ≥2–5% auPRC gain on held-out chromosomes.
+- Interpretation: Gains suggest transformer benefits beyond motif-scale patterns; no gain implies either insufficient context or overfitting—probe with longer windows or stronger regularization.
+- Follow-ups: add relative positional encodings; vary k-mer sizes; evaluate OOD to new cell types. Anchors: DNABERT; Enformer.
+
+2) Single-cell label transfer with pretrained transformer embeddings vs scVI
+- Hypothesis: pretrained single-cell transformers (e.g., scGPT/Geneformer embeddings with small adapters) improve donor-out label transfer over scVI by better capturing gene-gene dependencies.
+- Setup: Take a public PBMC or multi-tissue scRNA-seq dataset with multiple donors/batches. Donor-out split. Compare (a) scVI baseline to (b) transformer embeddings + linear classifier; tune batch correction consistently.
+- Metrics: macro-F1 for labels; ASW-batch and kBET for batch mixing; runtime/memory. Success: statistically significant macro-F1 lift under donor-out with comparable batch mixing.
+- Interpretation: If gains vanish under donor-out, the transformer may be learning batch cues; add adversarial batch removal or frozen encoders.
+- Follow-ups: Few-shot adaptation to a new lab; ablate adapter size.
+
+3) Protein mutation effect prediction with ESM-2 embeddings
+- Hypothesis: fixed ESM-2 embeddings plus a small head will outperform non-PLM baselines on deep mutational scanning benchmarks, especially under family-out splits.
+- Setup: Choose 3–5 DMS datasets (e.g., GB1, AAV, TEM-1). Ensure ≤30% sequence identity between train/test. Compare ridge/CNN baselines to ESM-2 embeddings + MLP.
+- Metrics: Spearman correlation; report per-protein and aggregated. Success: consistent lift across proteins and robustness across seeds.
+- Interpretation: If only in-distribution improves, the model may memorize local families; enforce stricter identity thresholds or try task-specific fine-tuning.
+- Follow-ups: zero-shot scoring using ESM variant likelihoods as a control.
+
+Phase 0 (≤14 days) gates
+- Reproduce one strong baseline (CNN for genomics or scVI for single-cell) within ≤10% of reported metrics; maintain a 14-entry prediction log.
+- Complete one experiment card (hypothesis, falsifier, minimal test, variables, analysis plan, stop rule) and run one ablation or document one negative result with a short post-mortem.
+
+Intuition
+- Biology tasks benefit when models capture long-range dependencies (genomics), compositional constraints (proteins), or gene-gene structure (single-cell). Pretrained transformers often encode these regularities, so small, well-controlled fine-tunes can deliver gains without huge compute.
+
+Why this is principled
+- DNABERT and Enformer demonstrate that attention over appropriately tokenized sequences and long contexts learns regulatory grammar beyond local motifs. Using biologically meaningful splits and strong baselines reduces the risk of data leakage and overfitting, aligning with reproducible ML practice in comp bio.
+
+Next actions (pick one, ≤2 hours each)
+- Confirm your domain (genomics/protein/single-cell) and target task/metric.
+- List datasets you can access now and your compute budget.
+- Draft the 1-page experiment card for Experiment 1, 2, or 3; I’ll review and tighten before you run it.
+
+Citations
+- DNABERT: pre-trained Bidirectional Encoder Representations from Transformers model for DNA-language in genome — https://academic.oup.com/bioinformatics/article/37/15/2112/6128680
+- Enformer: Effective gene expression prediction from sequence by integrating long-range interactions — https://www.nature.com/articles/s41592-021-01252-x
+- ESM-2 (evolutionary-scale protein language models; Science 2023) — https://www.science.org/doi/10.1126/science.ade2574
+- scVI (deep generative modeling for single-cell transcriptomics) — https://www.nature.com/articles/s41592-018-0229-2

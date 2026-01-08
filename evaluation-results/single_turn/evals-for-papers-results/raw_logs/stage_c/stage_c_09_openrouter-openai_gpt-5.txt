@@ -1,0 +1,143 @@
+1. Problem framing and goals
+- Objective: Over 12 months, build a rigorous, reproducible evaluation suite to assess interpretability methods for autonomous driving perception models (2D image detection/segmentation and 3D lidar detection), with ablations and governance checkpoints aligned to safety standards. The suite will quantify faithfulness, localization quality, stability under perturbations, and human usefulness, and map findings into safety/risk artifacts (NIST AI RMF; ISO 26262/21448 SOTIF) [9][10][11].
+- Rationale and anchors:
+  - Saliency methods can fail basic sanity tests; evaluation must include model/randomization controls [1].
+  - Faithfulness should be tested by measuring performance degradation when “important” features are removed (deletion/insertion; remove-and-retrain (ROAR)) [2][3][4].
+  - For detection, instance-specific attribution and pointing metrics are needed beyond classification (e.g., ODAM, pointing game) [7][8].
+  - Governance requires documented risk controls and evidence, not just visualizations (NIST AI RMF; ISO 26262; SOTIF) [9][10][11].
+- Targets (by year end):
+  - Method ranking by faithfulness and stability on 2D detection (BDD100K) and 3D detection (nuScenes) with statistically defensible tests [5][6].
+  - Detection-localization quality benchmark (pointing game/hit-rate) and causal faithfulness curves (insertion/deletion/ROAR) for at least 4 methods (Grad-CAM/++, RISE/D-RISE, Integrated Gradients, ODAM) [1][2][3][4][7][8].
+  - Governance artifacts: interpretability verification plan, safety case tie-ins to ISO 26262/21448, and risk register aligned to NIST AI RMF [9][10][11].
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+Experiment 1: Saliency sanity checks and invariance controls (2D detection)
+- Hypothesis: Some saliency methods are insensitive to model/label changes, failing sanity checks; such methods should be down-weighted or excluded [1].
+- Setup: Use a pretrained detector (e.g., Faster R-CNN/YOLO) on BDD100K. Run two sanity families: (a) model parameter randomization (progressively reinitialize layers), (b) label randomization; re-generate maps after each step [1][6].
+- Baselines: Original model/method maps; noise maps and edge detectors as naive controls.
+- Metrics: Rank correlation (Spearman/Kendall) between original and randomized saliency; sanity pass/fail thresholds per [1].
+- Expected outcomes: At least one method shows high correlation under randomization (fail), while others (e.g., gradient-based) degrade as expected (pass) [1].
+
+Experiment 2: Faithfulness via deletion/insertion and ROAR (2D detection)
+- Hypothesis: Methods that better identify truly causal pixels/regions cause steeper mAP drops under deletion and faster mAP recovery under insertion; ROAR magnifies differences by retraining on ablated data [2][3][4].
+- Setup: On BDD100K, compute attribution maps for detected instances; perform:
+  - Deletion/Insertion: Replace/remove top-k% pixels (blur/zero) within box masks, recompute detection scores/mAP across k∈{5,10,20,30} [4].
+  - ROAR: Remove top-k% regions from training images (within boxes), retrain a detector, and measure mAP loss vs. random removal [2][3].
+  - Methods: Grad-CAM/++, Integrated Gradients, RISE/D-RISE (black-box), ODAM (instance-specific) [4][7][8].
+- Baselines: Random and uniform masks; low-pass blurs.
+- Metrics: AOPC (area over perturbation curve) for insertion/deletion; ROAR mAP delta vs. random; statistical tests (paired) [4][2][3].
+- Expected outcomes: Black-box RISE/D-RISE and ODAM outperform naive gradients on causal metrics; normalized AOPC mitigates metric pathologies (we will report both; if literature suggests improved normalization we will include it) [4]. Note: Normalized AOPC improvements are reported, but generalization to detection is still active; we will validate empirically (limitation acknowledged) [12][13].
+
+Experiment 3: Localization quality via pointing game and instance hit-rate (2D detection)
+- Hypothesis: Instance-specific methods (e.g., ODAM) yield higher “pointing game” hit-rates within ground-truth boxes vs. generic class CAMs for detection [7][8].
+- Setup: For each detection, compute the max-activation point of the attribution map and check if it falls inside the corresponding ground-truth mask/box; evaluate across classes and conditions (day/night, rain) [6][8].
+- Baselines: Grad-CAM/++ and random points.
+- Metrics: Pointing game hit-rate and top-k pointing; overlap IoU between salient region and ground-truth; per-class breakdown [8].
+- Expected outcomes: ODAM > Grad-CAM on instance-level pointing metrics; RISE competitive but slower [7][8].
+
+Experiment 4: Stability under benign perturbations and distribution shift (2D detection)
+- Hypothesis: Faithful explanations remain consistent under label-preserving transforms (small brightness, JPEG, crop jitter), and their instability grows under domain shifts (night/rain), flagging spurious cues [1][6].
+- Setup: Apply small perturbations to validation images; compute saliency similarity (SSIM/correlation) within boxes. Evaluate across BDD100K conditions and nuScenes day/night subsets [5][6].
+- Baselines: Original, plus edge maps as upper-bound for input-driven stability.
+- Metrics: Map similarity; variance across seeds; mAP drift vs. saliency drift.
+- Expected outcomes: Methods passing sanity checks show higher stability under benign transforms; larger gaps under night/rain indicate sensitivity to non-causal cues [1][6].
+
+Experiment 5: 3D lidar detection interpretability with occlusion-based faithfulness (nuScenes)
+- Hypothesis: In 3D, occluding top-attributed voxels/points in BEV/point cloud space degrades detection more than random occlusions if attributions are faithful (method-agnostic) [5].
+- Setup: Pretrained nuScenes 3D detector (e.g., PointPillars/SECOND). Generate attributions via projected Grad-CAM or perturbation-based masks (RISE-style masks in BEV). Perform point/voxel deletion/insertion and measure AP changes vs. random deletions [5].
+- Baselines: Random occlusion; uniform downsampling.
+- Metrics: AP vs. occlusion fraction; AOPC curves; per-class analysis (car, ped, cyclist).
+- Expected outcomes: Top-importance occlusions cause significantly larger AP drops than random. Note: We did not find high-confidence, standardized 3D-saliency evaluation protocols; this experiment is proposed to fill that gap. We will conduct a targeted search (“3D Grad-CAM LiDAR PointPillars interpretability evaluation,” “BEV occlusion saliency autonomous driving”) and validate approaches on nuScenes devkit before preregistration (limitation acknowledged) [5].
+
+Experiment 6: Human-in-the-loop usefulness study (error triage by perception engineers)
+- Hypothesis: Explanations that score higher on causal metrics reduce time-to-root-cause for perception failures (missed/false detections) in a controlled debugging task.
+- Setup: Curate 100 failure cases across conditions; 12 engineers triage cases with different explanation overlays (counterbalanced). Measure diagnosis time and accuracy; collect SUS and NASA-TLX.
+- Baselines: No explanation; Grad-CAM baseline.
+- Metrics: Time-to-diagnosis; accuracy of identified cause; subjective usefulness; inter-rater agreement.
+- Expected outcomes: Methods with better faithfulness (Exp. 2/5) yield faster, more accurate triage.
+
+Experiment 7: Governance and safety-case integration checkpoints
+- Hypothesis: Mapping interpretability evidence to NIST AI RMF and ISO 26262/21448 controls improves auditability and acceptance [9][10][11].
+- Setup: Create an “Interpretability Verification Plan” with acceptance criteria (e.g., minimum AOPC delta vs. random; sanity check pass; pointing hit-rate thresholds). Tie results to hazard analysis (SOTIF) for perception faults and document in a safety case appendix [10][11].
+- Baselines: None (process control).
+- Metrics: Checklist coverage; independent review pass; risk register updates.
+- Expected outcomes: Approved governance artifacts and acceptance criteria integrated into model release gates [9][10][11].
+
+3. Timeline for the next 12 months with milestones
+- Quarter 1 (Months 1–3): Foundations, baselines, and governance kickoff
+  - Select datasets and models: BDD100K detector (2D), nuScenes 3D detector [5][6].
+  - Implement method toolkit: Grad-CAM/++, Integrated Gradients (Captum/torchcam), RISE/D-RISE, ODAM; sanity/deletion/insertion metrics; pointing game [4][7][8][12].
+  - Governance: Draft NIST AI RMF risk register; align acceptance criteria with ISO 26262/21448 (non-binding internal thresholds at this stage) [9][10][11].
+  - Milestones: Reproducible pipeline v0.1; sanity checks complete (Exp. 1); governance plan v0.1.
+
+- Quarter 2 (Months 4–6): 2D evaluation and ablations
+  - Run Exp. 2–4 on BDD100K: deletion/insertion/ROAR + pointing + stability; cover day/night/weather subsets [6].
+  - Ablations: method hyperparameters (e.g., CAM layer choice), mask sparsity, perturbation types; ROAR fraction grid {5,10,20,30%} [2][3][4].
+  - Governance checkpoint: Review Q2 evidence; set provisional thresholds for “faithfulness/stability pass.”
+  - Milestones: 2D report v1 with ranked methods; preregister 3D evaluation protocol.
+
+- Quarter 3 (Months 7–9): 3D evaluation and human study
+  - Implement Exp. 5 (3D faithfulness) on nuScenes; finalize occlusion protocol; run AOPC curves [5].
+  - Conduct Exp. 6 (human study); integrate logging and anonymized analytics.
+  - Governance checkpoint: Update risk register; SOTIF linkage for perception hazards; document limits (e.g., low-light).
+  - Milestones: 3D report v1; human factors report v1; draft acceptance criteria for 3D.
+
+- Quarter 4 (Months 10–12): Consolidation, governance, and release
+  - Cross-method synthesis; finalize thresholds (e.g., AOPC > random by ≥X%; pointing hit-rate ≥Y; sanity pass) per task.
+  - Build CI tests for interpretability regressions; integrate into model release gates.
+  - Governance checkpoint: Safety case appendix updated; internal audit against NIST AI RMF/ISO artifacts; publish preprint + code.
+  - Milestones: Public benchmark suite v1.0; preprint submission; governance package v1.0.
+
+4. Resources (compute, tools, datasets)
+- Datasets
+  - BDD100K for 2D detection/conditions (day/night/weather) [6].
+  - nuScenes for 3D lidar/radar + camera with devkit; use object detection benchmark splits [5].
+- Models
+  - Pretrained 2D detectors (YOLOv5/7, Faster R-CNN) on BDD100K; pretrained 3D detectors (PointPillars/SECOND) on nuScenes [5][6].
+- Tools
+  - Attribution: Captum/torchcam (Grad-CAM/IG), ODAM codebase, RISE/D-RISE implementations; pointing game evaluation code [4][7][8].
+  - Faithfulness metrics: deletion/insertion AOPC; ROAR (remove-and-retrain) with available repo/tooling [2][3][12].
+  - Evaluation/devkits: nuScenes devkit; BDD100K loaders; saliency-maps-metrics library for standard metrics [5][12].
+  - Governance: NIST AI RMF templates; ISO 26262/21448 checklists for internal mapping [9][10][11].
+- Compute
+  - Training-free for most experiments; ROAR requires retraining detectors (budget 2–4 GPUs for weeks across ablations).
+  - Storage: 3–5 TB for datasets, logs, and saliency maps.
+  - MLOps: Reproducible containers; determinism flags; WandB/MLflow for logging.
+
+5. Risks and mitigations table
+- Interpretability metrics disagree (faithfulness vs. localization)
+  - Mitigation: Multi-metric ranking; report Pareto front; tie acceptance to minimal floors across metrics [1][2][4][8].
+- Sanity-passing yet unhelpful explanations
+  - Mitigation: Include human usefulness study (Exp. 6); require both technical and human factors thresholds.
+- ROAR cost is high
+  - Mitigation: Subsample ROAR; focus on high-prevalence classes; use early-stopping proxies; complement with deletion/insertion curves [2][3][4].
+- 3D interpretability lacks standardized protocols
+  - Mitigation: Start with perturbation-based occlusion in BEV/point cloud; preregister; publish protocol as contribution. Conduct targeted literature search to strengthen foundations (stated limitation) [5].
+- Overfitting explanations to artifacts
+  - Mitigation: Stability tests under benign transforms and across conditions (night/rain); sanity controls [1][6].
+- Governance misalignment with standards
+  - Mitigation: Early mapping to NIST AI RMF and ISO 26262/21448; periodic checkpoints with safety team; document scope and limits [9][10][11].
+
+6. Stretch ideas or follow-up directions
+- Simulator-based causal testing: Use CARLA to generate counterfactual scenes (move/remove objects, change lighting) and measure explanation causal sensitivity; tie to AOPC.
+- Explanation-guided training: Regularize models to reduce reliance on spurious regions (checked by ROAR); evaluate safety gains.
+- 3D-specific methods: Explore emerging 3D CAM/attribution techniques; if robust literature appears, fold into Exp. 5 with additional metrics (No high-confidence sources found yet for standardized 3D attribution evaluation; will update after targeted search).
+- Safety case automation: Auto-generate governance summaries linking metrics to hazards per SOTIF taxonomy.
+
+Sources
+[1] Adebayo et al., 2018 — Sanity Checks for Saliency Maps — https://arxiv.org/abs/1810.03292
+[2] Hooker et al., 2019 — A Benchmark for Interpretability Methods (ROAR) — https://www.researchgate.net/publication/338447967_A_Benchmark_for_Interpretability_Methods_in_Deep_Neural_Networks
+[3] ROAR code repository — https://github.com/saurabheights/ROAR
+[4] Petsiuk et al., 2018 — RISE: Randomized Input Sampling for Explanation of Black-box Models (BMVC) — http://bmvc2018.org/contents/papers/1064.pdf
+[5] nuScenes dataset and object detection benchmark — https://www.nuscenes.org/
+[6] BDD100K — A Diverse Driving Dataset for Heterogeneous Multitask Learning — https://arxiv.org/abs/1805.04687
+[7] ODAM (instance-specific explanations for detection) — https://arxiv.org/abs/2304.06354
+[8] Pointing game evaluation code (Fong) — https://github.com/ruthcfong/pointing_game
+[9] NIST AI Risk Management Framework 1.0 — https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf
+[10] ISO 26262 overview (functional safety) — https://www.tuvsud.com/en-us/-/media/regions/us/pdf-files/whitepaper-report-e-books/tuvsud-iso-26262-compliance.pdf
+[11] ISO/PAS 21448 SOTIF (preview) — https://webstore.ansi.org/preview-pages/ISO/preview_ISO+PAS+21448-2019.pdf
+[12] saliency-maps-metrics (AOPC and related) — https://pypi.org/project/saliency-maps-metrics/
+[13] Normalized AOPC (discussion of pitfalls in faithfulness metrics) — https://arxiv.org/abs/2408.08137
+
+Optional next step
+- Approve Q1 setup: lock datasets/models, implement method/tooling, and run Exp. 1 (sanity checks) + a small deletion/insertion pilot on BDD100K. We will return with initial method triage and finalized Q2 ablation grid.

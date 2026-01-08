@@ -1,0 +1,95 @@
+Below is an evaluation plan for swapping the Hierarchical Transformer’s single base model with a committee of smaller open‑weight models and measuring agreement, coverage, and regressions against the original. I keep datasets and primary outcomes identical to the paper—rollout compute cost, rollout error, and final performance on Atari 100k and Crafter; include the same ablation axes (hierarchical masking, causal guidance, uncertainty-based masking) to preserve comparability [heirarchical-transformer.pdf:3].
+
+Committee swap (design sketch; Conjecture)
+- Backbone change: Replace the single world-model predictor with a committee of M smaller, open‑weight transformers (same input/output interfaces). The hierarchical masking/SHI and planning stack remain unchanged; only the predictor is replaced.
+- Training: Each committee member is trained independently on the same trajectories, seeds offset; identical optimizer/schedule to the original backbone to isolate the “many-small vs one-large” trade-off [heirarchical-transformer.pdf:3].
+- Inference aggregation:
+  - Distributional averaging: average member logits (or probabilities) per step; this preserves a single predictive distribution for rollouts. Conjecture.
+  - Disagreement and confidence: compute ensemble predictive entropy and mutual information (ambiguity vs disagreement) from member distributions. Conjecture.
+  - Optional selective mode: abstain or shrink rollout depth when ensemble confidence is below a threshold, for coverage–risk evaluation (see metrics). Conjecture.
+- Compute controls: Match parameter/FLOPs envelopes as closely as possible (e.g., M×small ≈ large), and separately report iso‑FLOPs comparisons to avoid confounding capacity with method [heirarchical-transformer.pdf:3].
+
+Datasets, baselines, and conditions
+- Datasets and protocol: Atari 100k and Crafter; same preprocessing, rollout depth, retained‑token budgets, and seeds as in the paper [heirarchical-transformer.pdf:3].
+- Baselines:
+  1) Original single‑model hierarchical backbone (paper’s default).
+  2) Flat transformer (no hierarchy) ablation.
+  3) Hierarchical uncertainty/causal guidance ablations (paper’s grid) [heirarchical-transformer.pdf:3].
+  4) Single small model (one committee member) to separate “ensemble” from “size.”
+- Committee variants: logit averaging; temperature‑scaled averaging; majority‑vote (diagnostic only). Conjecture.
+
+Primary evaluation axes
+- Keep the paper’s outcomes first
+  - Rollout compute cost (FLOPs proxy), rollout error (error vs horizon), final RL performance [heirarchical-transformer.pdf:3].
+- New committee‑specific outcomes
+  A) Agreement
+  - Within‑committee agreement: mean pairwise top‑1 agreement and Cohen’s kappa on next‑token predictions; mean symmetric KL among member distributions (lower is better); variation ratio (1 − fraction of votes on argmax).
+  - Model vs original agreement: top‑1 agreement between the committee’s aggregate prediction and the original baseline; symmetric KL between their distributions.
+  - Decomposition: ensemble predictive entropy vs mutual information (ambiguity vs disagreement) to diagnose where disagreement arises. Conjecture.
+  B) Coverage (selective prediction)
+  - Define confidence via max‑probability or low mutual information; abstain when below τ. Report:
+    - Risk–coverage curves (per‑step and per‑episode), area under risk–coverage (AURC; lower is better), selective NLL, coverage at fixed risk.
+  - Calibration: ECE/Brier score for committee vs single model; reliability diagrams. Conjecture.
+  C) Regressions vs original
+  - Token‑level regression rate: fraction where original top‑1 was correct but committee aggregate is incorrect (paired against ground truth).
+  - Episode‑level regression rate: fraction of episodes where committee’s final performance is worse than original beyond a δ margin (e.g., −2% relative RL score).
+  - Severity‑weighted regressions: weight token/episode regressions by future rollout error AUC or reward shortfall to capture impact.
+
+Statistical analysis plan
+- Design: Within‑game, within‑seed paired comparisons for each condition; aggregate across games with mixed‑effects models.
+- Agreement metrics
+  - Paired Wilcoxon signed‑rank on per‑seed, per‑game kappa, KL, and variation ratio; BCa bootstrap 95% CIs. FDR correction across games/metrics.
+- Coverage metrics
+  - Compare AURC via paired bootstrap; test difference in coverage at fixed risk using paired Wilcoxon. For calibration, paired tests on ECE/Brier and Spiegelhalter’s z test for calibration slope/intercept (where applicable). Conjecture.
+- Regressions
+  - McNemar’s test on paired token‑level correctness (original vs committee) to estimate regression and anti‑regression rates; report risk difference and Wilson 95% CIs.
+  - For episode‑level performance, two one‑sided tests (TOST) for non‑inferiority with pre‑registered margins (e.g., RL score not worse than −2% relative; rollout error AUC not worse than +2% relative), followed by superiority tests on calibration/AURC if non‑inferiority holds. Conjecture.
+- Error‑vs‑horizon slope
+  - Mixed‑effects regression: Error ~ β0 + β1·Method + β2·Horizon + β3·Method×Horizon + (1|Game) + (1|Seed). β3 estimates robustness gap over horizon; report 95% CIs. Conjecture.
+
+Controls to preserve comparability
+- Keep seeds, rollout depth, retained‑token budgets, context length, and evaluation harness unchanged across methods [heirarchical-transformer.pdf:3].
+- Report iso‑FLOPs and iso‑parameter slices alongside raw results; ensure selection/aggregation overheads are included in compute accounting [heirarchical-transformer.pdf:3].
+- Run the same ablation grid (hierarchy/uncertainty/causal guidance on/off) for both original and committee variants to attribute effects consistently [heirarchical-transformer.pdf:3].
+
+Three concrete, falsifiable experiments
+1) Agreement–error linkage
+- Setup: Atari 100k and Crafter; committee of M=5 small models vs original large model; identical seeds/budgets.
+- Measures: per‑step ensemble mutual information, predictive entropy, and next‑k‑step rollout error AUC; compute Spearman correlation between disagreement and future error; paired Wilcoxon on kappa and KL vs original.
+- Hypotheses: Higher ensemble disagreement predicts higher long‑horizon error beyond single‑model entropy; committee improves calibration (lower ECE). Conjecture.
+- Pass/fail: Partial correlation of disagreement with future error remains significant after controlling for entropy; ECE difference CI < 0.
+
+2) Selective coverage vs risk
+- Setup: Enable abstention when ensemble confidence < τ; sweep τ to obtain risk–coverage curves for committee and original (using temperature‑scaled confidence for the original).
+- Measures: AURC, coverage at fixed risk (e.g., 5%), selective NLL; compute cost impact.
+- Hypotheses: Committee achieves lower AURC and higher coverage at fixed risk with comparable compute (iso‑FLOPs). Conjecture.
+- Pass/fail: Paired bootstrap CI for ΔAURC < 0; coverage gain at fixed risk CI > 0 without exceeding compute by >2%.
+
+3) Regression audit at equal compute
+- Setup: Match FLOPs by adjusting committee size or retained‑token budget; evaluate RL score, rollout error AUC, and regression rates.
+- Measures: token‑level and episode‑level regression rates (original→committee errors), anti‑regressions (committee fixes original errors), and severity‑weighted regressions; McNemar tests; TOST non‑inferiority on RL score and error AUC.
+- Hypotheses: Net regressions do not exceed pre‑registered margins (token‑level +1% absolute; episode‑level −2% relative RL), while calibration and risk–coverage improve. Conjecture.
+- Pass/fail: TOST passes for non‑inferiority; McNemar RD CI includes 0 or favors anti‑regressions; calibration/risk–coverage show significant improvements.
+
+Implementation notes (Conjecture)
+- Member diversity: vary random seeds and (optionally) data order/bagging; keep architectures identical to isolate ensemble benefits.
+- Aggregation: default to logit averaging; apply per‑member temperature scaling on a held‑out validation split for calibrated averaging.
+- Diagnostics: log per‑member predictions and attention/retained‑token stats to analyze where disagreement concentrates (e.g., sparse‑reward or high‑occlusion states).
+- Overheads: measure aggregation FLOPs and memory; include in rollout compute cost accounting to remain faithful to the paper’s efficiency metric [heirarchical-transformer.pdf:3].
+
+Reporting
+- Present the paper’s primary metrics first—rollout compute cost, rollout error, final RL performance—then agreement, coverage, regression analyses with CIs and FDR‑adjusted p‑values [heirarchical-transformer.pdf:3].
+- Provide per‑game breakdowns and horizon‑wise curves; release scripts for agreement and selective‑prediction metrics.
+
+Literature anchors
+- Lakshminarayanan et al., 2017. Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles. Demonstrates improved calibration and uncertainty via independent model committees. https://arxiv.org/abs/1612.01474
+- Geifman and El‑Yaniv, 2019. SelectiveNet: A Deep Neural Network with an Integrated Reject Option. Introduces risk–coverage evaluation with abstention. https://arxiv.org/abs/1901.09192
+
+Key takeaways
+- Keep datasets, seeds, ablations, and primary metrics identical to the paper; add committee‑specific agreement, coverage, and regression metrics on top [heirarchical-transformer.pdf:3].
+- Use paired and mixed‑effects analyses with bootstrap CIs to quantify agreement and selective‑prediction benefits, and to bound regressions relative to the original single model.
+
+Citations
+- [heirarchical-transformer.pdf:3] Hypotheses and Evaluation: report rollout compute cost, rollout error, and final RL performance; ablations on hierarchical masking, causal guidance, and uncertainty-based masking — User-provided PDF
+- Lakshminarayanan et al., 2017. Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles — https://arxiv.org/abs/1612.01474
+- Geifman and El‑Yaniv, 2019. SelectiveNet: A Deep Neural Network with an Integrated Reject Option — https://arxiv.org/abs/1901.09192

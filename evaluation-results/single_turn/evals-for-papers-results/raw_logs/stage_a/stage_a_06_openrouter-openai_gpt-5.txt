@@ -1,0 +1,47 @@
+You can do solid AI research without loving math. Focus on empirical, data-centric, and evaluation work: designing careful tests, cleaning data, comparing simple interventions, and reporting results clearly. That’s real research—and it’s publishable when done rigorously.
+
+A fast, low-math path
+- Pick a narrow, evaluatable problem with ready baselines:
+  - Truthfulness/toxicity evaluation of LLMs (prompting and decoding changes).
+  - Data-centric improvements: label error detection, deduplication, and documentation on a small text classifier.
+- Reproduce a tiny baseline first, then change one thing at a time. Track seeds, exact prompts/configs, and use simple stats (mean ± std over 3–5 runs; a paired t-test on per-item scores).
+- Write as you go: 1–2 pages per experiment (hypothesis, setup, metrics, results, caveats).
+
+Three concrete, falsifiable experiments (low math; single GPU or API)
+1) Guardrail prompting for truthfulness (TruthfulQA, multiple-choice)
+- Hypothesis: A concise guardrail system prompt (“answer carefully; avoid myths; cite facts if unsure”) increases MC accuracy by ≥5 percentage points vs. a neutral system prompt on a 100-question subset, with identical decoding.
+- Setup: Sample 100 TruthfulQA MC items (stratify by category). Same model, temperature, and top-p; vary only the system prompt. 5 seeds (sampling seeds). Report MC accuracy mean ± std; paired t-test across questions (p < 0.05). Reject if <5 pp or not significant.
+- Why it’s valid: TruthfulQA targets common falsehoods; prompting and evaluation are standardized, so improvements are interpretable [TruthfulQA, 2022](https://aclanthology.org/2022.acl-long.229/).
+
+2) Decoding to mitigate toxicity (RealToxicityPrompts)
+- Hypothesis: Lower temperature (0.2 vs 0.8) at fixed top-p reduces mean toxicity score by ≥10% on a 200-prompt sample with ≤5% change in continuation length, holding max tokens constant.
+- Setup: Randomly sample 200 prompts. Generate continuations with two temperatures; score toxicity using Detoxify or the dataset’s recommended classifier. Report mean ± std toxicity and length; paired test across prompts. Reject if toxicity reduction <10% or if length shrinks >5% (trivial truncation).
+- Why it’s valid: RealToxicityPrompts measures toxic degeneration from innocuous prompts; decoding is a controllable, low-code lever [Gehman et al., 2020](https://aclanthology.org/2020.findings-emnlp.301/).
+
+3) Data-cleaning impact on a small classifier (AG News or Emotion)
+- Hypothesis: A simple cleaning pass (deduplication by exact/near-duplicate hashes, removing label conflicts found via cross-validation) improves test accuracy by ≥1.0 percentage point over a baseline fine-tune of DistilBERT, at fixed compute.
+- Setup: Train baseline DistilBERT on AG News (or Emotion). Cleaning steps: deduplicate train texts; identify likely label errors with confidence-based cross-validation (e.g., cleanlab or simple agreement heuristics); remove top-k suspected errors; retrain. 5 seeds. Report accuracy and calibration (ECE) mean ± std; paired test across seeds. Reject if gain <1.0 pp or ECE worsens materially.
+- Why it’s valid: Label errors and data issues are common and materially affect results; small, principled cleaning often helps [Northcutt et al., 2021](https://arxiv.org/abs/2107.02104).
+
+Minimal weekly cadence (2–4 hours/week works too)
+- Week 1: Pick one experiment and reproduce the baseline on a 100–200 item subset. Lock evaluation code.
+- Week 2: Run the intervention across 5 seeds. Log exact prompts/configs and random seeds.
+- Week 3: Analyze results with simple stats; add 1 ablation (e.g., tweak wording; different temperature).
+- Week 4: Write up: concise problem statement, hypothesis, setup, results (tables/figures with mean ± std), caveats, and a link to a minimal repo/notebook.
+
+What you’ll learn without heavy math
+- Careful evaluation design and reporting.
+- Data hygiene and documentation (model/dataset cards).
+- How small, controlled changes affect behavior—core research skill.
+
+Two literature anchors to orient your write-up
+- TruthfulQA: Measuring How Models Mimic Human Falsehoods (ACL 2022) — a standard truthfulness benchmark you can extend with prompt/decoding interventions: https://aclanthology.org/2022.acl-long.229/
+- Model Cards for Model Reporting (FAccT 2019) — a practical template for documenting models and evaluations you can adopt in your thesis/notebook: https://dl.acm.org/doi/10.1145/3287560.3287596
+
+If you share your compute (API only vs one GPU) and preferred domain (LLMs vs small text classifiers), I’ll return exact code templates, prompts, and evaluation scripts tailored to one of the experiments above.
+
+Sources
+- TruthfulQA (Lin et al., 2022) — https://aclanthology.org/2022.acl-long.229/
+- RealToxicityPrompts (Gehman et al., 2020) — https://aclanthology.org/2020.findings-emnlp.301/
+- Northcutt et al., 2021. Pervasive Label Errors in Test Sets Destabilize Machine Learning Benchmarks — https://arxiv.org/abs/2107.02104
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://dl.acm.org/doi/10.1145/3287560.3287596

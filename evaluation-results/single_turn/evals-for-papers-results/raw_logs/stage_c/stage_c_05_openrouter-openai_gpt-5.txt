@@ -1,0 +1,113 @@
+1. Problem framing and goals
+- Objective: Execute meaningful, publishable AI research without writing Python by leveraging no‑code/low‑code tools for data labeling, training, evaluation, and human studies. Focus on three contribution types you can deliver via UI-driven workflows:
+  - Model adaptation and benchmarking via no‑code training (Hugging Face AutoTrain) and UI-based LLM prompting A/B tests [1][2][5].
+  - Data-centric methods (labeling guidelines, quality control, sampling) using a point-and-click annotation platform (Label Studio) [3].
+  - Human evaluation at scale (Prolific) and rigorous reporting practices inspired by established evaluation frameworks (HELM) [4][6].
+- Six‑month deliverables:
+  - A reproducible “no‑code AI research” toolkit: dataset with data card, labeling guidelines, training recipes, evaluation rubric, and a public report with all settings.
+  - At least one model card and demo for a fine‑tuned classifier/LLM hosted via a UI (no Python required).
+  - A short paper or preprint documenting results and ablations (prompt strategies, label quality, data size), with transparent reporting.
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+Experiment 1: No‑code fine‑tuning vs. prompting for a domain FAQ task
+- Hypothesis: A small, domain FAQ Q&A or intent classification model fine‑tuned in AutoTrain outperforms zero‑shot prompting of a general LLM on exact‑match/F1, given 300–1,000 labeled examples [1][2].
+- Setup:
+  - Data: Collect 300–1,000 Q&A pairs (or intents) via Label Studio; export JSON/CSV [3].
+  - Training: Use Hugging Face AutoTrain LLM (hosted UI). Configure task (text classification or extractive QA), choose a small open model (e.g., 3–7B equivalent offering), enable automatic hyperparameter search. No coding needed [1][2].
+  - Inference/Eval: Use AutoTrain’s built‑in evaluation and a simple Google Sheet to compute EM/F1 on a held‑out set; optional side‑by‑side with a local LLM UI (Text Generation WebUI) for prompting baselines [1][5].
+- Baselines: Zero‑shot and few‑shot prompts in a local LLM UI; majority class/most‑frequent answer baselines [5].
+- Metrics: Exact Match, token‑level F1 (for QA) or Accuracy/F1 (for classification); latency per query; qualitative error taxonomy. Report all model and data settings for rigor (HELM-style transparency) [4].
+- Expected outcomes: AutoTrain fine‑tuning yields a statistically significant gain over zero‑shot prompting on EM/F1 with comparable latency, consistent with AutoTrain’s goal of state‑of‑the‑art no‑code training on standard tasks [1][2].
+
+Experiment 2: Prompting strategy A/B tests with human evaluation
+- Hypothesis: Chain‑of‑thought (CoT) and structured templates (role + task + constraints + examples) improve answer quality and reduce hallucinations on subjective or open‑ended tasks vs. “vanilla” prompts [4][5].
+- Setup:
+  - Tasks: 50–100 prompts spanning summarization, helpfulness, and factual QA (build a rubric with correctness, completeness, and safety).
+  - Tools: Serve two prompt variants per item in Text Generation WebUI or equivalent; randomize order; collect human preferences on Prolific via a simple form (no code) [5][6].
+  - Governance: Pre‑register your rubric and analysis plan; include attention checks in Prolific [6].
+- Baselines: Vanilla prompt; short instruction; few‑shot prompt without CoT.
+- Metrics: Pairwise win‑rate, mean Likert scores per criterion, inter‑rater agreement, time per evaluation; sample size planned to detect ≥10–15 percentage‑point win‑rate differences.
+- Expected outcomes: Structured prompts improve pairwise win‑rate and quality scores; report where CoT helps vs. harms. Follow HELM’s transparency guidelines in reporting scenarios and distributions [4].
+
+Experiment 3: Data‑centric ablation — labeling guideline quality vs. model performance
+- Hypothesis: Clear annotation guidelines and adjudication reduce label noise and improve downstream performance more than simply adding more noisy data, for a fixed labeling budget [3].
+- Setup:
+  - Phase A: Draft minimal labeling guideline and collect 300 examples in Label Studio. Phase B: Refine guidelines with concrete positives/negatives, add adjudication for disagreements, then collect another 300 examples [3].
+  - Train: For each phase, fine‑tune a classifier or QA model in AutoTrain with identical settings [1].
+- Baselines: Model trained on Phase A data only; naive merge of A+B without adjudication.
+- Metrics: Held‑out Accuracy/F1/EM; confusion matrices; labeler agreement (Cohen’s κ); time per labeled item; cost per performance point gained.
+- Expected outcomes: B (higher‑quality, smaller) matches or exceeds A (larger, noisier) on held‑out metrics; supports a data‑centric argument using no‑code steps [1][3].
+
+Experiment 4: Data size and domain shift curves using no‑code training
+- Hypothesis: Performance follows diminishing returns beyond ~1k examples for simple classification; cross‑domain generalization drops when testing on out‑of‑domain data, quantifiable in a simple curve study [1][4].
+- Setup:
+  - Train AutoTrain models at N ∈ {100, 300, 600, 1,000} examples from Domain 1; evaluate on Domain 1 (IID) and Domain 2 (OOD) splits [1].
+- Baselines: Zero‑shot prompting on both domains.
+- Metrics: Accuracy/F1 vs. N; OOD/IID performance gap; calibration (Brier score) if supported by AutoTrain.
+- Expected outcomes: Clear learning curves and OOD gaps; actionable takeaways on data needs and generalization in no‑code settings.
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Planning, governance, and tooling
+  - Finalize project scope and outcomes; draft labeling guidelines and evaluation rubrics; set up accounts for Label Studio (hosted or desktop), Hugging Face AutoTrain, Prolific, and a local LLM UI [1][3][6].
+  - Milestones: Guideline v1, rubric v1, IRB/exemption (if needed for human eval).
+- Month 2: Dataset v1 and feasibility runs
+  - Label 300–500 examples in Label Studio; export and train first AutoTrain models; stand up local LLM UI for prompting baselines [1][3][5].
+  - Milestones: Baseline AutoTrain run with metrics; prompt A/B pilot on 20 items; initial error analysis.
+- Month 3: A/B prompt study at scale
+  - Launch Prolific study with 100–200 items and two prompt variants; analyze win‑rates and inter‑rater agreement; iterate prompts [5][6].
+  - Milestones: Prompt study report with stats and confidence intervals.
+- Month 4: Data‑centric ablation
+  - Refine labeling guidelines; adjudicate disagreements; collect additional 300 examples; retrain AutoTrain models and compare phases [1][3].
+  - Milestones: Data quality vs. performance report; updated dataset card.
+- Month 5: Learning curves and domain shift
+  - Build subset splits; train/evaluate across N ∈ {100, 300, 600, 1,000}; add OOD test set if feasible [1][4].
+  - Milestones: Learning curve plots and OOD gap analysis; draft model card and demo page.
+- Month 6: Consolidation and paper
+  - Integrate results; finalize demos; write and submit a preprint; open data and artifacts (Hugging Face datasets/repo; OSF/Zenodo).
+  - Milestones: Camera‑ready preprint; public dataset + models with cards.
+
+4. Resources (compute, tools, datasets)
+- Compute
+  - Hosted training: Hugging Face AutoTrain provides managed training; you select model/task and upload data via UI [1][2].
+  - Local evaluation: A consumer laptop plus a local LLM UI (Text Generation WebUI) for prompt tests; or run in the cloud via a hosted instance if needed [5].
+- Tools
+  - Data labeling: Label Studio (GUI labeling, collaborative review) [3].
+  - Training/evaluation: Hugging Face AutoTrain (no‑code pipelines for text tasks, model selection, and evaluation) [1][2].
+  - Prompt evaluation: Text Generation WebUI (compare prompts and models through a browser) [5].
+  - Human evaluation: Prolific for recruiting and running studies; export CSV of responses [6].
+  - Reporting: Follow HELM’s emphasis on transparent evaluation (document scenarios, distributions, metrics) [4].
+- Datasets (examples you can curate without coding)
+  - Domain FAQ pairs (internal docs or public FAQs).
+  - Intent classification or short-form Q&A from a public domain (ensure licensing).
+  - For OOD, collect a small set from a related but distinct domain.
+
+5. Risks and mitigations table
+- Limited model/control in no‑code platforms
+  - Mitigation: Carefully document all UI settings; where options are hidden, run sensitivity via multiple presets; report constraints explicitly (HELM‑style transparency) [4].
+- Cost and usage limits (training credits, Prolific payments)
+  - Mitigation: Start with pilot studies to estimate budget; cap human‑eval items; reuse participants for paired comparisons; seek academic discounts [6].
+- Data privacy and licensing
+  - Mitigation: Use only public or consented data; redact sensitive information; include a data card with licenses and collection details.
+- Reproducibility challenges without code
+  - Mitigation: Export full experiment configs from AutoTrain; version datasets; publish exact UI settings, timestamps, and model IDs; archive artifacts on OSF/Zenodo [1].
+- Human evaluation variance and bias
+  - Mitigation: Pre‑register rubric; include attention checks; ensure adequate sample size for desired effect size; compute inter‑rater agreement [6].
+- Hardware limitations for local LLM UI
+  - Mitigation: Use small models locally; offload heavier tests to hosted instances; or restrict to text‑only evaluation where latency is acceptable [5].
+
+6. Stretch ideas or follow-up directions
+- No‑code active learning loop: Use AutoTrain’s predictions to identify low‑confidence items; prioritize them in Label Studio for iterative labeling cycles [1][3].
+- Preference studies across models: Add more LLMs to the UI and run multi‑model tournaments with Prolific; analyze consistency and annotator calibration [5][6].
+- Human‑in‑the‑loop dataset creation: Build a public benchmark with clear licensing, rubric, and leaderboards; emphasize transparency practices inspired by HELM [4].
+- Light low‑code bridge (optional): Use graphical tools or minimal templates to export and re‑run AutoTrain configs programmatically later, enabling gradual upskilling.
+
+Citations
+[1] AutoTrain — Hugging Face Docs — https://huggingface.co/docs/autotrain/en/index
+[2] AutoTrain: No‑code training for state‑of‑the‑art models — https://huggingface.co/papers/2410.15735
+[3] Label Studio: Open Source Data Labeling — https://labelstud.io/
+[4] Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
+[5] Text Generation WebUI (oobabooga) overview/guide — https://www.runpod.io/articles/guides/text-generation-web-ui
+[6] Prolific | Easily collect high‑quality data from real people — https://www.prolific.com/
+
+Optional next step
+- Greenlight Month 1–2: set up Label Studio, AutoTrain, Prolific, and a local Text Generation WebUI; draft your labeling guideline and evaluation rubric, then run the first pilot (100–200 labeled items + one AutoTrain run + a 20‑item prompt A/B test) to validate feasibility and refine scope.

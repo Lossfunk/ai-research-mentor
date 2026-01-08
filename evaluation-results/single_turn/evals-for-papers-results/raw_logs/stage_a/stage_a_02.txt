@@ -1,0 +1,73 @@
+Great to hear! Two beginner-friendly entry points where you can make real progress without huge compute are:
+
+- Satellite remote sensing for land-use change (e.g., deforestation). There are open, high-resolution images and clear baselines to replicate and extend. Examples include tree-cover change mapping and segmentation/classification approaches that account for rotation and viewpoint [P1][P8].
+- Probabilistic medium-range weather forecasting on established benchmarks (e.g., WeatherBench Probability), which provide standardized data and metrics to learn core time-series and uncertainty concepts without wrestling with raw meteorological pipelines.
+
+A 4–6 week starter plan
+
+1) Pick one task
+- Deforestation mapping: start with a single region and a time window with known change (e.g., Mato Grosso, Brazil) and replicate a published pipeline for tree-cover change detection before extending it [P1].
+- WeatherBench Probability: start with a single variable (e.g., 500 hPa geopotential, 2 m temperature) and a medium-range horizon; focus on deterministic vs probabilistic baselines using proper scoring rules (e.g., CRPS). See WeatherBench Probability: A benchmark dataset for probabilistic medium-range weather forecasting (2022) — http://arxiv.org/abs/2205.00865.
+
+2) Establish simple, transparent baselines
+- Always include trivial baselines: persistence/seasonal climatology (weather), or “last-period equals next” and simple thresholds on NDVI/NDWI indices (remote sensing). Then add a small CNN/UNet for segmentation or a ResNet for patch classification [P8].
+- Use proper metrics: IoU/F1 for segmentation; AUC and PR-AUC for rare-event detection; RMSE/MAE and CRPS for probabilistic forecasts. Report confidence via bootstrapping.
+
+3) Split data to avoid leakage and ensure reproducibility
+- Use temporally forward-held test periods and geographically disjoint tiles to avoid geospatial/temporal leakage, which can inflate results if not controlled [P3]. Fix seeds, version data, and document exact preprocessing to improve reproducibility [P4].
+
+4) Add uncertainty and calibration early
+- Favor ensembles or simple distributional outputs (e.g., Gaussian heads) and evaluate with calibration curves and CRPS in forecasting; for detection maps, consider MC dropout or deep ensembles and report prediction intervals.
+
+Three concrete, falsifiable experiments (with success criteria)
+
+1) Rotation-equivariant models for deforestation segmentation
+- Hypothesis: Rotation-equivariant CNNs improve out-of-region generalization for detecting deforestation patches.
+- Setup: Train a standard UNet vs. a rotation-equivariant variant on satellite images from Region A, test on a disjoint Region B.
+- Variables: Model architecture (UNet vs rotation-equivariant), augmentation strategy.
+- Metrics: IoU, F1, and AUROC on Region B; compute per-patch size stratification.
+- Expected outcome: Rotation-equivariant model yields higher IoU/F1 on Region B with similar or better calibration; failure to improve falsifies the hypothesis [P8], with data and task grounded in tropical deforestation mapping [P1].
+
+2) Temporal-geographic split vs random split evaluation
+- Hypothesis: Random splits overestimate performance relative to strict spatiotemporal splits in land-cover change detection.
+- Setup: Train identical models with two validation protocols: (a) random tile split; (b) temporally forward and geographically disjoint split.
+- Variables: Split protocol.
+- Metrics: IoU/F1 gap between protocols; measure leakage sensitivity as (random − strict) / strict.
+- Expected outcome: The strict split yields lower but more realistic performance, quantifying the overestimation from leakage [P3]. If no gap appears, that falsifies the hypothesis and suggests leakage was controlled.
+
+3) Probabilistic vs deterministic weather baselines
+- Hypothesis: Probabilistic models improve calibration (lower CRPS and better reliability) without necessarily improving RMSE over deterministic baselines on WeatherBench Probability.
+- Setup: Train a deterministic CNN and a probabilistic head (e.g., Gaussian/ensemble) for 2 m temperature forecasting at 3–5 day horizons.
+- Variables: Output type (point vs probabilistic), ensembling size.
+- Metrics: RMSE/MAE, CRPS, reliability diagrams (ECE).
+- Expected outcome: Probabilistic model shows lower CRPS and improved reliability with similar RMSE; if CRPS does not improve, the hypothesis is falsified. Benchmark context: WeatherBench Probability (2022) — http://arxiv.org/abs/2205.00865.
+
+4) Adding drivers to classify deforestation causes (optional stretch)
+- Hypothesis: Incorporating contextual features (roads, concessions) improves accuracy for classifying drivers of deforestation relative to imagery-only baselines.
+- Setup: Train image-only vs multimodal models that add vector layers (roads, land-use) as inputs.
+- Variables: Input modality (image vs image+context).
+- Metrics: Macro-F1 and calibration by class (driver type).
+- Expected outcome: Multimodal model improves macro-F1, especially for minority driver classes; if not, the added features may be weak or misaligned [P6].
+
+Practical tips
+- Start small: one region, one variable, one baseline. Keep a notebook with seeds, data version, and exact preprocessing to ensure runs are reproducible [P4].
+- Prioritize clean evaluation: document your split protocol and justify it (temporal-forward, spatially disjoint) to avoid hidden leakage [P3].
+- Report uncertainty: include confidence intervals on metrics, not just point estimates.
+- Keep compute light: small UNet/ResNet on 256–512 px tiles for remote sensing, or compact CNNs for WeatherBench variables at coarse grids.
+
+If you share a preference (remote sensing vs weather), I can tailor a minimal starter repo outline with data loaders, baselines, and evaluation scripts.
+
+Citations
+- [P1] Mapping Tropical Forest Cover and Deforestation with Planet NICFI Satellite Images and Deep Learning in Mato Grosso State (Brazil) from 2015 to 2021 — http://arxiv.org/abs/2211.09806v1
+- [P3] Importance of methodological choices in data manipulation for validating epileptic seizure detection models — http://arxiv.org/abs/2302.10672v1
+- [P4] Reproducibility in Learning — http://arxiv.org/abs/2201.08430v2
+- [P6] Multimodal SuperCon: Classifier for Drivers of Deforestation in Indonesia — http://arxiv.org/abs/2207.14656v1
+- [P8] Rotation Equivariant Deforestation Segmentation and Driver Classification — http://arxiv.org/abs/2110.13097v2
+
+Additional anchor
+- WeatherBench Probability: A benchmark dataset for probabilistic medium-range weather forecasting (2022) — http://arxiv.org/abs/2205.00865
+
+Key takeaways
+- Start with a well-scoped, benchmarked task and replicate a paper’s baseline before extending.
+- Use spatiotemporal splits, proper metrics, and uncertainty to produce trustworthy results.
+- Three simple experiments (rotation equivariance, split protocol comparison, probabilistic vs deterministic) can teach core ML-for-climate skills while being feasible on modest hardware.

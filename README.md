@@ -1,43 +1,89 @@
-# Academic Research Mentor
+# METIS: Mentoring Engine for Thoughtful Inquiry & Solutions
 
-## Objective
-Accelerate AI research with AI. We are building an AI Research Mentor that guides researchers through the entire research lifecycle so they can move from idea to published work faster.
+Code and evaluation artifacts for the preprint **“METIS: Mentoring Engine for Thoughtful Inquiry & Solutions”**.
 
-## Key Capabilities
-- Research-aware CLI powered by LangChain agents and dynamic tool routing.
-- O3-backed literature search with graceful fallbacks and citation synthesis.
-- Mentorship guidelines and experiment planning helpers to keep projects on track.
-- File and PDF ingestion so the mentor can ground responses in user-provided material.
-- Conversation logging with the ability to resume saved sessions from the CLI.
 
-## Setup
+
+## Abstract
+Many students lack access to expert research mentorship. We ask whether an AI mentor can move undergraduates from an idea to a paper. We build *METIS*, a tool‑augmented, stage‑aware assistant with literature search, curated guidelines, methodology checks, and memory. We evaluate *METIS* against GPT‑5 and Claude Sonnet~4.5 across six writing stages using LLM‑as‑a‑judge pairwise preferences, student‑persona rubrics, short multi‑turn tutoring, and evidence/compliance checks. On 90 single‑turn prompts, LLM judges preferred *METIS* to Claude Sonnet~4.5 in 74.4\% and to GPT‑5 in 58.3\%. Student scores (clarity/actionability/constraint‑fit; 90 prompts $\times$ 3 judges) are higher across stages. In multi‑turn sessions (five scenarios/agent), *METIS* yields slightly higher final quality than GPT‑5. Gains concentrate in document‑grounded stages (D--F), consistent with stage‑aware routing and grounding; failure modes include premature tool routing, shallow grounding, and occasional stage misclassification.
+
+## System overview
+
+![METIS system diagram](images/System-Diagram.png)
+
+## Key results
+![Results](images/figure1.jpg)
+
+## Evaluation results & scripts
+
+The preprint artifacts and runnable scripts are consolidated under the [evaluation-results/](evaluation-results/) folder.
+
+### Single-turn evals
+- **Scripts**: `evaluation-results/scripts/evals-for-papers-scripts/`
+  - Example: `bash evaluation-results/scripts/evals-for-papers-scripts/run_stage_a.sh`
+  - Pairwise: `bash evaluation-results/scripts/evals-for-papers-scripts/run_stage_a_pairwise.sh`
+  - Judges/metrics: `bash evaluation-results/scripts/evals-for-papers-scripts/run_stage_a_judges.sh`
+- **Key outputs** (snapshot used for the preprint):
+  - `evaluation-results/single_turn/evals-for-papers-results/` (raw logs + per-stage `analysis_reports/`)
+  - `evaluation-results/single_turn/reports-evals/` (summary JSON + rendered figures)
+
+### Student LLM-as-a-judge evals
+- **Runner**: `uv run python evaluation-results/scripts/evaluation-scripts/run_student_judge_scores.py`
+
+### Multi-turn evals
+- **Runner**: `uv run python evaluation-results/scripts/evaluation-scripts/run_multi_turn_evals.py`
+- **Key outputs** (snapshot used for the preprint): `evaluation-results/multi_turn/multi_turn_eval_all5/`
+
+### Run all single-turn stages (A–F)
+To run the full evaluation suite and generate a combined summary:
 ```bash
-# Install dependencies
-uv sync
+uv run python evaluation-results/scripts/evaluation-scripts/run_all_stages.py
+```
 
-# Run tests (optional)
-uv run pytest -q
+## Installation
+
+### Backend Server
+```bash
+uv sync
+```
+
+### Frontend UI
+```bash
+cd web & npm install
 ```
 
 ## Environment
 ```bash
 cp .example.env .env
 ```
-Edit `.env` and add your `OPENROUTER_API_KEY` (recommended). Other provider keys are optional fallbacks.
 
-## Usage
+Required (at least one):
+- `OPENROUTER_API_KEY` (recommended)
+- `OPENAI_API_KEY`
+
+Optional (enables additional retrieval providers):
+- `TAVILY_API_KEY`
+
+## Run METIS (mentor)
+
+### Backend server
 ```bash
-# Verify configuration
-uv run academic-research-mentor --check-env
-
-# Start the mentor CLI
-uv run academic-research-mentor
-
-# Alternate entrypoint
-uv run python main.py
+uv run python -m uvicorn academic_research_mentor.server:app --reload --port 8000
 ```
 
-## Troubleshooting
-- Ensure Python 3.11+ is installed.
-- Re-run `uv sync` after dependency changes.
-- Set additional API keys (OpenAI, Anthropic, etc.) if you prefer alternative models.
+### Frontend UI
+```bash
+cd web && npm run dev
+```
+
+## Citation
+If you use this code or evaluation setup, please cite the preprint:
+
+```bibtex
+@misc{metis2026,
+  title        = {METIS: Mentoring Engine for Thoughtful Inquiry \& Solutions},
+  author       = {Kumar, Abhinav Rajeev and Trehan, Dhruv and Chopra, Paras},
+  year         = {2026},
+  note         = {Preprint. Repository: https://github.com/lossfunk/ai-research-mentor}
+}
+```

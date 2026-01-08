@@ -1,0 +1,1903 @@
+Based on the attached paper, I'll design a comprehensive framework to instrument the Sparse Hierarchical Imagination (SHI) Transformer for real-time streaming inputs, with robust logging, failure analysis, and longitudinal evaluation.
+
+## Real-Time Streaming SHI Architecture
+
+### 1. Streaming Architecture Design
+
+```python
+class StreamingSHI:
+    """
+    Real-time streaming adaptation of SHI Transformer.
+    
+    Original SHI: Batch processing of fixed-length sequences
+    Streaming SHI: Continuous processing of unbounded streams
+    
+    Key challenges:
+    1. Incremental hierarchy assignment
+    2. Dynamic masking with partial context
+    3. Bounded memory for infinite streams
+    4. Low-latency inference (<100ms)
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # Core SHI components
+        self.vqvae = StreamingVQVAE(config)
+        self.hierarchy_module = StreamingHierarchyModule(config)
+        self.world_model = StreamingTransformer(config)
+        self.spartan = StreamingSPARTAN(config)
+        self.masking = StreamingMasking(config)
+        
+        # Streaming-specific components
+        self.buffer = CircularBuffer(
+            max_size=config['buffer_size'],
+            eviction_policy='hierarchical'  # Keep important tokens longer
+        )
+        self.state_manager = StreamingStateManager(config)
+        self.latency_monitor = LatencyMonitor(config)
+        
+        # Logging infrastructure
+        self.logger = StreamingLogger(config)
+        self.failure_detector = FailureDetector(config)
+        
+    def process_stream(self, input_stream):
+        """
+        Process continuous input stream.
+        
+        Args:
+            input_stream: Iterator yielding (timestamp, observation, action) tuples
+        
+        Yields:
+            (timestamp, prediction, metadata) tuples
+        """
+        for timestamp, observation, action in input_stream:
+            # Start latency tracking
+            start_time = time.time()
+            
+            try:
+                # Process single input
+                result = self.process_single_input(
+                    timestamp=timestamp,
+                    observation=observation,
+                    action=action
+                )
+                
+                # Compute latency
+                latency = time.time() - start_time
+                
+                # Log successful processing
+                self.logger.log_success(
+                    timestamp=timestamp,
+                    latency=latency,
+                    result=result
+                )
+                
+                # Monitor latency
+                self.latency_monitor.record(latency)
+                
+                yield timestamp, result['prediction'], result['metadata']
+                
+            except Exception as e:
+                # Capture failure
+                failure_info = self.failure_detector.capture_failure(
+                    timestamp=timestamp,
+                    observation=observation,
+                    action=action,
+                    exception=e,
+                    stack_trace=traceback.format_exc()
+                )
+                
+                # Log failure
+                self.logger.log_failure(failure_info)
+                
+                # Attempt recovery
+                recovery_result = self.attempt_recovery(failure_info)
+                
+                if recovery_result['success']:
+                    yield timestamp, recovery_result['prediction'], recovery_result['metadata']
+                else:
+                    # Yield fallback prediction
+                    yield timestamp, self.fallback_prediction(), {'failure': True}
+    
+    def process_single_input(self, timestamp, observation, action):
+        """
+        Process single streaming input with incremental updates.
+        """
+        # Encode observation
+        token = self.vqvae.encode_streaming(observation)
+        
+        # Assign hierarchy (incremental, using buffer context)
+        hierarchy_level = self.hierarchy_module.assign_incremental(
+            token=token,
+            context=self.buffer.get_context(),
+            timestamp=timestamp
+        )
+        
+        # Compute masking decision
+        masking_weight = self.masking.compute_streaming(
+            token=token,
+            hierarchy_level=hierarchy_level,
+            context=self.buffer.get_context()
+        )
+        
+        # Update buffer (with hierarchical eviction)
+        self.buffer.add(
+            token=token,
+            hierarchy_level=hierarchy_level,
+            masking_weight=masking_weight,
+            timestamp=timestamp
+        )
+        
+        # Generate prediction (using buffered context)
+        prediction = self.world_model.predict_streaming(
+            current_token=token,
+            context=self.buffer.get_active_tokens(),
+            action=action
+        )
+        
+        # Update SPARTAN causal graph (incremental)
+        self.spartan.update_incremental(
+            token=token,
+            hierarchy_level=hierarchy_level,
+            timestamp=timestamp
+        )
+        
+        # Update streaming state
+        self.state_manager.update(
+            token=token,
+            hierarchy_level=hierarchy_level,
+            prediction=prediction,
+            timestamp=timestamp
+        )
+        
+        return {
+            'prediction': prediction,
+            'metadata': {
+                'token': token,
+                'hierarchy_level': hierarchy_level,
+                'masking_weight': masking_weight,
+                'buffer_size': len(self.buffer),
+                'timestamp': timestamp
+            }
+        }
+    
+    def attempt_recovery(self, failure_info):
+        """
+        Attempt to recover from failure.
+        
+        Recovery strategies:
+        1. Use cached prediction
+        2. Fallback to simpler model
+        3. Skip problematic input
+        """
+        recovery_strategy = self.failure_detector.recommend_recovery(failure_info)
+        
+        if recovery_strategy == 'use_cache':
+            # Use most recent successful prediction
+            cached_prediction = self.state_manager.get_last_prediction()
+            return {
+                'success': True,
+                'prediction': cached_prediction,
+                'metadata': {'recovery': 'cache'}
+            }
+        
+        elif recovery_strategy == 'fallback_model':
+            # Use simpler fallback model
+            fallback_prediction = self.fallback_model.predict(
+                failure_info['observation']
+            )
+            return {
+                'success': True,
+                'prediction': fallback_prediction,
+                'metadata': {'recovery': 'fallback'}
+            }
+        
+        else:
+            return {'success': False}
+    
+    def fallback_prediction(self):
+        """
+        Generate fallback prediction when recovery fails.
+        """
+        # Return last known good prediction or zero prediction
+        return self.state_manager.get_last_prediction() or torch.zeros(self.config['output_dim'])
+```
+
+### 2. Streaming Components
+
+```python
+class CircularBuffer:
+    """
+    Circular buffer with hierarchical eviction policy.
+    
+    Key idea: Keep high-hierarchy tokens longer than low-hierarchy tokens.
+    """
+    def __init__(self, max_size, eviction_policy='hierarchical'):
+        self.max_size = max_size
+        self.eviction_policy = eviction_policy
+        
+        self.tokens = []
+        self.hierarchy_levels = []
+        self.masking_weights = []
+        self.timestamps = []
+        self.importance_scores = []
+        
+    def add(self, token, hierarchy_level, masking_weight, timestamp):
+        """
+        Add new token to buffer, evicting if necessary.
+        """
+        # Compute importance score
+        importance = self._compute_importance(
+            hierarchy_level=hierarchy_level,
+            masking_weight=masking_weight,
+            timestamp=timestamp
+        )
+        
+        # Check if buffer is full
+        if len(self.tokens) >= self.max_size:
+            # Evict least important token
+            evict_idx = self._select_eviction_candidate()
+            
+            # Remove evicted token
+            self.tokens.pop(evict_idx)
+            self.hierarchy_levels.pop(evict_idx)
+            self.masking_weights.pop(evict_idx)
+            self.timestamps.pop(evict_idx)
+            self.importance_scores.pop(evict_idx)
+        
+        # Add new token
+        self.tokens.append(token)
+        self.hierarchy_levels.append(hierarchy_level)
+        self.masking_weights.append(masking_weight)
+        self.timestamps.append(timestamp)
+        self.importance_scores.append(importance)
+    
+    def _compute_importance(self, hierarchy_level, masking_weight, timestamp):
+        """
+        Compute importance score for eviction policy.
+        
+        Factors:
+        1. Hierarchy level (higher = more important)
+        2. Masking weight (higher = more important)
+        3. Recency (more recent = more important)
+        """
+        # Normalize hierarchy level (0=coarse=most important, 2=fine=least important)
+        hierarchy_importance = (2 - hierarchy_level) / 2  # [0, 1]
+        
+        # Masking weight already in [0, 1]
+        masking_importance = masking_weight
+        
+        # Recency (exponential decay)
+        current_time = time.time()
+        age = current_time - timestamp
+        recency_importance = np.exp(-age / 60.0)  # Decay over 60 seconds
+        
+        # Weighted combination
+        importance = (
+            0.4 * hierarchy_importance +
+            0.3 * masking_importance +
+            0.3 * recency_importance
+        )
+        
+        return importance
+    
+    def _select_eviction_candidate(self):
+        """
+        Select token to evict based on policy.
+        """
+        if self.eviction_policy == 'hierarchical':
+            # Evict token with lowest importance score
+            return np.argmin(self.importance_scores)
+        
+        elif self.eviction_policy == 'fifo':
+            # Evict oldest token
+            return 0
+        
+        elif self.eviction_policy == 'lru':
+            # Evict least recently used (simplified: oldest)
+            return np.argmin(self.timestamps)
+    
+    def get_context(self):
+        """
+        Get current buffer context for hierarchy assignment.
+        """
+        return {
+            'tokens': self.tokens,
+            'hierarchy_levels': self.hierarchy_levels,
+            'masking_weights': self.masking_weights,
+            'timestamps': self.timestamps
+        }
+    
+    def get_active_tokens(self):
+        """
+        Get active (non-masked) tokens for prediction.
+        """
+        # Filter by masking weight
+        active_indices = [
+            i for i, w in enumerate(self.masking_weights)
+            if w > 0.5
+        ]
+        
+        return {
+            'tokens': [self.tokens[i] for i in active_indices],
+            'hierarchy_levels': [self.hierarchy_levels[i] for i in active_indices],
+            'positions': active_indices
+        }
+
+class StreamingHierarchyModule:
+    """
+    Incremental hierarchy assignment for streaming inputs.
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # Hierarchy assignment network
+        self.hierarchy_net = nn.Sequential(
+            nn.Linear(config['token_dim'], 256),
+            nn.ReLU(),
+            nn.Linear(256, 3)  # 3 hierarchy levels
+        )
+        
+        # Context encoder (for incremental updates)
+        self.context_encoder = nn.GRU(
+            input_size=config['token_dim'],
+            hidden_size=256,
+            num_layers=1,
+            batch_first=True
+        )
+        
+        # Hidden state for streaming
+        self.hidden_state = None
+    
+    def assign_incremental(self, token, context, timestamp):
+        """
+        Assign hierarchy level incrementally using streaming context.
+        """
+        # Encode token
+        token_embedding = self._encode_token(token)
+        
+        # Update context with GRU
+        if self.hidden_state is None:
+            # Initialize hidden state
+            self.hidden_state = torch.zeros(1, 1, 256)
+        
+        # Update hidden state with new token
+        _, self.hidden_state = self.context_encoder(
+            token_embedding.unsqueeze(0).unsqueeze(0),
+            self.hidden_state
+        )
+        
+        # Combine token and context
+        combined = torch.cat([
+            token_embedding,
+            self.hidden_state.squeeze()
+        ], dim=-1)
+        
+        # Predict hierarchy level
+        logits = self.hierarchy_net(combined)
+        hierarchy_level = torch.argmax(logits).item()
+        
+        return hierarchy_level
+    
+    def reset(self):
+        """Reset streaming state (e.g., at session boundaries)."""
+        self.hidden_state = None
+
+class LatencyMonitor:
+    """
+    Monitor and track latency for real-time performance.
+    """
+    def __init__(self, config):
+        self.config = config
+        self.latency_threshold = config.get('latency_threshold_ms', 100)
+        
+        # Latency history
+        self.latencies = []
+        self.violations = []
+        
+        # Real-time statistics
+        self.window_size = 100
+        self.current_window = []
+    
+    def record(self, latency_seconds):
+        """
+        Record latency measurement.
+        """
+        latency_ms = latency_seconds * 1000
+        
+        # Add to history
+        self.latencies.append(latency_ms)
+        self.current_window.append(latency_ms)
+        
+        # Maintain window size
+        if len(self.current_window) > self.window_size:
+            self.current_window.pop(0)
+        
+        # Check for violation
+        if latency_ms > self.latency_threshold:
+            self.violations.append({
+                'timestamp': time.time(),
+                'latency_ms': latency_ms,
+                'threshold_ms': self.latency_threshold
+            })
+    
+    def get_statistics(self):
+        """
+        Get current latency statistics.
+        """
+        if not self.current_window:
+            return None
+        
+        return {
+            'mean_latency_ms': np.mean(self.current_window),
+            'median_latency_ms': np.median(self.current_window),
+            'p95_latency_ms': np.percentile(self.current_window, 95),
+            'p99_latency_ms': np.percentile(self.current_window, 99),
+            'max_latency_ms': np.max(self.current_window),
+            'violation_rate': len(self.violations) / len(self.latencies),
+            'num_violations': len(self.violations)
+        }
+```
+
+### 3. Comprehensive Logging Infrastructure
+
+```python
+class StreamingLogger:
+    """
+    Comprehensive logging for streaming SHI.
+    
+    Logs:
+    1. Input/output pairs
+    2. Hierarchy assignments
+    3. Masking decisions
+    4. Latency measurements
+    5. Buffer state
+    6. Failures and recoveries
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # Log storage
+        self.log_dir = config.get('log_dir', './logs')
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        # Separate log files for different types
+        self.logs = {
+            'inputs': self._create_log_file('inputs.jsonl'),
+            'predictions': self._create_log_file('predictions.jsonl'),
+            'hierarchy': self._create_log_file('hierarchy.jsonl'),
+            'masking': self._create_log_file('masking.jsonl'),
+            'latency': self._create_log_file('latency.jsonl'),
+            'buffer': self._create_log_file('buffer.jsonl'),
+            'failures': self._create_log_file('failures.jsonl'),
+            'recoveries': self._create_log_file('recoveries.jsonl'),
+            'metrics': self._create_log_file('metrics.jsonl')
+        }
+        
+        # In-memory buffer for batch writing
+        self.buffers = {key: [] for key in self.logs.keys()}
+        self.buffer_size = config.get('log_buffer_size', 100)
+        
+        # Session metadata
+        self.session_id = str(uuid.uuid4())
+        self.session_start = time.time()
+        
+    def _create_log_file(self, filename):
+        """Create log file with header."""
+        filepath = os.path.join(self.log_dir, filename)
+        
+        # Create file if doesn't exist
+        if not os.path.exists(filepath):
+            with open(filepath, 'w') as f:
+                # Write session header
+                header = {
+                    'type': 'session_start',
+                    'session_id': self.session_id,
+                    'timestamp': self.session_start,
+                    'config': self.config
+                }
+                f.write(json.dumps(header) + '\n')
+        
+        return filepath
+    
+    def log_success(self, timestamp, latency, result):
+        """
+        Log successful processing.
+        """
+        # Log input
+        self._buffer_log('inputs', {
+            'session_id': self.session_id,
+            'timestamp': timestamp,
+            'observation_shape': result['metadata']['token'].shape if hasattr(result['metadata']['token'], 'shape') else None,
+        })
+        
+        # Log prediction
+        self._buffer_log('predictions', {
+            'session_id': self.session_id,
+            'timestamp': timestamp,
+            'prediction': result['prediction'].tolist() if torch.is_tensor(result['prediction']) else result['prediction'],
+            'metadata': {
+                k: v.tolist() if torch.is_tensor(v) else v
+                for k, v in result['metadata'].items()
+                if k != 'token'  # Don't log full token
+            }
+        })
+        
+        # Log hierarchy
+        self._buffer_log('hierarchy', {
+            'session_id': self.session_id,
+            'timestamp': timestamp,
+            'hierarchy_level': result['metadata']['hierarchy_level'],
+            'buffer_size': result['metadata']['buffer_size']
+        })
+        
+        # Log masking
+        self._buffer_log('masking', {
+            'session_id': self.session_id,
+            'timestamp': timestamp,
+            'masking_weight': result['metadata']['masking_weight']
+        })
+        
+        # Log latency
+        self._buffer_log('latency', {
+            'session_id': self.session_id,
+            'timestamp': timestamp,
+            'latency_ms': latency * 1000
+        })
+    
+    def log_failure(self, failure_info):
+        """
+        Log failure with detailed context.
+        """
+        self._buffer_log('failures', {
+            'session_id': self.session_id,
+            'timestamp': failure_info['timestamp'],
+            'failure_type': failure_info['failure_type'],
+            'failure_subtype': failure_info['failure_subtype'],
+            'exception': str(failure_info['exception']),
+            'stack_trace': failure_info['stack_trace'],
+            'context': failure_info['context']
+        })
+        
+        # Flush immediately for failures
+        self._flush_buffer('failures')
+    
+    def log_metrics(self, metrics):
+        """
+        Log aggregated metrics.
+        """
+        self._buffer_log('metrics', {
+            'session_id': self.session_id,
+            'timestamp': time.time(),
+            'metrics': metrics
+        })
+    
+    def _buffer_log(self, log_type, entry):
+        """
+        Add entry to buffer, flush if full.
+        """
+        self.buffers[log_type].append(entry)
+        
+        if len(self.buffers[log_type]) >= self.buffer_size:
+            self._flush_buffer(log_type)
+    
+    def _flush_buffer(self, log_type):
+        """
+        Flush buffer to disk.
+        """
+        if not self.buffers[log_type]:
+            return
+        
+        with open(self.logs[log_type], 'a') as f:
+            for entry in self.buffers[log_type]:
+                f.write(json.dumps(entry) + '\n')
+        
+        # Clear buffer
+        self.buffers[log_type] = []
+    
+    def flush_all(self):
+        """
+        Flush all buffers to disk.
+        """
+        for log_type in self.buffers.keys():
+            self._flush_buffer(log_type)
+    
+    def close(self):
+        """
+        Close logging session.
+        """
+        # Flush all buffers
+        self.flush_all()
+        
+        # Write session end marker
+        for log_file in self.logs.values():
+            with open(log_file, 'a') as f:
+                end_marker = {
+                    'type': 'session_end',
+                    'session_id': self.session_id,
+                    'timestamp': time.time(),
+                    'duration_seconds': time.time() - self.session_start
+                }
+                f.write(json.dumps(end_marker) + '\n')
+```
+
+### 4. Failure Detection & Subtype Capture
+
+```python
+class FailureDetector:
+    """
+    Detect and categorize failures in streaming SHI.
+    
+    Failure taxonomy:
+    1. Latency failures (exceeds threshold)
+    2. Prediction failures (invalid output)
+    3. Hierarchy failures (inconsistent assignments)
+    4. Memory failures (buffer overflow)
+    5. Model failures (NaN, inf, gradient explosion)
+    6. Input failures (malformed input)
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # Failure counters
+        self.failure_counts = defaultdict(lambda: defaultdict(int))
+        
+        # Failure history
+        self.failure_history = []
+        
+    def capture_failure(self, timestamp, observation, action, exception, stack_trace):
+        """
+        Capture and categorize failure.
+        """
+        # Determine failure type and subtype
+        failure_type, failure_subtype = self._categorize_failure(
+            exception=exception,
+            stack_trace=stack_trace,
+            observation=observation
+        )
+        
+        # Extract context
+        context = self._extract_failure_context(
+            timestamp=timestamp,
+            observation=observation,
+            action=action,
+            exception=exception
+        )
+        
+        # Create failure record
+        failure_info = {
+            'timestamp': timestamp,
+            'failure_type': failure_type,
+            'failure_subtype': failure_subtype,
+            'exception': exception,
+            'stack_trace': stack_trace,
+            'context': context,
+            'failure_id': str(uuid.uuid4())
+        }
+        
+        # Update counters
+        self.failure_counts[failure_type][failure_subtype] += 1
+        
+        # Add to history
+        self.failure_history.append(failure_info)
+        
+        return failure_info
+    
+    def _categorize_failure(self, exception, stack_trace, observation):
+        """
+        Categorize failure into type and subtype.
+        """
+        exception_str = str(exception)
+        
+        # Latency failures
+        if 'timeout' in exception_str.lower():
+            return 'latency', 'timeout'
+        
+        # Prediction failures
+        if 'nan' in exception_str.lower() or 'inf' in exception_str.lower():
+            return 'prediction', 'numerical_instability'
+        
+        if 'shape' in exception_str.lower() or 'dimension' in exception_str.lower():
+            return 'prediction', 'shape_mismatch'
+        
+        # Hierarchy failures
+        if 'hierarchy' in exception_str.lower():
+            return 'hierarchy', 'assignment_error'
+        
+        # Memory failures
+        if 'memory' in exception_str.lower() or 'oom' in exception_str.lower():
+            return 'memory', 'out_of_memory'
+        
+        if 'buffer' in exception_str.lower():
+            return 'memory', 'buffer_overflow'
+        
+        # Model failures
+        if 'gradient' in exception_str.lower():
+            return 'model', 'gradient_explosion'
+        
+        if 'cuda' in exception_str.lower():
+            return 'model', 'cuda_error'
+        
+        # Input failures
+        if observation is None:
+            return 'input', 'null_observation'
+        
+        if hasattr(observation, 'shape') and observation.shape[0] == 0:
+            return 'input', 'empty_observation'
+        
+        # Unknown failure
+        return 'unknown', 'uncategorized'
+    
+    def _extract_failure_context(self, timestamp, observation, action, exception):
+        """
+        Extract contextual information about failure.
+        """
+        context = {
+            'timestamp': timestamp,
+            'observation_shape': observation.shape if hasattr(observation, 'shape') else None,
+            'observation_dtype': str(observation.dtype) if hasattr(observation, 'dtype') else None,
+            'action': action.tolist() if torch.is_tensor(action) else action,
+            'exception_type': type(exception).__name__,
+        }
+        
+        # Add system context
+        context['system'] = {
+            'cpu_percent': psutil.cpu_percent(),
+            'memory_percent': psutil.virtual_memory().percent,
+            'gpu_memory_allocated': torch.cuda.memory_allocated() if torch.cuda.is_available() else None,
+        }
+        
+        return context
+    
+    def recommend_recovery(self, failure_info):
+        """
+        Recommend recovery strategy based on failure type.
+        """
+        failure_type = failure_info['failure_type']
+        failure_subtype = failure_info['failure_subtype']
+        
+        # Recovery strategy mapping
+        strategies = {
+            ('latency', 'timeout'): 'use_cache',
+            ('prediction', 'numerical_instability'): 'fallback_model',
+            ('prediction', 'shape_mismatch'): 'skip',
+            ('hierarchy', 'assignment_error'): 'use_default_hierarchy',
+            ('memory', 'out_of_memory'): 'reduce_buffer',
+            ('memory', 'buffer_overflow'): 'flush_buffer',
+            ('model', 'gradient_explosion'): 'fallback_model',
+            ('model', 'cuda_error'): 'cpu_fallback',
+            ('input', 'null_observation'): 'skip',
+            ('input', 'empty_observation'): 'skip',
+        }
+        
+        return strategies.get((failure_type, failure_subtype), 'fallback_model')
+    
+    def get_failure_statistics(self):
+        """
+        Get failure statistics for monitoring.
+        """
+        total_failures = sum(
+            sum(subtypes.values())
+            for subtypes in self.failure_counts.values()
+        )
+        
+        stats = {
+            'total_failures': total_failures,
+            'failures_by_type': {
+                ftype: sum(subtypes.values())
+                for ftype, subtypes in self.failure_counts.items()
+            },
+            'failures_by_subtype': {
+                ftype: dict(subtypes)
+                for ftype, subtypes in self.failure_counts.items()
+            },
+            'most_common_failure': self._get_most_common_failure(),
+            'failure_rate': self._compute_failure_rate()
+        }
+        
+        return stats
+    
+    def _get_most_common_failure(self):
+        """Get most common failure type/subtype."""
+        max_count = 0
+        most_common = None
+        
+        for ftype, subtypes in self.failure_counts.items():
+            for subtype, count in subtypes.items():
+                if count > max_count:
+                    max_count = count
+                    most_common = (ftype, subtype)
+        
+        return most_common
+    
+    def _compute_failure_rate(self):
+        """Compute failure rate over recent history."""
+        if not self.failure_history:
+            return 0.0
+        
+        # Compute failures in last 5 minutes
+        current_time = time.time()
+        recent_failures = [
+            f for f in self.failure_history
+            if current_time - f['timestamp'] < 300  # 5 minutes
+        ]
+        
+        return len(recent_failures) / 300  # Failures per second
+```
+
+### 5. Preregistered Hypotheses for Longitudinal Evaluation
+
+```python
+class PreregisteredHypotheses:
+    """
+    Preregistered hypotheses for longitudinal evaluation of streaming SHI.
+    
+    Preregistration ensures:
+    1. No p-hacking
+    2. Transparent evaluation
+    3. Reproducible results
+    4. Clear success criteria
+    """
+    def __init__(self):
+        self.hypotheses = self._define_hypotheses()
+        self.registration_timestamp = time.time()
+        self.registration_id = str(uuid.uuid4())
+        
+    def _define_hypotheses(self):
+        """
+        Define all hypotheses before data collection.
+        """
+        hypotheses = {
+            # Primary hypotheses
+            'H1_latency': {
+                'id': 'H1',
+                'category': 'performance',
+                'hypothesis': 'Streaming SHI maintains <100ms p95 latency over 30-day deployment',
+                'null': 'p95 latency ≥ 100ms',
+                'alternative': 'p95 latency < 100ms',
+                'direction': 'one-sided',
+                'test': 'one_sample_t_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'd = 0.5',
+                'sample_size': self._compute_sample_size_latency(),
+                'primary_metric': 'p95_latency_ms',
+                'success_criterion': 'p95_latency_ms < 100',
+                'measurement_frequency': 'continuous',
+                'analysis_window': '24 hours'
+            },
+            
+            'H2_accuracy_degradation': {
+                'id': 'H2',
+                'category': 'performance',
+                'hypothesis': 'Streaming SHI prediction accuracy does not degrade >5% over 30 days',
+                'null': 'Accuracy degradation ≥ 5%',
+                'alternative': 'Accuracy degradation < 5%',
+                'direction': 'one-sided',
+                'test': 'linear_regression_slope',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'slope = -0.001 per day',
+                'sample_size': self._compute_sample_size_degradation(),
+                'primary_metric': 'prediction_mse',
+                'success_criterion': 'slope > -0.001',
+                'measurement_frequency': 'daily',
+                'analysis_window': '30 days'
+            },
+            
+            'H3_hierarchy_stability': {
+                'id': 'H3',
+                'category': 'hierarchy',
+                'hypothesis': 'Hierarchy assignments remain stable (>80% consistency) across sessions',
+                'null': 'Consistency ≤ 80%',
+                'alternative': 'Consistency > 80%',
+                'direction': 'one-sided',
+                'test': 'one_sample_t_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'd = 0.5',
+                'sample_size': self._compute_sample_size_consistency(),
+                'primary_metric': 'hierarchy_consistency',
+                'success_criterion': 'consistency > 0.80',
+                'measurement_frequency': 'per_session',
+                'analysis_window': '30 days'
+            },
+            
+            'H4_failure_rate': {
+                'id': 'H4',
+                'category': 'reliability',
+                'hypothesis': 'Failure rate remains <1% over 30-day deployment',
+                'null': 'Failure rate ≥ 1%',
+                'alternative': 'Failure rate < 1%',
+                'direction': 'one-sided',
+                'test': 'binomial_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'p = 0.01',
+                'sample_size': self._compute_sample_size_failure_rate(),
+                'primary_metric': 'failure_rate',
+                'success_criterion': 'failure_rate < 0.01',
+                'measurement_frequency': 'continuous',
+                'analysis_window': '24 hours'
+            },
+            
+            # Secondary hypotheses
+            'H5_buffer_efficiency': {
+                'id': 'H5',
+                'category': 'efficiency',
+                'hypothesis': 'Hierarchical buffer eviction outperforms FIFO by >10% in prediction accuracy',
+                'null': 'Improvement ≤ 10%',
+                'alternative': 'Improvement > 10%',
+                'direction': 'one-sided',
+                'test': 'paired_t_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'd = 0.5',
+                'sample_size': self._compute_sample_size_buffer(),
+                'primary_metric': 'prediction_mse_improvement',
+                'success_criterion': 'improvement > 0.10',
+                'measurement_frequency': 'weekly',
+                'analysis_window': '30 days'
+            },
+            
+            'H6_recovery_success': {
+                'id': 'H6',
+                'category': 'reliability',
+                'hypothesis': 'Recovery mechanisms succeed in >90% of failures',
+                'null': 'Recovery rate ≤ 90%',
+                'alternative': 'Recovery rate > 90%',
+                'direction': 'one-sided',
+                'test': 'binomial_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'p = 0.90',
+                'sample_size': self._compute_sample_size_recovery(),
+                'primary_metric': 'recovery_success_rate',
+                'success_criterion': 'recovery_rate > 0.90',
+                'measurement_frequency': 'per_failure',
+                'analysis_window': '30 days'
+            },
+            
+            'H7_session_length': {
+                'id': 'H7',
+                'category': 'usability',
+                'hypothesis': 'Mean session length increases by >20% after first week (learning effect)',
+                'null': 'Increase ≤ 20%',
+                'alternative': 'Increase > 20%',
+                'direction': 'one-sided',
+                'test': 'paired_t_test',
+                'alpha': 0.05,
+                'power': 0.80,
+                'effect_size': 'd = 0.5',
+                'sample_size': self._compute_sample_size_session(),
+                'primary_metric': 'mean_session_length_seconds',
+                'success_criterion': 'increase > 0.20',
+                'measurement_frequency': 'weekly',
+                'analysis_window': '30 days'
+            },
+            
+            # Exploratory hypotheses (not preregistered for confirmatory testing)
+            'E1_failure_clustering': {
+                'id': 'E1',
+                'category': 'exploratory',
+                'hypothesis': 'Failures cluster temporally (not random)',
+                'test': 'runs_test',
+                'alpha': 0.05,
+                'primary_metric': 'failure_clustering_coefficient',
+                'measurement_frequency': 'continuous',
+                'analysis_window': '30 days',
+                'note': 'Exploratory - results will inform future hypotheses'
+            },
+            
+            'E2_hierarchy_drift': {
+                'id': 'E2',
+                'category': 'exploratory',
+                'hypothesis': 'Hierarchy assignments drift over time',
+                'test': 'time_series_analysis',
+                'alpha': 0.05,
+                'primary_metric': 'hierarchy_drift_rate',
+                'measurement_frequency': 'daily',
+                'analysis_window': '30 days',
+                'note': 'Exploratory - will inform adaptation strategies'
+            }
+        }
+        
+        return hypotheses
+    
+    def _compute_sample_size_latency(self):
+        """
+        Compute required sample size for latency hypothesis.
+        
+        Using one-sample t-test power analysis.
+        """
+        from statsmodels.stats.power import tt_solve_power
+        
+        # Expected: mean=80ms, std=20ms, test against 100ms
+        effect_size = (100 - 80) / 20  # Cohen's d = 1.0
+        
+        n = tt_solve_power(
+            effect_size=effect_size,
+            alpha=0.05,
+            power=0.80,
+            alternative='smaller'
+        )
+        
+        return int(np.ceil(n))
+    
+    def _compute_sample_size_degradation(self):
+        """Sample size for accuracy degradation (regression slope test)."""
+        # Need at least 30 days of daily measurements
+        return 30
+    
+    def _compute_sample_size_consistency(self):
+        """Sample size for hierarchy consistency."""
+        # Expected: consistency=85%, test against 80%
+        effect_size = (0.85 - 0.80) / 0.10  # Assume std=0.10
+        
+        from statsmodels.stats.power import tt_solve_power
+        
+        n = tt_solve_power(
+            effect_size=effect_size,
+            alpha=0.05,
+            power=0.80,
+            alternative='larger'
+        )
+        
+        return int(np.ceil(n))
+    
+    def _compute_sample_size_failure_rate(self):
+        """Sample size for failure rate (binomial test)."""
+        # Expected: p=0.005, test against 0.01
+        # Using normal approximation
+        
+        p0 = 0.01
+        p1 = 0.005
+        
+        z_alpha = 1.645  # One-sided, alpha=0.05
+        z_beta = 0.84    # Power=0.80
+        
+        n = ((z_alpha * np.sqrt(p0 * (1 - p0)) + 
+              z_beta * np.sqrt(p1 * (1 - p1))) / (p0 - p1)) ** 2
+        
+        return int(np.ceil(n))
+    
+    def _compute_sample_size_buffer(self):
+        """Sample size for buffer efficiency comparison."""
+        # Paired t-test
+        effect_size = 0.5  # Medium effect
+        
+        from statsmodels.stats.power import tt_solve_power
+        
+        n = tt_solve_power(
+            effect_size=effect_size,
+            alpha=0.05,
+            power=0.80,
+            alternative='larger'
+        )
+        
+        return int(np.ceil(n))
+    
+    def _compute_sample_size_recovery(self):
+        """Sample size for recovery success rate."""
+        # Expected: p=0.95, test against 0.90
+        
+        p0 = 0.90
+        p1 = 0.95
+        
+        z_alpha = 1.645
+        z_beta = 0.84
+        
+        n = ((z_alpha * np.sqrt(p0 * (1 - p0)) + 
+              z_beta * np.sqrt(p1 * (1 - p1))) / (p1 - p0)) ** 2
+        
+        return int(np.ceil(n))
+    
+    def _compute_sample_size_session(self):
+        """Sample size for session length increase."""
+        # Paired t-test (week 1 vs. week 4)
+        effect_size = 0.5
+        
+        from statsmodels.stats.power import tt_solve_power
+        
+        n = tt_solve_power(
+            effect_size=effect_size,
+            alpha=0.05,
+            power=0.80,
+            alternative='larger'
+        )
+        
+        return int(np.ceil(n))
+    
+    def save_preregistration(self, filepath='preregistration.json'):
+        """
+        Save preregistration to file (immutable record).
+        """
+        preregistration = {
+            'registration_id': self.registration_id,
+            'registration_timestamp': self.registration_timestamp,
+            'registration_date': datetime.fromtimestamp(self.registration_timestamp).isoformat(),
+            'hypotheses': self.hypotheses,
+            'metadata': {
+                'version': '1.0',
+                'author': 'Research Team',
+                'description': 'Preregistered hypotheses for streaming SHI longitudinal evaluation'
+            }
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(preregistration, f, indent=2)
+        
+        # Compute hash for verification
+        import hashlib
+        
+        content = json.dumps(preregistration, sort_keys=True)
+        hash_value = hashlib.sha256(content.encode()).hexdigest()
+        
+        print(f"Preregistration saved: {filepath}")
+        print(f"SHA-256 hash: {hash_value}")
+        
+        return hash_value
+```
+
+### 6. Longitudinal Evaluation Framework
+
+```python
+class LongitudinalEvaluator:
+    """
+    Longitudinal evaluation framework for streaming SHI.
+    
+    Tracks metrics over time and tests preregistered hypotheses.
+    """
+    def __init__(self, preregistered_hypotheses, logger):
+        self.hypotheses = preregistered_hypotheses
+        self.logger = logger
+        
+        # Metric collectors
+        self.collectors = {
+            'latency': LatencyCollector(),
+            'accuracy': AccuracyCollector(),
+            'hierarchy': HierarchyCollector(),
+            'failures': FailureCollector(),
+            'buffer': BufferCollector(),
+            'sessions': SessionCollector()
+        }
+        
+        # Time series storage
+        self.time_series = defaultdict(list)
+        
+        # Evaluation schedule
+        self.evaluation_schedule = self._create_evaluation_schedule()
+        
+    def _create_evaluation_schedule(self):
+        """
+        Create evaluation schedule based on hypotheses.
+        """
+        schedule = {
+            'continuous': [],  # Evaluated every input
+            'hourly': [],
+            'daily': [],
+            'weekly': [],
+            'monthly': []
+        }
+        
+        for hyp_id, hyp in self.hypotheses.hypotheses.items():
+            freq = hyp.get('measurement_frequency', 'daily')
+            
+            if freq == 'continuous':
+                schedule['continuous'].append(hyp_id)
+            elif freq == 'hourly':
+                schedule['hourly'].append(hyp_id)
+            elif freq == 'daily':
+                schedule['daily'].append(hyp_id)
+            elif freq == 'weekly':
+                schedule['weekly'].append(hyp_id)
+            elif freq == 'per_session':
+                schedule['daily'].append(hyp_id)  # Aggregate daily
+        
+        return schedule
+    
+    def collect_metrics(self, timestamp, result, metadata):
+        """
+        Collect metrics for longitudinal tracking.
+        """
+        # Latency metrics
+        if 'latency_ms' in metadata:
+            self.collectors['latency'].add(timestamp, metadata['latency_ms'])
+        
+        # Accuracy metrics
+        if 'prediction' in result and 'ground_truth' in metadata:
+            error = self._compute_error(result['prediction'], metadata['ground_truth'])
+            self.collectors['accuracy'].add(timestamp, error)
+        
+        # Hierarchy metrics
+        if 'hierarchy_level' in metadata:
+            self.collectors['hierarchy'].add(timestamp, metadata['hierarchy_level'])
+        
+        # Buffer metrics
+        if 'buffer_size' in metadata:
+            self.collectors['buffer'].add(timestamp, metadata['buffer_size'])
+    
+    def collect_failure(self, failure_info):
+        """
+        Collect failure information.
+        """
+        self.collectors['failures'].add(
+            timestamp=failure_info['timestamp'],
+            failure_type=failure_info['failure_type'],
+            failure_subtype=failure_info['failure_subtype']
+        )
+    
+    def evaluate_hypotheses(self, current_time):
+        """
+        Evaluate hypotheses according to schedule.
+        """
+        results = {}
+        
+        # Continuous evaluation
+        for hyp_id in self.evaluation_schedule['continuous']:
+            if self._should_evaluate(hyp_id, current_time, 'continuous'):
+                result = self._test_hypothesis(hyp_id)
+                results[hyp_id] = result
+        
+        # Daily evaluation
+        if self._is_new_day(current_time):
+            for hyp_id in self.evaluation_schedule['daily']:
+                result = self._test_hypothesis(hyp_id)
+                results[hyp_id] = result
+        
+        # Weekly evaluation
+        if self._is_new_week(current_time):
+            for hyp_id in self.evaluation_schedule['weekly']:
+                result = self._test_hypothesis(hyp_id)
+                results[hyp_id] = result
+        
+        # Log results
+        if results:
+            self.logger.log_metrics({
+                'timestamp': current_time,
+                'hypothesis_tests': results
+            })
+        
+        return results
+    
+    def _test_hypothesis(self, hyp_id):
+        """
+        Test individual hypothesis.
+        """
+        hyp = self.hypotheses.hypotheses[hyp_id]
+        
+        # Get relevant data
+        data = self._get_hypothesis_data(hyp)
+        
+        # Run statistical test
+        if hyp['test'] == 'one_sample_t_test':
+            result = self._one_sample_t_test(data, hyp)
+        elif hyp['test'] == 'linear_regression_slope':
+            result = self._regression_slope_test(data, hyp)
+        elif hyp['test'] == 'binomial_test':
+            result = self._binomial_test(data, hyp)
+        elif hyp['test'] == 'paired_t_test':
+            result = self._paired_t_test(data, hyp)
+        else:
+            result = {'error': f"Unknown test: {hyp['test']}"}
+        
+        return result
+    
+    def _get_hypothesis_data(self, hyp):
+        """
+        Get data for hypothesis testing.
+        """
+        metric = hyp['primary_metric']
+        window = hyp.get('analysis_window', '24 hours')
+        
+        # Parse window
+        if window == '24 hours':
+            window_seconds = 24 * 3600
+        elif window == '30 days':
+            window_seconds = 30 * 24 * 3600
+        else:
+            window_seconds = 24 * 3600  # Default
+        
+        # Get data from appropriate collector
+        if 'latency' in metric:
+            data = self.collectors['latency'].get_window(window_seconds)
+        elif 'mse' in metric or 'accuracy' in metric:
+            data = self.collectors['accuracy'].get_window(window_seconds)
+        elif 'hierarchy' in metric:
+            data = self.collectors['hierarchy'].get_window(window_seconds)
+        elif 'failure' in metric:
+            data = self.collectors['failures'].get_window(window_seconds)
+        else:
+            data = []
+        
+        return data
+    
+    def _one_sample_t_test(self, data, hyp):
+        """
+        One-sample t-test.
+        """
+        from scipy.stats import ttest_1samp
+        
+        # Extract values
+        values = [d['value'] for d in data]
+        
+        if not values:
+            return {'error': 'No data available'}
+        
+        # Determine test value from success criterion
+        # E.g., "p95_latency_ms < 100" → test against 100
+        criterion = hyp['success_criterion']
+        test_value = float(criterion.split()[-1])
+        
+        # Determine alternative
+        if '<' in criterion:
+            alternative = 'less'
+        elif '>' in criterion:
+            alternative = 'greater'
+        else:
+            alternative = 'two-sided'
+        
+        # Run test
+        t_stat, p_value = ttest_1samp(values, test_value, alternative=alternative)
+        
+        # Compute effect size
+        mean_val = np.mean(values)
+        std_val = np.std(values)
+        cohens_d = (mean_val - test_value) / std_val if std_val > 0 else 0
+        
+        # Determine if hypothesis is supported
+        supported = p_value < hyp['alpha']
+        
+        return {
+            'hypothesis_id': hyp['id'],
+            'test': 'one_sample_t_test',
+            'n': len(values),
+            'mean': mean_val,
+            'std': std_val,
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'cohens_d': cohens_d,
+            'alpha': hyp['alpha'],
+            'supported': supported,
+            'interpretation': 'Hypothesis supported' if supported else 'Hypothesis not supported'
+        }
+    
+    def _regression_slope_test(self, data, hyp):
+        """
+        Test if regression slope meets criterion.
+        """
+        from scipy.stats import linregress
+        
+        # Extract time and values
+        times = np.array([d['timestamp'] for d in data])
+        values = np.array([d['value'] for d in data])
+        
+        if len(values) < 2:
+            return {'error': 'Insufficient data for regression'}
+        
+        # Normalize time to days
+        times_days = (times - times[0]) / (24 * 3600)
+        
+        # Linear regression
+        slope, intercept, r_value, p_value, std_err = linregress(times_days, values)
+        
+        # Test slope against criterion
+        # E.g., "slope > -0.001" → test if slope > -0.001
+        criterion = hyp['success_criterion']
+        threshold = float(criterion.split()[-1])
+        
+        if '>' in criterion:
+            supported = slope > threshold
+        elif '<' in criterion:
+            supported = slope < threshold
+        else:
+            supported = False
+        
+        return {
+            'hypothesis_id': hyp['id'],
+            'test': 'linear_regression_slope',
+            'n': len(values),
+            'slope': slope,
+            'intercept': intercept,
+            'r_squared': r_value ** 2,
+            'p_value': p_value,
+            'std_err': std_err,
+            'threshold': threshold,
+            'supported': supported,
+            'interpretation': f"Slope = {slope:.6f} (threshold: {threshold})"
+        }
+    
+    def _binomial_test(self, data, hyp):
+        """
+        Binomial test for proportions.
+        """
+        from scipy.stats import binomtest
+        
+        # Count successes and trials
+        n_trials = len(data)
+        n_successes = sum(1 for d in data if d.get('success', False))
+        
+        if n_trials == 0:
+            return {'error': 'No data available'}
+        
+        # Extract test proportion from criterion
+        criterion = hyp['success_criterion']
+        test_p = float(criterion.split()[-1])
+        
+        # Determine alternative
+        if '<' in criterion:
+            alternative = 'less'
+        elif '>' in criterion:
+            alternative = 'greater'
+        else:
+            alternative = 'two-sided'
+        
+        # Run test
+        result = binomtest(n_successes, n_trials, test_p, alternative=alternative)
+        
+        observed_p = n_successes / n_trials
+        supported = result.pvalue < hyp['alpha']
+        
+        return {
+            'hypothesis_id': hyp['id'],
+            'test': 'binomial_test',
+            'n_trials': n_trials,
+            'n_successes': n_successes,
+            'observed_proportion': observed_p,
+            'test_proportion': test_p,
+            'p_value': result.pvalue,
+            'alpha': hyp['alpha'],
+            'supported': supported,
+            'interpretation': f"Observed: {observed_p:.3f}, Expected: {test_p:.3f}"
+        }
+    
+    def _paired_t_test(self, data, hyp):
+        """
+        Paired t-test for comparing two conditions.
+        """
+        from scipy.stats import ttest_rel
+        
+        # Split data into two groups (e.g., week 1 vs. week 4)
+        # Assumes data has 'group' field
+        
+        group1_data = [d['value'] for d in data if d.get('group') == 'group1']
+        group2_data = [d['value'] for d in data if d.get('group') == 'group2']
+        
+        if len(group1_data) != len(group2_data):
+            return {'error': 'Unequal group sizes for paired test'}
+        
+        if len(group1_data) == 0:
+            return {'error': 'No data available'}
+        
+        # Run paired t-test
+        t_stat, p_value = ttest_rel(group2_data, group1_data, alternative='greater')
+        
+        # Effect size
+        diff = np.array(group2_data) - np.array(group1_data)
+        cohens_d = np.mean(diff) / np.std(diff) if np.std(diff) > 0 else 0
+        
+        # Percent improvement
+        mean_improvement = (np.mean(group2_data) - np.mean(group1_data)) / np.mean(group1_data)
+        
+        supported = p_value < hyp['alpha']
+        
+        return {
+            'hypothesis_id': hyp['id'],
+            'test': 'paired_t_test',
+            'n_pairs': len(group1_data),
+            'group1_mean': np.mean(group1_data),
+            'group2_mean': np.mean(group2_data),
+            'mean_difference': np.mean(diff),
+            'percent_improvement': mean_improvement,
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'cohens_d': cohens_d,
+            'alpha': hyp['alpha'],
+            'supported': supported,
+            'interpretation': f"Improvement: {mean_improvement:.1%}"
+        }
+    
+    def _should_evaluate(self, hyp_id, current_time, frequency):
+        """Check if hypothesis should be evaluated now."""
+        # Simplified - actual implementation would track last evaluation time
+        return True
+    
+    def _is_new_day(self, current_time):
+        """Check if it's a new day."""
+        # Simplified - actual implementation would track last day
+        return True
+    
+    def _is_new_week(self, current_time):
+        """Check if it's a new week."""
+        # Simplified - actual implementation would track last week
+        return True
+    
+    def _compute_error(self, prediction, ground_truth):
+        """Compute prediction error."""
+        if torch.is_tensor(prediction):
+            prediction = prediction.detach().cpu().numpy()
+        if torch.is_tensor(ground_truth):
+            ground_truth = ground_truth.detach().cpu().numpy()
+        
+        return np.mean((prediction - ground_truth) ** 2)
+    
+    def generate_longitudinal_report(self, deployment_days=30):
+        """
+        Generate comprehensive longitudinal evaluation report.
+        """
+        report = f"""
+# Longitudinal Evaluation Report: Streaming SHI
+
+**Deployment Duration:** {deployment_days} days
+**Report Generated:** {datetime.now().isoformat()}
+
+## Preregistered Hypotheses Results
+
+"""
+        
+        # Test all hypotheses
+        for hyp_id, hyp in self.hypotheses.hypotheses.items():
+            if hyp.get('category') != 'exploratory':
+                # Get test result
+                data = self._get_hypothesis_data(hyp)
+                result = self._test_hypothesis(hyp_id)
+                
+                report += f"""
+### {hyp_id}: {hyp['hypothesis']}
+
+- **Test:** {hyp['test']}
+- **Alpha:** {hyp['alpha']}
+- **Sample Size:** {result.get('n', 'N/A')}
+- **Result:** {result.get('interpretation', 'N/A')}
+- **p-value:** {result.get('p_value', 'N/A'):.4f}
+- **Supported:** {'✅ Yes' if result.get('supported', False) else '❌ No'}
+
+"""
+        
+        report += """
+## Exploratory Analyses
+
+"""
+        
+        # Exploratory hypotheses
+        for hyp_id, hyp in self.hypotheses.hypotheses.items():
+            if hyp.get('category') == 'exploratory':
+                report += f"""
+### {hyp_id}: {hyp['hypothesis']}
+
+*Note: {hyp.get('note', 'Exploratory analysis')}*
+
+"""
+        
+        report += """
+## Summary
+
+"""
+        
+        # Count supported hypotheses
+        supported_count = sum(
+            1 for hyp_id, hyp in self.hypotheses.hypotheses.items()
+            if hyp.get('category') != 'exploratory' and
+            self._test_hypothesis(hyp_id).get('supported', False)
+        )
+        
+        total_count = sum(
+            1 for hyp in self.hypotheses.hypotheses.values()
+            if hyp.get('category') != 'exploratory'
+        )
+        
+        report += f"""
+**Hypotheses Supported:** {supported_count} / {total_count} ({supported_count/total_count:.1%})
+
+"""
+        
+        return report
+```
+
+### 7. Metric Collectors
+
+```python
+class LatencyCollector:
+    """Collect latency measurements over time."""
+    def __init__(self):
+        self.data = []
+        
+    def add(self, timestamp, latency_ms):
+        self.data.append({
+            'timestamp': timestamp,
+            'value': latency_ms
+        })
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            d for d in self.data
+            if current_time - d['timestamp'] <= window_seconds
+        ]
+    
+    def get_p95(self, window_seconds):
+        window_data = self.get_window(window_seconds)
+        if not window_data:
+            return None
+        values = [d['value'] for d in window_data]
+        return np.percentile(values, 95)
+
+class AccuracyCollector:
+    """Collect accuracy/error measurements over time."""
+    def __init__(self):
+        self.data = []
+        
+    def add(self, timestamp, error):
+        self.data.append({
+            'timestamp': timestamp,
+            'value': error
+        })
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            d for d in self.data
+            if current_time - d['timestamp'] <= window_seconds
+        ]
+
+class HierarchyCollector:
+    """Collect hierarchy assignments over time."""
+    def __init__(self):
+        self.data = []
+        
+    def add(self, timestamp, hierarchy_level):
+        self.data.append({
+            'timestamp': timestamp,
+            'value': hierarchy_level
+        })
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            d for d in self.data
+            if current_time - d['timestamp'] <= window_seconds
+        ]
+    
+    def compute_consistency(self, window_seconds):
+        """Compute consistency of hierarchy assignments."""
+        window_data = self.get_window(window_seconds)
+        if len(window_data) < 2:
+            return None
+        
+        # Compute pairwise consistency
+        levels = [d['value'] for d in window_data]
+        
+        # Simple consistency: mode frequency
+        from scipy.stats import mode
+        mode_level, mode_count = mode(levels)
+        consistency = mode_count[0] / len(levels)
+        
+        return consistency
+
+class FailureCollector:
+    """Collect failure events over time."""
+    def __init__(self):
+        self.data = []
+        
+    def add(self, timestamp, failure_type, failure_subtype):
+        self.data.append({
+            'timestamp': timestamp,
+            'failure_type': failure_type,
+            'failure_subtype': failure_subtype,
+            'success': False  # Failure event
+        })
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            d for d in self.data
+            if current_time - d['timestamp'] <= window_seconds
+        ]
+    
+    def compute_failure_rate(self, window_seconds, total_inputs):
+        """Compute failure rate."""
+        window_failures = len(self.get_window(window_seconds))
+        return window_failures / total_inputs if total_inputs > 0 else 0
+
+class BufferCollector:
+    """Collect buffer state over time."""
+    def __init__(self):
+        self.data = []
+        
+    def add(self, timestamp, buffer_size):
+        self.data.append({
+            'timestamp': timestamp,
+            'value': buffer_size
+        })
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            d for d in self.data
+            if current_time - d['timestamp'] <= window_seconds
+        ]
+
+class SessionCollector:
+    """Collect session information over time."""
+    def __init__(self):
+        self.sessions = []
+        self.current_session = None
+        
+    def start_session(self, timestamp):
+        self.current_session = {
+            'start_time': timestamp,
+            'end_time': None,
+            'duration': None,
+            'num_inputs': 0
+        }
+    
+    def add_input(self):
+        if self.current_session:
+            self.current_session['num_inputs'] += 1
+    
+    def end_session(self, timestamp):
+        if self.current_session:
+            self.current_session['end_time'] = timestamp
+            self.current_session['duration'] = timestamp - self.current_session['start_time']
+            self.sessions.append(self.current_session)
+            self.current_session = None
+    
+    def get_window(self, window_seconds):
+        current_time = time.time()
+        return [
+            s for s in self.sessions
+            if current_time - s['start_time'] <= window_seconds
+        ]
+```
+
+### 8. Deployment Example
+
+```python
+class StreamingSHIDeployment:
+    """
+    Complete deployment example for streaming SHI.
+    """
+    def __init__(self, config):
+        # Initialize streaming SHI
+        self.model = StreamingSHI(config)
+        
+        # Initialize preregistered hypotheses
+        self.hypotheses = PreregisteredHypotheses()
+        self.hypotheses.save_preregistration('preregistration.json')
+        
+        # Initialize longitudinal evaluator
+        self.evaluator = LongitudinalEvaluator(
+            preregistered_hypotheses=self.hypotheses,
+            logger=self.model.logger
+        )
+        
+    def deploy(self, input_stream, duration_days=30):
+        """
+        Deploy streaming SHI for longitudinal evaluation.
+        """
+        print(f"Starting {duration_days}-day deployment...")
+        
+        start_time = time.time()
+        end_time = start_time + (duration_days * 24 * 3600)
+        
+        input_count = 0
+        
+        try:
+            for timestamp, prediction, metadata in self.model.process_stream(input_stream):
+                input_count += 1
+                
+                # Collect metrics
+                self.evaluator.collect_metrics(
+                    timestamp=timestamp,
+                    result={'prediction': prediction},
+                    metadata=metadata
+                )
+                
+                # Evaluate hypotheses (according to schedule)
+                if input_count % 1000 == 0:  # Every 1000 inputs
+                    self.evaluator.evaluate_hypotheses(time.time())
+                
+                # Check if deployment duration reached
+                if time.time() >= end_time:
+                    break
+                
+                # Progress update
+                if input_count % 10000 == 0:
+                    elapsed_days = (time.time() - start_time) / (24 * 3600)
+                    print(f"Day {elapsed_days:.1f}: Processed {input_count} inputs")
+        
+        finally:
+            # Generate final report
+            print("\nGenerating longitudinal evaluation report...")
+            report = self.evaluator.generate_longitudinal_report(duration_days)
+            
+            with open('longitudinal_report.md', 'w') as f:
+                f.write(report)
+            
+            print(f"Report saved to: longitudinal_report.md")
+            
+            # Close logging
+            self.model.logger.close()
+            
+            print(f"\nDeployment complete: {input_count} inputs processed over {duration_days} days")
+
+# Example usage
+if __name__ == '__main__':
+    config = {
+        'buffer_size': 1000,
+        'latency_threshold_ms': 100,
+        'log_dir': './logs',
+        'log_buffer_size': 100,
+        # ... other config
+    }
+    
+    deployment = StreamingSHIDeployment(config)
+    
+    # Simulate input stream (replace with real stream)
+    def simulate_input_stream():
+        while True:
+            timestamp = time.time()
+            observation = torch.randn(64, 64, 3)  # Simulated observation
+            action = torch.randint(0, 4, (1,))     # Simulated action
+            yield timestamp, observation, action
+    
+    # Deploy for 30 days
+    deployment.deploy(simulate_input_stream(), duration_days=30)
+```
+
+## Summary
+
+**Streaming Architecture:**
+- Circular buffer with hierarchical eviction
+- Incremental hierarchy assignment
+- Real-time latency monitoring (<100ms target)
+- Failure detection and recovery
+
+**Logging Infrastructure:**
+- Separate logs: inputs, predictions, hierarchy, masking, latency, buffer, failures, recoveries, metrics
+- Buffered writes for efficiency
+- Session tracking with unique IDs
+- Immutable session markers
+
+**Failure Taxonomy:**
+1. Latency failures (timeout)
+2. Prediction failures (NaN, shape mismatch)
+3. Hierarchy failures (assignment errors)
+4. Memory failures (OOM, buffer overflow)
+5. Model failures (gradient explosion, CUDA errors)
+6. Input failures (null, empty observations)
+
+**Preregistered Hypotheses (7 primary + 2 exploratory):**
+- H1: p95 latency <100ms
+- H2: Accuracy degradation <5% over 30 days
+- H3: Hierarchy consistency >80%
+- H4: Failure rate <1%
+- H5: Hierarchical buffer >10% better than FIFO
+- H6: Recovery success >90%
+- H7: Session length increases >20% after week 1
+
+**Longitudinal Evaluation:**
+- Continuous, daily, and weekly measurements
+- Statistical tests: t-tests, regression, binomial
+- Power analysis for sample sizes
+- Automated hypothesis testing
+- Comprehensive reporting
+
+**Computational Budget:**
+- 30-day deployment
+- ~1M inputs (assuming 1 input/second)
+- Logging overhead: ~5% of compute
+- Total: ~720 GPU-hours (~$1,800 on A100s)
+
+## Sources
+
+This streaming instrumentation framework is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the hierarchical token organization [heirarchical-transformer.pdf:2], SPARTAN causal graph component [heirarchical-transformer.pdf:2], and evaluation on Atari 100k and Crafter [heirarchical-transformer.pdf:3]
+
+For streaming systems and longitudinal evaluation methodology, I recommend:
+- **Streaming ML:** Bifet et al. (2018) "Machine Learning for Data Streams" (MIT Press)
+- **Preregistration:** Nosek et al. (2018) "The Preregistration Revolution" (PNAS)
+- **Longitudinal analysis:** Singer & Willett (2003) "Applied Longitudinal Data Analysis" (Oxford)
+- **Failure taxonomy:** Avizienis et al. (2004) "Basic Concepts and Taxonomy of Dependable and Secure Computing" (IEEE TDSC)
+- **Real-time systems:** Buttazzo (2011) "Hard Real-Time Computing Systems" (Springer)
+- **Power analysis:** Cohen (1988) "Statistical Power Analysis for the Behavioral Sciences"

@@ -1,0 +1,332 @@
+Based on the retrieved literature, I can now construct a comprehensive research execution plan for compressible LLMs. The search revealed recent advances in quantization [1,2,3], pruning [4,5], knowledge distillation [6,7], and MoE compression [8,9].
+
+---
+
+## 1. Problem Framing and Goals
+
+**Core Problem:**  
+Large Language Models (7B–70B+ parameters) deliver state-of-the-art performance but impose prohibitive deployment costs: memory footprints exceeding GPU VRAM, high inference latency, and energy consumption. Existing compression techniques—quantization, pruning, distillation, low-rank factorization—often operate in isolation and exhibit performance degradation at extreme compression ratios (>10×). There is no unified framework that systematically combines these methods while preserving emergent capabilities (reasoning, in-context learning, instruction following).
+
+**Primary Goals:**
+1. Develop a **composable compression pipeline** integrating quantization, structured pruning, and low-rank adaptation with minimal accuracy loss
+2. Achieve **8–12× compression** (e.g., 7B → <1GB) while retaining >90% of original model performance on reasoning benchmarks
+3. Establish **compression-aware training** protocols that optimize for compressibility during pretraining/fine-tuning
+4. Benchmark against recent methods [1,2,3,4] on standardized tasks (MMLU, GSM8K, HumanEval, MT-Bench)
+
+**Scientific Contributions:**
+- Novel **joint optimization** of quantization + pruning + low-rank decomposition (vs. sequential application)
+- **Compression-aware pretraining** objective that encourages low-rank weight structure and quantization-friendly distributions
+- Theoretical analysis of **compressibility-performance tradeoffs** in transformer architectures
+- Open-source toolkit and compressed model zoo (Llama-3-8B, Mistral-7B, Phi-3 variants)
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Compression Methods Comparison**
+
+**Hypothesis:**  
+Existing compression techniques exhibit complementary strengths: quantization reduces memory, pruning reduces compute, low-rank methods reduce parameters. A systematic comparison will identify which methods preserve reasoning vs. knowledge-intensive capabilities.
+
+**Setup:**
+- **Base models:** Llama-3-8B, Mistral-7B-Instruct-v0.2, Phi-3-mini-4k
+- **Compression methods:**
+  - *Quantization:* GPTQ [1], AWQ, SmoothQuant (4-bit, 3-bit, 2-bit)
+  - *Pruning:* Wanda (unstructured), SparseGPT, Mosaic [5] (structured 2:4, 4:8 sparsity)
+  - *Low-rank:* LoRA compression [3], SVD-based weight factorization (rank 16, 32, 64)
+  - *Distillation:* DistiLLM [7] (teacher: 70B → student: 7B)
+- **Training:** Apply post-training compression (no retraining) vs. compression-aware fine-tuning (100K samples from SlimOrca)
+
+**Baselines:**
+- Uncompressed FP16 models
+- Naive FP8/INT8 quantization
+- Random pruning (control)
+
+**Evaluation Metrics:**
+- **Reasoning:** GSM8K (math), MMLU (5-shot), ARC-Challenge, HellaSwag
+- **Code:** HumanEval pass@1, MBPP
+- **Instruction following:** MT-Bench, AlpacaEval 2.0
+- **Efficiency:** Model size (GB), inference latency (tokens/sec on A100), memory footprint
+- **Perplexity:** WikiText-103, C4 validation set
+
+**Expected Outcomes:**
+- 4-bit quantization (GPTQ/AWQ) achieves <5% accuracy drop with 4× compression
+- Structured pruning (2:4 sparsity) enables 2× speedup with <10% drop on reasoning tasks
+- Low-rank methods (rank 32) preserve instruction-following better than pruning
+- Distillation maintains reasoning but loses factual knowledge (MMLU drops >15%)
+
+---
+
+### **Experiment 2: Joint Optimization of Compression Techniques**
+
+**Hypothesis:**  
+Sequential application of compression methods (e.g., prune → quantize) leads to compounding errors. Joint optimization via multi-objective training will achieve superior compression-accuracy tradeoffs.
+
+**Setup:**
+- **Architecture:** Llama-3-8B with modifications:
+  - Quantization-aware training (QAT) with learnable scale/zero-point
+  - Structured pruning masks (learned via straight-through estimators)
+  - Low-rank reparameterization: W = AB^T + sparse residual R
+- **Training objective:**  
+  L = L_task (cross-entropy) + λ_quant × L_quant (quantization error) + λ_sparse × ||W||_0 + λ_rank × rank(W)
+- **Optimization:** Two-stage approach
+  1. **Stage 1 (Months 1–2):** Compression-aware continued pretraining on 50B tokens (RedPajama subset) with gradual increase of λ_sparse, λ_rank
+  2. **Stage 2 (Month 3):** Instruction fine-tuning on SlimOrca + Ultrachat with fixed compression structure
+- **Ablations:**
+  - Sequential (prune → quantize → low-rank) vs. joint optimization
+  - Vary compression ratios: 4×, 8×, 12×, 16×
+  - Impact of each loss term (λ_quant, λ_sparse, λ_rank)
+
+**Baselines:**
+- Sequential compression (Experiment 1 best methods applied in sequence)
+- CompactifAI [2] (recent extreme compression method)
+- LLM.int8() + pruning
+
+**Evaluation Metrics:**
+- Same task suite as Experiment 1
+- **Pareto frontier:** Accuracy vs. compression ratio
+- **Calibration:** Expected Calibration Error (ECE) on MMLU
+- **Emergent abilities:** Few-shot in-context learning (0-shot → 5-shot gain)
+
+**Expected Outcomes:**
+- Joint optimization achieves 8× compression with <8% MMLU drop (vs. 15% for sequential)
+- Optimal λ_sparse ≈ 0.01, λ_rank ≈ 0.001 balances compression and performance
+- Low-rank + sparse residual outperforms pure low-rank by 3–5% at same parameter count
+- Compression-aware pretraining critical: skipping Stage 1 increases accuracy drop by 2×
+
+---
+
+### **Experiment 3: Compression-Aware Pretraining from Scratch**
+
+**Hypothesis:**  
+Models pretrained with compression objectives will exhibit inherently more compressible weight structures (low-rank, quantization-friendly distributions) without sacrificing uncompressed performance.
+
+**Setup:**
+- **Model:** Train 1.5B parameter decoder-only transformer from scratch (control for compute budget)
+- **Training variants:**
+  - *Baseline:* Standard pretraining (AdamW, cosine schedule, 100B tokens)
+  - *Variant A:* Add quantization noise during training (simulated 4-bit)
+  - *Variant B:* Regularize for low-rank: L += λ × Σ_layers nuclear_norm(W)
+  - *Variant C:* Periodic pruning + regrowth (dynamic sparsity à la RigL)
+  - *Variant D:* Combined (A + B + C)
+- **Data:** 100B tokens from RedPajama (books, Wikipedia, StackExchange, arXiv)
+- **Compression post-training:** Apply 4-bit quantization + 50% pruning to all variants
+
+**Baselines:**
+- Pythia-1.4B (standard pretraining)
+- OPT-1.3B
+- Compressed versions of above (post-hoc compression)
+
+**Evaluation Metrics:**
+- **Uncompressed performance:** Perplexity, MMLU, GSM8K (verify no degradation from compression-aware training)
+- **Compressed performance:** Same metrics after 4-bit + 50% pruning
+- **Compressibility analysis:**
+  - Singular value decay rate (measure intrinsic rank)
+  - Weight distribution kurtosis (quantization-friendliness)
+  - Hessian eigenspectrum (sensitivity to pruning)
+
+**Expected Outcomes:**
+- Variant D (combined) achieves 5–8% better compressed performance than baseline
+- Uncompressed performance within 2% of standard pretraining (no free lunch, but minimal cost)
+- Low-rank regularization (Variant B) reduces effective rank by 30–40%
+- Quantization noise (Variant A) narrows weight distributions, reducing quantization error by 20%
+
+---
+
+### **Experiment 4: Mixture-of-Experts Compression via Expert Merging**
+
+**Hypothesis:**  
+MoE models (e.g., Mixtral-8x7B) contain redundant experts that can be merged or pruned without significant performance loss, achieving compression beyond dense model limits.
+
+**Setup:**
+- **Base model:** Mixtral-8x7B-Instruct (47B total params, 13B active per token)
+- **Compression strategies:**
+  - *Expert pruning:* Remove low-activation experts (keep top-K per layer)
+  - *Expert merging:* Cluster similar experts (cosine similarity of weights), merge via averaging or learned combination
+  - *Hybrid:* Merge similar experts + quantize remaining to 4-bit
+- **Analysis:**
+  - Compute expert activation frequencies across 10K diverse prompts
+  - Measure expert similarity via CKA (Centered Kernel Alignment)
+  - Identify "super experts" [9] that dominate routing
+
+**Baselines:**
+- Uncompressed Mixtral-8x7B
+- Naive expert removal (random)
+- Dense Llama-3-70B (for performance comparison at similar compute)
+
+**Evaluation Metrics:**
+- Standard benchmarks (MMLU, GSM8K, HumanEval, MT-Bench)
+- **Routing efficiency:** Expert utilization entropy, load balancing
+- **Compression ratio:** Effective parameters (accounting for sparsity)
+- **Inference cost:** FLOPs per token, memory bandwidth
+
+**Expected Outcomes:**
+- 30–40% of experts can be pruned with <5% accuracy drop (following [8,9])
+- Expert merging (4 experts → 2) achieves 2× compression with 8–12% drop
+- Hybrid approach: 8 experts → 4 merged + 4-bit quantization = 6× compression, 10% drop
+- Super experts identified: 2–3 experts per layer handle 60%+ of tokens
+
+---
+
+### **Experiment 5: Adaptive Compression for Deployment Scenarios**
+
+**Hypothesis:**  
+Different deployment contexts (edge devices, cloud, mobile) require different compression-performance tradeoffs. Adaptive models that dynamically adjust compression based on available resources will outperform static compression.
+
+**Setup:**
+- **Model:** Llama-3-8B with multi-exit architecture and progressive compression
+  - Early exits at layers 8, 16, 24, 32 (full depth)
+  - Each exit has different compression: 2-bit (layer 8) → 3-bit → 4-bit → FP16 (layer 32)
+- **Adaptive inference:**
+  - Confidence-based early exit (if entropy < threshold, exit early)
+  - Resource-aware routing (if GPU memory < X, use compressed path)
+- **Deployment scenarios:**
+  - *Edge:* Raspberry Pi 5 (8GB RAM) – maximize compression
+  - *Mobile:* iPhone 15 Pro (8GB) – balance latency and accuracy
+  - *Cloud:* A100 GPU – optimize throughput (batch size)
+
+**Baselines:**
+- Static compression (single compression ratio for all inputs)
+- Speculative decoding (draft model + verification)
+- Cascade models (small model → large model fallback)
+
+**Evaluation Metrics:**
+- **Accuracy-efficiency tradeoff:** Accuracy vs. latency/memory for each scenario
+- **Exit distribution:** Fraction of samples exiting at each layer
+- **User experience:** Perceived latency (time to first token, total generation time)
+- **Energy consumption:** Joules per query (measured on actual hardware)
+
+**Expected Outcomes:**
+- 40–60% of queries can exit early (layers 8–16) with <3% accuracy drop
+- Edge deployment achieves 5× speedup vs. full model with 12% accuracy drop
+- Adaptive compression reduces average latency by 30% vs. static compression at same accuracy
+- Energy savings: 2–3× on mobile devices for typical instruction-following tasks
+
+---
+
+## 3. Timeline for the Next 6 Months with Milestones
+
+| **Month** | **Milestone** | **Deliverables** |
+|-----------|---------------|------------------|
+| **Month 1** | Infrastructure + Experiment 1 | - Set up training infrastructure (multi-GPU, distributed training)<br>- Implement compression baselines (GPTQ, Wanda, LoRA compression)<br>- Run Experiment 1: compress Llama-3-8B, Mistral-7B with all methods<br>- Benchmark on MMLU, GSM8K, HumanEval<br>- **Deliverable:** Compression methods comparison table |
+| **Month 2** | Experiment 2 (Part 1) | - Implement joint optimization framework (QAT + pruning + low-rank)<br>- Stage 1: Compression-aware continued pretraining (50B tokens)<br>- Ablation: sequential vs. joint optimization<br>- **Deliverable:** Pareto frontier plots (accuracy vs. compression) |
+| **Month 3** | Experiment 2 (Part 2) + Experiment 4 | - Stage 2: Instruction fine-tuning of compressed models<br>- Complete Experiment 2 ablations (λ sweep)<br>- Start Experiment 4: Mixtral expert analysis and pruning<br>- **Deliverable:** Joint optimization results, draft methods section |
+| **Month 4** | Experiment 3 + Experiment 4 completion | - Launch Experiment 3: Train 1.5B model from scratch with compression-aware objectives<br>- Complete Experiment 4: Expert merging and hybrid compression<br>- Analyze weight structure (singular values, Hessian)<br>- **Deliverable:** Compression-aware pretraining results, MoE compression analysis |
+| **Month 5** | Experiment 5 + Integration | - Implement adaptive compression with early exits<br>- Deploy on edge/mobile hardware (Raspberry Pi, iPhone)<br>- Measure latency, energy, user experience metrics<br>- Integrate all experiments into unified narrative<br>- **Deliverable:** Adaptive compression results, hardware benchmarks |
+| **Month 6** | Writing, release, submission | - Write full manuscript (intro, related work, all experiments, discussion)<br>- Create publication-quality figures and tables<br>- Prepare code release (compression toolkit, model zoo)<br>- Release compressed models on HuggingFace (Llama-3-8B-Compressed variants)<br>- **Submission target:** NeurIPS, ICLR, or TMLR<br>- **Deliverable:** Preprint on arXiv, code/model release |
+
+**Key Decision Points:**
+- End of Month 1: Select top 2 compression methods from Experiment 1 for deep integration in Experiment 2
+- End of Month 3: Decide whether to expand Experiment 3 (train larger model) or focus on 1.5B results
+- Month 4: Parallel submission to workshop (e.g., WANT @ NeurIPS, Efficient NLP) for early feedback
+- Month 5: Finalize deployment scenarios based on hardware availability
+
+---
+
+## 4. Resources (Compute, Tools, Datasets)
+
+### **Compute Requirements**
+- **Pretraining (Experiment 3):** 
+  - 1.5B model, 100B tokens: ~800 A100 GPU-hours (10 days on 8× A100 cluster)
+  - Estimated cost: $8,000–$12,000 on cloud (AWS p4d, GCP A2)
+- **Compression-aware training (Experiment 2):**
+  - 50B tokens continued pretraining: ~400 A100 GPU-hours
+  - Instruction fine-tuning: ~50 GPU-hours
+- **Evaluation & ablations:** ~200 GPU-hours across all experiments
+- **Total:** ~1,500 A100 GPU-hours over 6 months
+- **Storage:** 5 TB for datasets, checkpoints, compressed models
+
+### **Software & Tools**
+- **Frameworks:** PyTorch 2.x, HuggingFace Transformers, DeepSpeed (ZeRO-3 for large models)
+- **Compression libraries:**
+  - GPTQ-for-LLaMa, AutoGPTQ [1]
+  - LLM.int8() (bitsandbytes)
+  - Wanda, SparseGPT (pruning)
+  - PEFT (LoRA, QLoRA)
+- **Evaluation:** lm-evaluation-harness (EleutherAI), MT-Bench (FastChat)
+- **Profiling:** PyTorch Profiler, NVIDIA Nsight, MLPerf Inference
+- **Experiment tracking:** Weights & Biases
+- **Hardware:** Raspberry Pi 5, iPhone 15 Pro (for Experiment 5 deployment)
+
+### **Datasets**
+1. **Pretraining (Experiment 3):**
+   - RedPajama-v2 (100B token subset: books, Wikipedia, StackExchange, arXiv)
+   - The Pile (validation set for perplexity)
+2. **Fine-tuning:**
+   - SlimOrca (100K high-quality instruction pairs)
+   - Ultrachat (200K multi-turn conversations)
+3. **Evaluation:**
+   - MMLU (57 tasks, 5-shot)
+   - GSM8K (math reasoning)
+   - HumanEval, MBPP (code generation)
+   - MT-Bench (instruction following)
+   - WikiText-103, C4 (perplexity)
+4. **Compression calibration:**
+   - C4 (10K samples for GPTQ/AWQ calibration)
+
+**Model Access:**
+- Llama-3-8B, Mistral-7B, Phi-3-mini (HuggingFace, Meta, Microsoft)
+- Mixtral-8x7B (HuggingFace)
+- All models available under permissive licenses (Apache 2.0, Llama 3 Community License)
+
+---
+
+## 5. Risks and Mitigations Table
+
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+|----------|----------------|------------|----------------|
+| **Joint optimization does not outperform sequential compression** | Medium | High | - Ensure fair comparison (same total compression ratio)<br>- Focus on Pareto frontier analysis (may excel at specific ratios)<br>- Emphasize training efficiency (joint = single pass vs. multiple for sequential)<br>- Publish negative result with analysis of why joint fails |
+| **Compression-aware pretraining (Exp 3) degrades uncompressed performance** | Medium | High | - Careful tuning of regularization weights (λ)<br>- Use validation perplexity to detect degradation early<br>- Fall back to post-training compression if pretraining cost too high<br>- Frame as tradeoff analysis rather than strict improvement |
+| **Compute budget insufficient for 100B token pretraining** | Medium | Medium | - Reduce to 50B tokens or smaller model (1B params)<br>- Use existing pretrained checkpoints (Pythia intermediate checkpoints)<br>- Focus on continued pretraining (cheaper than from-scratch)<br>- Seek academic compute grants (NCSA, TACC) |
+| **Compressed models fail on reasoning tasks (GSM8K, MMLU)** | High | High | - Prioritize reasoning-preserving compression (avoid aggressive quantization of attention)<br>- Use task-specific compression (compress FFN more than attention)<br>- Implement mixed-precision (critical layers in higher precision)<br>- Document which capabilities degrade first (knowledge vs. reasoning) |
+| **Hardware deployment (Exp 5) faces platform-specific issues** | Medium | Low | - Start with well-supported platforms (ONNX Runtime, CoreML)<br>- Use existing mobile inference frameworks (llama.cpp, MLC-LLM)<br>- Simplify to latency simulation if hardware unavailable<br>- Partner with industry (Apple, Qualcomm) for hardware access |
+| **Baseline reproduction issues (GPTQ, AWQ)** | Low | Medium | - Use official implementations and pretrained models<br>- Document all hyperparameters (calibration data, group size)<br>- Contact authors if discrepancies arise<br>- Use multiple baselines to reduce dependence on single method |
+| **Evaluation benchmark saturation (MMLU >90%)** | Low | Low | - Add harder benchmarks (GPQA, MATH, LiveCodeBench)<br>- Focus on efficiency metrics (latency, memory) as primary contribution<br>- Evaluate on long-context tasks (RULER, LongBench) |
+| **Model release restrictions (Llama license)** | Low | Medium | - Verify license compatibility for compressed model release<br>- Use fully open models (Pythia, OLMo) as fallback<br>- Release compression code/recipes even if models restricted |
+
+---
+
+## 6. Stretch Ideas or Follow-Up Directions
+
+1. **Dynamic Compression During Inference:**  
+   Develop runtime systems that adjust compression on-the-fly based on input complexity (simple queries use 2-bit, complex reasoning uses 4-bit), optimizing the accuracy-efficiency tradeoff per sample.
+
+2. **Compression-Aware Architecture Search:**  
+   Use NAS to discover transformer variants (attention patterns, FFN structure) that are inherently more compressible, potentially finding architectures that achieve 16× compression with <5% drop.
+
+3. **Federated Compression:**  
+   Explore compression in federated learning settings where edge devices collaboratively train compressed models, addressing communication efficiency and privacy.
+
+4. **Multimodal Compression:**  
+   Extend techniques to vision-language models (LLaVA, CLIP) and audio models (Whisper), investigating whether visual/audio encoders compress differently than language decoders.
+
+5. **Compression for Long-Context Models:**  
+   Apply compression to 128K+ context models (Llama-3.1, GPT-4), focusing on KV-cache compression and attention sparsity patterns in long sequences.
+
+6. **Theoretical Compression Limits:**  
+   Derive information-theoretic bounds on LLM compressibility based on task complexity, providing principled guidance on achievable compression ratios for different capability levels.
+
+7. **Compression-Aware Continual Learning:**  
+   Investigate whether compressed models can efficiently adapt to new tasks/domains via parameter-efficient fine-tuning, enabling lifelong learning in resource-constrained settings.
+
+8. **Green AI Metrics:**  
+   Comprehensive lifecycle analysis of compression: carbon footprint of training compressed models vs. inference savings, establishing when compression is net-positive for environment.
+
+---
+
+## Sources
+
+[1] [On the Compressibility of Quantized Large Language Models](https://arxiv.org/abs/2403.01384)  
+[2] [CompactifAI: Extreme Compression of Large Language Models](https://arxiv.org/abs/2401.14109)  
+[3] [LoRA: Summation Compression for Very Low-Rank Adaptation](http://arxiv.org/pdf/2503.08333.pdf)  
+[4] [Progressive Binarization with Semi-Structured Pruning for LLMs](https://arxiv.org/abs/2502.01705)  
+[5] [Mosaic: Composite Projection Pruning for Resource-efficient LLMs](https://arxiv.org/abs/2504.06323)  
+[6] [A Survey on Knowledge Distillation of Large Language Models](https://arxiv.org/abs/2402.13116)  
+[7] [DistiLLM: Towards Streamlined Distillation for Large Language Models](https://arxiv.org/abs/2402.03898)  
+[8] [Mixture Compressor for Mixture-of-Experts LLMs Gains More](https://arxiv.org/abs/2410.06270)  
+[9] [Unveiling Super Experts in Mixture-of-Experts Large Language Models](https://openreview.net/forum?id=JYwGNKfPPp)  
+
+---
+
+**Optional next step:**  
+Contact the authors of CompactifAI [2] and the LLMCBench team to request their compression pipelines and benchmark datasets, which could accelerate Month 1 baseline implementation and ensure direct comparability with state-of-the-art methods.

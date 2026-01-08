@@ -1,0 +1,65 @@
+Below are likely reviewer concerns about the construct validity of “probably-rejected” labels in the arXiv portion of PeerRead, with concrete mitigations you can include in the discussion. I also propose falsifiable experiments to quantify and control label noise.
+
+What reviewers will worry about
+- Publication-lag confounding: “Probably-rejected” may mean “not yet matched to a venue,” not truly rejected (journal/conference delays, title changes, or venue switches). This risks systematic false negatives, especially for fields/years with longer lags.
+- Matching errors: Heuristics that match arXiv preprints to DBLP/venue records can miss publications due to name variants, title edits, author disambiguation issues, and workshop/short versions, producing label noise in the negative class.
+- Differential noise by field and time: arXiv adoption, venue practices, and lag differ across subfields and years, leading to class-conditional noise that is not i.i.d. across groups.
+- Outcome construct validity: Conference acceptance itself is a noisy outcome with reviewer disagreement; training to predict “acceptance” can be fragile even under clean labels [P6]. This compounds concerns when the negative class is weakly labeled.
+- Leakage from post-hoc signals: If any features are derived after the arXiv posting (later versions, citations), labels may leak future information; this would inflate performance and mask noise effects.
+- Limited external validation: Without a manual audit or an external gold set, “probably-rejected” precision/recall is unknown.
+- Ethical/interpretational risk: Treating “not matched to a venue” as “rejected” can unfairly stigmatize authors/papers that were never submitted, are under review, or later accepted.
+
+Evidence we can cite
+- PeerRead contains conference review forms asking “Should the paper be accepted or rejected?”; these provide clean labels for the ACL 2016 subset and can serve as a sanity-check benchmark for label-noise methods [PeerRead.pdf:15].
+- The conference review process exhibits disagreement and variability, underscoring that acceptance is a noisy supervision signal even before adding heuristic labels [P6].
+
+Mitigations to state in the discussion
+- Reframe and disclose: Explicitly describe “probably-rejected” as a weak, heuristic proxy for “not observed as accepted within a time window,” not as ground-truth rejection. Report it as weak supervision with unknown but measurable noise.
+- Estimate noise rates: Perform a stratified manual audit (by year, field) and a multi-source match (DBLP/Crossref/OpenAlex/Semantic Scholar) to estimate precision/recall of the heuristic negative label; report confidence intervals and subgroup differences.
+- Right-censoring and sensitivity analysis: Use sufficiently long censoring windows (e.g., 24–36 months) and report how estimated noise and model performance change as the window varies.
+- Robust learning under weak labels: Treat “probably-rejected” as weak negatives. Use noise-aware training (e.g., abstention/uncertainty-aware pseudo-labeling, loss correction, or risk estimators that downweight or model negative-class noise) and compare to standard cross-entropy [P4]. Clearly mark these as robustness analyses, not definitive performance claims.
+- Positive-unlabeled framing: Where appropriate, treat accepted = positive and “probably-rejected” = unlabeled, and apply PU-style estimators; report performance deltas relative to standard supervised baselines.
+- Clean-label evaluation: Evaluate final models on subsets with clean accept/reject labels (e.g., ACL 2016 reviews in PeerRead) to gauge how noise-aware methods generalize to cleaner targets [PeerRead.pdf:15].
+- Feature-time hygiene: Restrict features to information available at the first arXiv version time; exclude citation counts, later versions, and any post-acceptance metadata to avoid temporal leakage.
+- Stratified reporting: Report performance/noise estimates by arXiv category and year to surface differential noise and avoid overgeneralization.
+- Matching robustness: Use multiple matchers (title/author fuzzy matching with disambiguation, DOI inference) and report how labels and model results change under alternative matching pipelines.
+
+Concrete, falsifiable experiments
+1) Publication-lag audit and noise estimation
+- Hypothesis: After a sufficiently long censoring window (≥36 months), the precision of “probably-rejected” exceeds 90% for CS subfields with shorter publication cycles; precision is lower for theory/graphics (longer lags).
+- Design: Randomly sample “probably-rejected” papers from multiple arXiv categories and years; match to DBLP, Crossref, OpenAlex, Semantic Scholar with fuzzy title/author and DOI-based methods; record eventual venue publication within 12/24/36 months.
+- Metrics: Precision and false-negative rate of the “probably-rejected” label by month since arXiv, field, and year; Wilson CIs.
+- Expected pattern: Precision monotonically increases with the censoring window; significant between-field differences (evidence that noise is not i.i.d.).
+- Justification: Establishes construct validity and informs censoring and model choice; aligns with the known noisiness of acceptance outcomes [P6].
+
+2) Noise-aware versus standard training on arXiv subset with clean-label evaluation
+- Hypothesis: Noise-aware methods (e.g., uncertainty-aware pseudo-supervision or loss correction) improve out-of-sample AUC on cleanly labeled subsets relative to standard cross-entropy when trained with “probably-rejected” negatives [P4].
+- Design: Train identical architectures on the arXiv subset using (a) standard CE with “probably-rejected” as negatives, (b) loss-corrected training with estimated negative flip rates from Experiment 1, (c) abstention/credal approaches that downweight uncertain negatives. Evaluate on the ACL 2016 subset with explicit accept/reject from reviews [PeerRead.pdf:15].
+- Metrics: AUC/APS, calibration (ECE), and selective risk at fixed coverage.
+- Expected pattern: (b) and (c) outperform (a) on AUC and calibration; selective risk curves show safer abstention under uncertainty [P4].
+
+3) Sensitivity to censoring window and matching pipeline
+- Hypothesis: Model performance and label prevalence will materially change with the censoring window and the matching algorithm; robust conclusions should remain qualitatively stable across reasonable settings.
+- Design: Recreate labels under multiple censoring windows (12, 24, 36 months) and three matching pipelines (strict exact match; fuzzy title+author; multi-source consensus). Retrain models under each setting.
+- Metrics: Label prevalence, estimated noise (from Experiment 1), model AUC/APS deltas, and confidence intervals across settings.
+- Expected pattern: Prevalence decreases and precision increases with longer windows; models trained with noise-aware methods show smaller performance variance across settings than standard CE.
+
+4) Field/year stratification and fairness analysis
+- Hypothesis: Label-noise rates and model error differ by arXiv category and year; controlling for these reduces disparities in error rates.
+- Design: Estimate noise by subgroup (Experiment 1); train models with stratified sampling or group-robust objectives; compare per-group error/coverage.
+- Metrics: Per-group FPR/FNR, calibration, and gap reductions after robustness training.
+- Expected pattern: Group-robust training reduces inter-group error gaps, indicating that part of the disparity was driven by differential label noise.
+
+Language to include in the paper
+- Clarify that “probably-rejected” denotes “not observed published under our multi-source matching within a right-censoring window,” not verified rejection.
+- Report audited noise rates, subgroup differences, and sensitivity to censoring windows and matchers.
+- Prefer noise-aware or PU-style training and evaluate on clean-label subsets to avoid overstating performance.
+- Provide code and matching logs to enable replication of the labeling pipeline and audits.
+
+Citations
+- [P4] Credal Self-Supervised Learning — http://arxiv.org/abs/2106.11853v2
+- [P6] Analyzing the Machine Learning Conference Review Process — http://arxiv.org/abs/2011.12919v2
+- Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+
+Inline evidence from attached material
+- PeerRead’s conference-review subset includes explicit accept/reject recommendations in the review form, which can serve as a clean-label benchmark [PeerRead.pdf:15].

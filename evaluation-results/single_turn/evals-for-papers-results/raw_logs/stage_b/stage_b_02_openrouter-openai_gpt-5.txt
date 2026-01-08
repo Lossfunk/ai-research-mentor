@@ -1,0 +1,70 @@
+Great idea. “Compressible LLMs” can mean at least two things: (a) LLMs that remain accurate under strong post-training compression (quantization, pruning, KV-cache compression), or (b) LLMs trained to be compressible by design (rate–distortion-aware pretraining, codebooks, structured sparsity/low-rank). Most existing work focuses on post-training compression; making compressibility an explicit design/training objective is much less explored and is where novelty likely lies.
+
+What’s already known
+- Post-training quantization and pruning can preserve accuracy with care (e.g., SmoothQuant for activations, AWQ for weight sensitivity; SpQR and related near-lossless formats) [2][3][4].
+- “Bit-level” training shows that constraining weights during pretraining (e.g., 1–2 bit regimes) can work at scale when carefully designed, hinting that compressibility can be a first-class training objective rather than an afterthought [5].
+- KV-cache compression/streaming yields big memory and latency savings for long-context inference, but trade-offs depend on task and compression method; systematic evaluations show nontrivial accuracy regressions if done naively [6][7].
+- Efficient finetuning on quantized backbones (e.g., QLoRA) is now standard, providing a realistic deployment pathway [8].
+- Compression can degrade trustworthiness (calibration, bias, toxicity), not just accuracy; compression-aware evaluations are needed [9].
+
+Where clear novelty can be
+- Compression-aware pretraining (rate–distortion): Add an explicit compressibility term (e.g., code-length/entropy of weights and selected activations) to the loss with straight-through differentiable quantization. Show better rate–distortion curves than strong PTQ/QAT baselines at the same bitrate [1][2][3][4].
+- Codebook sharing and factorization: Learn small, shared codebooks across layers/submodules (e.g., attention vs MLP) with product-quantized subspaces and low-rank residuals, targeting 2–3 b/weight with minimal loss. Prior work explores codebooks for extreme compression, but layer-shared/factorized designs and pretraining-time codebook regularization remain open [1].
+- KV-compressible attention: Train attention to produce low-rank, sparsifiable K/V states (via nuclear-norm, N:M sparsity, or head-level bottlenecks) so that KV caches can be aggressively quantized/pruned at runtime with bounded loss—unifying weight and KV compressibility in one objective. Existing KV compression papers evaluate post hoc; making it a training target is underexplored [6][7].
+- Compression-robust generalization: Design architectures/priors that retain calibration and safety under compression, and quantify this robustness (trustworthiness under compression is an open concern) [9].
+- One model, many compression “views”: Demonstrate a single pretrained model that is resilient to multiple compression modalities (weights, activations, KV, sparsity) without per-modality fine-tuning—strong practical value and limited prior art tying them together [2][3][6].
+
+At least three concrete, falsifiable experiments
+
+E1. Rate–distortion benchmarking (weights/activations)
+- Setup: Pretrain/continue-train your “compressible” model with a code-length regularizer (e.g., entropy model over codebook assignments or per-channel bit targets). Compare against PTQ (SmoothQuant, AWQ), QAT, and SpQR on the same pretrained backbone [2][3][4].
+- Tasks/metrics: Perplexity (C4/Wikitext-103), MMLU, GSM8K, BBH; plot accuracy vs model bitrate (bits/parameter) at 2, 3, 4 bits.
+- Falsifiable outcome: For a fixed bitrate (e.g., 3 b/weight), your model outperforms PTQ/QAT baselines on perplexity and at least two downstream tasks by a statistically significant margin. If not, conclude training-time compressibility brings no advantage over strong PTQ/QAT baselines.
+
+E2. Codebook sharing and factorization ablation
+- Setup: Train variants with (a) per-layer codebooks, (b) shared codebooks within blocks, (c) product-quantized subspaces with low-rank residuals. Hold bitrate constant.
+- Metrics: Accuracy vs bitrate; decoding throughput; codebook memory and cache locality (L2/L3 miss rates).
+- Falsifiable outcome: Shared/factorized codebooks reduce total model footprint (weights + codebooks) and improve decode throughput with ≤1% relative accuracy loss vs per-layer codebooks. If not, per-layer codebooks suffice.
+
+E3. KV-cache compressibility as a training objective
+- Setup: Add a regularizer that penalizes the effective rank or entropy of K/V states (e.g., nuclear norm or sparsity with STE) and/or a distillation target encouraging head-level redundancy. Evaluate with KV compression/streaming baselines (e.g., chunked or top-k key selection) [6][7].
+- Tasks/metrics: Long-context QA/retrieval (e.g., Needle-in-a-Haystack style probes), long summarization; measure accuracy, perplexity, throughput, memory, and cache hit/eviction behavior at 4–16× KV compression.
+- Falsifiable outcome: Under a fixed compression ratio (e.g., 8×), your model maintains ≥95% of baseline long-context accuracy while improving throughput/memory vs a standard model subjected to the same KV compression. If not, training for KV compressibility offers limited benefit.
+
+E4. Compression-robust safety/calibration
+- Setup: Evaluate calibration (ECE/Brier), toxicity/bias benchmarks, and instruction-following quality before and after compression at multiple bitrates (2–4 bits) and KV settings.
+- References: Follow evaluation dimensions highlighted in trustworthiness-under-compression studies [9].
+- Falsifiable outcome: Your compressible model exhibits smaller degradation in ECE and toxicity metrics than PTQ/QAT baselines at equal bitrate. If not, compression-aware training does not improve trustworthiness.
+
+E5. Finetuning compatibility under heavy compression
+- Setup: Finetune with QLoRA on multiple instruction datasets using 3–4 bit base weights; compare your “compressible” backbone vs a standard backbone at equal bits [8].
+- Metrics: SFT task performance, stability (loss spikes), and catastrophic forgetting across tasks.
+- Falsifiable outcome: Your backbone achieves equal or better finetuned accuracy and fewer instabilities at the same quantization level. If worse, claim of finetuning robustness is not supported.
+
+E6. Multi-modality resilience test
+- Setup: Apply combined compression (e.g., 3 b/weight + SmoothQuant activations + 8× KV compression) and compare accuracy/latency vs applying any single modality alone [2][6].
+- Falsifiable outcome: Your model shows subadditive degradation under combined compression (i.e., “designed for compression” generalizes across modalities). Otherwise, benefits are modality-specific.
+
+Practical evaluation details
+- Strong baselines: SmoothQuant (PTQ activations), AWQ (weight-aware quant), SpQR (near-lossless sparse-quant), BitNet-style low-bit training, and QLoRA for finetuning [2][3][4][5][8].
+- Datasets: C4/Wikitext-103 (perplexity), MMLU, GSM8K, BBH; long-context suites (Needle-in-a-Haystack-style probes, long QA/summarization) for KV tests [6][7].
+- Metrics beyond accuracy: Bits/parameter, total model size (including codebooks), decode throughput, memory footprint, KV-cache size vs latency, calibration (ECE), and safety metrics [6][7][9].
+
+Anchors to read first
+- LLM-Codebook for Extreme Compression of Large Language Models — for codebook-style extreme compression and design space [1].
+- KV Cache Compression, But What Must We Give in Return? — for principled KV compression trade-offs and evaluation dimensions [6].
+
+Key takeaways
+- Novelty is strongest if compressibility is a first-class training objective tied to quantifiable rate–distortion improvements, and if you unify weights + activations + KV-cache compressibility with robust safety/calibration under compression.
+- Make claims falsifiable via rate–distortion curves, long-context KV tests, and trustworthiness evaluations against strong PTQ/QAT baselines.
+
+Citations
+[1] LLM-Codebook for Extreme Compression of Large Language Models — https://openreview.net/forum?id=nMbWsXPUVL  
+[2] SmoothQuant: Accurate and Efficient Post-Training Quantization for LLMs — https://arxiv.org/abs/2211.10438  
+[3] AWQ: Activation-aware Weight Quantization for On-Device LLM — https://proceedings.mlsys.org/paper_files/paper/2024/file/42a452cbafa9dd64e9ba4aa95cc1ef21-Paper-Conference.pdf  
+[4] SpQR: A Sparse-Quantized Representation for Near-Lossless LLMs — https://arxiv.org/abs/2306.03078  
+[5] BitNet: 1-bit Pre-training for Large Language Models — http://www.jmlr.org/papers/volume26/24-2050/24-2050.pdf  
+[6] KV Cache Compression, But What Must We Give in Return? — https://aclanthology.org/2024.findings-emnlp.266.pdf  
+[7] KV Cache Compression and Streaming for Fast Large Language Models — https://arxiv.org/html/2310.07240v6  
+[8] QLoRA: Efficient Finetuning of Quantized LLMs — https://arxiv.org/abs/2305.14314  
+[9] Scrutinizing the Trustworthiness of Efficient LLMs Under Compression — https://par.nsf.gov/servlets/purl/10524904

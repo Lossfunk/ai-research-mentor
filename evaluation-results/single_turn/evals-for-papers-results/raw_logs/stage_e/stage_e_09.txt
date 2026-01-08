@@ -1,0 +1,44 @@
+Short discussion
+PeerRead enables research on peer-review prediction and analysis, but many downstream claims (e.g., robustness of acceptance prediction or aspect-label models) implicitly assume reliable ground truth for subjective labels (review judgments, aspect ratings). Adding an independent, multi-rater layer of crowd-sourced annotations would let you (a) quantify uncertainty and systematic disagreement, (b) test whether original labels generalize across annotator pools, and (c) model annotator effects explicitly. Prior work shows that disagreement itself is informative signal and that analyzing it improves interpretability and reliability of annotations [P1]. Further, collecting annotator characteristics (expertise, field familiarity) enables auditing of bias and competence, which strengthens robustness claims [P2]. Re-annotation of a stratified sample of PeerRead reviews (e.g., acceptance labels, aspect ratings, perceived helpfulness, rationale spans) with multiple raters per item would provide the evidence needed to support or qualify robustness claims in the dataset paper and derived models (e.g., whether performance persists under alternative aggregations or annotator shifts). See PeerRead’s original description for tasks and labels to prioritize in re-annotation (accept/reject, aspect scores) (Kang et al., 2018).
+
+Metrics to track in an Appendix update
+- Inter-annotator agreement: Krippendorff’s alpha (nominal/ordinal), Fleiss’ kappa, and 95% CIs per label type and venue/year slices.
+- Disagreement structure: item-level entropy/variance; proportion of items with split decisions; hardest items by IRT “difficulty.”
+- Aggregation diagnostics: Dawid–Skene/MACE estimated annotator confusion matrices; aggregation log-likelihood; IRT discrimination parameters.
+- Alignment with originals: Spearman/Kendall correlation between new aggregates and original labels; Jensen–Shannon divergence between label distributions; proportion of label flips.
+- Predictive validity: model performance (AUC/F1) trained on different aggregations (majority vs DS vs IRT vs soft labels); calibration metrics (ECE, Brier score, NLL).
+- Annotator-related robustness: performance/calibration under annotator-pool shifts; correlation between annotator expertise metadata and agreement with area-chair or meta-review judgments [P2].
+- Cost/quality controls: gold-check accuracy, attention-check pass rates, per-item annotation time.
+
+Concrete, falsifiable experiments
+1) Re-annotation reliability audit
+- Hypothesis: For acceptance labels and aspect ratings, multi-rater agreement is at least moderate (e.g., Krippendorff’s α ≥ 0.60), but varies by venue/year.
+- Design: Stratified sample across venues/years; 5–7 crowd raters per item with minimal expertise screening; include seeded gold items.
+- Metrics: α/kappa with CIs; item-level entropy; gold accuracy; correlation with original labels (Spearman ρ).
+- Expected outcome: Identify specific subsets with low agreement and high uncertainty, informing cautious use of those labels [P1].
+
+2) Aggregation method comparison for predictive validity
+- Hypothesis: Labels aggregated with Dawid–Skene or IRT yield higher out-of-sample acceptance-prediction AUC and better calibration than simple majority vote.
+- Design: Produce four label sets (majority, DS, IRT, soft-probabilities). Train the same model architecture on each; evaluate on a held-out split.
+- Metrics: AUC/F1, ECE, Brier score, NLL; bootstrap CIs; pairwise tests of metric differences.
+- Expected outcome: Small but statistically meaningful gains for DS/IRT, supporting a robustness claim tied to uncertainty-aware aggregation [P1].
+
+3) Disagreement-aware training and annotator-shift robustness
+- Hypothesis: Training with soft labels (probabilistic targets from rater distributions) maintains accuracy and improves calibration and stability under annotator-pool shifts compared to hard labels.
+- Design: Train models with hard vs soft labels; simulate annotator shift by holding out ratings from a subset of annotator profiles (e.g., higher-expertise vs general crowd) at test time.
+- Metrics: AUC/F1, ECE/NLL; change in metrics under shift; variance across multiple resampled annotator pools.
+- Expected outcome: Better calibration and lower performance variance for soft-label training, strengthening robustness claims about generalization across annotator pools [P1][P2].
+
+Optional additions (if space permits)
+- Rationale span annotation for reviews to link decisions to evidence, enabling rationale-level agreement checks and error analysis [P1].
+- Collect minimal annotator characteristics (expertise, field familiarity) to analyze competence and bias effects [P2].
+
+Citations
+- PeerRead: A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- [P1] Re-Examining Human Annotations for Interpretable NLP — http://arxiv.org/abs/2204.04580v1
+- [P2] MBIC — A Media Bias Annotation Dataset Including Annotator Characteristics — http://arxiv.org/abs/2105.11910v1
+
+Sources
+- Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Carton et al., 2022. Re-Examining Human Annotations for Interpretable NLP — http://arxiv.org/abs/2204.04580v1
+- Hamborg et al., 2021. MBIC: A Media Bias Annotation Dataset Including Annotator Characteristics — http://arxiv.org/abs/2105.11910v1

@@ -1,0 +1,77 @@
+Below is a compact plan to extend your Hierarchical Transformer evaluation with efficiency metrics while keeping results comparable to the original, followed by an analysis plan to demonstrate statistical separation between accuracy and efficiency trade-offs.
+
+Context from the attached plan
+- The current evaluation already reports rollout compute cost, rollout error, and final RL performance, and includes ablations for hierarchical masking, causal-graph guidance, and uncertainty-based masking [heirarchical-transformer.pdf:3]. We will instrument these same settings with latency, memory, and throughput, and analyze efficiency–accuracy trade-offs without changing tasks, seeds, or horizons [heirarchical-transformer.pdf:3].
+
+What to measure (and how)
+- Latency
+  - Time-to-first-token (TTFT): wall-clock time from inference call to first output.
+  - Per-step latency: mean/median and 5/95th percentiles for rollout steps.
+  - End-to-end episode latency: from start to termination/horizon.
+  - Protocol: 50–100 warmup steps; then 200+ measured steps per seed. Report medians and dispersion. Separate and report any one-time compilation overhead, if applicable.
+- Throughput
+  - Tokens/s (or model steps/s for rollouts), reported at fixed batch sizes used for accuracy evaluation plus a scaling curve.
+  - Protocol: stabilize clock rates (nvidia-smi -lgc if available), measure steady-state throughput and variance.
+- Memory
+  - Peak GPU memory reserved/allocated (torch.cuda.max_memory_reserved), peak KV-cache, peak activation memory during inference rollout.
+  - Optional: VRAM traffic estimates via profiler (read/write bytes) to contextualize IO-bound behavior [P5].
+- Compute cost per rollout step
+  - Kernel-level FLOPs via a profiler (e.g., PyTorch Profiler with FLOP counters) or analytical estimates per attention/MLP block; report average FLOPs/step and per-token FLOPs. This aligns with “rollout compute cost” already in the plan [heirarchical-transformer.pdf:3].
+
+Preserving comparability to the original results
+- Keep everything else fixed: tasks, datasets, horizons, evaluation protocol, and ablations (hierarchical masking, causal-graph guidance, uncertainty-based masking) [heirarchical-transformer.pdf:3].
+- Seeds: use the same seeds, and per-seed, collect paired accuracy and efficiency measurements.
+- Hardware/software: same GPU model, driver, CUDA/cuDNN, precision (fp16/bf16), attention kernel, and compiler flags. Lock GPU clocks if possible to reduce drift. Disable dropout in eval.
+- Shapes: evaluate at the same sequence lengths and batch sizes as the original; add explicit length/batch scaling curves as supplementary analysis (not the headline number) to avoid shifting baselines.
+- Warmups and timer: exclude JIT/graph compile time from steady-state latency and throughput; report it separately.
+
+Analysis plan for statistical separation of accuracy–efficiency trade-offs
+- Paired evaluation across seeds/episodes
+  - For each configuration, collect paired tuples: (accuracy metric: rollout error or RL return, efficiency metrics: TTFT, per-step latency, throughput, peak memory, FLOPs/step).
+  - Use paired non-parametric tests (Wilcoxon signed-rank) on per-episode latency and memory at matched seeds to assess distributional shifts independent of accuracy differences.
+- Pareto frontier and hypervolume
+  - Construct Pareto fronts for each method in the space of (error, latency), (error, memory), and (error, throughput). Compute dominated hypervolume with a fixed reference point (worst observed values). Use bootstrap (e.g., 1,000 resamples over episodes/seeds) to get 95% CIs for hypervolume and frontier locations; compare methods by the separation of hypervolume distributions [P1]. This directly summarizes multi-objective trade-offs.
+- MANOVA/ANCOVA
+  - MANOVA on joint (accuracy, latency) or (accuracy, memory) to test overall separation; or ANCOVA modeling latency as dependent variable with accuracy as a covariate and method as a factor to test whether a method achieves lower latency at a given accuracy level (and analogously for memory/throughput).
+- Stratifications and normalization
+  - Stratify by sequence length and batch size. Also analyze per-token latency and memory to control for length effects, guided by IO-aware attention literature indicating bandwidth/IO can dominate latency at long lengths [P5].
+- Effect sizes and visualizations
+  - Report effect sizes (e.g., Cliff’s delta) alongside p-values. Plot trade-off curves with 95% bootstrap ribbons, and annotate statistically non-overlapping regions. Include decomposition (attention vs MLP time) from the profiler to diagnose where gains arise [P5].
+
+Three concrete, falsifiable experiments
+1) Hierarchical masking strength sweep
+- Hypothesis: Increasing masking strength reduces compute and memory (lower per-step latency, peak memory, and FLOPs/step) with minimal accuracy loss up to a regime-specific threshold [heirarchical-transformer.pdf:3].
+- Variables: masking strength or token-retention threshold (K or probability); keep all else fixed (tasks, seeds, precision, hardware).
+- Metrics: rollout error/return; TTFT; per-step latency; throughput; peak memory; FLOPs/step.
+- Analysis: For each setting, compute Pareto front and hypervolume (error vs latency, error vs memory). Use bootstrap CIs; test hypervolume differences. Paired tests on per-episode latency at matched seeds. Expect a smooth efficiency gain until a knee where accuracy drops.
+2) Causal-graph guidance ablation and intensity
+- Hypothesis: Enabling causal-graph guidance yields better accuracy at similar cost, or similar accuracy at lower cost, by focusing attention on causally relevant tokens [heirarchical-transformer.pdf:3].
+- Variables: guidance on/off; guidance strength (weight or topological pruning level).
+- Metrics: same as above plus “tokens attended per step” (retained/active tokens) to mechanistically explain efficiency.
+- Analysis: Compare paired differences in latency and memory while matching accuracy bins. Evaluate hypervolume improvement; test if guided configs dominate unguided configs in Pareto space with non-overlapping bootstrap CIs.
+3) Uncertainty-based masking calibration
+- Hypothesis: Calibrated uncertainty thresholds retain only high-uncertainty (informative) tokens, improving efficiency without degrading accuracy until an over-pruning regime [heirarchical-transformer.pdf:3].
+- Variables: uncertainty threshold; calibration method (e.g., temperature scaling); evaluation under identical seeds/horizons.
+- Metrics: same as above; additionally report “retained-token fraction” and its correlation with latency/memory.
+- Analysis: Fit ANCOVA with latency as outcome, accuracy as covariate, and method/threshold as factors; test whether certain thresholds achieve significantly lower latency at equivalent accuracy. Compare hypervolume vs baseline and vs hierarchical-only masking.
+Optional robustness/sensitivity study
+- Sequence-length scaling: measure latency ∝ f(N) and memory ∝ f(N) for each method; verify shifts from quadratic/bandwidth-limited regimes and relate to IO-awareness [P5]. Use slopes and confidence intervals to quantify scaling improvements.
+
+Reporting checklist (preserving comparability)
+- Replicate the original tables with rollout error and final RL performance, then append columns for: per-step latency (median, p5/p95), throughput, peak memory, FLOPs/step, and TTFT [heirarchical-transformer.pdf:3].
+- Provide per-seed paired summaries and bootstrap CIs; include Pareto plots and hypervolume with 95% CIs [P1].
+- Fix and report: GPU model/driver, CUDA/cuDNN, precision, batch sizes, sequence lengths, warmup steps, seeds, and whether attention kernels (e.g., FlashAttention) were used, as IO/bandwidth can materially affect latency/memory [P5].
+
+Why these analyses
+- Hypervolume and Pareto-front analysis are standard, decision-relevant ways to summarize multi-objective trade-offs and enable statistical comparison via bootstrap CIs [P1].
+- IO-aware attention work shows that memory bandwidth and data movement dominate runtime in Transformers at scale, justifying the decomposition of latency and explicit memory measurements, not just FLOPs [P5].
+
+Key takeaways
+- Add TTFT, per-step latency, throughput, peak memory, and FLOPs/step to the existing rollout compute cost/error/RL performance while keeping the original tasks, seeds, horizons, and ablations unchanged [heirarchical-transformer.pdf:3].
+- Use paired tests, MANOVA/ANCOVA, and bootstrap hypervolume on Pareto fronts to show statistically significant separation of accuracy–efficiency trade-offs [P1].
+- Diagnose mechanisms via profiler-based breakdowns and token-retention stats, guided by IO-aware attention insights [P5].
+
+Citations
+- [heirarchical-transformer.pdf:3] Sparse Hierarchical Imagination for Efficient Transformer World Models — (attached PDF)
+- [P1] Multi-Objective Learning to Predict Pareto Fronts Using Hypervolume Maximization — http://arxiv.org/abs/2102.04523v2
+- [P5] FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness — http://arxiv.org/abs/2205.14135v2

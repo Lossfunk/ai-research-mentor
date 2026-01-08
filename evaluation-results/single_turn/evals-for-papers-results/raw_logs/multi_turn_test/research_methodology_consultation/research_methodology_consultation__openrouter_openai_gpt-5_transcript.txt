@@ -1,0 +1,346 @@
+[Turn 0] SYSTEM:
+You're a first-year PhD student working on a computer vision project. You're struggling with experimental design and want guidance on how to properly ablate your contributions and report results.
+
+[Turn 1] USER:
+I’m still fuzzy on what counts as a real ablation—do I drop entire modules, or can I just tweak hyper-parameters and still call it ablation?
+
+[Turn 1] ASSISTANT:
+Short answer: An ablation is any minimal, controlled intervention that isolates the causal contribution of one design choice. Dropping or disabling a module is a classic structural ablation. Carefully constrained hyperparameter changes can also be ablations, but only when they directly test a specific design claim; otherwise they are sensitivity analysis. To be credible, ablations must hold confounders constant, be re-trained from scratch, and report variance across seeds [P2]. Hyperparameter retuning can mask or fabricate effects, so handle it explicitly and cautiously [P6].
+
+No sources found for methodology guidelines; proceeding with literature evidence.
+
+What “counts” as ablation
+- Structural ablations: remove/disable/replace a component (e.g., turn off attention head group, drop an auxiliary loss, replace a block with a parameter-matched linear layer). Keep total training budget constant to avoid compute confounds [P2].
+- Parametric ablations: vary a single, design-linked hyperparameter (e.g., set the regularizer strength to 0 to ablate that mechanism; freeze a module’s weights to ablate learning in that part). General hyperparameter sweeping is sensitivity analysis, not ablation, unless it tests a precise design claim [P2].
+- Protocol/data ablations: remove a training technique (e.g., mixup off), or systematically reduce/perturb data to test the regime where your component is purported to help (e.g., low-data, long-tail). These test scope conditions of your claim [P2].
+
+Best practices (minimal set)
+- Change one thing at a time; retrain from scratch; report mean ± std across 3–5 seeds and effect sizes. This is standard reproducibility hygiene [P2].
+- Fairness on tuning: either (a) freeze hyperparameters across conditions, or (b) re-tune both baseline and ablated model with the same budget. Otherwise, you risk confounding ablation effects with tuning luck; HPO can even harm or distort conclusions if misapplied [P6].
+- Keep budgets equal (data seen, steps, wall-clock, HPO trials). Unequal budgets invalidate causal interpretation [P2].
+- Add a negative control (a change expected to have no effect). If it moves the metric, you likely have hidden confounders [P2].
+
+Three concrete, falsifiable experiments
+1) Structural removal vs. fair retuning
+- Objective & hypothesis: Test whether module M genuinely improves performance beyond what tuning can recover. Hypothesis: Removing M reduces metric by ≥X% even after equal-budget retuning.
+- Setup: Train baseline (with M) and ablated (without M) from scratch on your primary dataset; allow both conditions an identical small HPO budget (e.g., 20 trials) or no HPO at all; 5 seeds per condition.
+- Metrics: Primary metric (e.g., accuracy/AUROC/Reward), effect size (Cohen’s d), mean ± std; success if ablated < baseline by ≥X% with non-overlapping 95% CIs.
+- Interpretation: If gap persists after equal HPO, M likely contributes causally; if gap vanishes only with HPO, M’s effect may be tuning-dependent; if gap flips, M may be harmful in your regime [P6][P2].
+- Follow-ups: Check learning curves and compute-normalized metrics to ensure no budget confound [P2].
+
+2) Mechanism ablation via parametric “off switch”
+- Objective & hypothesis: Test whether a mechanism acts via its intended parameter. Hypothesis: Setting λ_mech=0 (or freezing its parameters) matches the effect of physically removing the mechanism.
+- Setup: Three conditions: (A) full model, (B) λ_mech=0 (or freeze module weights), (C) module removed and replaced by parameter-matched identity/linear stub. Same training protocol and seeds.
+- Metrics: Compare A vs. B vs. C; success if B≈C and both underperform A by ≥X%, supporting the claim that λ_mech mediates the effect.
+- Interpretation: If B≈A but C underperforms, architecture, not the learned mechanism, may matter (placebo via capacity). If B underperforms but C≈A, learned content matters more than structure.
+- Follow-ups: Sweep small λ values to find thresholds; report seed variance to confirm robustness [P2].
+
+3) Regime-specific data ablation
+- Objective & hypothesis: Test the scope of your claim (e.g., “Module M helps in low-data or long-tail settings”). Hypothesis: The benefit of M increases as data is reduced or class imbalance increases.
+- Setup: Train with 100%, 50%, 10% of data (or stratified long-tail perturbations), keeping steps per example or total steps constant. Compare full vs. ablated models across 5 seeds.
+- Metrics: Interaction effect between condition (with/without M) and data regime; success if the performance gap widens in low-data/long-tail (significant interaction term).
+- Interpretation: A significant interaction supports the claimed regime; a flat interaction suggests the module’s benefit is not specific to that regime.
+- Follow-ups: Repeat with a domain shift or OOD split if your claim includes robustness; maintain equal HPO budgets to avoid confounding [P6][P2].
+
+Strategic questions to tailor this to you
+1) What model/task are you working on, and what’s the concrete design claim you want to test (one sentence)?
+2) What compute/time do you have per run and per study (e.g., GPUs, hours/week), and can you afford 3–5 seeds per condition?
+3) Are you allowed to do any HPO? If yes, what budget (trials, search space)?
+4) What’s the target venue/timeline and your biggest bottleneck right now?
+
+Next actions (1–2 hours)
+- Draft a one-page experiment card for Experiment 1 with: Hypothesis, Falsifier, Minimal test, Variables, Analysis plan, Effect size threshold, Stop rule. I can review it and tighten the design.
+- Identify and script an “off switch” for the mechanism (λ=0 or freeze). Confirm it reproduces module removal within tolerance on a tiny subset.
+- Decide your HPO policy: fixed hyperparameters across conditions or equal-budget tuning for both; write it into the protocol to precommit and avoid forking paths [P6][P2].
+
+Intuition
+- Ablations are about causal isolation: you make the smallest change that cleanly tests a claim. Removing a module is one path; flipping its “off switch” or testing the regime where it should help are equally valid when they isolate the variable of interest.
+
+Why this is principled
+- Reproducibility and fair comparison standards in ML emphasize multiple seeds, equal budgets, and explicit tuning policies to avoid confounding and overfitting conclusions to hyperparameters [P2]. HPO can distort findings or even degrade true generalization if misapplied, so ablations must control or symmetrically apply tuning [P6].
+
+Citations
+- [P2] Hyperparameters in Reinforcement Learning and How To Tune Them — http://arxiv.org/abs/2306.01324v1
+- [P6] Hyperparameter Optimization Can Even be Harmful in Off-Policy Learning and How to Deal with It — http://arxiv.org/abs/2404.15084v1
+
+[Turn 2] USER:
+If I ablate a module and the gap disappears after equal-budget HPO, does that mean the module is unnecessary or just that its benefit is hyperparameter-sensitive?
+
+[Turn 2] ASSISTANT:
+Short answer: If equal-budget HPO erases the ablation gap, the safest conclusion is that the module does not provide a tuning-invariant advantage on this benchmark. Its apparent benefit is contingent on hyperparameters. Whether you keep it depends on your goals: if you can afford tuning, the module may be unnecessary; if you operate under limited or no tuning, it might still be useful because it reaches good performance with less tuning effort or variance [1][2][4].
+
+Decision rules
+- Conclude “no robust benefit” if, under matched HPO budgets and ≥3–5 seeds, the gap vanishes and seed variance is comparable. Report this as a negative result with confidence intervals and effect sizes [1][2].
+- Conclude “hyperparameter-sensitive benefit” if the module wins at small HPO budgets but ties at larger budgets. Then the honest claim is “improves tuning-efficiency, not ultimate performance” [4][5].
+- Conclude “practical benefit” if the module reduces seed sensitivity or widens the basin of good hyperparameters (i.e., better average performance over random hyperparameter draws), even when best-case performance ties [1][5].
+- Re-check that your HPO was neither underpowered (failed to find good configs) nor overfit to validation. Symmetric search spaces and identical trial counts are essential [2][3][4].
+
+Three concrete, falsifiable experiments
+1) HPO budget–performance curve
+- Objective & hypothesis: Test whether the module improves tuning-efficiency. Hypothesis: With small HPO budgets (e.g., 5–10 trials), the module outperforms; with larger budgets (e.g., 50–100), performance converges.
+- Setup: Same train/val split, identical search space; budgets B ∈ {5, 10, 20, 50, 100}. For each B, run HPO separately for with-module and ablated models; report best-of-B and mean-over-B across 3–5 seeds per trial.
+- Metrics: Primary metric, effect size, and area under the “best-of-B vs. B” curve (AUC). Success: AUC advantage for the module at low B that diminishes at high B.
+- Interpretation: Advantage only at low B = hyperparameter-sensitive benefit; flat curves = no benefit; persistent gap = robust benefit.
+- Follow-ups: Repeat with a held-out test set to check for HPO overfitting [2][4].
+
+2) Seed and hyperparameter robustness
+- Objective & hypothesis: Test stability. Hypothesis: The module reduces performance variance over seeds and small hyperparameter perturbations.
+- Setup: Fix the top-1 configuration per model; run 10 seeds. Then apply ±10% perturbations to each tuned hyperparameter and re-run 5 seeds per perturbation.
+- Metrics: Std dev across seeds, worst-case and average performance over perturbation grid; “robustness radius” where performance stays within δ of the optimum. Success: Module shows significantly lower variance or larger robustness radius.
+- Interpretation: If robustness improves without a best-case gain, you can claim practical reliability benefits [1][5].
+- Follow-ups: Visualize performance landscapes to confirm broader basins of attraction.
+
+3) Scope/interaction test (data or regularization regime)
+- Objective & hypothesis: Test if the module’s effect is conditional. Hypothesis: The module helps in low-data or high-regularization regimes and not otherwise.
+- Setup: Train with data fractions {100%, 50%, 10%} or regularization multipliers {0.5×, 1×, 2×}; identical HPO budgets per condition and model; 3–5 seeds.
+- Metrics: Two-way ANOVA or interaction term between model (with/without module) and regime. Success: Significant interaction where the module’s advantage increases as data decreases (or as regularization increases).
+- Interpretation: If interaction is significant, state a scoped claim (“benefits low-data regimes”); if flat, the module’s gains are not regime-specific.
+- Follow-ups: Repeat on an OOD split to test generalization [2].
+
+Strategic questions
+1) What is the module and the specific design claim you’re testing?
+2) What HPO budget and search space are you using now (trials, ranges), and how many seeds can you afford per condition?
+3) Is your deployment scenario tuning-limited (few trials, fixed time) or performance-maximizing (large HPO allowed)?
+
+Intuition
+- If careful tuning can recover the ablation gap, the module isn’t changing what’s ultimately achievable—only how easy it is to get there. That shifts the claim from “intrinsic performance” to “tuning efficiency or robustness.”
+
+Why this is principled
+- Reproducibility work shows outcomes can flip with seeds and hyperparameters; fair claims require matched budgets, multiple seeds, and explicit HPO policies [1][2][3]. Hyperparameter studies demonstrate that many “architecture wins” collapse under adequate tuning or become contingent on search space and budget [4][5].
+
+Citations
+- [1] Henderson et al., Deep Reinforcement Learning that Matters — https://arxiv.org/abs/1709.06560
+- [2] Pineau et al., Improving Reproducibility in Machine Learning Research — https://jmlr2020.csail.mit.edu/papers/volume22/20-303/20-303.pdf
+- [3] NeurIPS 2021 Paper Checklist Guidelines — https://neurips.cc/Conferences/2021/PaperInformation/PaperChecklist
+- [4] Pineda et al., Hyperparameters in Reinforcement Learning and How To Tune Them — https://arxiv.org/pdf/2306.01324
+- [5] Probst et al., Importance of Hyperparameters of Machine Learning Algorithms — https://jmlr.org/papers/volume20/18-444/18-444.pdf
+
+[Turn 3] USER:
+When I compare the module-off run to the module-on run, should I freeze all other hyperparameters at the best-found values or re-tune both conditions from scratch?
+
+[Turn 3] ASSISTANT:
+Short answer: Do both. Report (a) a zero-retune “plug-out” comparison with all other hyperparameters fixed to the same values, and (b) an equal-budget re-tune of both conditions from scratch within the same search space. The fixed run isolates an immediate architectural/mechanistic effect; the re-tuned run answers whether the module provides a tuning-invariant advantage under fair optimization budgets [P6]. If the re-tuned gap vanishes, your honest claim shifts from “intrinsic performance gain” to “tuning-efficiency or robustness benefit” [P4][P6].
+
+Decision rule
+- If your claim is “this module improves ultimate performance,” make the equal-budget re-tuned result primary and keep compute, seeds, and search space symmetric [P6].
+- If your claim is “this mechanism matters within a fixed training protocol,” make the fixed-hyperparameter result primary (and also show the re-tuned result for fairness).
+- Pre-register the HPO policy (budgets, ranges, selection metric) to avoid forking paths, and report mean ± std across seeds.
+
+Three concrete, falsifiable experiments
+1) Two-pass ablation: fixed vs re-tuned
+- Objective & hypothesis: Separate mechanism effect from tuning effect. Hypothesis: With-module > without-module both when fixed and after equal-budget HPO.
+- Setup: Pick a validated hyperparameter set; run 5 seeds for with/without module (fixed). Then run equal-budget HPO for both (identical search space; e.g., 20–50 trials), retraining top-1 configs with 5 seeds.
+- Metrics: Primary metric, effect size, 95% CIs; compute-normalized performance. Expected outcome: If the gap persists post-HPO, the module’s benefit is tuning-invariant; if it vanishes, the benefit is tuning-contingent.
+- Follow-ups: Publish both numbers and discuss implications for deployment scenarios with/without HPO [P6].
+
+2) HPO budget–performance curve
+- Objective & hypothesis: Test tuning-efficiency. Hypothesis: Module yields higher performance at small budgets but converges at large budgets.
+- Setup: Budgets B ∈ {5, 10, 20, 50, 100} trials; identical search spaces; for each B, report best-of-B and average-over-B; 3–5 seeds per trial.
+- Metrics: Area under “best-of-B vs B” curve, stability (std across seeds). Expected outcome: Early-B advantage for the module; diminishing gap at high B indicates hyperparameter sensitivity, not intrinsic superiority [P6][P4].
+- Follow-ups: Verify on a held-out test set to check HPO overfitting.
+
+3) Hyperparameter transfer and robustness
+- Objective & hypothesis: Test whether the module shifts or broadens the basin of good hyperparameters. Hypothesis: Best hyperparameters from module-on transfer poorly to module-off (and vice versa), and module-on shows wider robust regions.
+- Setup: Take top-1 config from each condition; evaluate it on the other condition; then apply ±10% perturbations around each top config; 5–10 seeds per point.
+- Metrics: Transfer gap, variance across seeds, worst-case/average under perturbations. Expected outcome: If module-on has larger robustness radius or smaller variance, claim practical reliability benefits even if best-case ties [P6][P4].
+- Follow-ups: Visualize performance landscapes to illustrate basin width.
+
+Strategic questions (to tailor the protocol)
+1) What’s your target claim: tuning-invariant performance or improved tuning-efficiency/robustness?
+2) What HPO budget and search space can you afford (trials, ranges), and how many seeds per condition?
+3) Are you optimizing for deployment with limited tuning, or for best-achievable benchmark numbers?
+
+Next actions (≤2 hours)
+- Pre-register your HPO policy (budget, ranges, selection metric) and seed counts.
+- Run the fixed-hyperparameter plug-out comparison for 3–5 seeds to get a quick read.
+- Set up a small symmetric HPO (e.g., 10–20 trials) for both conditions and log results.
+
+Intuition
+- Fixing hyperparameters measures the module’s immediate effect; retuning tests whether that effect persists once each model is given a fair chance to find its own optimum.
+
+Why this is principled
+- Hyperparameter landscapes can drastically alter conclusions; matched budgets and symmetric search spaces are necessary for fair comparisons, while reporting variance and budget–performance curves communicates tuning-efficiency vs intrinsic gains [P6]. Methods that reduce tuning effort are practically valuable even when ultimate performance ties, so documenting both perspectives is informative for users [P4].
+
+Citations
+- [P4] Online Weighted Q-Ensembles for Reduced Hyperparameter Tuning in Reinforcement Learning — http://arxiv.org/abs/2209.15078v1
+- [P6] AutoRL Hyperparameter Landscapes — http://arxiv.org/abs/2304.02396v4
+
+[Turn 4] USER:
+If I run the fixed-hyperparameter plug-out first and the gap is already tiny, is it still worth burning compute on the full re-tune or can I safely stop?
+
+[Turn 4] ASSISTANT:
+Short answer: Don’t stop solely on a tiny plug-out gap. Either (a) run a minimal, equal-budget re-tune to check if any residual advantage reappears, or (b) apply a pre-registered equivalence/non-inferiority test at the fixed settings and stop only if you can statistically conclude “no meaningful difference” under your margin. This avoids forking paths and protects against underspecification-driven flukes [1][2][5]. If your claim is “tuning-invariant performance,” you owe at least a small symmetric re-tune; if your claim is “works within a fixed protocol,” an equivalence test at fixed hyperparameters can justify stopping [2][4].
+
+A compute-aware decision rule
+- If you can afford it: do a small symmetric HPO (e.g., 10–20 trials per condition) with 3–5 seeds; stop if the gap stays ≤ your pre-specified margin with overlapping CIs and similar variance [1][2].
+- If compute is tight: pre-register an equivalence margin (e.g., ≤0.2% abs or Cohen’s d < 0.2) and run TOST/non-inferiority at fixed hyperparameters across 5+ seeds; stop only if equivalence is met; otherwise escalate to a small HPO [2][4].
+- In all cases: keep search spaces and budgets symmetric, and avoid post-hoc rule changes (common source of questionable practices) [2][3].
+
+Three concrete, falsifiable experiments
+1) Fixed-setting equivalence test (minimal stop rule)
+- Objective & hypothesis: Test “no meaningful difference” without HPO. Hypothesis: Module-on and module-off are equivalent within margin δ.
+- Setup: Use the same fixed hyperparameters for both; run 5–10 seeds; predefine δ (e.g., 0.2% absolute metric or d < 0.2).
+- Metrics & criteria: Two one-sided tests (TOST) for equivalence; also report mean ± std and 95% CIs. Success = equivalence accepted; then you can credibly stop without HPO [4][2].
+- Interpretation: Equivalence accepted → “no tuning-invariant benefit under this protocol.” Rejected → proceed to small symmetric HPO.
+- Follow-ups: Confirm on a held-out test split to guard against selection effects [2].
+
+2) Minimal symmetric re-tune
+- Objective & hypothesis: Check for tuning-invariant advantage. Hypothesis: After equal-budget HPO, the gap remains ≤ δ.
+- Setup: Identical search space; B = 10–20 trials per condition; select top-1 by validation; retrain top-1 with 5 seeds.
+- Metrics & criteria: Primary metric, effect size, and 95% CIs; success if gap ≤ δ and equivalence holds. If a gap > δ emerges, the module has a tuning-sensitive benefit; revise claims accordingly [1][2].
+- Interpretation: Vanishing gap post-HPO → no robust advantage; persistent gap → keep the module for tuning-invariant performance.
+- Follow-ups: Plot best-of-B vs B curves to communicate tuning-efficiency [1].
+
+3) Robustness-to-seeds and small perturbations
+- Objective & hypothesis: Test practical reliability. Hypothesis: Even if means tie, module-on has lower variance and broader basins.
+- Setup: Take the top-1 config (from fixed or minimal HPO) for each condition; run 10 seeds; then apply ±10% perturbations to tuned hyperparameters and run 5 seeds per perturbation.
+- Metrics & criteria: Std across seeds, worst-case and average over perturbations. Success = module-on shows significantly lower variance or larger robustness radius [1][5].
+- Interpretation: If reliability improves without mean gains, claim “stability/tuning-efficiency” rather than “higher ultimate performance.”
+- Follow-ups: Replicate on a second dataset or OOD split to check scope [2][5].
+
+Strategic questions
+1) What’s your equivalence margin δ that would make the module not worth keeping?
+2) What HPO budget (trials) and seeds can you afford for a minimal symmetric re-tune?
+3) Is your target claim tuning-invariant performance or improved tuning-efficiency/stability?
+
+Intuition
+- A tiny plug-out gap could be noise, protocol-specific, or recoverable by tuning. An explicit equivalence margin or a small symmetric re-tune lets you distinguish “no real difference” from “difference masked by fixed settings,” without overspending compute.
+
+Why this is principled
+- Matched seeds, budgets, and pre-registered policies avoid confounding and selective reporting; small hyperparameter differences can flip conclusions, so symmetric HPO is the fair test for tuning-invariant claims [1][2]. Equivalence/non-inferiority testing gives a statistically sound stop rule, and robustness checks address underspecification risks [4][5].
+
+Note: No specific mentorship guidelines were retrieved; proceeding with literature evidence.
+
+Next actions (≤2 hours)
+- Write down δ, seeds, and whether you’ll use TOST or a minimal re-tune; pre-register this policy.
+- If compute-limited, run Experiment 1 now; if not, queue Experiment 2 with B=10–20.
+- Prepare a simple script to compute CIs, effect sizes, and TOST results; template your figure for best-of-B vs B.
+
+Citations
+- [1] Henderson et al., Deep Reinforcement Learning that Matters — https://arxiv.org/pdf/1709.06560
+- [2] Pineau et al., Improving Reproducibility in Machine Learning Research — https://jmlr2020.csail.mit.edu/papers/volume22/20-303/20-303.pdf
+- [3] Raff et al., Questionable practices in machine learning — https://arxiv.org/pdf/2407.12220
+- [4] Wellek, What to make of non-inferiority and equivalence testing with a negative result — https://arxiv.org/abs/1807.03413
+- [5] D’Amour et al., Underspecification Presents Challenges for Credibility in Modern ML — https://www.jmlr.org/papers/volume23/20-1335/20-1335.pdf
+
+[Turn 5] USER:
+If my equivalence margin is 0.5% and the fixed plug-out gap is 0.3%, how many seeds do I need for TOST to hit 80% power?
+
+[Turn 5] ASSISTANT:
+Short answer: You can’t determine n without the seed-to-seed variance. With equivalence margin Δ = 0.5% and a true gap around 0.3%, the required per-condition seeds (two-sample TOST, α = 0.05, 80% power) is approximately
+n_per_group ≈ 2 × ((z0.95 + z0.8) × σ / (Δ − |θ|))^2 = 2 × (2.487 × σ / 0.2%)^2,
+where σ is the across-seed standard deviation of your metric and θ ≈ 0.3% is the true gap. For a paired design using the same seeds across conditions, replace σ with s_d (the SD of within-seed differences) and drop the leading ×2:
+n_pairs ≈ (2.487 × s_d / 0.2%)^2. [Lakens 2017; Wellek 2010]
+
+Concrete numbers (rounded up)
+- Two-sample (independent seeds; use σ):
+  - σ = 0.2% → n ≈ 13 per group
+  - σ = 0.3% → n ≈ 28 per group
+  - σ = 0.4% → n ≈ 50 per group
+  - σ = 0.5% → n ≈ 78 per group
+- Paired (same seeds; use s_d of paired differences):
+  - s_d = 0.2% → n ≈ 7 pairs
+  - s_d = 0.3% → n ≈ 14 pairs
+  - s_d = 0.4% → n ≈ 25 pairs
+  - s_d = 0.5% → n ≈ 39 pairs
+
+Notes
+- Units are absolute percentage points of your primary metric (e.g., accuracy). Convert your observed variability to the same scale.
+- Paired designs often cut required n substantially if the two conditions are positively correlated across seeds (s_d < σ√2). Use the SD of the per-seed differences to plan.
+- These are normal-approximate TOST calculations; with small n, add a 10–15% safety margin or use a noncentral t calculator.
+
+Strategic questions
+1) What’s your across-seed SD (σ) at the fixed hyperparameters, and can you run paired seeds to estimate s_d?
+2) Are you treating α = 0.05 (standard for TOST) and aiming for 80% power at θ ≈ 0.3%, or do you expect a different true gap?
+3) Is your metric bounded with ceiling effects (e.g., >98% accuracy), which can reduce variance and lower n?
+
+Three concrete, falsifiable experiments
+1) Pilot variance estimation
+- Objective & hypothesis: Estimate σ and s_d to size your TOST. Hypothesis: Seed variance is ≤ 0.3% (p.p.).
+- Setup: Run 8–10 seeds for module-on and module-off at the fixed hyperparameters, using identical seeds to compute paired differences.
+- Metrics: σ (per condition), s_d (paired differences), and correlation across conditions. Success: You obtain stable SD estimates (CV of SD < 20%).
+- Interpretation: Plug σ or s_d into the formulas above to select n; if s_d << σ√2, prefer the paired design.
+- Follow-ups: If variance is higher than expected, consider variance-reduction (e.g., longer training, stronger averaging) before scaling n.
+
+2) Equivalence TOST with paired design
+- Objective & hypothesis: Establish equivalence within Δ = 0.5% at θ ≈ 0.3%. Hypothesis: Mean difference lies within [−0.5%, +0.5%].
+- Setup: Use n_pairs from the paired formula; run that many seed pairs; keep training budget and evaluation protocol fixed.
+- Metrics: TOST at α = 0.05; report 90% CI, effect size, and power achieved. Success: Both one-sided tests reject non-equivalence.
+- Interpretation: If equivalence accepted, you can credibly stop without HPO; if not, escalate to minimal symmetric HPO.
+
+3) Minimal symmetric HPO check
+- Objective & hypothesis: Verify no tuning-invariant benefit emerges. Hypothesis: After equal-budget HPO, the gap remains ≤ 0.5%.
+- Setup: Identical search space; 10–20 trials per condition; retrain top-1 configs with the same n (or the paired n) as above.
+- Metrics: TOST on the tuned top-1 configs; also report best-of-B vs B curves. Success: Equivalence holds post-HPO.
+- Interpretation: If a >0.5% gap appears post-HPO, the benefit is tuning-contingent; revise claims accordingly.
+
+Next actions (≤2 hours)
+- Run 8–10 paired seeds at the fixed setting to estimate s_d and compute n with the paired formula.
+- If n is large, check whether pairing reduces s_d enough to be worthwhile; otherwise plan for two-sample n with a 10–15% buffer.
+- Pre-register α, Δ, θ assumption (0.3%), and the chosen design before collecting confirmatory data.
+
+Intuition
+- Power for TOST depends on how much “room” you have between the equivalence margin (0.5%) and the true gap (~0.3%). The smaller that room and the noisier your runs, the more seeds you need. Pairing reduces noise by canceling shared randomness.
+
+Why this is principled
+- TOST declares equivalence when the 90% CI lies entirely within [−Δ, +Δ]; planning n via the noncentral t or normal approximation with z0.95 + z0.8 ensures 5% type I error and 80% power at the assumed true difference [Lakens 2017; Schuirmann 1987]. Using paired designs leverages covariance to reduce standard error, a standard efficiency gain in experimental design [Wellek 2010].
+
+Citations
+- Lakens, D. Equivalence Tests: A Practical Primer for t Tests, Correlations, and Meta-Analyses — https://psyarxiv.com/97gpc/
+- Schuirmann, D. A Comparison of the Two One-Sided Tests Procedure and the Power Approach — https://doi.org/10.1002/bimj.4710290108
+- Wellek, S. Testing Statistical Hypotheses of Equivalence and Noninferiority (Book) — https://doi.org/10.1201/EBK1439808184
+
+[Turn 6] USER:
+If I run 10 paired seeds and s_d turns out higher than 0.3%, can I still stop at n=14 or must I collect more seeds?
+
+[Turn 6] ASSISTANT:
+Short answer
+- You shouldn’t stop at n=14 pairs if the observed paired SD (s_d) is higher than you planned, unless a fresh power calculation still shows ≥80% power for your equivalence margin (±0.5%) at your assumed true gap (~0.3%). Update n via the paired-TOST power formula and continue sampling if power falls short [1][2]. An internal pilot sample-size re-estimation (based on the blinded/paired variance) preserves Type I error and is the standard way to handle this situation [3].
+
+How to decide quickly
+- Recompute required pairs with your observed s_d using n_pairs ≈ (z0.95 + z0.8)^2 × (s_d/δ)^2 with δ = (0.5% − 0.3%) = 0.2% and z0.95 + z0.8 ≈ 2.487; then round up and add ~10–15% buffer for small-sample t corrections [1][2]. For example:
+  - s_d = 0.35% → n ≈ (2.487×0.35/0.2)^2 ≈ 19 pairs
+  - s_d = 0.40% → n ≈ 25 pairs
+  - s_d = 0.50% → n ≈ 39 pairs
+  If this recalculation says n > 14, collect more seeds (unless you explicitly accept lower power and state it) [1][2][3].
+- If you pre-registered a variance-adaptive rule (internal pilot), implement it now; this maintains nominal α for equivalence tests when the re-estimation uses blinded/pooled variance or paired-difference variance [3]. If you didn’t, document the deviation and use a conservative target n (round up) [3].
+- If compute is tight, you may stop at n=14 only if you transparently revise the claim (“equivalence within 0.5% tested at ~X% power”), or switch to a non-inferiority claim with an a priori margin—both should be pre-specified to avoid forking paths [1][5].
+
+Three concrete, falsifiable experiments
+1) Internal-pilot TOST with variance re-estimation
+- Objective & hypothesis: Establish equivalence within ±0.5% at 80% power using adaptive n. Hypothesis: Mean paired difference lies within [−0.5%, +0.5%].
+- Setup: Run 10 paired seeds, estimate s_d of paired differences; recompute required n with paired TOST power (noncentral t, α=0.05); collect additional paired seeds until n is met; keep protocol fixed across all seeds [1][3].
+- Metrics & criteria: TOST at α=0.05 with 90% CI entirely within [−0.5%, +0.5%]; report achieved power using the final s_d [1][2].
+- Interpretation: If equivalence accepted at planned power, you can stop; if not, either increase n or revise claims.
+- Follow-ups: Replicate on a second dataset/split to assess scope.
+
+2) Group-sequential equivalence test (two looks)
+- Objective & hypothesis: Improve efficiency with early stopping for equivalence. Hypothesis: Equivalence can be concluded at an interim look with controlled Type I error.
+- Setup: Design two looks (e.g., after 14 and 24 pairs) with O’Brien–Fleming–style equivalence boundaries; analyze with TOST at each look using precomputed boundaries; stop early if within the equivalence wedge; otherwise continue to final n [4].
+- Metrics & criteria: Adhere to spending function boundaries; report information fraction and adjusted CIs.
+- Interpretation: If interim shows equivalence, stop; if not, the design guarantees overall error control.
+- Follow-ups: Document the planned design and boundaries in your protocol.
+
+3) Minimal retune verification after equivalence (optional)
+- Objective & hypothesis: Check that tuning doesn’t flip the conclusion. Hypothesis: After equal-budget HPO, the paired difference remains within ±0.5%.
+- Setup: Run a small symmetric HPO (e.g., 10–20 trials/condition), retrain top-1 configs for the same n pairs, and re-run TOST [1].
+- Metrics & criteria: TOST equivalence post-HPO; report best-of-B vs B curves to communicate tuning-efficiency.
+- Interpretation: If equivalence holds, the “no meaningful difference” claim is robust; if not, the module’s benefit is tuning-contingent.
+
+Strategic questions
+1) What is your observed s_d from the 10 pairs? I can compute the exact n with the noncentral t version. 
+2) Do you want to use an internal pilot rule (variance-adaptive n) or a fixed n with potentially lower power?
+3) If compute is the bottleneck, would you accept a transparently reported lower-power equivalence result or switch to a non-inferiority margin?
+
+Intuition
+- Power depends on how much “room” remains between your equivalence margin and the true difference and on your noise. If noise is higher than expected, you need more seeds to keep the CI inside the equivalence bounds; pairing helps, but only as much as it reduces the SD of differences.
+
+Why this is principled
+- TOST declares equivalence when the 90% CI lies entirely within [−Δ, +Δ]; planning (and re-planning) n based on observed variance is standard and supported by established tools (e.g., TOSTER) and texts [1][2]. Internal pilot sample-size re-estimation using (blinded/paired) variance maintains nominal α while restoring target power when variance assumptions are off, and group-sequential designs enable efficient early stopping with controlled error rates [3][4][2].
+
+Citations
+- [1] TOSTER: Two One-Sided Tests (TOST) Equivalence Testing (CRAN manual) — https://cran.r-project.org/web/packages/TOSTER/TOSTER.pdf
+- [2] NCSS: Paired t-Test for Equivalence (procedure and power) — https://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/NCSS/Paired_T-Test_for_Equivalence.pdf
+- [3] Friede, T., Kieser, M. Sample Size Recalculation in Internal Pilot Study Designs: A Review — https://www.semanticscholar.org/paper/Sample-Size-Recalculation-in-Internal-Pilot-Study-A-Friede-Kieser/7f12bb5e47ec973bc4dbffba09d5d52fd85662a1
+- [4] Stata: Introduction to group sequential designs (overview of boundaries/implementation) — https://www.stata.com/manuals/adaptgsdintro.pdf
+- [5] Lakens, D. Absence of evidence is not evidence of absence (equivalence testing primer) — http://daniellakens.blogspot.com/2016/05/absence-of-evidence-is-not-evidence-of.html

@@ -1,0 +1,63 @@
+Here’s a practical way to scope a first, part‑time AI project that fits into late-night slots, keeps risk low, and produces a clear, defensible result.
+
+Define a minimum publishable unit (MPU)
+- Problem: one narrow task (e.g., binary text classification or a small reasoning subtask).
+- Dataset: one public dataset with a small, fixed subset (e.g., 1–10k labeled examples or a k-shot slice).
+- Baseline: prompt-only and a small supervised baseline.
+- Method: one compute-efficient technique (parameter-efficient fine-tuning, PEFT) and one simple data augmentation knob. PEFT (e.g., LoRA) is designed to reduce updated parameters and compute while maintaining quality [P1]. EDA is a low-effort way to boost performance in low-resource text classification [P6].
+- Budget: what you can run overnight on a single consumer GPU or free cloud tier.
+- Success criteria: a pre-registered delta over baseline (e.g., +2–3 points accuracy or a statistically significant improvement).
+- Stopping rule: if your method underperforms by <1 point after 3 seeds for two consecutive nights, stop and pivot; if the gain vanishes when you tighten evaluation (e.g., better dev split), stop.
+
+A late-nights schedule (example, 4–6 weeks)
+- Week 0 (1–2 nights): Select task + write a one-page pre-plan (objective, dataset, baselines, method, metrics, target delta, stop rule).
+- Week 1 (2 nights): Build clean baselines (prompt-only; small supervised fine-tune). Save configs, seeds, and environment.
+- Week 2 (2 nights): Implement PEFT (LoRA). Start with small ranks and conservative training steps to fit overnight [P1].
+- Week 3 (2 nights): Add EDA augmentation; run k-shot and low-data ablations [P6].
+- Week 4 (1–2 nights): Replicate with 3–5 seeds; compute CIs; error analysis; finalize plots.
+- Week 5 (1–2 nights): Write a short report or blog with reproducibility kit.
+
+Baselines and compute-efficient choices
+- Prompt-only: zero-/few-shot prompts as a no-training baseline you can run even when you’re too tired to train.
+- Small model + PEFT: choose a readily available small or medium model; apply LoRA and sweep a small rank range first to keep runs short [P1].
+- Simple augmentation: EDA (synonym replacement, random swap, etc.) is quick to implement and has shown gains on low-resource text classification [P6].
+
+Reproducibility and evaluation under tight budgets
+- Fix seeds and report mean ± 95% CI over 3–5 runs; use stratified splits where applicable.
+- Log all configs; pin package versions; record hardware and wall-clock time.
+- Use a small, frozen dev set for iteration; only touch test set once at the end.
+- Prefer simple, interpretable metrics (accuracy/F1 for classification; exact match for QA). Use power-aware comparisons: require the same wall-clock budget across methods when you compare.
+
+Three concrete, falsifiable experiments you can run overnight
+1) PEFT rank vs performance
+- Hypothesis: Increasing LoRA rank improves accuracy up to a point, after which returns diminish (compute scales while quality plateaus) [P1].
+- Variables: LoRA rank r ∈ {2, 4, 8, 16}; constant steps, lr, and total tokens.
+- Metrics: Validation accuracy/F1; wall-clock time; GPU memory.
+- Expected outcome: Performance improves from r=2→8 with diminishing returns beyond; memory/time increase monotonically [P1].
+- Decision rule: Pick the lowest r whose 95% CI overlaps the best result.
+
+2) Low-data augmentation effect (EDA)
+- Hypothesis: EDA yields a positive and statistically significant accuracy/F1 gain in k-shot regimes (e.g., k ∈ {32, 128}) [P6].
+- Variables: Augmentation factor a ∈ {0, 1, 2, 4} augmented samples per original; same PEFT config.
+- Metrics: Dev accuracy/F1; mean over 5 seeds; paired t-test or bootstrap CI for Δ vs a=0.
+- Expected outcome: Positive Δ at small k; diminishing/neutral effect as k grows [P6].
+- Decision rule: Adopt the smallest a with significant gain and no overfitting (gap dev→test < 2 points).
+
+3) PEFT vs prompt-only under equal budget
+- Hypothesis: With the same wall-clock budget, PEFT fine-tuning outperforms prompt-only few-shot prompting on the selected task [P1].
+- Variables: Two conditions: (A) prompt-only few-shot; (B) PEFT with a small rank and fixed steps tuned to the same overnight time.
+- Metrics: Dev/test accuracy/F1; wall-clock; cost.
+- Expected outcome: PEFT > prompt-only by a statistically significant margin on the target task [P1].
+- Decision rule: If Δ ≥ pre-registered threshold (e.g., +2 points) with overlapping compute, accept PEFT as the method of record.
+
+Risk controls and stopping rules
+- Overfitting: Monitor dev–train gap; if gap > 5–7 points and test doesn’t improve, early stop or reduce steps/augmentation.
+- Variance: If seed variance > 2 points, increase seeds or simplify method; don’t claim improvements without overlapping CIs.
+- Pivot triggers: If PEFT cannot beat prompt-only within your budget after 2–3 nights of targeted sweeps, pivot to error analysis or data quality fixes rather than more hyperparameters.
+
+What “done” looks like
+- A short report with: task, dataset, baselines, method (PEFT + EDA), 3 experiments, plots with CIs, compute table, and a reproducibility kit (config files, seed list, environment and run script). This is a solid first MPU and a foundation for a workshop submission or a technical blog.
+
+Citations
+- [P1] A Guide to Parameter-Efficient Fine-Tuning — https://arxiv.org/html/2303.15647v2
+- [P6] EDA: Easy Data Augmentation Techniques for Boosting Performance on Text Classification Tasks — https://arxiv.org/abs/1901.11196

@@ -1,0 +1,87 @@
+Below is a focused ablation plan on local attention window sizes for the attached Hierarchical Transformer, keeping the original datasets and primary metrics fixed for comparability.
+
+Scope and invariants from the paper
+- Keep the original benchmarks and metrics unchanged: evaluate on Atari 100k and Crafter; report rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+- Do not change rollout depth, retained-token budget, or model capacity across variants to isolate the effect of the attention window [heirarchical-transformer.pdf:3].
+
+Benchmark suite
+- Primary: Atari 100k and Crafter, identical preprocessing, rollout horizon, and evaluation seeds used in your baseline runs [heirarchical-transformer.pdf:3].
+- Optional sanity subset (precheck): 3 Atari games spanning different dynamics (stochasticity, partial observability), to validate windowed attention stability before full sweep. Conjecture.
+
+Variants (ablation settings)
+- Baseline: Original attention setting (global or whatever the paper uses).
+- Local window sizes (uniform across layers/levels): window w ∈ {32, 64, 128}; causal, sliding window attention.
+- Optional: heterogeneous windows by level (coarse level: w=128; fine level: w=64) to test whether coarse tokens benefit from broader context while keeping fine tokens local. Conjecture.
+
+Minimal code changes (PyTorch-style)
+- Attention mask: replace full causal mask with a banded causal mask that permits keys/values in [t−w+1, t] for each query position t; keep causal directionality. Conjecture.
+- Efficiency kernel: if available, enable sliding-window attention in your backend (e.g., FlashAttention-2 local mode or xFormers); otherwise use a custom block-sparse matmul with the banded mask. Conjecture.
+- Memory/summary token(s): preserve their global connectivity to avoid bottlenecking long-range info flow; keep any cross-level memory attention unchanged so the ablation targets only token–token locality. Conjecture.
+- Controller/masking module: unchanged. Ensure its inputs and outputs are identical across variants so differences are attributable to windowing alone [heirarchical-transformer.pdf:3]. Conjecture.
+
+Compute budget and protocol
+- Seeds: ≥5 seeds per game/setting for each variant to estimate variance. Conjecture.
+- Training steps and schedules: identical to the original runs; no retuning per variant (unless clearly unstable) to preserve comparability [heirarchical-transformer.pdf:3]. Conjecture.
+- Run plan per dataset:
+  - Baseline + three window sizes = 4 variants.
+  - 5 seeds × 4 variants per game; aggregate across games as in the baseline report [heirarchical-transformer.pdf:3].
+- Hardware: fix GPU type and software stack; measure the paper’s compute metrics plus wall-clock for context (reporting the latter does not replace the paper’s compute cost metric) [heirarchical-transformer.pdf:3]. Conjecture.
+
+Primary outcomes (unchanged from the paper)
+- Rollout compute cost, rollout error (token- and image-level, at multiple horizons), and final RL performance on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+
+Secondary diagnostics for this ablation
+- Long-horizon error slope: error growth vs rollout horizon H to detect context truncation.
+- Attention boundary effects: increased error or variance near sequence boundaries when w is small.
+- Memory-token reliance: attention mass onto memory/summary tokens; spikes may indicate overcompensation for lost long-range token–token interactions. Conjecture.
+- Latency/throughput (optional): report alongside compute cost to contextualize windowed speedups, but do not substitute the paper’s metrics [heirarchical-transformer.pdf:3]. Conjecture.
+
+Failure modes to monitor
+- Long-context degradation: higher long-horizon rollout error and lower RL performance as w shrinks (especially on games needing long temporal credit assignment) [heirarchical-transformer.pdf:3]. Conjecture.
+- Training instability: divergence or oscillatory losses with small w due to insufficient receptive field.
+- Controller–attention mismatch: masking policy selecting tokens that the local window cannot exploit (e.g., selected tokens lie outside each other’s windows), reducing effective capacity. Conjecture.
+- Boundary artifacts: performance drops at chunk boundaries if sequences are processed in segments; mitigate with overlap or cache-based streaming. Conjecture.
+
+Three concrete, falsifiable experiments
+1) Window-size sweep under fixed compute shape
+- Setup: Train/evaluate baseline and w ∈ {32, 64, 128} with identical hyperparameters, token budgets, rollout depth, and context length on Atari 100k and Crafter [heirarchical-transformer.pdf:3].
+- Metrics: rollout error at horizons H ∈ {25, 50, 100}, final RL performance, rollout compute cost [heirarchical-transformer.pdf:3].
+- Hypotheses: Smaller w improves compute cost but increases long-horizon error; there exists a “knee” at which RL performance begins to drop. Conjecture.
+- Pass/fail: Statistically significant difference in error-growth slope and RL scores between w=64 and w=32; no significant difference between baseline and w=128 if global context was underused. Conjecture.
+
+2) Context-length robustness
+- Setup: Evaluate inference with context lengths L ∈ {128, 256, 512} for each w, holding all else fixed.
+- Metrics: long-horizon error slope and final RL performance.
+- Hypothesis: With small w, increasing L yields diminishing returns (local attention saturates), while larger w or baseline benefits more with longer context. Conjecture.
+- Pass/fail: Significant interaction between w and L on error AUC.
+
+3) Level-wise heterogeneous windowing
+- Setup: Compare uniform w=64 versus heterogeneous windows (coarse: 128, fine: 64) while keeping retained-token budget and compute comparable.
+- Metrics: rollout error at long horizons; compute cost; RL performance.
+- Hypothesis: Heterogeneous windows recover some long-range fidelity with similar compute to uniform w=64 by giving coarse tokens wider context. Conjecture.
+- Pass/fail: Lower long-horizon error AUC without significant compute increase relative to uniform w=64.
+
+Analysis notes
+- Use paired comparisons across seeds and games for RL and error AUC; adjust for multiple comparisons across variants. Conjecture.
+- Plot compute cost vs error and compute cost vs RL score to visualize the trade-off; report the dominated hypervolume difference if running multiple w settings. Conjecture.
+
+Why local windows are reasonable to test
+- Sliding-window attention reduces attention complexity from quadratic to roughly linear in sequence length, commonly implemented via banded masks (e.g., Longformer/BigBird) [1][2], making it a targeted way to trade long-range accuracy for efficiency.
+
+Literature anchors
+- Longformer: The Long-Document Transformer (sliding-window attention) — https://arxiv.org/pdf/2004.05150 [1]
+- BigBird: Transformers for Longer Sequences — https://arxiv.org/pdf/2007.14062.pdf [2]
+
+Citations
+- [heirarchical-transformer.pdf:3] The paper evaluates on Atari 100k and Crafter and reports rollout compute cost, rollout error, and final RL performance; it proposes ablations on structural components.
+- [1] Longformer: The Long-Document Transformer — https://arxiv.org/pdf/2004.05150
+- [2] Big Bird: Transformers for Longer Sequences — https://arxiv.org/pdf/2007.14062.pdf
+
+Sources
+- Sparse Hierarchical Imagination for Efficient Transformer World Models — [heirarchical-transformer.pdf:3]
+- Longformer: The Long-Document Transformer — https://arxiv.org/pdf/2004.05150
+- Big Bird: Transformers for Longer Sequences — https://arxiv.org/pdf/2007.14062.pdf
+
+Key takeaways
+- Keep datasets and primary metrics fixed per the paper to preserve comparability [heirarchical-transformer.pdf:3]; swap only the attention window.
+- Evaluate w ∈ {32, 64, 128} plus baseline, monitor long-horizon degradation and controller–attention mismatch, and quantify compute–accuracy trade-offs. Conjecture.

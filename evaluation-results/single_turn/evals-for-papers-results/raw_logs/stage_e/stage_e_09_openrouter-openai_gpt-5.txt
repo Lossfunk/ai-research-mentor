@@ -1,0 +1,34 @@
+Short discussion
+Expanding PeerRead with crowd-sourced aspect annotations—especially for newer venues/years—would strengthen robustness claims in two ways. First, multiple independent judgments per paper reduce label sparsity and allow principled aggregation (e.g., MACE/Dawid–Skene) to lower variance and correct rater noise, yielding more reliable training/evaluation labels. Second, preserving disagreement rather than collapsing to a single score enables uncertainty-aware targets (soft labels), which typically improve calibration and out-of-domain (OOD) retention when norms shift across venues. By covering underrepresented topics and years with sufficient N and rater diversity, we can test whether reported gains hold beyond legacy venue-year slices and quantify how much performance is explainable by true ambiguity versus model error.
+
+Metrics to add in the appendix (track over time)
+- Coverage and balance
+  - Papers annotated per venue-year; topic/length distributions vs. existing PeerRead; % with ≥3 raters.
+- Annotation quality and aggregation
+  - Inter-annotator agreement per aspect (Krippendorff’s alpha; quadratic-weighted kappa); disagreement entropy; MACE competence estimates; comparison of aggregators (majority vs. Dawid–Skene vs. MACE vs. mean-of-scores) with correlations to an expert-adjudicated subset.
+- Bias and reliability diagnostics
+  - Rater and item variance components via mixed-effects models; differential item functioning across venues/years; label drift over time.
+- Model-centric robustness
+  - In-domain vs. OOD retained-performance ratio (RPR = OOD/ID) for RMSE/Kendall’s tau; Expected Calibration Error (ECE)/Brier score; correlation between human disagreement and model predictive entropy (should be positive); performance on high-disagreement vs. low-disagreement items.
+- Data quality safeguards
+  - Blindness rate (% items annotated without decision cues); time-on-task and attention checks; annotation cost and throughput.
+
+Concrete, falsifiable follow-up experiments
+1) Reliability-to-performance curve
+- Design: Annotate a fixed newer venue-year with 1, 3, and 5 raters per paper; aggregate with MACE and majority vote. Train identical models on each label set.
+- Outcomes: ID/OOD tau and RMSE; ECE.
+- Criterion: If moving from 1→3 raters improves OOD tau by ≥0.02 or reduces RMSE by ≥0.01 (95% CI excludes 0), we adopt ≥3 raters as the standard; otherwise, we justify 1–2 raters as sufficient.
+
+2) Disagreement-aware training
+- Design: Train models on soft labels (mean and variance per aspect) vs. hard labels; use heteroscedastic losses to model aleatoric uncertainty.
+- Outcomes: ECE, prediction-interval coverage, RPR across venues.
+- Criterion: Accept soft-label training if it improves OOD ECE by ≥5 points or increases RPR by ≥0.05 without harming ID tau by >0.01.
+
+3) New-venue generalization with crowd seeds
+- Design: Collect crowd labels for 300–500 papers from a recent venue-year (≥3 raters each). Evaluate source-only models (trained on legacy venues), then fine-tune on 100 labeled target examples.
+- Outcomes: RPR and absolute tau/RMSE before vs. after adaptation.
+- Criterion: If source-only RPR < 0.90 but few-shot adaptation improves tau by ≥0.03 with ≤0.01 ID loss, we recommend minimal target-venue seeding for robust deployment; if not, limit claims to in-venue use.
+
+Sources
+- Snow, R., O’Connor, B., Jurafsky, D., & Ng, A. Y. (2008). Cheap and Fast—but is it Good? Evaluating Non-Expert Annotations for Natural Language Tasks — https://aclanthology.org/D08-1027.pdf
+- Hovy, D., Berg-Kirkpatrick, T., Vaswani, A., & Hovy, E. (2013). Learning Whom to Trust with MACE — https://aclanthology.org/N13-1132.pdf

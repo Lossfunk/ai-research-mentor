@@ -1,0 +1,112 @@
+1. Problem framing and goals
+Objective: Produce a rigorous, end-to-end recipe for compressing open LLMs (7B–13B class) to ≤4-bit weights, low-bit KV caches, and ≥50% sparsity with minimal quality loss, paired with ablations and scaling analyses that generalize across models/datasets.
+Primary goals (6 months):
+- 4-bit weight-only PTQ parity: ≤1.0 average point drop on MMLU/ARC/TruthfulQA vs fp16, and ≤3% perplexity increase on PG19/C4 for Llama-2/3 7B and one 13B model using GPTQ/AWQ baselines [1][2].
+- Low-bit activations and KV caches: demonstrate stable 8→4-bit activation quantization with SmoothQuant for layerwise outlier mitigation [3], and 4→2→1-bit-per-channel KV-cache quantization with ≤1 point average drop on MT-Bench and ≤0.5 perplexity increase while measuring memory/latency gains [6][7].
+- Prune+quant co-design: 50–70% unstructured sparsity via SparseGPT combined with 4-bit weights, with ≤2 point average performance drop and ≥1.8× throughput speedup on a single A100 [5].
+- Fine-tuning under quantization: QLoRA-style 4-bit fine-tuning that matches fp16 LoRA within error bars across 2 tasks (e.g., instruction-following, QA) [4].
+- Reporting: compression scaling curves for (bits, sparsity) → (perplexity, accuracy, latency, memory), plus a reproducible toolkit and experiment cards.
+
+Anchor papers (for orientation and replication baselines): GPTQ (PTQ for LLMs) [1], QLoRA (4-bit quantized fine-tuning) [4]. These map directly to the weight-only PTQ and quantized fine-tuning tracks below.
+
+Intuition
+LLMs have structured redundancy and sharpness/outlier issues that make naive compression brittle. Methods that (a) choose quantization granularity well (e.g., per-channel), (b) suppress activation outliers, and (c) train or select flatter minima tend to preserve accuracy while enabling very low precision, sparse weights, and compact KV caches [1][3][5][6].
+
+Why this is principled
+Empirical evidence shows near-lossless 4-bit weight-only PTQ with GPTQ/AWQ when calibration is careful [1][2], activation smoothing stabilizes low-bit activations [3], KV caches can be quantized aggressively with tailored schemes [6][7], and quantized fine-tuning via QLoRA recovers quality with modest compute [4]. Flat-minima training improves post-hoc compressibility, providing a causal lever for “train-for-compression” [P5].
+
+2. Experiments
+E1. Baseline PTQ sweep: GPTQ vs AWQ on 7B/13B
+- Hypothesis: With 128–1024 calibration samples and per-channel/group-wise quantization, 4-bit PTQ is near-lossless on 7B/13B for standard LLM benchmarks [1][2].
+- Setup: Models: Llama-2/3 7B and one 13B. Methods: GPTQ (group size, damp params), AWQ (activation-aware channel selection), W4A16 weights-only. Calibration: 256–1024 diverse prompts. Datasets: PG19/C4 for perplexity; MMLU, ARC, TruthfulQA; MT-Bench for dialogue. Hardware: 1× A100 80GB or equivalent. Baselines: fp16, 8-bit weight-only. Ablations: group size; outlier-channel masking.
+- Metrics: Perplexity deltas; accuracy deltas; latency, tokens/s, memory footprint.
+- Expected: ≤3% PPL increase; ≤1 point average drop; 2–3× memory reduction [1][2]. If failure, analyze layer/channel outliers and retry with per-channel/group-wise tweaks.
+- Follow-ups: Layer-wise precision schedules for attention/MLP; mixed-precision embeddings/LM head.
+
+E2. Activation smoothing + W4A8/4 (SmoothQuant)
+- Hypothesis: Smoothing outlier activations enables 8→4-bit activation quantization with minimal quality loss in LLM inference [3].
+- Setup: Apply SmoothQuant to the models in E1; test W4A8 and W4A4. Vary smoothing strength per layer. Keep weight quantization fixed (best from E1).
+- Metrics: Same as E1; add calibration time and kernel efficiency.
+- Expected: W4A8 parity; W4A4 modest but controlled drop (<1.5 points avg) [3]. If large drops, inspect attention layers and consider mixed-precision activations.
+- Follow-ups: Compare with DuQuant-like outlier redistribution; evaluate kernel availability and fused INT4 kernels.
+
+E3. KV-cache quantization to ultra-low bits
+- Hypothesis: Per-channel or windowed schemes yield 4→2→1-bit-per-channel KV caches with small quality loss and large memory/latency wins [6][7].
+- Setup: Streaming generation with sliding-window KV; methods: per-channel quant, sliding-window quant (SKVQ), and a strong 1-bit-per-channel baseline. Evaluate on long-context tasks (Needle-in-a-Haystack variants) and standard chat benchmarks.
+- Metrics: Win rate on MT-Bench, perplexity under long contexts, time-to-first-token, steady-state tokens/s, KV memory usage.
+- Expected: 4-bit near parity; 2-bit small drop; 1-bit-per-channel feasible with task-dependent trade-offs [6][7]. If degradation spikes on reasoning, try per-head mixed precision.
+- Follow-ups: Adaptive bit allocation based on spectral gaps in K/V [6]; ablate window sizes.
+
+E4. SparseGPT pruning + W4 quantization co-design
+- Hypothesis: 50–70% unstructured sparsity composed with 4-bit weights retains strong accuracy with careful layerwise pruning/quantization ordering [5].
+- Setup: One-shot SparseGPT with different sparsity levels (30/50/70%), then PTQ (best from E1). Order variants: prune→quant vs quant→prune. Evaluate on same suite.
+- Metrics: Accuracy/perplexity deltas, throughput, memory footprint, kernel sparsity speedup.
+- Expected: Up to 70% sparsity with acceptable drops; combined with W4 yields ≥1.8× throughput gains [5]. If failure, lower sparsity in attention/LM head; explore 2:4 structured sparsity kernels.
+- Follow-ups: Distillation to recover sparse accuracy; per-block sparsity patterns.
+
+E5. Quantized fine-tuning with QLoRA vs fp16 LoRA
+- Hypothesis: 4-bit QLoRA fine-tuning matches fp16 LoRA on task performance, enabling cheap adaptation under compression [4].
+- Setup: Two downstream tasks (e.g., Alpaca-style instruction-following, open-domain QA). Compare fp16 LoRA vs 4-bit QLoRA (nf4/Int4). Sweep LoRA rank, α, dropout; evaluate stability across 3 seeds.
+- Metrics: MT-Bench, task-specific metrics (exact match/F1 on QA), and generalization (MMLU delta). Track memory/compute savings.
+- Expected: Parity within error bars; 4–8× memory reduction during training [4]. If gap persists, increase LoRA rank or apply LoftQ-style quantization-aware adaptation [10].
+- Follow-ups: Merge LoRA weights + re-PTQ; compare to QA-LoRA (if available) for quant-aware low-rank.
+
+E6. Train-for-compressibility: flat minima and noise injection
+- Hypothesis: Models trained with sharpness-aware objectives (SAM-like) or quantization-noise injection compress better at fixed accuracy [P5].
+- Setup: Short continued pretraining (50–100B tokens) on 7B with SAM or loss smoothing; optionally inject uniform quant noise during forward passes. Compare post-hoc compressibility vs a control finetune.
+- Metrics: Post-compression PPL/accuracy curves vs bits/sparsity; sharpness proxies; Hessian trace approximations.
+- Expected: Better retention after W4 and 50–60% sparsity relative to control [P5]. If negligible gains, test layerwise SAM or selective noise in attention.
+- Follow-ups: Combine with E2’s smoothing to align minima with quantizers.
+
+E7. Compression scaling curves and predictive model
+- Hypothesis: A simple law (e.g., affine in 1/bit + sparsity) predicts loss/perplexity deltas across models and datasets under PTQ and pruning.
+- Setup: Aggregate results from E1–E6 across multiple bit/sparsity grids; fit parametric forms and validate on held-out settings.
+- Metrics: Prediction RMSE/MAE; goodness-of-fit; extrapolation to unseen models.
+- Expected: Usable predictor that guides precision/sparsity choices ex-ante. If poor fit, introduce layerwise terms or head/MLP asymmetry.
+
+3. Timeline (6 months)
+- Month 1 (Phase 0 — gate): Reproduce GPTQ/AWQ (E1) and SmoothQuant (E2) on 7B. Deliverables: (a) prediction log with ≥14 entries; (b) one reproduced figure/metric within ≤10% of reported; (c) experiment card + one negative result post-mortem. Gate: If not met, iterate calibration/outlier handling before proceeding.
+- Month 2: KV-cache quantization prototypes to 4/2-bit; early 1-bit-per-channel attempt (E3). Deliverables: KV memory vs quality vs latency curves; ablation on per-head vs per-channel.
+- Month 3: SparseGPT + W4 co-design (E4). Deliverables: sparsity–accuracy–speed tradeoff charts; ordering ablation (prune→quant vs quant→prune).
+- Month 4: QLoRA fine-tuning vs fp16 LoRA on two tasks (E5). Deliverables: parity analysis; compute/memory accounting; stability across seeds.
+- Month 5: Train-for-compressibility finetunes (E6) and unified scaling analysis (E7). Deliverables: compressibility gains vs control; fitted scaling law with validation.
+- Month 6: Integration and paper: combine best recipe (e.g., W4 + W4A8 + 2-bit KV + 60% sparsity), final ablations, error analysis, and packaging of a reproducible codebase with experiment cards; draft and internal reviews.
+
+4. Resources (compute, tools, datasets)
+- Compute: Access to 2–4× A100/H100 80GB (or equivalent) strongly preferred; minimum viable: 1× A100 80GB for E1–E4; E6 benefits from multi-GPU. ~30–60 TB storage for checkpoints/datasets; SSD/NVMe for fast data.
+- Software: PyTorch 2.x; Hugging Face Transformers/PEFT; bitsandbytes; AutoGPTQ [1]; AWQ repo [2]; SmoothQuant implementations [3]; SparseGPT code [5]; KV quant baselines (e.g., SKVQ, “1 Bit Per Channel”) [6][7]; evaluation: EleutherAI lm-evaluation-harness; FastChat MT-Bench.
+- Datasets: Calibration: 256–1024 mixed prompts from The Pile/C4/ShareGPT. Evaluation: PG19/C4 (PPL), MMLU, ARC-C, TruthfulQA, MT-Bench; downstream finetuning: open instruction datasets (e.g., OpenOrca/Alpaca variants), QA (NQ/SQuAD for controlled checks).
+- Models: Llama-2/3 7B and a 13B; optionally Mistral 7B for cross-model generality.
+- Tracking: Weights & Biases or MLflow; experiment cards template; prediction log with Brier-style calibration for binary pass/fail thresholds.
+
+5. Risks and mitigations table
+- PTQ instability at 3–4 bits on certain layers — Use per-channel/group-wise quant, exclude embeddings/LM head from low-bit; increase calibration set to 1024; fallback to mixed precision [1][2].
+- Activation quantization hurts attention-heavy tasks — Apply SmoothQuant with layerwise tuning; keep attention activations at 8-bit; profile kernels for INT4 availability [3].
+- KV 1-bit-per-channel degrades reasoning — Use adaptive or per-head bit allocation; prefer 2-bit for heads most impacting quality; validate on long-context tasks [6][7].
+- Sparse+quant composes poorly — Tune ordering (prune→quant); reduce sparsity in attention; consider structured 2:4 sparsity for kernel support [5].
+- QLoRA instability across seeds — Increase LoRA rank; smaller LR and longer warmup; gradient clipping; evaluate ≥3 seeds [4].
+- Kernel/hardware support gaps — Target supported kernels first (W4A8, 2:4 sparsity); measure real speedups on target hardware; upstream missing kernels or use Triton JIT.
+- Timeline slip due to reproduction hurdles — Enforce Phase 0 gate; maintain rigorous experiment cards; reduce model size temporarily (Mistral 7B) to iterate faster.
+
+6. Stretch ideas or follow-up directions
+- 1–2 bit weight training: Explore BitNet-style 1–1.58-bit pretraining/finetuning on smaller models as a path to extreme compression (report small-scale feasibility and pitfalls) [9].
+- Quant-aware LoRA variants: Evaluate LoftQ or QA-LoRA to further close the gap under low-bit training [10].
+- Learned precision schedules: Use sensitivity scoring to assign bits per-layer/head; combine with spectral-gap-informed KV allocation [6].
+- Structured sparsity + custom kernels: 2:4 and block sparsity with fused quantized matmuls for end-to-end speedups.
+- Memory-budgeted inference: Solve for (bits, sparsity, KV bits) under a fixed VRAM budget to maximize benchmark score.
+
+Optional next step
+Confirm target base models (e.g., Llama-3 8B and 70B preview, or Llama-2/3 7B/13B) so I can pin exact calibration sizes, batch shapes, and kernel availability for your hardware.
+
+Citations
+[P5] Train Flat, Then Compress: Sharpness-Aware Minimization Learns More Compressible Models — http://arxiv.org/abs/2205.12694v2
+[1] Frantar et al., GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — https://arxiv.org/pdf/2210.17323.pdf
+[2] Lin et al., AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration — https://arxiv.org/abs/2306.00978
+[3] Xiao et al., SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — https://arxiv.org/pdf/2211.10438
+[4] Dettmers et al., QLoRA: Efficient Finetuning of Quantized LLMs — https://arxiv.org/abs/2305.14314
+[5] Frantar & Alistarh, SparseGPT: Massive Language Models Can Be Accurately Pruned in One-Shot — https://arxiv.org/abs/2301.00774
+[6] “KV Cache is 1 Bit Per Channel: Efficient Large Language Model Inference with Coupled Quantization” (NeurIPS 2024) — https://proceedings.neurips.cc/paper_files/paper/2024/file/05d6b5b6901fb57d2c287e1d3ce6d63c-Paper-Conference.pdf
+[7] SKVQ: Sliding-window Key and Value Cache Quantization for Large Language Models — https://arxiv.org/html/2405.06219v2
+[8] “Cache Me If You Must: Adaptive Key-Value Quantization for Large Language Models” — https://arxiv.org/html/2501.19392v1
+[9] BitNet: 1-bit Pre-training for Large Language Models (JMLR) — https://www.jmlr.org/papers/volume26/24-2050/24-2050.pdf
+[10] LoftQ: LoRA-Fine-Tuning-Aware Quantization for Large Language Models — https://arxiv.org/abs/2310.08659

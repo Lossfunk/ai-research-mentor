@@ -1,0 +1,78 @@
+Below are the most critical threats to validity in PeerRead’s data collection and concrete analyses you can add to preempt reviewer critiques. I anchor claims to the PeerRead paper and public repo where possible; for aspect-score subjectivity I cite the review rubric pages in the attached PDF [PeerRead.pdf:12–13].
+
+Critical threats to validity in data collection
+- Selection and coverage bias across venues/years
+  - PeerRead aggregates specific conference-years (e.g., ACL and ICLR) and an arXiv-derived subset; it does not represent the full distribution of NLP/ML submissions or journals, and may omit desk rejects and venues without public reviews [1][2]. This can distort label and text distributions.
+- Submission vs. camera-ready mismatch
+  - Many texts are sourced from public repositories (ACL Anthology, arXiv/OpenReview). Accepted papers may reflect camera-ready versions rather than the exact submissions reviewed, introducing leakage of post-review edits into features [1][2].
+- Noisy aspect labels and rubric heterogeneity
+  - Aspect scores (e.g., originality, clarity) are subjective and vary across venues/years. The provided rubrics are coarse Likert anchors rather than fine-grained constructs, which limits construct validity and caps learnable signal [PeerRead.pdf:12–13][1].
+- Incomplete or inconsistent review coverage
+  - Papers have varying numbers of reviews; rebuttals, meta-reviews, and final decisions are unevenly available. Treating multiple reviews per paper as independent observations can inflate sample size and bias variance estimates [1][2].
+- Author/venue/entity resolution and metadata gaps
+  - Automated scraping and matching (titles, authors, venues) can mis-link items, drop affiliations, or miss DOIs, leading to silent sample loss or mislabeling [2].
+- arXiv “probably-rejected” heuristic errors
+  - The arXiv subset infers non-acceptance by failure to match to target venues, risking false negatives (late acceptances, alternative venues), time-lag bias, and coverage limitations of the bibliographic sources used [1][2].
+- Temporal drift and topical confounding
+  - Year-to-year shifts in topics, writing conventions, and acceptance norms confound models that pool years/venues without controls; this threatens external validity of findings [1].
+- Parsing/formatting artifacts
+  - PDF-to-text extraction noise (equations, tables, references), variable sectioning, and arXiv versioning can create spurious features or mask relevant content, differentially by venue/source [2].
+
+Additional analyses to preempt reviewer critiques
+- Representativeness and missingness audits
+  - Compare distributions (year, venue, paper length, topical keywords) between PeerRead subsets and the target population; quantify missingness (which papers lack aspects, reviews, or decisions) and test MCAR vs. MAR patterns with logistic regressions predicting missingness from observable features [1][2].
+- Submission-vs-camera-ready sensitivity
+  - For a stratified sample of accepted papers, reconstruct submission-era text (OpenReview “original” PDFs or earliest arXiv version) and re-run key analyses; report deltas to quantify leakage risk. If unavailable, simulate by masking post-acceptance sections (e.g., “Acknowledgements”) and measure robustness.
+- Multi-review dependence control
+  - Collapse to paper-level by aggregating review signals (mean/median aspect scores) and re-run results; additionally, fit cluster-robust SEs with paper as cluster to show conclusions do not hinge on review-level independence assumptions [1].
+- Inter-annotator agreement and human upper bounds
+  - On papers with ≥2 reviews, compute IAA per aspect (weighted kappa, Kendall’s tau) and bound maximum achievable performance; contextualize model gains relative to this ceiling [1].
+- arXiv matching validation and latency analysis
+  - Extend matching to Crossref/DBLP/OpenAlex with fuzzy title/author and a ≥24–36 month window; estimate precision via manual audit of a stratified sample; perform a survival analysis of “time-to-acceptance” to show how many “probably-rejected” convert over time [2].
+- Robustness across time and venue
+  - Train/evaluate within-venue-year and out-of-domain (train ACL-YY, test ICLR-YY and ACL-YY+1); report retention of performance to address temporal/venue drift [1].
+- Parser noise and section ablations
+  - Quantify PDF-to-text coverage (token recovery rate, section detection accuracy) by source (arXiv vs. ACL Anthology). Re-run models on standardized sections (title+abstract+intro) to show that findings are not artifacts of parsing disparities [2].
+- Data leakage checks
+  - Remove explicit acceptance cues (e.g., “Accepted at …” in arXiv comments) and near-duplicate versions; verify that acceptance/score prediction results persist when such cues are masked.
+
+Concrete, falsifiable experiments
+1) Submission-vs-camera-ready impact
+- Design: For n=200 accepted papers (stratified by venue/year), compare features and prediction accuracy using earliest-available submission PDF vs. camera-ready.
+- Outcomes: ΔRMSE/ΔAUC with 95% CIs for aspect/acceptance tasks.
+- Falsifiable criterion: If median absolute performance gain from camera-ready > 0.02 RMSE (aspects) or > 0.01 AUC (acceptance), we will restrict training to submission-era text and flag prior results as optimistic.
+
+2) arXiv “probably-rejected” audit
+- Design: Stratified sample of n=200 arXiv items labeled “probably-rejected.” Match via DBLP+Crossref+OpenAlex+Google Scholar with 36-month window; record later acceptances and provenance.
+- Outcomes: Estimated precision and false-negative rate with CIs; reasons (late accept, venue not covered, matching error).
+- Falsifiable criterion: If precision < 80% or ≥10% become matched under extended procedures, we will (a) treat arXiv items as unlabeled (PU learning) and (b) report revised analyses excluding them.
+
+3) Inter-annotator agreement ceiling
+- Design: Use papers with ≥2 reviews to compute aspect-wise IAA (weighted kappa, Kendall’s tau). Train models on one review set, test against the other.
+- Outcomes: Human–human vs. model–human agreement; calibration error.
+- Falsifiable criterion: If model–human tau exceeds human–human tau by >0.03, investigate for leakage; if model–human is <70% of human–human, reframe objectives (ranking, uncertainty) rather than chasing RMSE.
+
+4) Cluster-robust inference and paper-level aggregation
+- Design: Re-estimate key regressions/classifiers with cluster-robust SEs at paper level; also aggregate reviews to paper-level labels.
+- Outcomes: Coefficient/significance stability; performance deltas.
+- Falsifiable criterion: If any headline significance flips (p<0.05 to p≥0.05) or performance drops >20% under clustering/aggregation, revise claims to paper-level only.
+
+5) Section and parser robustness
+- Design: Evaluate models on standardized sections (title+abstract+intro) and on cleanly parsed texts only (based on token recovery thresholds).
+- Outcomes: Retained performance ratio and variance.
+- Falsifiable criterion: If retained performance < 0.9 or variance doubles on clean subsets, prioritize text normalization/section-specific modeling before architectural changes.
+
+How to present this in the paper
+- Acknowledge selection, label noise, and arXiv heuristic limitations; cite the rubric subjectivity and the dataset’s venue-year scope [PeerRead.pdf:12–13][1][2].
+- Add a dedicated “Threats to Validity” subsection listing the above risks and the pre-registered sensitivity and audit analyses.
+- Report all headline results with sensitivity trims (paper-level aggregation, OOD splits, arXiv-excluded) and include uncertainty (CIs, calibration).
+
+Literature anchors
+- Kang et al., 2018. A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — describes data sources, tasks, and limitations; use for grounding selection, labeling, and review variability claims [1].
+- PeerRead GitHub repository — documents construction scripts, data fields, and known caveats (e.g., source-specific parsing/matching), useful for reproducibility and audit extensions [2].
+
+Citations
+[PeerRead.pdf:12] Rubric anchor definitions for aspect scores (e.g., “Surprising,” “Creative”), underscoring subjectivity — https://aclanthology.org/N18-1149.pdf#page=12
+[PeerRead.pdf:13] Rating scale anchors (e.g., “Generally solid work…”) illustrating coarse Likert semantics — https://aclanthology.org/N18-1149.pdf#page=13
+[1] Kang, Ammar, Schwartz, Cohen (2018). A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+[2] allenai/PeerRead (data and construction details) — https://github.com/allenai/PeerRead

@@ -1,0 +1,828 @@
+Based on the attached paper, I'll design a comprehensive ablation study for local attention window sizes in the Sparse Hierarchical Imagination (SHI) Transformer. While the paper doesn't explicitly specify the attention mechanism details, I'll design an ablation that tests how local attention windows interact with the hierarchical masking strategy.
+
+## Ablation Design: Local Attention Window Sizes
+
+### Motivation
+
+The SHI model performs **long-horizon imagination in latent space** [heirarchical-transformer.pdf:2] with hierarchical token masking. Local attention windows can:
+1. Reduce computational complexity from O(L²) to O(L×W) where W is window size
+2. Interact with hierarchical masking (which already provides sparsity)
+3. Impact long-range dependency modeling critical for multi-step rollouts
+
+**Key Question:** Does local attention provide additional efficiency gains beyond hierarchical masking, or does it degrade long-context rollout quality?
+
+### Ablation Variants
+
+**Baseline (Full Attention):**
+- Global attention across all tokens at each layer
+- Complexity: O(L² × d_model) per layer
+- Serves as upper bound on accuracy
+
+**Variant 1: Uniform Local Windows**
+- Window sizes: W ∈ {32, 64, 128, 256, 512, 1024}
+- Same window size across all layers
+- Sliding window with causal masking
+
+**Variant 2: Hierarchical Windows**
+- Early layers: Small windows (W=64) for local patterns
+- Middle layers: Medium windows (W=256) for mid-range dependencies
+- Late layers: Large windows (W=1024) or global for long-range reasoning
+- Inspired by Longformer architecture
+
+**Variant 3: Hierarchy-Aware Windows**
+- Window size varies by token hierarchy level [heirarchical-transformer.pdf:2]
+- Level 1 (global scene): Large windows (W=512)
+- Level 2 (objects): Medium windows (W=256)
+- Level 3 (fine-grained): Small windows (W=64)
+- Rationale: Coarse tokens need broader context
+
+**Variant 4: Dilated Windows**
+- Combine local attention (W=128) with dilated attention (stride=4, W=512)
+- Captures both local and long-range dependencies efficiently
+- Similar to Longformer's global+local pattern
+
+**Variant 5: Adaptive Windows**
+- Window size determined by SPARTAN causal graph [heirarchical-transformer.pdf:2]
+- Tokens with high causal influence get larger windows
+- Dynamic adjustment per rollout step
+
+**Variant 6: Hybrid Sparse Attention**
+- Combine local windows (W=256) with hierarchical masking
+- Test if two sparsity mechanisms are complementary or redundant
+
+### Control Conditions
+
+**SHI-Dense (No Masking, Full Attention):**
+- Removes hierarchical masking
+- Full global attention
+- Upper bound on both accuracy and cost
+
+**SHI-Hierarchical (Original):**
+- Hierarchical masking with full attention
+- Baseline for comparing local attention benefit
+
+**SHI-Local-Only:**
+- Local attention without hierarchical masking
+- Isolates local attention contribution
+
+## Benchmark Suite
+
+### Primary Benchmarks
+
+**1. Atari 100k** [heirarchical-transformer.pdf:3]
+- **Games (subset for ablation):** 10 representative games
+  - **Long-horizon planning:** Montezuma's Revenge, Pitfall, Private Eye
+  - **Reactive control:** Pong, Breakout, Space Invaders
+  - **Visual complexity:** Seaquest, Ms. Pacman, Enduro, Qbert
+- **Rationale:** Tests window size impact across diverse temporal dynamics
+- **Metric:** Final median human-normalized score
+
+**2. Crafter** [heirarchical-transformer.pdf:3]
+- **Rationale:** Open-ended environment requiring long-horizon planning (critical for testing long-context degradation)
+- **Metric:** Achievement score across 22 tasks
+- **Specific focus:** Tasks requiring multi-step planning (build tools, combat)
+
+**3. Long-Horizon Diagnostic Tasks**
+
+**3a. Memory Maze**
+- Custom environment: Agent must remember distant observation to solve maze
+- Context lengths: {50, 100, 200, 500} steps
+- **Metric:** Success rate vs. context length (tests long-range dependency)
+
+**3b. Delayed Reward**
+- Modify Atari games to delay reward by K steps
+- K ∈ {5, 10, 20, 50}
+- **Metric:** Credit assignment accuracy
+
+**3c. Object Permanence**
+- Objects disappear and reappear after K frames
+- Tests if model maintains object representations
+- **Metric:** Prediction accuracy for reappeared objects
+
+### Secondary Benchmarks
+
+**4. DMControl Suite (Continuous Control)**
+- **Tasks:** walker_walk, cheetah_run, reacher_hard
+- **Rationale:** Different dynamics than Atari; tests generalization
+- **Metric:** Episode return
+
+**5. Synthetic Sequence Tasks**
+
+**5a. Copying Task**
+- Input: Random sequence of length L
+- Output: Copy sequence after L/2 delay steps
+- **Metric:** Exact match accuracy vs. L
+
+**5b. Associative Recall**
+- Input: Key-value pairs, then query key
+- Output: Retrieve associated value
+- **Metric:** Recall accuracy vs. number of pairs
+
+### Benchmark Selection Rationale
+
+- **Atari 100k:** Standard RL benchmark, enables comparison to baselines [heirarchical-transformer.pdf:3]
+- **Crafter:** Tests long-horizon planning explicitly
+- **Diagnostic tasks:** Isolate specific failure modes (long-context, credit assignment)
+- **DMControl:** Tests generalization beyond discrete action spaces
+- **Synthetic tasks:** Controlled experiments with known ground truth
+
+## Minimal Code Changes
+
+### Implementation Strategy
+
+Assume base implementation in PyTorch with standard Transformer architecture.
+
+### Code Change 1: Attention Mask Generation
+
+**File:** `models/attention.py`
+
+```python
+def create_local_attention_mask(seq_len, window_size, device):
+    """
+    Create causal local attention mask.
+    
+    Args:
+        seq_len: Sequence length L
+        window_size: Local window size W
+        device: torch device
+    
+    Returns:
+        mask: [L, L] boolean mask (True = attend, False = mask)
+    """
+    # Causal mask: can only attend to past
+    causal_mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
+    
+    # Local window: only attend to W previous tokens
+    row_indices = torch.arange(seq_len, device=device).unsqueeze(1)
+    col_indices = torch.arange(seq_len, device=device).unsqueeze(0)
+    window_mask = (row_indices - col_indices) <= window_size
+    
+    # Combine causal and window constraints
+    local_mask = causal_mask & window_mask
+    return local_mask.bool()
+
+def create_hierarchical_window_mask(seq_len, token_levels, window_sizes, device):
+    """
+    Create hierarchy-aware local attention mask.
+    
+    Args:
+        seq_len: Sequence length L
+        token_levels: [L] tensor of hierarchy levels (0, 1, 2, ...)
+        window_sizes: dict mapping level -> window size
+        device: torch device
+    
+    Returns:
+        mask: [L, L] boolean mask
+    """
+    mask = torch.zeros(seq_len, seq_len, device=device, dtype=torch.bool)
+    
+    for level, window_size in window_sizes.items():
+        level_indices = (token_levels == level).nonzero(as_tuple=True)[0]
+        if len(level_indices) == 0:
+            continue
+        
+        # Create local mask for this level
+        level_mask = create_local_attention_mask(seq_len, window_size, device)
+        
+        # Apply only to tokens at this level
+        mask[level_indices[:, None], :] |= level_mask[level_indices[:, None], :]
+    
+    return mask
+```
+
+**Lines changed:** ~50 lines added
+
+### Code Change 2: Modified Attention Layer
+
+**File:** `models/transformer.py`
+
+```python
+class LocalAttention(nn.Module):
+    def __init__(self, d_model, n_heads, window_size=None, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.window_size = window_size  # None = global attention
+        self.dropout = dropout
+        
+        self.qkv_proj = nn.Linear(d_model, 3 * d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+        
+    def forward(self, x, attention_mask=None, token_levels=None):
+        """
+        Args:
+            x: [B, L, d_model]
+            attention_mask: Optional [L, L] mask from hierarchical masking
+            token_levels: Optional [L] hierarchy levels for adaptive windows
+        """
+        B, L, D = x.shape
+        
+        # Project to Q, K, V
+        qkv = self.qkv_proj(x).reshape(B, L, 3, self.n_heads, D // self.n_heads)
+        q, k, v = qkv.unbind(dim=2)  # Each [B, L, n_heads, d_head]
+        
+        # Transpose for attention computation
+        q = q.transpose(1, 2)  # [B, n_heads, L, d_head]
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+        
+        # Create local attention mask if window_size specified
+        if self.window_size is not None:
+            if token_levels is not None:
+                # Hierarchy-aware windows (Variant 3)
+                local_mask = create_hierarchical_window_mask(
+                    L, token_levels, self.window_size, x.device
+                )
+            else:
+                # Uniform windows (Variant 1)
+                local_mask = create_local_attention_mask(
+                    L, self.window_size, x.device
+                )
+            
+            # Combine with hierarchical masking if provided
+            if attention_mask is not None:
+                combined_mask = local_mask & attention_mask
+            else:
+                combined_mask = local_mask
+        else:
+            combined_mask = attention_mask
+        
+        # Compute attention (use Flash Attention if available)
+        if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+            # PyTorch 2.0+ efficient attention
+            attn_output = F.scaled_dot_product_attention(
+                q, k, v, 
+                attn_mask=combined_mask,
+                dropout_p=self.dropout if self.training else 0.0
+            )
+        else:
+            # Manual attention computation
+            scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(D // self.n_heads)
+            if combined_mask is not None:
+                scores = scores.masked_fill(~combined_mask, float('-inf'))
+            attn_weights = F.softmax(scores, dim=-1)
+            attn_weights = F.dropout(attn_weights, p=self.dropout, training=self.training)
+            attn_output = torch.matmul(attn_weights, v)
+        
+        # Reshape and project output
+        attn_output = attn_output.transpose(1, 2).reshape(B, L, D)
+        output = self.out_proj(attn_output)
+        
+        return output
+```
+
+**Lines changed:** ~80 lines modified
+
+### Code Change 3: Configuration System
+
+**File:** `configs/ablation_windows.yaml`
+
+```yaml
+ablation_variants:
+  baseline:
+    attention_type: "global"
+    window_size: null
+    
+  local_32:
+    attention_type: "local"
+    window_size: 32
+    
+  local_64:
+    attention_type: "local"
+    window_size: 64
+    
+  local_128:
+    attention_type: "local"
+    window_size: 128
+    
+  local_256:
+    attention_type: "local"
+    window_size: 256
+    
+  local_512:
+    attention_type: "local"
+    window_size: 512
+    
+  hierarchical_windows:
+    attention_type: "hierarchical"
+    window_sizes:
+      layer_0_2: 64    # Early layers
+      layer_3_5: 256   # Middle layers
+      layer_6_8: 1024  # Late layers
+      
+  hierarchy_aware:
+    attention_type: "hierarchy_aware"
+    window_sizes:
+      level_0: 512  # Global scene tokens
+      level_1: 256  # Object tokens
+      level_2: 64   # Fine-grained tokens
+      
+  dilated:
+    attention_type: "dilated"
+    local_window: 128
+    dilated_window: 512
+    dilation_stride: 4
+```
+
+**Lines changed:** ~40 lines added
+
+### Code Change 4: Training Script Modification
+
+**File:** `train.py`
+
+```python
+def create_model(config):
+    """Factory function to create model with specified attention type."""
+    
+    if config.attention_type == "global":
+        attention_class = GlobalAttention
+        attention_kwargs = {}
+    elif config.attention_type == "local":
+        attention_class = LocalAttention
+        attention_kwargs = {"window_size": config.window_size}
+    elif config.attention_type == "hierarchical":
+        attention_class = HierarchicalWindowAttention
+        attention_kwargs = {"window_sizes_by_layer": config.window_sizes}
+    elif config.attention_type == "hierarchy_aware":
+        attention_class = LocalAttention
+        attention_kwargs = {"window_size": config.window_sizes}  # Dict for hierarchy
+    else:
+        raise ValueError(f"Unknown attention type: {config.attention_type}")
+    
+    model = TransformerWorldModel(
+        attention_class=attention_class,
+        attention_kwargs=attention_kwargs,
+        **config.model_params
+    )
+    
+    return model
+
+# Minimal change to existing training loop
+def train(config):
+    model = create_model(config)
+    # ... rest of training code unchanged
+```
+
+**Lines changed:** ~30 lines modified
+
+### Total Code Changes Summary
+
+- **New files:** 0 (all modifications to existing files)
+- **Modified files:** 4 (attention.py, transformer.py, configs/, train.py)
+- **Total lines added/modified:** ~200 lines
+- **Backward compatibility:** Maintained (window_size=None defaults to global attention)
+
+### Testing Changes
+
+**File:** `tests/test_attention.py`
+
+```python
+def test_local_attention_mask():
+    """Verify local attention mask is correct."""
+    mask = create_local_attention_mask(seq_len=10, window_size=3, device='cpu')
+    
+    # Check causal property
+    assert torch.all(torch.tril(mask) == mask), "Mask must be causal"
+    
+    # Check window size
+    for i in range(10):
+        attended_positions = mask[i].nonzero(as_tuple=True)[0]
+        assert len(attended_positions) <= 4, f"Window size violated at position {i}"
+        assert torch.all(attended_positions <= i), "Cannot attend to future"
+
+def test_attention_equivalence():
+    """Verify local attention with large window equals global attention."""
+    x = torch.randn(2, 100, 512)
+    
+    global_attn = GlobalAttention(d_model=512, n_heads=8)
+    local_attn = LocalAttention(d_model=512, n_heads=8, window_size=100)
+    
+    # Copy weights
+    local_attn.load_state_dict(global_attn.state_dict())
+    
+    global_out = global_attn(x)
+    local_out = local_attn(x)
+    
+    assert torch.allclose(global_out, local_out, atol=1e-5), "Large window should equal global"
+```
+
+**Lines changed:** ~50 lines added for tests
+
+## Compute Budget
+
+### Per-Variant Training Cost
+
+**Assumptions:**
+- Base model: 50M parameters (similar to IRIS)
+- Training: 100k environment steps (Atari 100k protocol)
+- Hardware: NVIDIA A100 40GB
+- Batch size: 64
+
+**Training Time Estimates:**
+
+| Variant | Attention FLOPs | Training Time | GPU-Hours | Cost ($0.50/hr) |
+|---------|----------------|---------------|-----------|-----------------|
+| Global (baseline) | 100% | 4.0 hours | 4.0 | $2.00 |
+| Local-32 | 15% | 2.5 hours | 2.5 | $1.25 |
+| Local-64 | 25% | 2.8 hours | 2.8 | $1.40 |
+| Local-128 | 40% | 3.2 hours | 3.2 | $1.60 |
+| Local-256 | 60% | 3.6 hours | 3.6 | $1.80 |
+| Local-512 | 85% | 3.9 hours | 3.9 | $1.95 |
+| Hierarchical | 45% | 3.3 hours | 3.3 | $1.65 |
+| Hierarchy-aware | 50% | 3.4 hours | 3.4 | $1.70 |
+| Dilated | 35% | 3.0 hours | 3.0 | $1.50 |
+
+### Full Ablation Budget
+
+**Primary Benchmarks:**
+- **Atari 100k (10 games):** 10 variants × 10 games × 5 seeds × 3.3 hours = 1,650 GPU-hours
+- **Crafter:** 10 variants × 5 seeds × 8 hours = 400 GPU-hours
+- **Diagnostic tasks (3 tasks):** 10 variants × 3 tasks × 5 seeds × 2 hours = 300 GPU-hours
+
+**Secondary Benchmarks:**
+- **DMControl (3 tasks):** 10 variants × 3 tasks × 5 seeds × 3 hours = 450 GPU-hours
+- **Synthetic tasks (2 tasks):** 10 variants × 2 tasks × 5 seeds × 1 hour = 100 GPU-hours
+
+**Total Training:** 2,900 GPU-hours
+
+**Profiling & Analysis:**
+- Efficiency measurements: 100 GPU-hours
+- Ablation analysis: 50 GPU-hours
+
+**Grand Total:** ~3,050 GPU-hours (~$1,525 on cloud A100s)
+
+### Budget Optimization Strategies
+
+**Reduced Budget Option 1 (50% reduction):**
+- Reduce to 3 seeds instead of 5 (-40%)
+- Test only 6 Atari games instead of 10 (-40%)
+- Skip secondary benchmarks (-30%)
+- **New total:** ~1,500 GPU-hours
+
+**Reduced Budget Option 2 (75% reduction):**
+- Single seed for initial screening
+- Full 5-seed evaluation only for promising variants (W ∈ {64, 128, 256})
+- Atari only (skip Crafter, DMControl)
+- **New total:** ~750 GPU-hours
+
+**Staged Approach (Recommended):**
+1. **Stage 1 (200 GPU-hours):** Quick screening on 3 Atari games, 1 seed, all variants
+2. **Stage 2 (800 GPU-hours):** Full evaluation of top 3 variants on all benchmarks
+3. **Stage 3 (500 GPU-hours):** Deep dive on best variant with diagnostic tasks
+
+### Parallelization Strategy
+
+- **Parallel jobs:** 40 GPUs simultaneously
+- **Wall-clock time:** 3,050 GPU-hours / 40 GPUs = 76 hours (~3 days)
+- **Job scheduling:** Use SLURM or Kubernetes for job management
+- **Checkpointing:** Save every 10k steps to enable restarts
+
+## Failure Modes to Monitor
+
+### 1. Long-Context Degradation
+
+**Symptom:** Performance drops as rollout horizon increases
+
+**Metrics to Track:**
+- **Reconstruction error vs. rollout step:** Plot MSE at t ∈ {1, 5, 10, 15, 20} [heirarchical-transformer.pdf:3]
+- **Reward prediction error vs. horizon:** MAE for K-step ahead reward prediction
+- **Attention entropy:** Measure if attention becomes more uniform (less focused) at longer horizons
+
+**Detection Threshold:**
+- Error increases >50% from step 5 to step 15
+- Correlation between error and horizon: ρ > 0.7
+
+**Diagnostic Test:**
+- Run Memory Maze with increasing context lengths
+- Plot success rate vs. context length
+- Window size W should support context length L
+
+**Mitigation if Detected:**
+- Increase window size for late layers
+- Add global attention tokens (like Longformer)
+- Use dilated attention for long-range dependencies
+
+### 2. Hierarchical Masking Interference
+
+**Symptom:** Local attention + hierarchical masking perform worse than either alone
+
+**Metrics to Track:**
+- **Effective receptive field:** Measure how many tokens each position can attend to
+- **Masking overlap:** % of tokens masked by both mechanisms
+- **Gradient flow:** Check if gradients vanish due to over-sparsification
+
+**Detection Threshold:**
+- SHI-Hybrid (local + hierarchical) < max(SHI-Local-Only, SHI-Hierarchical)
+- Effective receptive field < 10% of sequence length
+
+**Diagnostic Test:**
+- Visualize attention patterns: Are there "dead zones" with no attention?
+- Measure token utilization: Are some tokens never attended to?
+
+**Mitigation if Detected:**
+- Increase window size when hierarchical masking is active
+- Make window size adaptive based on masking rate
+- Use hierarchical masking OR local attention, not both
+
+### 3. Training Instability
+
+**Symptom:** Loss spikes, gradient explosions, or divergence
+
+**Metrics to Track:**
+- **Gradient norm:** Track max and mean gradient norms
+- **Loss variance:** Standard deviation of loss over 1k-step windows
+- **Attention weight distribution:** Check for extreme values (all 0 or all 1)
+
+**Detection Threshold:**
+- Gradient norm > 10× median
+- Loss increases >20% within 5k steps
+- >10% of attention weights are NaN or Inf
+
+**Diagnostic Test:**
+- Reduce learning rate by 10× and retry
+- Check if specific window sizes are unstable
+- Visualize attention weights for anomalies
+
+**Mitigation if Detected:**
+- Add gradient clipping (max_norm=1.0)
+- Use layer normalization before attention
+- Warm up window size (start large, gradually reduce)
+- Add attention dropout
+
+### 4. Object Tracking Failure
+
+**Symptom:** Model loses track of objects that move outside local window
+
+**Metrics to Track:**
+- **Object permanence accuracy:** Prediction accuracy for objects that reappear
+- **Multi-object tracking:** Accuracy on tasks requiring tracking multiple objects
+- **Spatial coherence:** Consistency of object positions across rollout steps
+
+**Detection Threshold:**
+- Object permanence accuracy < 60%
+- Tracking accuracy drops >30% when objects move >W pixels
+
+**Diagnostic Test:**
+- Create synthetic task: Object moves linearly, predict position after K steps
+- Vary object velocity and window size
+- Measure tracking accuracy vs. velocity
+
+**Mitigation if Detected:**
+- Use hierarchy-aware windows (give object tokens larger windows)
+- Add position embeddings to help track spatial relationships
+- Implement memory tokens that persist across windows
+
+### 5. Credit Assignment Degradation
+
+**Symptom:** Model fails to associate distant actions with rewards
+
+**Metrics to Track:**
+- **Delayed reward task performance:** Accuracy when reward delayed by K steps
+- **Value prediction error:** Error in predicting long-term returns
+- **Policy gradient variance:** Variance of policy gradients (high variance = poor credit assignment)
+
+**Detection Threshold:**
+- Performance on delayed reward task < 50% of immediate reward baseline
+- Value prediction error increases >2× for K > W
+
+**Diagnostic Test:**
+- Delayed reward task with varying K
+- Plot performance vs. K
+- Window size W should be ≥ K for good performance
+
+**Mitigation if Detected:**
+- Increase window size in value network layers
+- Use dilated attention for value prediction
+- Add auxiliary loss for intermediate rewards
+
+### 6. Computational Efficiency Paradox
+
+**Symptom:** Smaller windows don't actually reduce wall-clock time
+
+**Metrics to Track:**
+- **Theoretical FLOPs:** Expected reduction based on window size
+- **Actual latency:** Measured wall-clock time
+- **GPU utilization:** % of GPU compute used
+- **Memory bandwidth:** Data transfer bottlenecks
+
+**Detection Threshold:**
+- Latency reduction < 50% of theoretical FLOPs reduction
+- GPU utilization < 60%
+
+**Diagnostic Test:**
+- Profile with PyTorch Profiler
+- Identify bottlenecks (memory-bound vs. compute-bound)
+- Compare dense vs. sparse kernel performance
+
+**Mitigation if Detected:**
+- Use optimized sparse attention kernels (e.g., xFormers, Flash Attention)
+- Increase batch size to improve GPU utilization
+- Fuse operations to reduce memory transfers
+- Consider that very small windows may not be hardware-efficient
+
+### 7. Hierarchy Level Collapse
+
+**Symptom:** Hierarchy-aware windows don't differentiate between levels
+
+**Metrics to Track:**
+- **Per-level attention patterns:** Visualize attention for each hierarchy level
+- **Cross-level attention:** Measure attention from level i to level j
+- **Level utilization:** % of tokens at each level that are actively used
+
+**Detection Threshold:**
+- Attention patterns identical across levels (correlation > 0.95)
+- One level receives <5% of total attention
+
+**Diagnostic Test:**
+- Compute attention entropy per level
+- Check if SPARTAN causal graphs distinguish levels [heirarchical-transformer.pdf:2]
+- Visualize token embeddings (should cluster by level)
+
+**Mitigation if Detected:**
+- Increase window size differences between levels
+- Add level-specific position embeddings
+- Regularize to encourage level diversity
+
+### 8. Generalization Failure
+
+**Symptom:** Window size tuned for one environment fails on others
+
+**Metrics to Track:**
+- **Cross-environment performance:** Test window size optimized for Atari on DMControl
+- **Performance variance:** Standard deviation across games/tasks
+- **Optimal window size per environment:** Does it vary significantly?
+
+**Detection Threshold:**
+- Performance drops >20% when transferring to new environment
+- Optimal window size varies by >2× across environments
+
+**Diagnostic Test:**
+- Train on Atari, evaluate on DMControl (zero-shot transfer)
+- Measure performance vs. window size for each environment
+- Check if optimal window correlates with environment properties
+
+**Mitigation if Detected:**
+- Use adaptive window size based on environment features
+- Train with mixed window sizes (curriculum)
+- Implement learned window size selection
+
+## Monitoring Dashboard
+
+### Real-Time Metrics (During Training)
+
+**Panel 1: Training Progress**
+- Loss curves (reconstruction, reward prediction)
+- Gradient norms
+- Learning rate schedule
+
+**Panel 2: Attention Analysis**
+- Attention weight heatmaps (sample rollouts)
+- Effective receptive field over time
+- Attention entropy per layer
+
+**Panel 3: Rollout Quality**
+- Reconstruction error at checkpoints {t₅, t₁₀, t₁₅} [heirarchical-transformer.pdf:3]
+- Reward prediction MAE
+- Rollout divergence rate
+
+**Panel 4: Efficiency Metrics**
+- Steps per second
+- GPU utilization
+- Memory usage
+
+### Post-Training Analysis
+
+**Comparative Analysis:**
+- Performance vs. window size (scatter plot)
+- Pareto frontier (accuracy vs. FLOPs)
+- Per-game breakdown (heatmap)
+
+**Failure Mode Detection:**
+- Long-context degradation curves
+- Object tracking accuracy
+- Credit assignment performance
+
+**Statistical Tests:**
+- Wilcoxon signed-rank test: Each window size vs. baseline
+- Correlation: Window size vs. performance
+- ANOVA: Performance across window size groups
+
+## Experimental Protocol
+
+### Phase 1: Initial Screening (Week 1)
+
+**Objective:** Identify promising window size ranges
+
+**Setup:**
+- 3 Atari games (Pong, Breakout, Seaquest)
+- 1 random seed
+- All 10 variants
+- 100k steps each
+
+**Analysis:**
+- Rank variants by final score
+- Identify top 3 for full evaluation
+- Check for obvious failure modes
+
+**Decision Point:** Proceed with top 3 variants + baseline
+
+### Phase 2: Full Evaluation (Weeks 2-4)
+
+**Objective:** Comprehensive performance assessment
+
+**Setup:**
+- 10 Atari games + Crafter
+- 5 random seeds
+- Top 3 variants + baseline
+- Full 100k steps (Atari) / 1M steps (Crafter)
+
+**Analysis:**
+- Statistical tests (Wilcoxon, effect sizes)
+- Efficiency measurements
+- Learning curves
+
+**Decision Point:** Select best variant for deep dive
+
+### Phase 3: Diagnostic Testing (Week 5)
+
+**Objective:** Understand failure modes and limitations
+
+**Setup:**
+- Best variant from Phase 2
+- All diagnostic tasks (Memory Maze, Delayed Reward, Object Permanence)
+- Varying difficulty levels
+
+**Analysis:**
+- Identify breaking points (context length, delay, etc.)
+- Characterize failure modes
+- Propose mitigations
+
+### Phase 4: Sensitivity Analysis (Week 6)
+
+**Objective:** Test robustness to hyperparameters
+
+**Setup:**
+- Best variant
+- Vary: learning rate (±50%), batch size (±50%), model depth (±2 layers)
+- 3 Atari games, 3 seeds
+
+**Analysis:**
+- Check if window size choice is robust
+- Identify hyperparameter interactions
+
+## Expected Outcomes & Interpretation
+
+### Scenario 1: Sweet Spot Exists (W=128-256)
+
+**Observation:** Medium window sizes achieve 95% of global attention performance with 60% FLOPs reduction
+
+**Interpretation:** Local attention provides efficiency gains without sacrificing long-range modeling
+
+**Recommendation:** Use W=256 as default; combine with hierarchical masking for maximum efficiency
+
+### Scenario 2: Hierarchy Makes Windows Redundant
+
+**Observation:** Local attention provides no benefit when hierarchical masking is active
+
+**Interpretation:** Hierarchical masking already provides sufficient sparsity; local windows over-constrain
+
+**Recommendation:** Use global attention with hierarchical masking; don't combine mechanisms
+
+### Scenario 3: Task-Dependent Optimal Windows
+
+**Observation:** Reactive tasks (Pong) work with W=64; planning tasks (Montezuma) need W=512
+
+**Interpretation:** Optimal window size depends on temporal credit assignment horizon
+
+**Recommendation:** Implement adaptive window size based on task features or learned selection
+
+### Scenario 4: Hierarchical Windows Win
+
+**Observation:** Different window sizes per layer outperform uniform windows
+
+**Interpretation:** Early layers need local features; late layers need global context
+
+**Recommendation:** Use hierarchical window schedule (64 → 256 → 1024 across layers)
+
+## Reproducibility Checklist
+
+- [ ] Pin random seeds for all experiments
+- [ ] Document exact PyTorch/CUDA versions
+- [ ] Provide configuration files for each variant
+- [ ] Log all hyperparameters to Weights & Biases
+- [ ] Save model checkpoints at {25k, 50k, 75k, 100k} steps
+- [ ] Record hardware specifications
+- [ ] Share attention visualization code
+- [ ] Provide scripts to reproduce all figures
+- [ ] Archive raw results (CSV files)
+- [ ] Document any failed runs and reasons
+
+## Sources
+
+This ablation design is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the hierarchical token organization [heirarchical-transformer.pdf:2], long-horizon imagination rollout approach [heirarchical-transformer.pdf:2], reconstruction checkpoints at t ∈ {t₀, t₅, t₁₀} [heirarchical-transformer.pdf:3], evaluation on Atari 100k and Crafter benchmarks [heirarchical-transformer.pdf:3], and planned ablation studies [heirarchical-transformer.pdf:3]
+
+For local attention mechanisms and implementation, I recommend:
+- Beltagy et al. (2020) "Longformer: The Long-Document Transformer" - for hierarchical and dilated window patterns
+- Dao et al. (2022) "FlashAttention: Fast and Memory-Efficient Exact Attention" - for efficient implementation
+- Child et al. (2019) "Generating Long Sequences with Sparse Transformers" - for sparse attention patterns in generative models

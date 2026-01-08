@@ -1,0 +1,80 @@
+Below is a concise, rebuttal-style reviewer summary you can adapt. I assume your paper introduces a federated learning (FL) benchmark with datasets, heterogeneity knobs, and multiple baselines; where my concerns don’t apply, note them as “not applicable.”
+
+Summary of contributions
+- Proposes an FL benchmark and evaluation suite with standardized tasks, multiple training algorithms, and a reporting protocol across accuracy and systems metrics. This problem is timely and important given persistent gaps in measuring heterogeneity, personalization, and reproducibility in FL benchmarks [P1], and the field’s need for rigorous, repeatable evaluation practices [P5].
+
+Major strengths
+- Clear need and scope: A common suite for heterogeneity and personalization is impactful; rigorous per-client evaluation is essential in FL where client distributions diverge [P1].
+- Attention to systems metrics: Tracking rounds, bytes communicated, and wall-clock aids realistic comparisons; reproducible benchmarking frameworks emphasize explicit budgets and standardized runners [P5].
+- Potential extensibility: If the suite exposes configuration knobs (non-IID severity, client sampling rate, stragglers, compute variability) and a clean API for new algorithms/datasets, it can become a community asset [P5].
+
+Major concerns to address (ranked by impact)
+1) Coverage and realism of heterogeneity
+- Please clarify whether you model label- and feature-skew, compute/network heterogeneity, partial participation, and stragglers. Benchmarks that omit these lead to optimistic or misleading conclusions on personalization and fairness [P1]. Include per-client distributions (e.g., median, 10th/90th percentiles) and worst-client metrics, not only macro averages [P1].
+
+2) Personalization and fairness metrics
+- If personalization is a stated goal, include appropriate metrics (e.g., client-level improvements over a global model, calibration, and worst-client accuracy). Motley highlights the need for client-specific evaluations and fairness-aware summaries in heterogeneous settings [P1].
+
+3) Reproducibility and tuning parity
+- Please document multi-seed results with confidence intervals, controlled hyperparameter budgets per method, and fixed random seeds/config registries. Benchopt-style practices (environment capture, config hashing, CI-based runners) materially improve reproducibility and prevent “tuning leakage” [P5].
+
+4) Privacy accounting and robustness
+- If any privacy claims are made (DP or secure aggregation), report epsilon/delta with an explicit accountant, privacy-utility curves, and the effect on worst-client outcomes; reproducibility of DP results is itself a recognized challenge and should be part of evaluation [P2]. DP interacts with heterogeneity; analyses should assess whether DP disproportionately harms minority/rare clients [P4].
+
+5) Scale realism and resource bounds
+- Clarify cross-device vs. cross-silo focus, the number of clients (ideally 1k+ for cross-device), client sampling rate, and compute/communication budgets per round. Without such budgets, comparisons can be confounded by unequal resource use [P5].
+
+6) Baselines and ablations
+- Ensure strong, fairly tuned baselines (e.g., FedAvg, FedProx, SCAFFOLD, personalization baselines) with equivalent compute/comm budgets and explicit hyperparameter sweeps. Ablate heterogeneity severity, participation rate, compression, and personalization components to support claims [P1], [P5].
+
+Missing artifacts and checklist items
+- Code and runners: End-to-end scripts, fixed seeds, YAML configs, and CI-ready runners; environment capture (Docker/Conda lockfiles), hardware specs [P5].
+- Data and partitions: Dataset provenance, licenses, exact partition scripts and non-IID generators; hashes for released splits.
+- Results: Raw per-client metrics and summary statistics (mean±CI, quantiles), training logs, and hyperparameter sweep logs.
+- Fairness and personalization: Client-level reports and worst-client metrics; calibration metrics if applicable [P1].
+- Systems metrics: Bytes up/down per round, number of rounds to a fixed target accuracy, wall-clock, energy estimates (if available) [P5].
+- Privacy/robustness: DP accountant code and parameters (epsilon/delta, noise multiplier, clipping), secure aggregation settings or references; attack scripts and outcomes if robustness is claimed [P2], [P4].
+- Extensibility docs: Minimal example for adding a new algorithm/dataset; benchmark “card” describing scope and known limitations [P5].
+- Licensing: Repo license and dataset licenses made explicit.
+
+Concrete, falsifiable experiments to strengthen the benchmark
+1) Personalization under non-IID severity (heterogeneity sweep)
+- Hypothesis: Personalized FL methods outperform a single global model as label-skew increases, with gains visible in worst-client accuracy [P1].
+- Protocol: Fix model/dataset; vary Dirichlet alpha or per-client class caps; compare global vs. personalized methods at matched comm/compute budgets.
+- Metrics: Per-client accuracy distribution, worst 10% accuracy, calibration error, bytes and rounds.
+- Expected outcome: Personalized methods show increasing advantage as alpha decreases; fairness improves (higher worst-client accuracy) [P1].
+
+2) DP-utility-fairness trade-offs under heterogeneity
+- Hypothesis: DP-SGD in FL degrades worst-client accuracy more than mean accuracy, and the effect intensifies with heterogeneity [P2], [P4].
+- Protocol: Apply client-side or server-side DP at noise multipliers n∈{0.5,1.0,1.5}; run across two heterogeneity settings (alpha=0.1 vs. 1.0) with matched budgets.
+- Metrics: Mean/worst-client accuracy, client-level variance, epsilon/delta from the accountant, comm/compute costs.
+- Expected outcome: As noise increases, mean accuracy declines; worst-client declines faster in more heterogeneous settings [P2], [P4].
+
+3) Partial participation and scale-up stress test
+- Hypothesis: Methods with variance reduction or better client sampling policies maintain target accuracy with fewer rounds under low participation (e.g., 5–10% clients/round).
+- Protocol: Fix 10k clients, vary participation rate p∈{1.0, 0.2, 0.1, 0.05}; compare methods at equal per-round byte budgets.
+- Metrics: Rounds and wall-clock to reach a fixed accuracy, bytes communicated, final fairness metrics.
+- Expected outcome: Algorithms designed to mitigate client-drift reduce round complexity at low p relative to FedAvg.
+
+4) Poisoning/backdoor robustness under secure aggregation
+- Hypothesis: Secure aggregation preserves privacy but does not mitigate poisoning; robust aggregation reduces attack success rate at a modest accuracy cost.
+- Protocol: Inject a small fraction (1–5%) of malicious clients performing a label-flip or backdoor attack; compare FedAvg vs. robust aggregators at matched budgets.
+- Metrics: Attack success rate, clean accuracy, bytes/round.
+- Expected outcome: Robust aggregation substantially lowers attack success; secure aggregation alone does not.
+
+Actionable suggestions for the camera-ready
+- Add a benchmark card detailing heterogeneity knobs, participation regimes, and known limitations [P1], [P5].
+- Release per-client raw metrics and multi-seed logs; include reproducible runners (Docker, configs, CI) and an accountant for any DP results [P2], [P5].
+- Include at least one personalization and one DP-fairness experiment as above, each with confidence intervals and matched budgets [P1], [P2], [P5].
+
+Two literature anchors to position the benchmark
+- Motley: Benchmarking Heterogeneity and Personalization in Federated Learning — http://arxiv.org/abs/2206.09262 [P1]
+- Benchopt: Reproducible, efficient and collaborative optimization benchmarks — http://arxiv.org/abs/2206.13424 [P5]
+
+Citations
+- [P1] Motley: Benchmarking Heterogeneity and Personalization in Federated Learning — http://arxiv.org/abs/2206.09262v6
+- [P2] Epistemic Parity: Reproducibility as an Evaluation Metric for Differential Privacy — http://arxiv.org/abs/2208.12700v3
+- [P4] Differentially Private Federated Learning on Heterogeneous Data — http://arxiv.org/abs/2111.09278v3
+- [P5] Benchopt: Reproducible, efficient and collaborative optimization benchmarks — http://arxiv.org/abs/2206.13424v3
+
+If you share your abstract or main results table, I can tailor this to your specific claims and fill in a precise artifact checklist.
