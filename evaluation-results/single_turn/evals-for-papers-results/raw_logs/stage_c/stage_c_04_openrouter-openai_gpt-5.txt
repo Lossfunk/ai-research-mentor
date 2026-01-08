@@ -1,0 +1,111 @@
+1. Problem framing and goals
+- Objective: Deliver publishable contributions that do not require paid GPUs by focusing on (a) parameter‑efficient methods you can run on free/community compute, (b) rigorous evaluation/reproducibility science, and (c) systematic evidence synthesis. Parameter‑efficient fine‑tuning (PEFT) such as LoRA and QLoRA reduces trainable parameters and memory enough to fit on commodity/limited hardware [1][2][5]. Robust evaluation frameworks like HELM and lm‑evaluation‑harness enable meaningful, comparable results without large training runs [3][6]. Systematic reviews should follow PRISMA to be publishable and citable [4].
+- Concrete 6‑month goals:
+  - Release a “Zero‑Compute PEFT” benchmark and recipes showing how far LoRA/QLoRA can go on free/community GPUs (e.g., Colab/Kaggle) with defensible evaluations [1][2][6].
+  - Produce a PRISMA‑compliant systematic review/meta‑analysis of PEFT performance vs. compute/memory on common NLP tasks [4][5].
+  - Publish a small, high‑quality evaluation suite (data card, scripts, CI) with HELM/lm‑eval integration to lower barriers for other zero‑compute labs [3][6].
+
+2. Experiments
+Experiment 1: QLoRA on free/community GPUs — feasibility and quality
+- Hypothesis: 4‑bit QLoRA on 7B‑class open LLMs can be fine‑tuned for small tasks (e.g., SST‑2, TREC, small instruction sets) within free or community GPU limits (≤1–2 hours per run) while achieving ≥95% of FP16/LoRA baselines [2][5].
+- Setup:
+  - Models: 7B open LLM (license‑permitting), quantized to 4‑bit (NF4) with QLoRA; LoRA rank r∈{4,8}, α∈{8,16}.
+  - Data: Compact supervised tasks (e.g., SST‑2, TREC‑6) and a 20–50k token instruction subset; stratified splits.
+  - Compute: Free/community GPU (e.g., Colab/Kaggle); cap wall‑time and VRAM.
+  - Training: 1–3 epochs, batch size tuned to VRAM, gradient checkpointing.
+- Baselines: Zero‑shot and few‑shot prompting; LoRA in FP16 on the smallest run that fits; published numbers where available [1][2][6].
+- Evaluation metrics: Task accuracy/F1; lm‑evaluation‑harness battery for small tasks; wall‑clock time; peak VRAM; energy proxy (tokens/sec) [6].
+- Expected outcomes: QLoRA reaches within ≤2 points of FP16 LoRA on small tasks, with 4–8× memory reduction and practical run times on free GPUs, consistent with QLoRA reports [2].
+
+Experiment 2: Reproducibility under tight budgets — seed and calibration sensitivity for PEFT
+- Hypothesis: Under constrained compute, variance from random seeds, optimizer choices, and calibration data size (for quantization) materially affects reported gains; standardizing these reduces variance and improves replicability [3][5][6].
+- Setup:
+  - Models/Tasks: Use the best configuration from Exp. 1 on two datasets (e.g., SST‑2, AG News).
+  - Factors: Seeds {0,1,2,3}, LoRA rank {4,8}, learning rate grid (e.g., 1e‑4, 2e‑4), and (if used) activation/weight quantization calibration set sizes {128, 512, 2048}.
+  - Protocol: 12–16 small runs per task (≤1h each) across free/community GPUs; pre‑registered analysis plan.
+- Baselines: Single‑seed “best” run; previously reported LoRA/QLoRA configurations [1][2][5].
+- Evaluation metrics: Mean/SD of accuracy; confidence intervals; delta to baseline vs. cost (runs × minutes); report cards and scripts using lm‑eval [6].
+- Expected outcomes: Show that 30–50% of claimed gains can disappear without seed averaging; provide a minimal “replicable config” that stabilizes results at near‑zero extra compute. This aligns with HELM’s emphasis on robust, transparent evaluation [3].
+
+Experiment 3: PRISMA‑compliant systematic review and meta‑analysis of PEFT
+- Hypothesis: Across published studies, PEFT methods achieve consistent quality–compute trade‑offs that can be quantified via meta‑regression (e.g., accuracy vs. rank, bits, and base‑model size), informing zero‑compute practitioners [4][5].
+- Setup:
+  - Protocol: Register on OSF; use PRISMA 2020 checklist; search arXiv/ACM/ACL with queries combining “LoRA,” “QLoRA,” “parameter‑efficient,” “low‑resource,” “4‑bit,” and benchmark names [4].
+  - Inclusion: Peer‑reviewed and widely cited preprints with clear task metrics and compute footprints.
+  - Data extraction: Task, base model, bits, PEFT config, hardware, epochs, outcomes.
+- Baselines: Narrative reviews without quantitative synthesis.
+- Evaluation metrics: Pooled effect sizes (delta vs full fine‑tuning); heterogeneity (I²); meta‑regression coefficients linking rank/bits to accuracy loss.
+- Expected outcomes: A citable, methods‑rigorous synthesis of PEFT trade‑offs, building on the 2024 PEFT survey yet adding quantitative meta‑analysis and compute‑footprint normalization [5][4].
+
+Experiment 4: HELM/lm‑eval “Zero‑Compute” benchmark kit release
+- Hypothesis: A curated, small‑footprint evaluation kit with standardized preprocessing, seeds, and reporting reduces result variance and accelerates low‑compute research dissemination [3][6].
+- Setup:
+  - Assets: Data cards; scripts to run lm‑eval with fixed seeds; documentation for running on CPU or free GPUs; reproducible Docker.
+  - Scope: 4–6 datasets with small memory footprints (SST‑2, TREC‑6, BoolQ‑subset, AG News‑subset, GSM8K‑mini).
+- Baselines: Ad‑hoc per‑paper evaluation scripts.
+- Evaluation metrics: Inter‑run variance before/after standardization; adoption (stars, forks); CI reproducibility success rate.
+- Expected outcomes: Reduced variance, easier adoption, and transparent reporting aligned with HELM principles [3][6].
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Foundations and protocol
+  - Register PRISMA protocol on OSF; finalize task list and metrics; set up lm‑eval/HELM pipelines; draft “zero‑compute” constraints and reporting template [3][4][6].
+  - Milestone: Public repo skeleton with CI and evaluation scripts.
+- Month 2: Feasibility runs (Exp. 1)
+  - Execute QLoRA fine‑tunes on two tasks across free/community GPUs; document VRAM/time constraints; release initial recipes [2].
+  - Milestone: Technical report showing W4‑QLoRA results within ≤2 points of FP16 LoRA on at least one task.
+- Month 3: Reproducibility grid (Exp. 2)
+  - Run seed/lr/rank and calibration‑size sweeps; compute variance and CIs; codify a “replicable config” [3][5][6].
+  - Milestone: Reproducibility note with averaged results and minimal compute budget.
+- Month 4: Systematic review (Exp. 3)
+  - Full search, screening, extraction; draft meta‑analysis; run sensitivity analyses and meta‑regression [4][5].
+  - Milestone: Preprint of PRISMA‑compliant review with dataset and code.
+- Month 5: Benchmark kit (Exp. 4)
+  - Finalize datasets, Docker, and documentation; integrate HELM module and lm‑eval; add data cards [3][6].
+  - Milestone: v1.0 release; announce to PEFT/open‑source communities.
+- Month 6: Consolidation and writing
+  - Integrate findings; harmonize reporting; prepare two manuscripts (experiments + review) and an artifact appendix.
+  - Milestone: Submit methods paper (zero‑compute PEFT + reproducibility) and PRISMA review; archive all assets.
+
+4. Resources (compute, tools, datasets)
+- Compute
+  - Laptop/CPU for data handling and evaluation; opportunistic free/community GPUs (e.g., Colab/Kaggle). Note: We did not find high‑confidence, citable sources guaranteeing sustained free GPU availability; verify provider terms-of-service and document resource variability. To strengthen evidence, record actual session limits, VRAM, and uptime during runs and include them in the artifact.
+- Tools
+  - Training/PEFT: LoRA/QLoRA implementations in popular libraries [1][2][5].
+  - Evaluation: lm‑evaluation‑harness for standardized metrics [6]; HELM for broader evaluation design and documentation [3].
+  - Review: PRISMA 2020 checklists and templates [4].
+  - Reproducibility: Docker/Conda; GitHub Actions (CPU‑only CI); OSF/Zenodo for data/code archiving.
+- Datasets (small‑footprint)
+  - Classification: SST‑2, TREC‑6, AG News (subsampled).
+  - QA/Reasoning: BoolQ (subset), GSM8K‑mini.
+  - All datasets accompanied by data cards and license checks.
+
+5. Risks and mitigations table
+- Free GPU availability is intermittent; sessions end early
+  - Mitigations: Design sub‑1‑hour runs; automatic checkpointing; resume scripts; keep CPU‑only eval paths. Record resource variability in the paper.
+- Model/license constraints limit what can be fine‑tuned
+  - Mitigations: Choose permissive checkpoints; verify licenses; publish configs without weights when needed.
+- Variance obscures conclusions under tiny budgets
+  - Mitigations: Pre‑register seeds/grids; aggregate over multiple brief runs; report CIs and effect sizes; favor simpler tasks to maintain power [3][6].
+- Evaluation leakage or inconsistent preprocessing
+  - Mitigations: Use lm‑eval canonical loaders; lock seeds and tokenizers; include data cards and checksums [6].
+- Systematic review bias (publication bias, inconsistent reporting)
+  - Mitigations: PRISMA flow diagram; dual screening; risk‑of‑bias assessment; sensitivity analyses (exclude small‑n, preprint‑only) [4].
+- Generalizability beyond small tasks
+  - Mitigations: Clearly scope claims; propose follow‑up with modest grants/compute credits; include guidance for scaling (rank/bit‑width trends) [5].
+
+6. Stretch ideas or follow-up directions
+- Mixed‑precision and adapter search under compute budgets: small bilevel sweeps for per‑layer rank with early stopping; publish a “budgeted PEFT” schedule [5].
+- Data governance contributions: templates and checklists for dataset documentation with concrete examples (data cards, licenses), improving community standards.
+- CPU‑only inference optimization: quantify accuracy vs. latency under quantized CPU backends; contribute kernels or configs.
+- Cross‑task reproducibility: replicate key PEFT results in vision or speech with equally small budgets to test modality transfer.
+
+Sources
+[1] LoRA: Low-Rank Adaptation of Large Language Models — https://arxiv.org/abs/2106.09685
+[2] QLoRA: Efficient Finetuning of Quantized LLMs — https://arxiv.org/abs/2305.14314
+[3] Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110
+[4] PRISMA 2020 explanation and elaboration — https://www.bmj.com/content/bmj/372/bmj.n160.full.pdf
+[5] Parameter-Efficient Fine-Tuning for Large Models (survey, 2024) — https://arxiv.org/abs/2403.14608
+[6] EleutherAI lm-evaluation-harness — https://github.com/EleutherAI/lm-evaluation-harness
+
+Optional next step
+- Greenlight Month 1–2: set up the repo and run two QLoRA feasibility fine‑tunes on free/community GPUs with full logging; in parallel, register the PRISMA protocol and begin literature screening.

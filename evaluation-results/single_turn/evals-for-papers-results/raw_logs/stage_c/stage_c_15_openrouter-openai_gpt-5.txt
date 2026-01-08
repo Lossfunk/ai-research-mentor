@@ -1,0 +1,139 @@
+1. Problem framing and goals
+- Objective: Design and execute a 6-month, human-centered evaluation program for AI legal assistants used by lawyers, law students, and paralegals. The program measures utility, safety, privacy, and reliability during realistic legal tasks, with IRB/ethics oversight and governance artifacts suitable for publication and audit.
+- Target use cases: (a) legal research and case retrieval, (b) drafting (emails, memos, brief sections), (c) citation and quotation verification, (d) issue spotting and risk analysis from fact patterns, (e) summarization of long documents.
+- Human-centered pillars
+  - Utility and productivity: quality of outputs and time savings.
+  - Safety and accuracy: hallucination/citation error rates; harmful or misleading outputs; calibration and abstention.
+  - Trust and usability: task load (NASA-TLX), system usability (SUS), trust calibration vs. overreliance.
+  - Privacy and compliance: handling of sensitive content, logging controls, retention, and data minimization.
+  - Equity and fairness: performance across practitioner segments (experience levels) and task domains (e.g., criminal, family, immigration).
+- IRB/ethics framing
+  - Risk classification: minimal risk behavioral study; no real client data; strictly hypothetical/synthetic materials; no legal advice is provided to participants.
+  - Consent and debrief: explicit notice of model limitations and prohibition on real-client use; debrief summarizes risks of overreliance.
+  - Data protections: de-identification, role-based access, retention limits (e.g., 90 days), and privacy-by-design test environment without vendor data sharing.
+- Success criteria (end of Month 6)
+  - ≥15–25% median time reduction on drafting and research tasks at non-inferior quality (non-inferiority margin ≤0.3 SD on expert rubric).
+  - Hallucinated citation rate ≤5% with verification tooling; false quotation rate ≤2%.
+  - Calibrated confidence: expected calibration error (ECE) ≤0.08; abstention appropriately invoked on ambiguous tasks (target ≥80% precision on “abstain-worthy” items).
+  - Participant-reported usability: SUS ≥70 (acceptable) and NASA-TLX reduced vs. baseline.
+  - Privacy: zero sensitive data replication in outputs during red-team prompts; audit logs show no storage of PII; retention policy enforced.
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+Experiment 1: Legal research with evidence-grounded answers
+- Hypothesis: With integrated retrieval and citation checks, the assistant improves research accuracy and reduces time-to-answer vs. search-only baselines.
+- Setup: Within a secure browser, participants (n≈36; mix of attorneys, law students, paralegals) answer 10 FEVER-style legal queries using: (A) search-only baseline (legal search engine + manual summarization), (B) AI assistant with retrieval and quote-required prompts, (C) assistant + citation checker tool. Latin-square crossover to counterbalance order; 45-min sessions.
+- Baselines: Search-only; assistant without retrieval; keyword BM25 snippet summarization.
+- Metrics: Expert-graded correctness (binary + 1–5 scale), citation veracity (supports/neutral/contradicts), time-to-answer, evidence sufficiency (top-k sources), SUS, NASA-TLX, reliance behaviors (keystroke/hover logs).
+- Expected outcomes: +10–15 points in accuracy over search-only and −20% time; citation veracity ≥95% with checker. Sanity check: shuffling or removing top evidence reduces accuracy more than removing random passages (evidence necessity).
+
+Experiment 2: Drafting quality and hallucination control (memos and emails)
+- Hypothesis: Drafting with the assistant and a mandatory verification checklist yields non-inferior quality and lower hallucination/quotation error than assistant-only.
+- Setup: Participants draft a 400–600 word client email and a 1–2 page research memo from synthetic fact patterns. Arms: (A) control (no AI), (B) assistant-only, (C) assistant + verification checklist (citations/quotes verified, highlighted uncertainties). Double-blind expert scoring with a rubric (structure, legal reasoning, citation accuracy, tone/clarity).
+- Baselines: Control and assistant-only.
+- Metrics: Rubric score (0–100), hallucinated citation rate, false quotation rate, number of unsupported assertions, time, revision count, self-reported confidence, ECE of self-rated confidence vs. rubric correctness.
+- Expected outcomes: Assistant + checklist achieves non-inferior quality to control with ≥20% time savings; hallucination and quotation errors significantly lower than assistant-only.
+
+Experiment 3: Citation and quotation verification stress test
+- Hypothesis: A dedicated citation-verification tool reduces false acceptance of fabricated or misquoted authorities.
+- Setup: Seed 30 responses with a mix of accurate, fabricated, and subtly wrong citations/quotes. Participants review with: (A) no tool, (B) inline verifier (links to sources, line-level quote alignment), (C) strong warning banner + verifier. Randomized controlled design.
+- Baselines: No tool.
+- Metrics: False acceptance rate (FAR), true positive rate (TPR) on errors, review time, confidence miscalibration for accepted errors, user-reported trust.
+- Expected outcomes: FAR drops by ≥50% with verifier; warning further reduces overconfidence on errors.
+
+Experiment 4: Issue spotting and risk identification
+- Hypothesis: Assistant improves recall for issues without inflating spurious issue rate when prompts require uncertainty tagging (must mark speculation).
+- Setup: Three fact patterns (contracts, employment, privacy). Arms: (A) manual checklist, (B) assistant-freeform, (C) assistant with uncertainty tags (e.g., MUST label items as Certain/Likely/Plausible). Experts produce gold issue lists.
+- Baselines: Manual checklist.
+- Metrics: Issue recall@k, precision@k, F1; spurious issue rate; calibration of certainty tags (Brier score); time; downstream expert time to finalize.
+- Expected outcomes: Higher recall@k with similar or better precision when uncertainty tags are enforced; improved calibration vs assistant-freeform.
+
+Experiment 5: Trust, overreliance, and disclaimer placement (A/B)
+- Hypothesis: Prominent, specific disclaimers and visible verification status (e.g., “3 citations verified, 1 unverified”) reduce overreliance without harming utility.
+- Setup: Same tasks as Exp. 1–2 but interface variants: (A) minimal banner, (B) persistent top-of-screen disclaimer + verification counters, (C) just-in-time warnings when confidence low. Between-subjects design.
+- Baselines: Minimal banner.
+- Metrics: Overreliance rate (accepting wrong recommendations without edits), task accuracy/time, perceived trust and appropriateness, abandonment on low-confidence items.
+- Expected outcomes: (B) and (C) reduce overreliance ≥25% with ≤5% utility loss.
+
+Experiment 6: Privacy and confidentiality drills (red team)
+- Hypothesis: With strict privacy controls, the assistant will not regurgitate sensitive data and will avoid storing prompts/outputs beyond configured retention.
+- Setup: Create a seeded vault of “sensitive strings” visible only in prior sessions; attempt prompt injections to elicit leakage; run logs/audits for retention and access; verify that model does not store session content across runs (statelessness). Include role-based access tests and export control.
+- Baselines: None (controls are process-based).
+- Metrics: Sensitive string leakage (0 is target), retention compliance (automatic deletion within policy window), access control violations, encryption and audit coverage.
+- Expected outcomes: Zero leakage; retention and access logs match policy; any leakage triggers root-cause analysis and fix.
+
+Experiment 7: Fairness across users and task domains
+- Hypothesis: Performance differences across user roles (attorney vs. student) and domains are small after controlling for experience and with uncertainty tagging enabled.
+- Setup: Stratified sampling across roles and domains; analyze interaction effects and error types; include accessibility accommodations (screen readers, font scaling).
+- Baselines: Pooled averages.
+- Metrics: Domain-wise accuracy/time gaps; interaction terms; accessible experience ratings; equity indicators (no subgroup falls >1 SD below mean without mitigation).
+- Expected outcomes: Identify domains with gaps (e.g., criminal vs. contracts) and recommend domain-specific guardrails or training data curation.
+
+Sanity checks across studies
+- Randomization and carryover: Latin-square/crossover designs; test order effects.
+- Ground truth stability: A subset of tasks with unambiguous gold answers; inter-rater reliability (Krippendorff’s alpha ≥0.75).
+- Adversarial prompts: Negation/minimal edits flip label when appropriate; translation/back-translation preserves intent.
+- Non-leakage: Accuracy drops when retrieved evidence is removed/shuffled; citation verifier actually alters error rates.
+
+3. Timeline for the next 6 months with milestones
+- Month 1: IRB/ethics and infrastructure
+  - Draft IRB protocol: study purpose, minimal-risk classification, consent, debrief, risks (overreliance, confidentiality), compensation, inclusion/exclusion (licensed vs. trainees), data handling plan, incident response.
+  - Secure environment: disable vendor training on logs, enforce retention caps, role-based access, audit logging, encryption at rest/in transit.
+  - Milestones: IRB submitted; DMP finalized; testbed MVP; pilot tasks scripted; expert rubric drafts.
+- Month 2: Pilot and rubric validation
+  - Run small pilot (n=8–10) on Exp. 1–2; refine prompts, rubrics, and logging; measure inter-rater reliability; calibrate time budgets.
+  - Milestones: Pilot report; rubrics with reliability ≥0.75; finalized task bank; risk register v0.1.
+- Month 3: Core utility and drafting studies
+  - Execute Exp. 1–2 at target scale; implement citation checker.
+  - Milestones: Interim analysis of accuracy/time/hallucinations; usability surveys (SUS, NASA-TLX); interface backlog.
+- Month 4: Verification stress test and issue spotting
+  - Run Exp. 3–4; add uncertainty tagging; start fairness slice analysis.
+  - Milestones: Citation FAR reduction results; issue spotting calibration and precision/recall report; risk register update.
+- Month 5: Trust calibration and privacy drills
+  - Run Exp. 5 (disclaimer placement) and Exp. 6 (privacy drills); complete audit of retention/access controls.
+  - Milestones: Overreliance reduction findings; privacy compliance checklist; incident playbook finalized.
+- Month 6: Consolidation and guidance
+  - Complete Exp. 7 fairness analysis; triangulate findings; produce deployment guidelines, model/behavior cards, and governance package (consent templates, IRB approval letter, DMP, audit summaries).
+  - Milestones: Public preprint + artifacts; practitioner checklist; internal decision memo for go/no-go or limited pilot.
+
+4. Resources (compute, tools, datasets)
+- Participants: 30–60 total (balanced across roles and domains). Compensation: market-rate hourly or per-task.
+- Personnel: PI, IRB liaison, two legal subject-matter experts for grading, HCI researcher, data engineer, privacy officer.
+- Infrastructure/tools
+  - Secure testing environment: VPC-hosted web app with role-based access; logging/metrics; redaction and export tools.
+  - Evaluation: Expert grading dashboards; SUS and NASA-TLX instruments; calibration metrics (ECE/Brier); A/B testing framework.
+  - Verification: Citation/quote matcher with authority databases (Caselaw Access Project, CourtListener/RECAP); plagiarism and duplication checks.
+  - Datasets/materials: Synthetic fact patterns; public-domain opinions/statutes; domain-specific corpora for retrieval (no client data).
+  - Governance artifacts: Consent forms, debrief template, DMP, incident response SOP, retention policy, access reviews.
+
+5. Risks and mitigations table
+- Unauthorized practice of law (UPL) or perceived advice
+  - Mitigation: Explicit consent and instructions; synthetic scenarios only; disclaimers; no public deployment; legal counsel review of materials.
+- Overreliance leading to harmful behavior
+  - Mitigation: Prominent disclaimers; uncertainty tagging; verification tooling; evaluate and publish overreliance metrics; debrief emphasizes limitations.
+- Privacy breaches or sensitive data leakage
+  - Mitigation: No real client data; red-team drills; strict retention and access controls; periodic audits; immediate containment and reporting plan.
+- Bias in participant sampling and rubric grading
+  - Mitigation: Stratified recruiting; double-blind grading; inter-rater calibration; pre-registered analysis plan.
+- Hallucination and misquotation not adequately captured
+  - Mitigation: Dedicated stress test with seeded errors; expert spot checks; automated quote alignment.
+- IRB delays or conditional approval
+  - Mitigation: Early submission with thorough risk analysis; parallel development of non-human automated components; contingency pilot with internal staff while awaiting approval.
+- Vendor policy changes or model drift
+  - Mitigation: Version pinning; snapshot models; regression tests; drift monitoring; document model/version in all artifacts.
+
+6. Stretch ideas or follow-up directions
+- Field pilot in a sandbox: Limited deployment in a law clinic with parallel human review; collect operational metrics and safety incidents.
+- Comparative study of retrieval sources: Open legal corpora vs. commercial databases (if access available) on citation accuracy and coverage.
+- Accessibility and inclusivity: Evaluate performance for screen-reader users; multilingual legal scenarios; evaluate fairness across jurisdictions.
+- Explainability UX: Test selective disclosure of reasoning chains vs. hidden chains + verified citations on trust and accuracy.
+
+Citations
+No sources found for human-centered evaluation standards specific to AI legal assistants due to web-search tool limitations. To gather authoritative references, we will run targeted searches such as:
+- “legal AI human-centered evaluation study lawyers SUS NASA-TLX arXiv”
+- “AI legal assistants hallucination citation verification court sanctions”
+- “LegalBench human evaluation user study”
+- “LexGLUE CaseHOLD benchmark human assessment reliability”
+We will prioritize peer-reviewed HCI/legal-tech venues, bar association guidance on AI use (competence/confidentiality), and empirical studies on lawyer–AI collaboration.
+
+Optional next step
+- Approve Month 1 IRB packet and security setup; we will deliver the IRB submission, consent/debrief drafts, secure testbed MVP, and pilot task/rubric materials within two weeks.

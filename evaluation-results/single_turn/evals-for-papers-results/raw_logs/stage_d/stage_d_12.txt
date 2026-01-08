@@ -1,0 +1,96 @@
+Below is a concrete plan to replace the base model with a committee of smaller open‑weight models and to evaluate agreement, coverage, and regressions relative to the original Hierarchical Transformer.
+
+Context from the attached doc
+- The original evaluation emphasizes reporting rollout compute cost, rollout error, and final RL performance; it also plans ablations of hierarchical masking, causal graph guidance, and uncertainty‑based masking [heirarchical-transformer.pdf:3]. We’ll keep those core metrics and add agreement/coverage analyses on top to ensure compatibility with the project’s stated evaluation goals [heirarchical-transformer.pdf:3].
+
+How to swap the base model
+- Committee: K smaller open‑weight models, each trained (or fine‑tuned) identically on the same world‑model/dynamics task as the original base, but with diversity via different seeds and/or bootstrap resampling.
+- Compatibility: use the same tokenizer, output head, and training objective as the original base. Distill or adapt where necessary so that outputs are in the same space (e.g., next‑token logits for latent states or action distributions).
+- Aggregation options (evaluate as ablations):
+  - Logit averaging (mean of pre‑softmax logits) vs probability averaging (mean of softmaxes).
+  - Weighted averaging via per‑member temperature or learned gates (trained on a held‑out calibration set).
+  - Selective prediction (abstain when disagreement/uncertainty exceeds a threshold), which supports risk‑coverage evaluation [P2].
+
+Evaluation dimensions and metrics
+1) Agreement with the original base
+- Distributional agreement:
+  - Mean symmetric KL divergence between the original base distribution p0 and committee distribution pC over next‑state or action tokens.
+  - JS divergence (bounded) for interpretability.
+- Decision agreement:
+  - Exact match rate for argmax actions/selections.
+  - McNemar’s test on paired decisions to test if the disagreement rate differs significantly.
+- Rank/score agreement:
+  - Spearman/Pearson correlation between value estimates, log‑likelihoods, or trajectory scores when both produce scalars.
+
+2) Coverage and calibration (selective prediction)
+- Selective prediction and risk‑coverage: construct an uncertainty score U(x) (e.g., predictive entropy or variance across committee members), abstain when U(x) exceeds a threshold, and trace the risk‑coverage curve; report area under risk‑coverage curve and minimum risk at fixed coverage levels. Conformal methods can provide finite‑sample coverage guarantees and principled set sizes for classification or regression; for classification, evaluate set‑size vs error trade‑offs; for regression/continuous latent states, evaluate interval widths vs empirical coverage [P2].
+- Calibration metrics:
+  - ECE/MCE (expected/maximum calibration error) on predictive probabilities.
+  - Brier score and NLL.
+- Coverage under OOD shifts: evaluate coverage and calibration on held‑out OOD scenarios (see Experiment 3), where ensembles often yield more reliable abstention behavior (posed as conjecture to be tested).
+
+3) Regressions vs the original model (primary project metrics)
+- Preserve the project’s core metrics: rollout compute cost, rollout error, and final RL performance [heirarchical-transformer.pdf:3].
+  - Rollout compute cost: tokens/sec or wall‑clock per rollout horizon; report committee overhead vs baseline [heirarchical-transformer.pdf:3].
+  - Rollout error: per‑step predictive error (e.g., NLL, cross‑entropy, or MSE in latent space) and compounded rollout error over horizon H [heirarchical-transformer.pdf:3].
+  - Final RL performance: average episodic return across seeds; learning curves (sample efficiency), and stability metrics [heirarchical-transformer.pdf:3].
+- Statistical comparisons:
+  - Non‑inferiority/equivalence tests (TOST) with pre‑registered deltas (e.g., allow ≤1% relative loss in return, ≤5% increase in compute), across ≥5 seeds.
+  - Paired bootstrap CIs over trajectories for rollout error differences.
+
+4) Ablations and controls (aligns with the paper’s ablations)
+- Vary K (committee size) and per‑member size to sweep compute budgets and trace accuracy–compute frontiers [heirarchical-transformer.pdf:3].
+- Aggregator type: logit vs probability averaging; weighted averaging vs learned gates; selective prediction thresholds.
+- Hierarchical masking and uncertainty‑based masking toggles: check if uncertainty gating interacts with the hierarchy as hypothesized [heirarchical-transformer.pdf:3].
+
+Three+ concrete, falsifiable experiments
+Experiment 1: Non‑inferiority on project’s primary metrics
+- Hypothesis: The committee is non‑inferior to the original base on final RL performance and rollout error under a fixed compute budget.
+- Variables:
+  - Independent: model type (original base vs committee), committee size K ∈ {3, 5}, aggregator type (logit vs probability averaging).
+  - Controlled: training data, tokenizer, rollout horizon, environment seeds, evaluation budget.
+- Metrics: final RL return and rollout error (primary), rollout compute cost (secondary) [heirarchical-transformer.pdf:3].
+- Test: TOST non‑inferiority with margins (pre‑register: ≤1% relative drop in return; ≤5% increase in rollout compute; ≤1% increase in rollout error). 5–10 seeds; paired tests per seed.
+- Expected outcome (to be tested): Committee matches return and rollout error while slightly increasing compute; failure would indicate regressions or poor aggregation settings.
+
+Experiment 2: Agreement analysis vs original base
+- Hypothesis: The committee’s predictions agree with the original base on ≥95% of high‑confidence states, and divergences concentrate in states the original base is uncertain about.
+- Variables: aggregator type; confidence threshold on the original base (e.g., max prob ≥0.9).
+- Metrics: decision agreement rate; mean JS divergence; McNemar’s test p‑value on paired decisions; stratified by original base confidence bins.
+- Procedure: Evaluate per‑state next‑token/action distribution on a large held‑out dataset; compute metrics globally and by bins.
+- Expected outcome: Agreement ≥95% in high‑confidence bins; meaningful divergences in low‑confidence bins. If not observed, the committee may be miscalibrated or overly smooth.
+
+Experiment 3: Risk‑coverage and conformal coverage under shifts
+- Hypothesis: The committee achieves better risk‑coverage trade‑offs and more stable coverage under OOD shifts than the original base (with selective prediction). Use conformal prediction to target 90% coverage and test realized coverage [P2].
+- Variables: in‑distribution vs OOD splits; abstention thresholds; conformal calibration sets drawn from ID vs slight domain shifts.
+- Metrics: risk‑coverage curves and AURC; realized conformal coverage at target levels (e.g., 80/90/95%); set sizes/interval widths; ECE/NLL calibration.
+- Procedure: Define 2–3 OOD conditions relevant to the environment (e.g., novel object combinations, altered dynamics parameters); run selective prediction and conformal calibration with and without refitting on shifted calibration sets.
+- Expected outcome: Committee yields lower risk at matched coverage and smaller coverage violations on OOD. If not, ensembles provide no coverage advantage in this setting.
+
+Experiment 4: Hierarchical + uncertainty masking synergy
+- Hypothesis: Using committee uncertainty for masking/gating in the hierarchical imagination reduces compounded rollout error over horizon H without harming final RL return [heirarchical-transformer.pdf:3].
+- Variables: uncertainty‑based masking on/off; masking threshold; committee size K.
+- Metrics: compounded rollout error vs horizon; final RL return; compute overhead (due to selective expansions) [heirarchical-transformer.pdf:3].
+- Procedure: Integrate a gate that prunes low‑confidence branches (by ensemble entropy or variance). Compare to the paper’s hierarchical masking baseline.
+- Expected outcome: Reduced long‑horizon error and equal or improved returns; if returns regress, the masking threshold is too aggressive.
+
+Practical details to ensure rigor
+- Data and seeds: Pre‑register train/val/test splits; ≥5 seeds for RL runs; log environment seeds and evaluation randomness.
+- Calibration: Temperature‑scale the committee using a held‑out calibration set; compare with uncalibrated outputs.
+- Diversity: Induce committee diversity via different seeds and/or bootstrapped subsamples; report diversity proxy (mean pairwise KL).
+- Reporting (aligning with the paper): Always report rollout compute cost, rollout error, and final RL performance, and provide ablations for hierarchical and uncertainty‑based masking to mirror the project’s evaluation plan [heirarchical-transformer.pdf:3].
+
+What to watch for
+- Compute parity: When comparing to the original base, create matched‑compute settings (e.g., reduce per‑member size or rollout frequency) to avoid conflating gains with more FLOPs [heirarchical-transformer.pdf:3].
+- Distribution mismatch: If OOD splits are severe, conformal coverage can degrade unless recalibrated on data reflecting the shift; test both with and without recalibration [P2].
+- Aggregator sensitivity: Logit vs probability averaging can change sharpness (logit averaging tends to be sharper); report calibration and NLL to detect over/under‑confidence.
+
+Key takeaways
+- Keep the project’s primary metrics central (rollout compute cost, rollout error, final RL return), then add agreement and coverage layers to detect subtle behavior changes [heirarchical-transformer.pdf:3].
+- Use selective prediction and conformal coverage to quantify coverage with risk‑coverage curves and finite‑sample guarantees [P2].
+- Pre‑register non‑inferiority margins and run paired tests to detect regressions reliably.
+
+Citations
+- [heirarchical-transformer.pdf] Sparse Hierarchical Imagination for Efficient Transformer World Models — (attachment)
+- [P2] Selection and Aggregation of Conformal Prediction Sets — http://arxiv.org/abs/2104.13871v3
+- Lakshminarayanan et al., 2017. Simple and Scalable Predictive Uncertainty Estimation using Deep Ensembles — https://arxiv.org/abs/1612.01474

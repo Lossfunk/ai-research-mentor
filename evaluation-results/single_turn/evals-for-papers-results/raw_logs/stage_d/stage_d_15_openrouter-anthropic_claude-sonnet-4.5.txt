@@ -1,0 +1,1929 @@
+Based on the attached paper, I'll design a comprehensive framework to replace hand-designed hierarchy with automatically learned structure and evaluate it against SHI's approach.
+
+## Automatically Learned Hierarchical Structure
+
+### 1. Clustering-Based Hierarchy Learning
+
+```python
+class AutomaticHierarchyLearning:
+    """
+    Learn hierarchical structure automatically from data using clustering.
+    
+    Original SHI: Learns hierarchy end-to-end with world model [heirarchical-transformer.pdf:2]
+    Automatic: Discovers hierarchy through unsupervised clustering
+    
+    Methods:
+    1. Hierarchical clustering (agglomerative, divisive)
+    2. Spectral clustering
+    3. Deep clustering (VAE, contrastive learning)
+    4. Graph-based clustering (community detection)
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # Clustering methods
+        self.methods = {
+            'hierarchical': HierarchicalClustering(config),
+            'spectral': SpectralClustering(config),
+            'deep': DeepClustering(config),
+            'graph': GraphClustering(config)
+        }
+        
+        # Selected method
+        self.method = self.methods[config.get('method', 'hierarchical')]
+        
+    def learn_hierarchy(self, embeddings, num_levels=3):
+        """
+        Learn hierarchical structure from token embeddings.
+        
+        Args:
+            embeddings: [N, D] token embeddings
+            num_levels: Number of hierarchy levels (default: 3)
+        
+        Returns:
+            hierarchy_assignments: [N] cluster assignments per level
+            cluster_tree: Hierarchical cluster structure
+            cluster_quality: Quality metrics for clusters
+        """
+        return self.method.fit(embeddings, num_levels)
+
+class HierarchicalClustering:
+    """
+    Hierarchical agglomerative clustering for hierarchy discovery.
+    
+    Approach:
+    1. Start with each token as singleton cluster
+    2. Iteratively merge most similar clusters
+    3. Cut dendrogram at different heights for different levels
+    """
+    def __init__(self, config):
+        self.config = config
+        self.linkage_method = config.get('linkage', 'ward')
+        self.distance_metric = config.get('distance', 'euclidean')
+        
+    def fit(self, embeddings, num_levels=3):
+        """
+        Fit hierarchical clustering.
+        """
+        from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+        from scipy.spatial.distance import pdist
+        
+        # Compute pairwise distances
+        distances = pdist(embeddings, metric=self.distance_metric)
+        
+        # Perform hierarchical clustering
+        linkage_matrix = linkage(distances, method=self.linkage_method)
+        
+        # Cut dendrogram at different heights for different levels
+        hierarchy_assignments = {}
+        
+        # Determine cut heights for each level
+        # Level 0 (coarse): Few large clusters
+        # Level 1 (medium): Moderate number of clusters
+        # Level 2 (fine): Many small clusters
+        
+        num_clusters_per_level = self._determine_num_clusters(
+            embeddings.shape[0], num_levels
+        )
+        
+        for level in range(num_levels):
+            n_clusters = num_clusters_per_level[level]
+            
+            # Cut dendrogram
+            clusters = fcluster(
+                linkage_matrix,
+                n_clusters,
+                criterion='maxclust'
+            )
+            
+            # Map to hierarchy level (0 = coarse, 2 = fine)
+            # Invert: Level 0 should have fewest clusters
+            hierarchy_level = num_levels - 1 - level
+            hierarchy_assignments[hierarchy_level] = clusters - 1  # 0-indexed
+        
+        # Build cluster tree
+        cluster_tree = self._build_cluster_tree(
+            linkage_matrix, hierarchy_assignments, num_levels
+        )
+        
+        # Compute cluster quality
+        cluster_quality = self._compute_cluster_quality(
+            embeddings, hierarchy_assignments
+        )
+        
+        return hierarchy_assignments, cluster_tree, cluster_quality
+    
+    def _determine_num_clusters(self, n_samples, num_levels):
+        """
+        Determine number of clusters for each level.
+        
+        Strategy: Exponential spacing
+        - Level 0 (coarse): sqrt(n_samples) / 4
+        - Level 1 (medium): sqrt(n_samples) / 2
+        - Level 2 (fine): sqrt(n_samples)
+        """
+        base_clusters = int(np.sqrt(n_samples))
+        
+        num_clusters = {}
+        for level in range(num_levels):
+            # Exponential spacing
+            factor = 2 ** (num_levels - 1 - level)
+            num_clusters[level] = max(2, base_clusters // factor)
+        
+        return num_clusters
+    
+    def _build_cluster_tree(self, linkage_matrix, hierarchy_assignments, num_levels):
+        """
+        Build hierarchical cluster tree.
+        """
+        tree = {
+            'linkage_matrix': linkage_matrix,
+            'levels': hierarchy_assignments,
+            'num_levels': num_levels
+        }
+        
+        # Build parent-child relationships
+        tree['parent_child'] = {}
+        
+        for level in range(num_levels - 1):
+            parent_level = level
+            child_level = level + 1
+            
+            parent_clusters = hierarchy_assignments[parent_level]
+            child_clusters = hierarchy_assignments[child_level]
+            
+            # Map each parent cluster to its children
+            parent_to_children = {}
+            
+            for parent_id in np.unique(parent_clusters):
+                # Find tokens in this parent cluster
+                parent_mask = (parent_clusters == parent_id)
+                
+                # Find child clusters for these tokens
+                children = np.unique(child_clusters[parent_mask])
+                
+                parent_to_children[parent_id] = children.tolist()
+            
+            tree['parent_child'][level] = parent_to_children
+        
+        return tree
+    
+    def _compute_cluster_quality(self, embeddings, hierarchy_assignments):
+        """
+        Compute cluster quality metrics.
+        
+        Metrics:
+        - Silhouette score (higher = better separated)
+        - Davies-Bouldin index (lower = better)
+        - Calinski-Harabasz index (higher = better)
+        """
+        from sklearn.metrics import (
+            silhouette_score,
+            davies_bouldin_score,
+            calinski_harabasz_score
+        )
+        
+        quality = {}
+        
+        for level, clusters in hierarchy_assignments.items():
+            # Skip if only one cluster
+            if len(np.unique(clusters)) <= 1:
+                quality[level] = {
+                    'silhouette': 0.0,
+                    'davies_bouldin': float('inf'),
+                    'calinski_harabasz': 0.0
+                }
+                continue
+            
+            quality[level] = {
+                'silhouette': silhouette_score(embeddings, clusters),
+                'davies_bouldin': davies_bouldin_score(embeddings, clusters),
+                'calinski_harabasz': calinski_harabasz_score(embeddings, clusters)
+            }
+        
+        return quality
+
+class SpectralClustering:
+    """
+    Spectral clustering for hierarchy discovery.
+    
+    Approach:
+    1. Construct affinity graph from embeddings
+    2. Compute graph Laplacian
+    3. Perform eigendecomposition
+    4. Cluster in spectral space
+    """
+    def __init__(self, config):
+        self.config = config
+        self.affinity = config.get('affinity', 'rbf')
+        self.n_neighbors = config.get('n_neighbors', 10)
+        
+    def fit(self, embeddings, num_levels=3):
+        """
+        Fit spectral clustering.
+        """
+        from sklearn.cluster import SpectralClustering as SKLearnSpectral
+        
+        hierarchy_assignments = {}
+        
+        # Determine number of clusters per level
+        num_clusters_per_level = self._determine_num_clusters(
+            embeddings.shape[0], num_levels
+        )
+        
+        for level in range(num_levels):
+            n_clusters = num_clusters_per_level[level]
+            
+            # Spectral clustering
+            spectral = SKLearnSpectral(
+                n_clusters=n_clusters,
+                affinity=self.affinity,
+                n_neighbors=self.n_neighbors,
+                assign_labels='kmeans'
+            )
+            
+            clusters = spectral.fit_predict(embeddings)
+            
+            # Map to hierarchy level
+            hierarchy_level = num_levels - 1 - level
+            hierarchy_assignments[hierarchy_level] = clusters
+        
+        # Build cluster tree (simplified - no true hierarchy)
+        cluster_tree = {
+            'levels': hierarchy_assignments,
+            'num_levels': num_levels,
+            'method': 'spectral'
+        }
+        
+        # Compute quality
+        cluster_quality = self._compute_cluster_quality(
+            embeddings, hierarchy_assignments
+        )
+        
+        return hierarchy_assignments, cluster_tree, cluster_quality
+    
+    def _determine_num_clusters(self, n_samples, num_levels):
+        """Determine number of clusters per level."""
+        base_clusters = int(np.sqrt(n_samples))
+        
+        num_clusters = {}
+        for level in range(num_levels):
+            factor = 2 ** (num_levels - 1 - level)
+            num_clusters[level] = max(2, base_clusters // factor)
+        
+        return num_clusters
+    
+    def _compute_cluster_quality(self, embeddings, hierarchy_assignments):
+        """Compute cluster quality metrics."""
+        from sklearn.metrics import silhouette_score
+        
+        quality = {}
+        
+        for level, clusters in hierarchy_assignments.items():
+            if len(np.unique(clusters)) <= 1:
+                quality[level] = {'silhouette': 0.0}
+                continue
+            
+            quality[level] = {
+                'silhouette': silhouette_score(embeddings, clusters)
+            }
+        
+        return quality
+
+class DeepClustering:
+    """
+    Deep clustering using VAE or contrastive learning.
+    
+    Approach:
+    1. Train VAE to learn latent representations
+    2. Cluster in latent space
+    3. Optionally: Joint training of VAE + clustering
+    """
+    def __init__(self, config):
+        self.config = config
+        
+        # VAE for learning representations
+        self.vae = VAEClustering(
+            input_dim=config.get('input_dim', 512),
+            latent_dim=config.get('latent_dim', 64),
+            num_levels=config.get('num_levels', 3)
+        )
+        
+    def fit(self, embeddings, num_levels=3):
+        """
+        Fit deep clustering.
+        """
+        # Train VAE
+        self.vae.train(embeddings, num_epochs=100)
+        
+        # Get latent representations
+        latent = self.vae.encode(embeddings)
+        
+        # Cluster in latent space
+        from sklearn.cluster import KMeans
+        
+        hierarchy_assignments = {}
+        
+        num_clusters_per_level = self._determine_num_clusters(
+            embeddings.shape[0], num_levels
+        )
+        
+        for level in range(num_levels):
+            n_clusters = num_clusters_per_level[level]
+            
+            # K-means in latent space
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+            clusters = kmeans.fit_predict(latent)
+            
+            hierarchy_level = num_levels - 1 - level
+            hierarchy_assignments[hierarchy_level] = clusters
+        
+        # Build cluster tree
+        cluster_tree = {
+            'levels': hierarchy_assignments,
+            'num_levels': num_levels,
+            'method': 'deep',
+            'vae': self.vae
+        }
+        
+        # Compute quality
+        cluster_quality = self._compute_cluster_quality(
+            latent, hierarchy_assignments
+        )
+        
+        return hierarchy_assignments, cluster_tree, cluster_quality
+    
+    def _determine_num_clusters(self, n_samples, num_levels):
+        """Determine number of clusters per level."""
+        base_clusters = int(np.sqrt(n_samples))
+        
+        num_clusters = {}
+        for level in range(num_levels):
+            factor = 2 ** (num_levels - 1 - level)
+            num_clusters[level] = max(2, base_clusters // factor)
+        
+        return num_clusters
+    
+    def _compute_cluster_quality(self, embeddings, hierarchy_assignments):
+        """Compute cluster quality metrics."""
+        from sklearn.metrics import silhouette_score
+        
+        quality = {}
+        
+        for level, clusters in hierarchy_assignments.items():
+            if len(np.unique(clusters)) <= 1:
+                quality[level] = {'silhouette': 0.0}
+                continue
+            
+            quality[level] = {
+                'silhouette': silhouette_score(embeddings, clusters)
+            }
+        
+        return quality
+
+class VAEClustering(nn.Module):
+    """
+    Variational Autoencoder for clustering.
+    """
+    def __init__(self, input_dim, latent_dim, num_levels):
+        super().__init__()
+        
+        # Encoder
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU()
+        )
+        
+        self.fc_mu = nn.Linear(128, latent_dim)
+        self.fc_logvar = nn.Linear(128, latent_dim)
+        
+        # Decoder
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, input_dim)
+        )
+        
+    def encode(self, x):
+        """Encode to latent space."""
+        h = self.encoder(x)
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
+        return mu, logvar
+    
+    def reparameterize(self, mu, logvar):
+        """Reparameterization trick."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+    
+    def decode(self, z):
+        """Decode from latent space."""
+        return self.decoder(z)
+    
+    def forward(self, x):
+        """Forward pass."""
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        recon = self.decode(z)
+        return recon, mu, logvar
+    
+    def train(self, data, num_epochs=100):
+        """Train VAE."""
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        
+        data_tensor = torch.FloatTensor(data)
+        
+        for epoch in range(num_epochs):
+            # Forward pass
+            recon, mu, logvar = self.forward(data_tensor)
+            
+            # Compute loss
+            recon_loss = F.mse_loss(recon, data_tensor, reduction='sum')
+            kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+            
+            loss = recon_loss + kld_loss
+            
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            if (epoch + 1) % 10 == 0:
+                print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}")
+
+class GraphClustering:
+    """
+    Graph-based clustering using community detection.
+    
+    Approach:
+    1. Construct k-NN graph from embeddings
+    2. Detect communities using Louvain or similar
+    3. Hierarchical community detection for multiple levels
+    """
+    def __init__(self, config):
+        self.config = config
+        self.k_neighbors = config.get('k_neighbors', 10)
+        
+    def fit(self, embeddings, num_levels=3):
+        """
+        Fit graph clustering.
+        """
+        import networkx as nx
+        from sklearn.neighbors import kneighbors_graph
+        
+        # Construct k-NN graph
+        knn_graph = kneighbors_graph(
+            embeddings,
+            n_neighbors=self.k_neighbors,
+            mode='connectivity',
+            include_self=False
+        )
+        
+        # Convert to NetworkX graph
+        G = nx.from_scipy_sparse_array(knn_graph)
+        
+        # Hierarchical community detection
+        hierarchy_assignments = {}
+        
+        # Use Louvain for multi-level detection
+        import community as community_louvain
+        
+        # Level 0 (coarse): Low resolution
+        partition_coarse = community_louvain.best_partition(
+            G, resolution=0.5
+        )
+        hierarchy_assignments[0] = np.array([
+            partition_coarse[i] for i in range(len(embeddings))
+        ])
+        
+        # Level 1 (medium): Medium resolution
+        partition_medium = community_louvain.best_partition(
+            G, resolution=1.0
+        )
+        hierarchy_assignments[1] = np.array([
+            partition_medium[i] for i in range(len(embeddings))
+        ])
+        
+        # Level 2 (fine): High resolution
+        partition_fine = community_louvain.best_partition(
+            G, resolution=2.0
+        )
+        hierarchy_assignments[2] = np.array([
+            partition_fine[i] for i in range(len(embeddings))
+        ])
+        
+        # Build cluster tree
+        cluster_tree = {
+            'levels': hierarchy_assignments,
+            'num_levels': num_levels,
+            'method': 'graph',
+            'graph': G
+        }
+        
+        # Compute quality
+        cluster_quality = self._compute_cluster_quality(
+            embeddings, hierarchy_assignments
+        )
+        
+        return hierarchy_assignments, cluster_tree, cluster_quality
+    
+    def _compute_cluster_quality(self, embeddings, hierarchy_assignments):
+        """Compute cluster quality metrics."""
+        from sklearn.metrics import silhouette_score
+        
+        quality = {}
+        
+        for level, clusters in hierarchy_assignments.items():
+            if len(np.unique(clusters)) <= 1:
+                quality[level] = {'silhouette': 0.0}
+                continue
+            
+            quality[level] = {
+                'silhouette': silhouette_score(embeddings, clusters),
+                'modularity': self._compute_modularity(clusters)
+            }
+        
+        return quality
+    
+    def _compute_modularity(self, clusters):
+        """Compute modularity of clustering."""
+        # Simplified modularity computation
+        # Full implementation would use graph structure
+        return 0.5  # Placeholder
+```
+
+### 2. Stability Evaluation
+
+```python
+class StabilityEvaluation:
+    """
+    Evaluate stability of learned hierarchical structure.
+    
+    Stability measures:
+    1. Temporal stability (consistency over time)
+    2. Perturbation stability (robustness to noise)
+    3. Subsample stability (consistency across data subsets)
+    4. Cross-validation stability
+    """
+    def __init__(self):
+        pass
+    
+    def evaluate_temporal_stability(self, hierarchy_learner, data_stream, window_size=1000):
+        """
+        Evaluate stability of hierarchy over time.
+        
+        Method:
+        1. Learn hierarchy on sliding windows
+        2. Measure consistency between consecutive windows
+        3. Compute stability metrics
+        """
+        hierarchies = []
+        timestamps = []
+        
+        # Collect hierarchies over time
+        for t, window_data in enumerate(self._sliding_windows(data_stream, window_size)):
+            # Learn hierarchy on this window
+            embeddings = self._extract_embeddings(window_data)
+            hierarchy, _, _ = hierarchy_learner.learn_hierarchy(embeddings)
+            
+            hierarchies.append(hierarchy)
+            timestamps.append(t)
+        
+        # Compute pairwise stability
+        stability_scores = []
+        
+        for i in range(len(hierarchies) - 1):
+            h1 = hierarchies[i]
+            h2 = hierarchies[i + 1]
+            
+            # Measure consistency
+            consistency = self._measure_hierarchy_consistency(h1, h2)
+            stability_scores.append(consistency)
+        
+        # Aggregate statistics
+        temporal_stability = {
+            'mean_stability': np.mean(stability_scores),
+            'std_stability': np.std(stability_scores),
+            'min_stability': np.min(stability_scores),
+            'max_stability': np.max(stability_scores),
+            'stability_over_time': stability_scores,
+            'interpretation': self._interpret_stability(np.mean(stability_scores))
+        }
+        
+        return temporal_stability
+    
+    def evaluate_perturbation_stability(self, hierarchy_learner, embeddings, num_perturbations=10, noise_level=0.1):
+        """
+        Evaluate stability under perturbations.
+        
+        Method:
+        1. Learn hierarchy on original data
+        2. Add noise and re-learn hierarchy
+        3. Measure consistency
+        """
+        # Learn baseline hierarchy
+        baseline_hierarchy, _, _ = hierarchy_learner.learn_hierarchy(embeddings)
+        
+        stability_scores = []
+        
+        for _ in range(num_perturbations):
+            # Add Gaussian noise
+            noise = np.random.randn(*embeddings.shape) * noise_level
+            perturbed_embeddings = embeddings + noise
+            
+            # Learn hierarchy on perturbed data
+            perturbed_hierarchy, _, _ = hierarchy_learner.learn_hierarchy(
+                perturbed_embeddings
+            )
+            
+            # Measure consistency
+            consistency = self._measure_hierarchy_consistency(
+                baseline_hierarchy,
+                perturbed_hierarchy
+            )
+            
+            stability_scores.append(consistency)
+        
+        perturbation_stability = {
+            'mean_stability': np.mean(stability_scores),
+            'std_stability': np.std(stability_scores),
+            'noise_level': noise_level,
+            'num_perturbations': num_perturbations,
+            'interpretation': self._interpret_stability(np.mean(stability_scores))
+        }
+        
+        return perturbation_stability
+    
+    def evaluate_subsample_stability(self, hierarchy_learner, embeddings, num_subsamples=10, subsample_ratio=0.8):
+        """
+        Evaluate stability across data subsets.
+        
+        Method:
+        1. Randomly subsample data
+        2. Learn hierarchy on each subsample
+        3. Measure pairwise consistency
+        """
+        hierarchies = []
+        
+        for _ in range(num_subsamples):
+            # Random subsample
+            n_samples = int(len(embeddings) * subsample_ratio)
+            indices = np.random.choice(len(embeddings), n_samples, replace=False)
+            subsample = embeddings[indices]
+            
+            # Learn hierarchy
+            hierarchy, _, _ = hierarchy_learner.learn_hierarchy(subsample)
+            
+            # Map back to full dataset indices
+            full_hierarchy = np.full(len(embeddings), -1, dtype=int)
+            for level in hierarchy.keys():
+                full_hierarchy_level = np.full(len(embeddings), -1, dtype=int)
+                full_hierarchy_level[indices] = hierarchy[level]
+                hierarchy[level] = full_hierarchy_level
+            
+            hierarchies.append(hierarchy)
+        
+        # Compute pairwise stability
+        stability_scores = []
+        
+        for i in range(len(hierarchies)):
+            for j in range(i + 1, len(hierarchies)):
+                consistency = self._measure_hierarchy_consistency(
+                    hierarchies[i],
+                    hierarchies[j]
+                )
+                stability_scores.append(consistency)
+        
+        subsample_stability = {
+            'mean_stability': np.mean(stability_scores),
+            'std_stability': np.std(stability_scores),
+            'subsample_ratio': subsample_ratio,
+            'num_subsamples': num_subsamples,
+            'interpretation': self._interpret_stability(np.mean(stability_scores))
+        }
+        
+        return subsample_stability
+    
+    def evaluate_cross_validation_stability(self, hierarchy_learner, embeddings, n_folds=5):
+        """
+        Evaluate stability using cross-validation.
+        
+        Method:
+        1. Split data into k folds
+        2. Learn hierarchy on each fold
+        3. Measure consistency across folds
+        """
+        from sklearn.model_selection import KFold
+        
+        kf = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+        
+        hierarchies = []
+        
+        for train_idx, _ in kf.split(embeddings):
+            # Learn hierarchy on training fold
+            train_embeddings = embeddings[train_idx]
+            hierarchy, _, _ = hierarchy_learner.learn_hierarchy(train_embeddings)
+            
+            # Map to full dataset
+            full_hierarchy = {}
+            for level in hierarchy.keys():
+                full_hierarchy_level = np.full(len(embeddings), -1, dtype=int)
+                full_hierarchy_level[train_idx] = hierarchy[level]
+                full_hierarchy[level] = full_hierarchy_level
+            
+            hierarchies.append(full_hierarchy)
+        
+        # Compute pairwise stability
+        stability_scores = []
+        
+        for i in range(len(hierarchies)):
+            for j in range(i + 1, len(hierarchies)):
+                consistency = self._measure_hierarchy_consistency(
+                    hierarchies[i],
+                    hierarchies[j]
+                )
+                stability_scores.append(consistency)
+        
+        cv_stability = {
+            'mean_stability': np.mean(stability_scores),
+            'std_stability': np.std(stability_scores),
+            'n_folds': n_folds,
+            'interpretation': self._interpret_stability(np.mean(stability_scores))
+        }
+        
+        return cv_stability
+    
+    def _sliding_windows(self, data_stream, window_size):
+        """Generate sliding windows from data stream."""
+        window = []
+        
+        for data in data_stream:
+            window.append(data)
+            
+            if len(window) >= window_size:
+                yield window
+                window = window[window_size // 2:]  # 50% overlap
+    
+    def _extract_embeddings(self, data):
+        """Extract embeddings from data."""
+        # Placeholder - actual implementation depends on data format
+        if isinstance(data, list):
+            return np.array(data)
+        return data
+    
+    def _measure_hierarchy_consistency(self, hierarchy1, hierarchy2):
+        """
+        Measure consistency between two hierarchies.
+        
+        Metrics:
+        - Adjusted Rand Index (ARI)
+        - Normalized Mutual Information (NMI)
+        - Fowlkes-Mallows Index
+        """
+        from sklearn.metrics import (
+            adjusted_rand_score,
+            normalized_mutual_info_score,
+            fowlkes_mallows_score
+        )
+        
+        # Average across levels
+        ari_scores = []
+        nmi_scores = []
+        fm_scores = []
+        
+        for level in hierarchy1.keys():
+            h1 = hierarchy1[level]
+            h2 = hierarchy2[level]
+            
+            # Filter out unassigned (-1)
+            valid_mask = (h1 != -1) & (h2 != -1)
+            
+            if valid_mask.sum() == 0:
+                continue
+            
+            h1_valid = h1[valid_mask]
+            h2_valid = h2[valid_mask]
+            
+            # Compute metrics
+            ari = adjusted_rand_score(h1_valid, h2_valid)
+            nmi = normalized_mutual_info_score(h1_valid, h2_valid)
+            fm = fowlkes_mallows_score(h1_valid, h2_valid)
+            
+            ari_scores.append(ari)
+            nmi_scores.append(nmi)
+            fm_scores.append(fm)
+        
+        # Average across levels
+        consistency = {
+            'ari': np.mean(ari_scores) if ari_scores else 0.0,
+            'nmi': np.mean(nmi_scores) if nmi_scores else 0.0,
+            'fowlkes_mallows': np.mean(fm_scores) if fm_scores else 0.0
+        }
+        
+        # Return average of all metrics
+        return np.mean([consistency['ari'], consistency['nmi'], consistency['fowlkes_mallows']])
+    
+    def _interpret_stability(self, stability_score):
+        """Interpret stability score."""
+        if stability_score > 0.8:
+            return 'High stability (very consistent)'
+        elif stability_score > 0.6:
+            return 'Moderate stability (reasonably consistent)'
+        elif stability_score > 0.4:
+            return 'Low stability (somewhat inconsistent)'
+        else:
+            return 'Very low stability (highly inconsistent)'
+```
+
+### 3. Coverage Evaluation
+
+```python
+class CoverageEvaluation:
+    """
+    Evaluate coverage of learned hierarchical structure.
+    
+    Coverage measures:
+    1. Token coverage (% tokens assigned to clusters)
+    2. Semantic coverage (diversity of captured concepts)
+    3. Functional coverage (coverage of important tokens)
+    4. Distributional coverage (coverage of data distribution)
+    """
+    def __init__(self):
+        pass
+    
+    def evaluate_token_coverage(self, hierarchy_assignments, total_tokens):
+        """
+        Evaluate what percentage of tokens are assigned to clusters.
+        """
+        coverage_by_level = {}
+        
+        for level, assignments in hierarchy_assignments.items():
+            # Count assigned tokens (not -1)
+            assigned = (assignments != -1).sum()
+            coverage = assigned / total_tokens
+            
+            coverage_by_level[level] = {
+                'assigned_tokens': assigned,
+                'total_tokens': total_tokens,
+                'coverage_rate': coverage
+            }
+        
+        # Overall coverage (average across levels)
+        overall_coverage = np.mean([
+            c['coverage_rate'] for c in coverage_by_level.values()
+        ])
+        
+        return {
+            'coverage_by_level': coverage_by_level,
+            'overall_coverage': overall_coverage,
+            'interpretation': self._interpret_coverage(overall_coverage)
+        }
+    
+    def evaluate_semantic_coverage(self, hierarchy_assignments, embeddings, semantic_labels=None):
+        """
+        Evaluate diversity of semantic concepts captured.
+        
+        Method:
+        1. Compute cluster centroids
+        2. Measure diversity (inter-cluster distance)
+        3. Compare to semantic labels if available
+        """
+        coverage_by_level = {}
+        
+        for level, assignments in hierarchy_assignments.items():
+            # Get unique clusters
+            unique_clusters = np.unique(assignments[assignments != -1])
+            
+            if len(unique_clusters) == 0:
+                coverage_by_level[level] = {
+                    'num_clusters': 0,
+                    'diversity': 0.0
+                }
+                continue
+            
+            # Compute cluster centroids
+            centroids = []
+            for cluster_id in unique_clusters:
+                cluster_mask = (assignments == cluster_id)
+                centroid = embeddings[cluster_mask].mean(axis=0)
+                centroids.append(centroid)
+            
+            centroids = np.array(centroids)
+            
+            # Measure diversity (average pairwise distance)
+            from scipy.spatial.distance import pdist
+            
+            if len(centroids) > 1:
+                pairwise_distances = pdist(centroids)
+                diversity = pairwise_distances.mean()
+            else:
+                diversity = 0.0
+            
+            coverage_by_level[level] = {
+                'num_clusters': len(unique_clusters),
+                'diversity': diversity
+            }
+            
+            # If semantic labels available, measure coverage
+            if semantic_labels is not None:
+                semantic_coverage = self._measure_semantic_label_coverage(
+                    assignments, semantic_labels
+                )
+                coverage_by_level[level]['semantic_coverage'] = semantic_coverage
+        
+        return coverage_by_level
+    
+    def evaluate_functional_coverage(self, hierarchy_assignments, importance_scores):
+        """
+        Evaluate coverage of functionally important tokens.
+        
+        Method:
+        1. Identify important tokens (high importance scores)
+        2. Check if they're assigned to appropriate hierarchy levels
+        3. Measure coverage of important tokens
+        """
+        coverage_by_level = {}
+        
+        # Define importance threshold (top 20%)
+        importance_threshold = np.percentile(importance_scores, 80)
+        important_mask = importance_scores > importance_threshold
+        
+        for level, assignments in hierarchy_assignments.items():
+            # Count important tokens assigned to this level
+            assigned_important = (
+                (assignments != -1) & important_mask
+            ).sum()
+            
+            total_important = important_mask.sum()
+            
+            coverage = assigned_important / total_important if total_important > 0 else 0.0
+            
+            coverage_by_level[level] = {
+                'assigned_important': assigned_important,
+                'total_important': total_important,
+                'coverage_rate': coverage
+            }
+        
+        # Check if important tokens are at appropriate levels
+        # (Level 0 should capture most important tokens)
+        level_0_important = coverage_by_level.get(0, {}).get('coverage_rate', 0.0)
+        
+        return {
+            'coverage_by_level': coverage_by_level,
+            'level_0_important_coverage': level_0_important,
+            'interpretation': self._interpret_functional_coverage(level_0_important)
+        }
+    
+    def evaluate_distributional_coverage(self, hierarchy_assignments, embeddings):
+        """
+        Evaluate coverage of data distribution.
+        
+        Method:
+        1. Estimate data distribution (KDE)
+        2. Check if clusters cover high-density regions
+        3. Measure coverage of distribution
+        """
+        from scipy.stats import gaussian_kde
+        
+        # Estimate data distribution (use PCA for dimensionality reduction)
+        from sklearn.decomposition import PCA
+        
+        pca = PCA(n_components=2)
+        embeddings_2d = pca.fit_transform(embeddings)
+        
+        # Fit KDE
+        kde = gaussian_kde(embeddings_2d.T)
+        
+        # Evaluate density at each point
+        densities = kde(embeddings_2d.T)
+        
+        coverage_by_level = {}
+        
+        for level, assignments in hierarchy_assignments.items():
+            # For each cluster, compute coverage of high-density regions
+            unique_clusters = np.unique(assignments[assignments != -1])
+            
+            cluster_coverages = []
+            
+            for cluster_id in unique_clusters:
+                cluster_mask = (assignments == cluster_id)
+                cluster_densities = densities[cluster_mask]
+                
+                # Coverage: mean density of cluster points
+                coverage = cluster_densities.mean()
+                cluster_coverages.append(coverage)
+            
+            # Average coverage across clusters
+            avg_coverage = np.mean(cluster_coverages) if cluster_coverages else 0.0
+            
+            coverage_by_level[level] = {
+                'num_clusters': len(unique_clusters),
+                'avg_density_coverage': avg_coverage
+            }
+        
+        return coverage_by_level
+    
+    def _measure_semantic_label_coverage(self, assignments, semantic_labels):
+        """
+        Measure coverage of semantic labels.
+        
+        Check if each semantic category is represented in clusters.
+        """
+        unique_labels = np.unique(semantic_labels)
+        
+        covered_labels = set()
+        
+        for cluster_id in np.unique(assignments[assignments != -1]):
+            cluster_mask = (assignments == cluster_id)
+            cluster_labels = semantic_labels[cluster_mask]
+            
+            covered_labels.update(np.unique(cluster_labels))
+        
+        coverage_rate = len(covered_labels) / len(unique_labels)
+        
+        return {
+            'covered_labels': len(covered_labels),
+            'total_labels': len(unique_labels),
+            'coverage_rate': coverage_rate
+        }
+    
+    def _interpret_coverage(self, coverage_rate):
+        """Interpret coverage rate."""
+        if coverage_rate > 0.9:
+            return 'Excellent coverage (>90%)'
+        elif coverage_rate > 0.7:
+            return 'Good coverage (70-90%)'
+        elif coverage_rate > 0.5:
+            return 'Moderate coverage (50-70%)'
+        else:
+            return 'Poor coverage (<50%)'
+    
+    def _interpret_functional_coverage(self, level_0_coverage):
+        """Interpret functional coverage."""
+        if level_0_coverage > 0.7:
+            return 'Good: Most important tokens at Level 0'
+        elif level_0_coverage > 0.5:
+            return 'Moderate: Some important tokens at Level 0'
+        else:
+            return 'Poor: Important tokens not prioritized'
+```
+
+### 4. Statistical Comparison Framework
+
+```python
+class StatisticalComparison:
+    """
+    Statistical tests to compare automatic hierarchy with SHI's approach.
+    
+    Tests:
+    1. Stability comparison (paired t-test, Wilcoxon)
+    2. Coverage comparison (proportion test)
+    3. Performance comparison (ANOVA, regression)
+    4. Efficiency comparison (time, memory)
+    """
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
+        
+    def compare_stability(self, automatic_stability, shi_stability):
+        """
+        Compare stability between automatic and SHI hierarchies.
+        
+        H0: Stability is equal
+        H1: Stability differs
+        """
+        from scipy.stats import ttest_rel, wilcoxon
+        
+        # Extract stability scores
+        auto_scores = automatic_stability['stability_over_time']
+        shi_scores = shi_stability['stability_over_time']
+        
+        # Ensure same length
+        min_len = min(len(auto_scores), len(shi_scores))
+        auto_scores = auto_scores[:min_len]
+        shi_scores = shi_scores[:min_len]
+        
+        # Paired t-test
+        t_stat, p_value_t = ttest_rel(auto_scores, shi_scores)
+        
+        # Wilcoxon signed-rank test (non-parametric)
+        w_stat, p_value_w = wilcoxon(auto_scores, shi_scores)
+        
+        # Effect size (Cohen's d)
+        diff = np.array(auto_scores) - np.array(shi_scores)
+        cohens_d = diff.mean() / diff.std() if diff.std() > 0 else 0
+        
+        # Determine winner
+        auto_mean = np.mean(auto_scores)
+        shi_mean = np.mean(shi_scores)
+        
+        if p_value_t < self.alpha:
+            if auto_mean > shi_mean:
+                winner = 'Automatic hierarchy more stable'
+            else:
+                winner = 'SHI hierarchy more stable'
+        else:
+            winner = 'No significant difference'
+        
+        return {
+            'test': 'stability_comparison',
+            't_statistic': t_stat,
+            'p_value_t': p_value_t,
+            'wilcoxon_statistic': w_stat,
+            'p_value_wilcoxon': p_value_w,
+            'cohens_d': cohens_d,
+            'automatic_mean': auto_mean,
+            'shi_mean': shi_mean,
+            'winner': winner,
+            'significant': p_value_t < self.alpha
+        }
+    
+    def compare_coverage(self, automatic_coverage, shi_coverage):
+        """
+        Compare coverage between automatic and SHI hierarchies.
+        
+        H0: Coverage is equal
+        H1: Coverage differs
+        """
+        from scipy.stats import chi2_contingency
+        
+        # Extract coverage rates
+        auto_rate = automatic_coverage['overall_coverage']
+        shi_rate = shi_coverage['overall_coverage']
+        
+        # Assume we have counts (convert rates to counts)
+        # This is simplified - actual implementation would use real counts
+        total_tokens = 10000  # Placeholder
+        
+        auto_covered = int(auto_rate * total_tokens)
+        auto_uncovered = total_tokens - auto_covered
+        
+        shi_covered = int(shi_rate * total_tokens)
+        shi_uncovered = total_tokens - shi_covered
+        
+        # Contingency table
+        contingency = np.array([
+            [auto_covered, auto_uncovered],
+            [shi_covered, shi_uncovered]
+        ])
+        
+        # Chi-squared test
+        chi2, p_value, dof, expected = chi2_contingency(contingency)
+        
+        # Effect size (Cramér's V)
+        n = contingency.sum()
+        cramers_v = np.sqrt(chi2 / n)
+        
+        # Determine winner
+        if p_value < self.alpha:
+            if auto_rate > shi_rate:
+                winner = 'Automatic hierarchy better coverage'
+            else:
+                winner = 'SHI hierarchy better coverage'
+        else:
+            winner = 'No significant difference'
+        
+        return {
+            'test': 'coverage_comparison',
+            'chi2_statistic': chi2,
+            'p_value': p_value,
+            'cramers_v': cramers_v,
+            'automatic_coverage': auto_rate,
+            'shi_coverage': shi_rate,
+            'winner': winner,
+            'significant': p_value < self.alpha
+        }
+    
+    def compare_performance(self, automatic_performance, shi_performance):
+        """
+        Compare downstream task performance.
+        
+        H0: Performance is equal
+        H1: Performance differs
+        """
+        from scipy.stats import ttest_ind
+        
+        # Extract performance metrics (e.g., prediction errors)
+        auto_errors = automatic_performance['errors']
+        shi_errors = shi_performance['errors']
+        
+        # Independent t-test
+        t_stat, p_value = ttest_ind(auto_errors, shi_errors)
+        
+        # Effect size (Cohen's d)
+        pooled_std = np.sqrt(
+            (np.var(auto_errors) + np.var(shi_errors)) / 2
+        )
+        cohens_d = (np.mean(auto_errors) - np.mean(shi_errors)) / pooled_std
+        
+        # Determine winner (lower error = better)
+        auto_mean = np.mean(auto_errors)
+        shi_mean = np.mean(shi_errors)
+        
+        if p_value < self.alpha:
+            if auto_mean < shi_mean:
+                winner = 'Automatic hierarchy better performance'
+            else:
+                winner = 'SHI hierarchy better performance'
+        else:
+            winner = 'No significant difference'
+        
+        return {
+            'test': 'performance_comparison',
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'cohens_d': cohens_d,
+            'automatic_mean_error': auto_mean,
+            'shi_mean_error': shi_mean,
+            'winner': winner,
+            'significant': p_value < self.alpha
+        }
+    
+    def compare_efficiency(self, automatic_efficiency, shi_efficiency):
+        """
+        Compare computational efficiency.
+        
+        Metrics: Time, memory, FLOPs
+        """
+        # Time comparison
+        auto_time = automatic_efficiency['time_ms']
+        shi_time = shi_efficiency['time_ms']
+        
+        time_ratio = auto_time / shi_time
+        time_speedup = shi_time / auto_time
+        
+        # Memory comparison
+        auto_memory = automatic_efficiency['memory_mb']
+        shi_memory = shi_efficiency['memory_mb']
+        
+        memory_ratio = auto_memory / shi_memory
+        
+        # Determine winner
+        if time_ratio < 0.9:
+            time_winner = 'Automatic hierarchy faster'
+        elif time_ratio > 1.1:
+            time_winner = 'SHI hierarchy faster'
+        else:
+            time_winner = 'Similar speed'
+        
+        if memory_ratio < 0.9:
+            memory_winner = 'Automatic hierarchy less memory'
+        elif memory_ratio > 1.1:
+            memory_winner = 'SHI hierarchy less memory'
+        else:
+            memory_winner = 'Similar memory'
+        
+        return {
+            'test': 'efficiency_comparison',
+            'time_ratio': time_ratio,
+            'time_speedup': time_speedup,
+            'memory_ratio': memory_ratio,
+            'time_winner': time_winner,
+            'memory_winner': memory_winner,
+            'automatic_time_ms': auto_time,
+            'shi_time_ms': shi_time,
+            'automatic_memory_mb': auto_memory,
+            'shi_memory_mb': shi_memory
+        }
+    
+    def multiple_comparison_correction(self, p_values, method='holm'):
+        """
+        Apply multiple comparison correction.
+        
+        Methods: Bonferroni, Holm, FDR
+        """
+        from statsmodels.stats.multitest import multipletests
+        
+        reject, p_corrected, alpha_sidak, alpha_bonf = multipletests(
+            p_values,
+            alpha=self.alpha,
+            method=method
+        )
+        
+        return {
+            'method': method,
+            'original_p_values': p_values,
+            'corrected_p_values': p_corrected,
+            'reject_null': reject,
+            'num_significant': reject.sum()
+        }
+```
+
+### 5. Comprehensive Evaluation Protocol
+
+```python
+class AutomaticHierarchyEvaluation:
+    """
+    Complete evaluation protocol for automatic vs. SHI hierarchy.
+    """
+    def __init__(self, automatic_learner, shi_model):
+        self.automatic = automatic_learner
+        self.shi = shi_model
+        
+        self.stability_eval = StabilityEvaluation()
+        self.coverage_eval = CoverageEvaluation()
+        self.statistical_comp = StatisticalComparison()
+        
+    def run_evaluation(self, test_datasets):
+        """
+        Execute complete evaluation protocol.
+        """
+        print("=" * 80)
+        print("AUTOMATIC HIERARCHY EVALUATION")
+        print("=" * 80)
+        
+        results = {}
+        
+        # Phase 1: Learn hierarchies
+        print("\n[Phase 1/6] Learning hierarchies...")
+        results['hierarchies'] = self._learn_hierarchies(test_datasets)
+        
+        # Phase 2: Stability evaluation
+        print("\n[Phase 2/6] Evaluating stability...")
+        results['stability'] = self._evaluate_stability(test_datasets)
+        
+        # Phase 3: Coverage evaluation
+        print("\n[Phase 3/6] Evaluating coverage...")
+        results['coverage'] = self._evaluate_coverage(test_datasets)
+        
+        # Phase 4: Performance evaluation
+        print("\n[Phase 4/6] Evaluating performance...")
+        results['performance'] = self._evaluate_performance(test_datasets)
+        
+        # Phase 5: Statistical comparison
+        print("\n[Phase 5/6] Statistical comparison...")
+        results['statistical'] = self._run_statistical_tests(results)
+        
+        # Phase 6: Generate report
+        print("\n[Phase 6/6] Generating report...")
+        self._generate_report(results)
+        
+        return results
+    
+    def _learn_hierarchies(self, test_datasets):
+        """Learn hierarchies on test datasets."""
+        hierarchies = {
+            'automatic': {},
+            'shi': {}
+        }
+        
+        for dataset_name, dataset in test_datasets.items():
+            print(f"  Learning on {dataset_name}...")
+            
+            # Extract embeddings
+            embeddings = self._extract_embeddings(dataset)
+            
+            # Learn automatic hierarchy
+            auto_hierarchy, auto_tree, auto_quality = self.automatic.learn_hierarchy(
+                embeddings
+            )
+            
+            # Get SHI hierarchy
+            shi_hierarchy = self._get_shi_hierarchy(dataset)
+            
+            hierarchies['automatic'][dataset_name] = {
+                'hierarchy': auto_hierarchy,
+                'tree': auto_tree,
+                'quality': auto_quality
+            }
+            
+            hierarchies['shi'][dataset_name] = {
+                'hierarchy': shi_hierarchy
+            }
+        
+        return hierarchies
+    
+    def _evaluate_stability(self, test_datasets):
+        """Evaluate stability for both approaches."""
+        stability_results = {
+            'automatic': {},
+            'shi': {}
+        }
+        
+        for dataset_name, dataset in test_datasets.items():
+            print(f"  Evaluating {dataset_name}...")
+            
+            # Extract embeddings
+            embeddings = self._extract_embeddings(dataset)
+            
+            # Automatic hierarchy stability
+            auto_temporal = self.stability_eval.evaluate_temporal_stability(
+                self.automatic,
+                dataset,
+                window_size=1000
+            )
+            
+            auto_perturbation = self.stability_eval.evaluate_perturbation_stability(
+                self.automatic,
+                embeddings,
+                num_perturbations=10
+            )
+            
+            auto_subsample = self.stability_eval.evaluate_subsample_stability(
+                self.automatic,
+                embeddings,
+                num_subsamples=10
+            )
+            
+            stability_results['automatic'][dataset_name] = {
+                'temporal': auto_temporal,
+                'perturbation': auto_perturbation,
+                'subsample': auto_subsample
+            }
+            
+            # SHI hierarchy stability (if available)
+            # Placeholder - would need actual SHI implementation
+            stability_results['shi'][dataset_name] = {
+                'temporal': {'mean_stability': 0.75},  # Placeholder
+                'perturbation': {'mean_stability': 0.80},
+                'subsample': {'mean_stability': 0.78}
+            }
+        
+        return stability_results
+    
+    def _evaluate_coverage(self, test_datasets):
+        """Evaluate coverage for both approaches."""
+        coverage_results = {
+            'automatic': {},
+            'shi': {}
+        }
+        
+        for dataset_name, dataset in test_datasets.items():
+            print(f"  Evaluating {dataset_name}...")
+            
+            # Extract embeddings
+            embeddings = self._extract_embeddings(dataset)
+            
+            # Get hierarchies
+            auto_hierarchy = self.automatic.learn_hierarchy(embeddings)[0]
+            shi_hierarchy = self._get_shi_hierarchy(dataset)
+            
+            # Automatic coverage
+            auto_token_cov = self.coverage_eval.evaluate_token_coverage(
+                auto_hierarchy,
+                len(embeddings)
+            )
+            
+            auto_semantic_cov = self.coverage_eval.evaluate_semantic_coverage(
+                auto_hierarchy,
+                embeddings
+            )
+            
+            coverage_results['automatic'][dataset_name] = {
+                'token': auto_token_cov,
+                'semantic': auto_semantic_cov
+            }
+            
+            # SHI coverage (placeholder)
+            coverage_results['shi'][dataset_name] = {
+                'token': {'overall_coverage': 0.95},  # Placeholder
+                'semantic': {}
+            }
+        
+        return coverage_results
+    
+    def _evaluate_performance(self, test_datasets):
+        """Evaluate downstream task performance."""
+        performance_results = {
+            'automatic': {},
+            'shi': {}
+        }
+        
+        for dataset_name, dataset in test_datasets.items():
+            print(f"  Evaluating {dataset_name}...")
+            
+            # Get predictions using each hierarchy
+            auto_predictions = self._predict_with_hierarchy(
+                dataset,
+                'automatic'
+            )
+            
+            shi_predictions = self._predict_with_hierarchy(
+                dataset,
+                'shi'
+            )
+            
+            # Compute errors
+            ground_truth = self._get_ground_truth(dataset)
+            
+            auto_errors = np.abs(auto_predictions - ground_truth)
+            shi_errors = np.abs(shi_predictions - ground_truth)
+            
+            performance_results['automatic'][dataset_name] = {
+                'errors': auto_errors,
+                'mean_error': auto_errors.mean(),
+                'std_error': auto_errors.std()
+            }
+            
+            performance_results['shi'][dataset_name] = {
+                'errors': shi_errors,
+                'mean_error': shi_errors.mean(),
+                'std_error': shi_errors.std()
+            }
+        
+        return performance_results
+    
+    def _run_statistical_tests(self, results):
+        """Run statistical tests comparing approaches."""
+        statistical_results = {}
+        
+        # Stability comparison
+        auto_stability = results['stability']['automatic']
+        shi_stability = results['stability']['shi']
+        
+        # Aggregate across datasets
+        auto_temporal_scores = []
+        shi_temporal_scores = []
+        
+        for dataset_name in auto_stability.keys():
+            auto_temporal_scores.extend(
+                auto_stability[dataset_name]['temporal']['stability_over_time']
+            )
+            shi_temporal_scores.extend(
+                [shi_stability[dataset_name]['temporal']['mean_stability']] * 
+                len(auto_stability[dataset_name]['temporal']['stability_over_time'])
+            )
+        
+        stability_comparison = self.statistical_comp.compare_stability(
+            {'stability_over_time': auto_temporal_scores},
+            {'stability_over_time': shi_temporal_scores}
+        )
+        
+        statistical_results['stability'] = stability_comparison
+        
+        # Coverage comparison
+        auto_coverage = results['coverage']['automatic']
+        shi_coverage = results['coverage']['shi']
+        
+        # Aggregate
+        auto_cov_rates = [
+            auto_coverage[d]['token']['overall_coverage']
+            for d in auto_coverage.keys()
+        ]
+        
+        shi_cov_rates = [
+            shi_coverage[d]['token']['overall_coverage']
+            for d in shi_coverage.keys()
+        ]
+        
+        coverage_comparison = self.statistical_comp.compare_coverage(
+            {'overall_coverage': np.mean(auto_cov_rates)},
+            {'overall_coverage': np.mean(shi_cov_rates)}
+        )
+        
+        statistical_results['coverage'] = coverage_comparison
+        
+        # Performance comparison
+        auto_performance = results['performance']['automatic']
+        shi_performance = results['performance']['shi']
+        
+        # Aggregate errors
+        auto_all_errors = np.concatenate([
+            auto_performance[d]['errors']
+            for d in auto_performance.keys()
+        ])
+        
+        shi_all_errors = np.concatenate([
+            shi_performance[d]['errors']
+            for d in shi_performance.keys()
+        ])
+        
+        performance_comparison = self.statistical_comp.compare_performance(
+            {'errors': auto_all_errors},
+            {'errors': shi_all_errors}
+        )
+        
+        statistical_results['performance'] = performance_comparison
+        
+        # Multiple comparison correction
+        p_values = [
+            stability_comparison['p_value_t'],
+            coverage_comparison['p_value'],
+            performance_comparison['p_value']
+        ]
+        
+        correction = self.statistical_comp.multiple_comparison_correction(
+            p_values,
+            method='holm'
+        )
+        
+        statistical_results['multiple_comparison'] = correction
+        
+        return statistical_results
+    
+    def _extract_embeddings(self, dataset):
+        """Extract embeddings from dataset."""
+        # Placeholder - actual implementation depends on dataset format
+        if isinstance(dataset, list):
+            return np.random.randn(len(dataset), 512)
+        return dataset
+    
+    def _get_shi_hierarchy(self, dataset):
+        """Get SHI hierarchy for dataset."""
+        # Placeholder - would use actual SHI model
+        n_samples = len(dataset) if isinstance(dataset, list) else 1000
+        
+        return {
+            0: np.random.randint(0, 10, n_samples),
+            1: np.random.randint(0, 50, n_samples),
+            2: np.random.randint(0, 200, n_samples)
+        }
+    
+    def _predict_with_hierarchy(self, dataset, method):
+        """Make predictions using hierarchy."""
+        # Placeholder
+        n_samples = len(dataset) if isinstance(dataset, list) else 1000
+        return np.random.randn(n_samples)
+    
+    def _get_ground_truth(self, dataset):
+        """Get ground truth for dataset."""
+        # Placeholder
+        n_samples = len(dataset) if isinstance(dataset, list) else 1000
+        return np.random.randn(n_samples)
+    
+    def _generate_report(self, results):
+        """Generate comprehensive evaluation report."""
+        report = f"""
+# Automatic Hierarchy Evaluation Report
+
+**Generated:** {datetime.now().isoformat()}
+
+## Executive Summary
+
+This report evaluates automatically learned hierarchical structure compared to
+the Sparse Hierarchical Imagination (SHI) Transformer's learned hierarchy.
+
+## 1. Hierarchy Quality
+
+### Cluster Quality Metrics
+
+"""
+        
+        # Report cluster quality
+        for dataset_name, hierarchy_data in results['hierarchies']['automatic'].items():
+            quality = hierarchy_data['quality']
+            
+            report += f"""
+#### {dataset_name}
+
+"""
+            
+            for level, metrics in quality.items():
+                report += f"""
+**Level {level}:**
+- Silhouette Score: {metrics.get('silhouette', 0.0):.3f}
+- Davies-Bouldin Index: {metrics.get('davies_bouldin', 0.0):.3f}
+- Calinski-Harabasz Index: {metrics.get('calinski_harabasz', 0.0):.3f}
+
+"""
+        
+        report += """
+## 2. Stability Analysis
+
+### Temporal Stability
+
+"""
+        
+        # Report stability
+        for dataset_name, stability_data in results['stability']['automatic'].items():
+            temporal = stability_data['temporal']
+            
+            report += f"""
+#### {dataset_name}
+
+- Mean Stability: {temporal['mean_stability']:.3f}
+- Std Stability: {temporal['std_stability']:.3f}
+- Interpretation: {temporal['interpretation']}
+
+"""
+        
+        report += """
+### Perturbation Stability
+
+"""
+        
+        for dataset_name, stability_data in results['stability']['automatic'].items():
+            perturbation = stability_data['perturbation']
+            
+            report += f"""
+#### {dataset_name}
+
+- Mean Stability: {perturbation['mean_stability']:.3f}
+- Noise Level: {perturbation['noise_level']:.2f}
+- Interpretation: {perturbation['interpretation']}
+
+"""
+        
+        report += """
+## 3. Coverage Analysis
+
+"""
+        
+        for dataset_name, coverage_data in results['coverage']['automatic'].items():
+            token_cov = coverage_data['token']
+            
+            report += f"""
+#### {dataset_name}
+
+- Overall Coverage: {token_cov['overall_coverage']:.2%}
+- Interpretation: {token_cov['interpretation']}
+
+"""
+        
+        report += """
+## 4. Statistical Comparison
+
+### Stability Comparison
+
+"""
+        
+        stability_comp = results['statistical']['stability']
+        
+        report += f"""
+- **Winner:** {stability_comp['winner']}
+- **p-value:** {stability_comp['p_value_t']:.4f}
+- **Cohen's d:** {stability_comp['cohens_d']:.3f}
+- **Automatic Mean:** {stability_comp['automatic_mean']:.3f}
+- **SHI Mean:** {stability_comp['shi_mean']:.3f}
+
+"""
+        
+        report += """
+### Coverage Comparison
+
+"""
+        
+        coverage_comp = results['statistical']['coverage']
+        
+        report += f"""
+- **Winner:** {coverage_comp['winner']}
+- **p-value:** {coverage_comp['p_value']:.4f}
+- **Automatic Coverage:** {coverage_comp['automatic_coverage']:.2%}
+- **SHI Coverage:** {coverage_comp['shi_coverage']:.2%}
+
+"""
+        
+        report += """
+### Performance Comparison
+
+"""
+        
+        performance_comp = results['statistical']['performance']
+        
+        report += f"""
+- **Winner:** {performance_comp['winner']}
+- **p-value:** {performance_comp['p_value']:.4f}
+- **Cohen's d:** {performance_comp['cohens_d']:.3f}
+- **Automatic Mean Error:** {performance_comp['automatic_mean_error']:.4f}
+- **SHI Mean Error:** {performance_comp['shi_mean_error']:.4f}
+
+"""
+        
+        report += """
+### Multiple Comparison Correction
+
+"""
+        
+        correction = results['statistical']['multiple_comparison']
+        
+        report += f"""
+- **Method:** {correction['method']}
+- **Significant Tests:** {correction['num_significant']} / {len(correction['original_p_values'])}
+
+"""
+        
+        report += """
+## 5. Recommendations
+
+"""
+        
+        # Generate recommendations
+        recommendations = self._generate_recommendations(results)
+        
+        for rec in recommendations:
+            report += f"- {rec}\n"
+        
+        # Save report
+        with open('automatic_hierarchy_evaluation.md', 'w') as f:
+            f.write(report)
+        
+        print("\nReport saved to: automatic_hierarchy_evaluation.md")
+        
+        return report
+    
+    def _generate_recommendations(self, results):
+        """Generate recommendations based on results."""
+        recommendations = []
+        
+        # Check stability
+        stability_comp = results['statistical']['stability']
+        
+        if stability_comp['significant']:
+            if 'Automatic' in stability_comp['winner']:
+                recommendations.append(
+                    "✅ Automatic hierarchy shows significantly better stability"
+                )
+            else:
+                recommendations.append(
+                    "⚠️ SHI hierarchy shows significantly better stability"
+                )
+        else:
+            recommendations.append(
+                "➡️ Stability is comparable between approaches"
+            )
+        
+        # Check coverage
+        coverage_comp = results['statistical']['coverage']
+        
+        if coverage_comp['significant']:
+            if 'Automatic' in coverage_comp['winner']:
+                recommendations.append(
+                    "✅ Automatic hierarchy shows significantly better coverage"
+                )
+            else:
+                recommendations.append(
+                    "⚠️ SHI hierarchy shows significantly better coverage"
+                )
+        else:
+            recommendations.append(
+                "➡️ Coverage is comparable between approaches"
+            )
+        
+        # Check performance
+        performance_comp = results['statistical']['performance']
+        
+        if performance_comp['significant']:
+            if 'Automatic' in performance_comp['winner']:
+                recommendations.append(
+                    "✅ Automatic hierarchy shows significantly better performance"
+                )
+            else:
+                recommendations.append(
+                    "⚠️ SHI hierarchy shows significantly better performance"
+                )
+        else:
+            recommendations.append(
+                "➡️ Performance is comparable between approaches"
+            )
+        
+        return recommendations
+```
+
+## Summary
+
+**Automatic Hierarchy Learning Methods:**
+
+1. **Hierarchical Clustering:** Agglomerative clustering with dendrogram cutting
+2. **Spectral Clustering:** Graph Laplacian eigendecomposition
+3. **Deep Clustering:** VAE-based latent space clustering
+4. **Graph Clustering:** Community detection (Louvain)
+
+**Stability Evaluation:**
+
+1. **Temporal:** Consistency over sliding windows (ARI, NMI, Fowlkes-Mallows)
+2. **Perturbation:** Robustness to noise (Gaussian perturbations)
+3. **Subsample:** Consistency across data subsets (80% subsampling)
+4. **Cross-validation:** k-fold stability
+
+**Coverage Evaluation:**
+
+1. **Token Coverage:** % tokens assigned to clusters
+2. **Semantic Coverage:** Diversity of captured concepts (inter-cluster distance)
+3. **Functional Coverage:** Coverage of important tokens
+4. **Distributional Coverage:** Coverage of data distribution (KDE)
+
+**Statistical Tests:**
+
+1. **Stability:** Paired t-test, Wilcoxon signed-rank
+2. **Coverage:** Chi-squared test, proportion test
+3. **Performance:** Independent t-test, Cohen's d
+4. **Efficiency:** Time/memory ratio comparison
+5. **Multiple Comparison:** Holm correction
+
+**Expected Results:**
+- Stability: Automatic 0.6-0.7, SHI 0.7-0.8
+- Coverage: Automatic 0.85-0.95, SHI 0.90-0.98
+- Performance: Automatic 90-95% of SHI
+- Efficiency: Automatic 2-5x faster (no end-to-end training)
+
+**Computational Budget:**
+- Clustering: 10-50 GPU-hours (one-time)
+- Evaluation: 100-200 GPU-hours
+- Total: ~250 GPU-hours (~$625 on A100s)
+
+## Sources
+
+This automatic hierarchy learning framework is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the hierarchical token organization concept [heirarchical-transformer.pdf:2] that we learn automatically through clustering
+
+For clustering and evaluation methodology, I recommend:
+- **Hierarchical clustering:** Müllner (2011) "Modern hierarchical, agglomerative clustering algorithms" (arXiv)
+- **Spectral clustering:** Von Luxburg (2007) "A tutorial on spectral clustering" (Statistics and Computing)
+- **Deep clustering:** Xie et al. (2016) "Unsupervised Deep Embedding for Clustering Analysis" (ICML)
+- **Stability evaluation:** Von Luxburg (2010) "Clustering stability: An overview" (Foundations and Trends in Machine Learning)
+- **Agreement metrics:** Hubert & Arabie (1985) "Comparing partitions" (Journal of Classification)
+- **Statistical testing:** Demšar (2006) "Statistical Comparisons of Classifiers over Multiple Data Sets" (JMLR)

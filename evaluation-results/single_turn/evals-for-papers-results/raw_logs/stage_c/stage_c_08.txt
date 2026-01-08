@@ -1,0 +1,106 @@
+1. Problem framing and goals
+Goal: Build and rigorously evaluate an open-source, privacy-preserving mental health chatbot that provides empathetic, safe, non-diagnostic support. “Privacy-preserving” here means: (a) no training-time leakage of sensitive text via differentially private fine-tuning (DP), (b) optional federated learning (FL) so data never leaves the client domain, (c) strict PII redaction and logging minimization at inference, and (d) auditable privacy metrics (e.g., ε, canary exposure, membership inference risk) alongside safety metrics. Core utility target: maintain ≥90–95% of non-private fine-tuning performance on empathy/support tasks while meeting strict privacy thresholds. We will use only open-source models, datasets, and libraries (e.g., OLMo for base model; Opacus for DP; Flower for FL; Presidio for PII) [1][3][4][5][6].
+
+Primary success criteria
+- Privacy: DP ε ≤ 8 (δ = 1e-5), canary exposure ≤ random baseline within 95% CI, and membership inference advantage ≤ 5% above chance [3][7][8].
+- Safety: ≥80% reduction in unsafe/contraindicated responses with gating vs. no gate; ≥95% correct crisis escalation on synthetic high-risk prompts [9].
+- Utility: ≥90% of baseline empathy/helpfulness scores (automatic plus rubric-based human or LLM-as-judge with open models) on held-out sets [1].
+
+Literature anchors (for foundations and datasets)
+- Towards Empathetic Open-domain Conversation Models (EmpatheticDialogues) — https://arxiv.org/abs/1811.00207 [1]
+- Opacus: User-Friendly Differential Privacy Library in PyTorch — https://arxiv.org/abs/2109.12298 [3]
+
+Intuition
+- Most privacy leakage arises during fine-tuning and logging; combining DP-SGD (to bound memorization) with FL (to keep data local) and PII redaction at ingress and logging time sharply reduces attack surfaces while preserving performance via parameter-efficient training. Safety gating catches edge-case harms that generative models can produce.
+
+Why this is principled
+- DP provides quantifiable worst-case guarantees against memorization and membership inference [3][8], canary exposure directly probes unintended memorization [7], and FL reduces data movement risks [4]. Empathy and safety require task-specific evaluation; EmpatheticDialogues provides a public benchmark for empathetic responses [1], while emerging safety rubrics formalize harm reduction in mental health contexts [9].
+
+2. Experiments
+Experiment 1: DP-LoRA fine-tuning vs. non-DP
+- Hypothesis: DP-LoRA with ε ≤ 8 on adapter weights reduces memorization to near-baseline exposure while retaining ≥90% utility vs. non-DP LoRA.
+- Setup: Base model: OLMo 2 (7B/13B) under Apache 2.0 [6]. Datasets: EmpatheticDialogues train/dev/test [1] + CounselChat for support-style replies [2]. Training: LoRA on attention/MLP adapters; per-sample clipping + noise via Opacus; privacy accountant to report (ε, δ) [3]. Controls: non-DP LoRA; full non-DP fine-tune (if feasible) as upper-bound utility.
+- Baselines: Zero-shot OLMo; non-DP LoRA; simple retrieval of psychoeducation snippets (open-source curated).
+- Metrics: Utility—response empathy/helpfulness via automatic classifiers and rubric-based LLM-as-judge with an open model; Safety—rate of contraindicated advice on targeted probes [9]; Privacy—canary exposure and membership inference advantage [7][8].
+- Expected outcomes: DP-LoRA modestly lags non-DP (≤10% relative drop) while significantly lowering canary exposure and MIA advantage. If utility drops >10%, tune noise multiplier, clipping, batch size, and adapter rank.
+
+Experiment 2: Federated fine-tuning with client-level DP
+- Hypothesis: FL with client-level DP (noise after local training) and FedAvg matches centralized DP-LoRA privacy with <5% additional utility loss.
+- Setup: Simulate K=10–50 clients stratified by domain (e.g., different subforums in CounselChat). Use Flower for orchestration; local training uses LoRA on adapters; apply client-level DP before upload; secure TLS channels [4]. Compare to centralized DP-LoRA (Exp 1).
+- Baselines: Centralized DP-LoRA (same ε budget); non-DP FL to isolate DP effect.
+- Metrics: Same utility/safety as Exp 1; Privacy: global ε accounting per round; canary exposure under FL aggregation; MIA advantage [3][7][8].
+- Expected outcomes: FL+DP retains similar privacy while adding small utility overhead due to heterogeneity. If divergence appears, add FedProx or per-client adaptive steps and re-balance client sampling.
+
+Experiment 3: PII redaction + logging minimization
+- Hypothesis: Presidio-based redaction before storage preserves ≥95% task utility while removing ≥90% detectible PII from logs and training buffers.
+- Setup: Integrate Presidio with custom recognizers for mental-health-specific entities (e.g., clinic names). Evaluate pre/post redaction on empirical transcripts and synthetic PII-injected text [5]. Run ablations: redaction at ingress vs. egress; partial vs. full de-identification.
+- Baselines: No redaction; regex-only redaction.
+- Metrics: PII recall/precision against hand-labeled gold; utility delta on ED/CounselChat test sets; latency overhead.
+- Expected outcomes: High PII recall with minimal utility degradation. If recall <90%, expand recognizers, add contextual NER, or conservative mask policy.
+
+Experiment 4: Safety gating for crisis and contraindicated advice
+- Hypothesis: A lightweight, open safety gate reduces unsafe responses by ≥80% with ≤5% loss in helpfulness on benign prompts.
+- Setup: Build a two-stage gate: (a) risk detection (self-harm, intent-to-harm, medical emergencies) via open classifiers or rules; (b) constrained response templates with immediate referral information and disclaimers. Evaluate with targeted “red team” prompts and safe-support prompts [9].
+- Baselines: No gate; simple keyword-only gate.
+- Metrics: Unsafe response rate; correct escalation rate; helpfulness/empathetic score on benign prompts; refusal appropriateness.
+- Expected outcomes: Marked reduction in unsafe responses with minimal impact on benign helpfulness. If over-refusal appears, refine risk thresholds and add context windows.
+
+3. Timeline for the next 6 months with milestones
+Phase 0 (Weeks 1–2, gate before proceeding)
+- Deliverables: (1) Prediction log with ≥14 entries; (2) Reproduce a non-DP LoRA baseline on EmpatheticDialogues; (3) One experiment card + one ablation/negative result with post-mortem.
+- Infrastructure: MLflow tracking, privacy accountant checks, reproducible seeds; data governance SOPs.
+
+Month 2 (Weeks 3–8)
+- Run Experiment 1 on small- to medium-scale. Map ε–utility frontier; choose target ε. Milestones: DP-LoRA achieves ≥90% baseline utility; canary exposure ~random baseline [7]; MIA advantage ≤5% over chance [8].
+
+Month 3 (Weeks 9–12)
+- Run Experiment 2. Milestones: FL+DP stable training across ≥20 clients; privacy budgets logged per round; utility gap vs. centralized DP ≤5%.
+
+Month 4 (Weeks 13–16)
+- Run Experiment 3. Milestones: PII recall ≥90% with <5% utility drop; latency overhead <10%; logging minimized (content hashes + counters only).
+
+Month 5 (Weeks 17–20)
+- Run Experiment 4. Milestones: Unsafe responses reduced ≥80%; crisis escalation ≥95% on probes; finalize safety playbook and disclaimers.
+
+Month 6 (Weeks 21–24)
+- Hardening, ablations, and write-up. Milestones: Reproduction pack (Dockerfile, configs), ethics/privacy appendix (threat model, ε–δ reporting), and paper draft targeting ML4H/Findings of ACL (open-source artifacts included).
+
+4. Resources (compute, tools, datasets)
+- Compute: Preferred: 1× A100 80GB or 2× 3090/4090 (24GB) for 7B LoRA. Budget path: gradient checkpointing + 4-bit quantization for adapter training. FL can simulate clients on a single node.
+- Tools (all open-source): OLMo 2 (base model) [6]; Opacus (DP-SGD) [3]; Flower (FL) [4]; Microsoft Presidio (PII) [5]; MLflow (tracking); Hugging Face Transformers/Datasets; Prometheus/Grafana for metrics.
+- Datasets: EmpatheticDialogues (English empathy benchmark) [1]; CounselChat (counseling Q/A) [2]. Note: Some mental health benchmarks are emerging and heterogeneous; prioritize conservative, validated sets. If multilingual, consider separate tracks; PsyQA exists but is Chinese-only [2].
+
+5. Risks and mitigations table
+- Utility degradation from DP: Tune noise/clipping/batch; use PEFT (LoRA) to limit trainable params; perform ε–utility sweep before locking ε [3].
+- FL instability/heterogeneity: Use FedProx, client sampling, adaptive local steps; evaluate non-iid splits [4].
+- PII redaction misses sensitive spans: Extend recognizers, add contextual NER, and perform human spot-checks; default to conservative masking [5].
+- Safety over- or under-refusal: Calibrate thresholds; maintain templated escalations; A/B test on benign vs. risky prompts with separate metrics [9].
+- Evaluation bias (LLM-as-judge): Use open models only, double-score with rubric prompts, and spot-check with human raters; report inter-rater agreement.
+- Dataset consent/licensing: Use only permissively licensed datasets; document consent provenance; exclude questionable sources.
+- Re-identification via logs: Minimize logs, store hashes not content, encrypt at rest/in transit, restrict access; periodic red-team reviews.
+- Overfitting to canaries/attacks: Keep held-out secret canaries; vary attack strengths; report uncertainty [7][8].
+- Regulatory mismatch: Map controls to HIPAA-like safeguards; plan for external audit; clearly state non-diagnostic scope and crisis-handling policy. Note: web sources on HIPAA chatbots are often generic; prioritize institutional guidance or NIST SP 800-53 controls mapping in a compliance appendix if needed (limitation noted).
+
+6. Stretch ideas or follow-up directions
+- Client-side RAG: Local retrieval from user-controlled, encrypted notes; no server persistence.
+- Split learning or secure aggregation: Add PySyft-based secure aggregation for FL; benchmark overheads (may be heavy) [PySyft resources are evolving; verify maturity before adoption].
+- DP-LoRA variants: Explore flatness-inducing or sharpness-aware schedules to recover DP utility [10].
+- Adversarial privacy tuning: Jointly optimize for low canary exposure while preserving empathy via multi-objective training.
+
+Citations
+[1] Rashkin et al., Towards Empathetic Open-domain Conversation Models — https://arxiv.org/abs/1811.00207
+[2] CounselChat dataset (Hugging Face) — https://huggingface.co/datasets/nbertagnolli/counsel-chat
+[3] Opacus: User-Friendly Differential Privacy Library in PyTorch — https://arxiv.org/abs/2109.12298
+[4] Flower: A Friendly Federated Learning Framework — https://arxiv.org/abs/2007.14390
+[5] Microsoft Presidio (PII detection/anonymization) — https://github.com/microsoft/presidio
+[6] OLMo: Accelerating the Science of Language Models — https://arxiv.org/abs/2402.00838
+[7] A Note on Interpreting Canary Exposure — https://arxiv.org/abs/2306.00133
+[8] Do Membership Inference Attacks Work on Large Language Models? — https://arxiv.org/abs/2402.07841
+[9] Building Trust in Mental Health Chatbots: Safety Metrics and LLM-Based Evaluation Tools — https://arxiv.org/abs/2408.04650
+[10] Privacy-Preserving Fine-Tuning of Large Language Models through Flatness — https://openreview.net/pdf?id=LtdcfCw92l
+
+Note on guidelines retrieval
+A targeted mentorship-guidelines query returned no specific guidance for “privacy-preserving LLMs in mental health”; to tighten rigor, we will (a) pre-register hypotheses/stop-rules, (b) adopt ML reproducibility standards (seed control, multi-seed reporting, exact configs), and (c) add an ethics appendix with a threat model and ε–δ accounting. We will also solicit domain review from mental-health researchers or ML4H-affiliated mentors to validate safety rubrics. If needed, we will perform a focused literature sweep using domain-specific queries (e.g., “mental health chatbot safety benchmark arXiv,” “differential privacy LoRA LLM arXiv,” “federated fine-tuning LLM privacy arXiv”).
+
+Optional next step
+Confirm the target base model size (OLMo 2 7B vs. 13B) and your available GPU budget; I’ll translate this plan into exact training commands (LoRA config, Opacus hooks, Flower scripts) and a Phase 0 experiment card you can run in ≤2 hours.

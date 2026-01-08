@@ -1,0 +1,110 @@
+1) Problem framing and goals
+Goal: Develop spatiotemporal graph neural network (ST-GNN) methods that improve short- to sub-seasonal sea ice prediction and analysis by explicitly modeling geophysical structure. Concretely, target four tasks:
+- Drift nowcasting/forecasting (1–10 days) from SAR-derived floe graphs with physics-aware edges.
+- Sea ice concentration (SIC) forecasting (1–30 days) on a geodesic/irregular graph with multi-scale message passing.
+- Lead network nowcasting by converting SAR segmentations into a dynamic graph and predicting lead evolution.
+- Thickness reconstruction/fusion from sparse altimetry tracks (ICESat-2, CryoSat-2/SMOS) via graph interpolation constrained by sea-ice physics.
+
+Why graphs: ST-GNNs represent spatial topology (neighbors, flow connectivity) and temporal dependency more naturally than pure grids, improving generalization for spatiotemporal processes [P1]. Early sea-ice GNN papers show promising skill for multi-scale graph modeling of SIC (IceGAT) and sub-seasonal forecasting with spatiotemporal GNNs [n]. This project aims to (a) benchmark GNNs against strong CNN/Transformer baselines, (b) quantify physics-informed benefits, and (c) deliver reproducible, uncertainty-aware forecasts.
+
+Intuition: Sea ice is a deformable medium with flow-connected interactions; nodes (floe/patch/mesh cells) and edges (adjacency, current-driven, stress-coupling) map cleanly to a graph. Message passing can encode advection and deformation, while physics-aware losses regularize toward plausible dynamics.
+
+Why this is principled: Spatiotemporal GNNs have repeatedly outperformed unstructured baselines on dynamic systems where topology matters [P1], and GNNs have been successfully adapted for Arctic sea ice prediction with multi-scale attention over graph neighborhoods [n]. Incorporating physics via constraints or graph construction helps prevent overfitting and improves extrapolation—a pattern shown in physics-informed forecasting and Earth-system emulation [P4].
+
+2) Experiments
+Experiment 1: Floe-graph drift forecasting (1–10 days)
+- Hypothesis: A physics-informed ST-GNN on floe graphs will reduce 10-day vector drift RMSE vs. persistence, optical-flow, and CNN/Transformer baselines by ≥10%.
+- Setup: Build daily floe graphs from Sentinel-1 SAR GRD tiles (HH/VV), nodes = floe/patch superpixels (SLIC/Watershed), features = backscatter stats, texture, SIC, ice type; edges = kNN + physics edges weighted by ERA5 winds and ocean surface currents (HYCOM/CMEMS). Model: ST-GCN + graph Transformer with edge features and learned edge gates; optional momentum-balance regularizer. Train 2017–2023 Arctic, test 2024, with regional splits.
+- Baselines: Persistence; OSI-SAF drift vectors; Farnebäck/RAFT optical flow on SAR; ConvLSTM/ViT-time; ST-Transformer (grid).
+- Metrics: Vector RMSE (u,v), angular error, endpoint error at 1/3/5/10 days; reliability of predictive intervals (calibration), CRPS for probabilistic outputs.
+- Expected outcomes: GNN > baselines especially beyond 3 days where advection/interaction matter; physics edge weighting ablation improves long-horizon skill. If not, diagnose with adjacency sensitivity and local-vs-global effect analysis [P5]. Supports: ST-GNN benefits on spatiotemporal tasks [P1]; physics-driven drift modeling parallels exist for icebergs [P4].
+
+Experiment 2: Multi-scale graph SIC forecasting (1–30 days)
+- Hypothesis: Multi-scale graph attention (IceGAT-style) with hierarchical pooling reduces 14–30 day SIC RMSE by ≥5% vs MT-IceNet and ST-Transformer, especially in marginal ice zone.
+- Setup: Nodes = hex/icosahedral mesh or adaptive superpixels; features = SIC (OSI-SAF), SST, 10m wind, MSLP, sea-level anomaly, seasonality encodings; temporal window = 60-day context. Model: Graph attention network with cross-scale pooling/unpooling and exogenous drivers as node/edge attributes.
+- Baselines: Climatology + persistence; MT-IceNet (CNN); ST-Transformer; XGBoost with engineered features.
+- Metrics: RMSE/MAE, anomaly correlation, Brier/ROC for thresholded ice edge, CRPS; regional skill (Barents, Bering, MIZ vs pack).
+- Expected outcomes: Multi-scale GNN improves edges and transition zones. Literature suggests multi-scale graph modeling yields gains in Arctic SIC prediction [n] and ST-GNNs handle non-Euclidean dynamics well [P1].
+
+Experiment 3: Lead network nowcasting from SAR-derived graphs
+- Hypothesis: Modeling leads as a dynamic graph (nodes=lead segments; edges=proximity/orientation shear) enables 24–72h nowcasts that improve IoU/F1 by ≥7% over pixel-wise segmentation-only extrapolation.
+- Setup: Segment leads on Sentinel-1 using a strong segmentation model (Conv-Transformer or foundation model) [n], then build a graph from segments with attributes (length, width, orientation, backscatter contrast). ST-GNN predicts node persistence/motion and link changes (merge/split). Compose back to raster for evaluation.
+- Baselines: Persistence of segmentation; optical-flow extrapolation; ConvLSTM on segmentation masks.
+- Metrics: IoU/F1 for lead masks; topology-aware metrics (Betti numbers stability); calibration of event probabilities.
+- Expected outcomes: Explicit graph dynamics better capture fractures and merges than pixel extrapolation. Supports: strong SAR segmentation exists [n]; GNN adds structured temporal dynamics [P1].
+
+Experiment 4: Thickness reconstruction/fusion on graphs
+- Hypothesis: A graph interpolation network that fuses sparse ICESat-2/CryoSat-2/SMOS along-track nodes with neighborhood geophysics reduces monthly SIT RMSE vs kriging and CNN by ≥10%, and yields sharper uncertainty maps.
+- Setup: Build a spatiotemporal graph with nodes at altimetry footprints and nearby mesh cells; features = freeboard, snow depth climatology, SIC, drift history, SST, wind; edges = geodesic + drift-informed. Train to reconstruct gridded SIT products; include heteroscedastic head and conformal calibration.
+- Baselines: Optimal interpolation/kriging; CNN super-resolution; partial-conv thickness reconstruction [n].
+- Metrics: RMSE/MAE vs reference, CRPS; uncertainty coverage; spatial cross-validation (hold-out regions).
+- Expected outcomes: GNN fuses sparse irregular data more naturally than grid CNN, improving coverage. Related: GNN Earth-system emulators and graph-based ocean/weather models show promise on irregular domains [P1], [n].
+
+Experiment 5 (ablation/robustness, mandatory across 1–4)
+- Hypothesis: Graph construction and physics priors explain ≥50% of GNN gains; removing physics edges or multi-scale pooling degrades 5–10 day skill materially.
+- Setup: Ablate edge types (kNN vs current-weighted vs learned), remove physics loss, vary graph resolution; compare across seasons/regions.
+- Metrics: Delta skill vs base; Shapley-style importance of components; out-of-region generalization gap.
+- Expected outcomes: Clear attribution or falsification; if gains vanish, pivot to hybrid architectures. Method guidance: local/global effects in ST-GNN require careful control [P5].
+
+3) Timeline for the next 6 months with milestones
+Phase 0 (Weeks 1–2, gate to proceed)
+- Deliverables: (1) Prediction log (≥14 entries) and one reproduced baseline figure (e.g., persistence vs MT-IceNet on SIC) within ≤10% gap; (2) One experiment card and one ablation/negative result with post-mortem.
+- Data/infra: Standing data pipeline (xarray/zarr), region splits, W&B tracking, preregistered metrics.
+
+Month 1
+- Implement Experiment 1 minimal version (kNN graph; no physics edges). Train on 2019–2022, validate 2023. Milestones: baseline comparisons, first ablation.
+
+Month 2
+- Add physics edges and uncertainty heads to Exp1; start Exp2 with multi-scale graph and exogenous drivers. Milestones: 10-day drift vector RMSE improvement ≥5%; SIC 7-day improvement ≥3%.
+
+Month 3
+- Launch Exp3 (lead graph), integrate SAR segmentation model. Milestones: lead IoU +5% over persistence; topology metric stability.
+
+Month 4
+- Launch Exp4 (thickness fusion); begin cross-basin generalization tests (Arctic→Antarctic small-scope pilot). Milestones: SIT RMSE -8% vs kriging; uncertainty coverage within 90% ±3%.
+
+Month 5
+- Consolidate ablations (Exp5), seasonal robustness; prepare draft figures; external reproducibility check (new machine). Milestones: Ablation clarity (≥50% of gains attributed) and reproduction fidelity ≤10% gap.
+
+Month 6
+- Paper polishing, code/data release, preprint; submit to JAMES/GRL/ML4Earth venue. Milestones: Writing cadence (≥1 page/week), reviewer-proof checklist.
+
+4) Resources (compute, tools, datasets)
+- Compute: 1–2× A100 40–80 GB or 2–4× 3090/4090; ~5 TB storage; optional CPU cluster for preprocessing. Training each model: 1–3 days per experiment, ablations parallelized.
+- Tools: PyTorch + PyG/DGL, PyTorch Lightning, Hydra, W&B; xarray/zarr/dask; rasterio/sen2cor; shapely/geopandas; faiss/scikit-nearest for graph builds; conformal prediction libs.
+- Datasets:
+  - SAR: Sentinel-1 GRD (Copernicus), preprocessed to sigma0; segmentation labels from existing studies for weak supervision [n].
+  - SIC: OSI-SAF, NSIDC SSM/I-SSMIS.
+  - Drift: OSI-405/MEaSUREs.
+  - Thickness: CryoSat-2/SMOS products; ICESat-2 ATL07/ATL10.
+  - Forcing: ERA5 winds/pressure; ocean currents (HYCOM/CMEMS); bathymetry (GEBCO).
+
+5) Risks and mitigations table
+- Label noise and sparse ground truth — Use multiple references, cross-sensor consistency checks; model aleatoric + conformal calibration; report coverage.
+- Graph construction brittleness — Compare kNN, Delaunay, current-weighted, learned edges; sensitivity analysis; regularize with physics edges [P5].
+- Non-stationarity/seasonal shifts — Seasonal embeddings; domain adaptation; train/test by season and basin; report regional skill.
+- Segmentation errors propagate to lead graphs — Use ensemble/foundation models and uncertainty thresholds; treat low-confidence nodes cautiously [n].
+- Compute/storage limits — Start with regional subsets; mixed precision; checkpointing and on-the-fly graph builds.
+- Reproducibility gaps — Seed control, config versioning, data snapshots, three-seed reporting.
+
+6) Stretch ideas or follow-up directions
+- Graph neural operators for sea-ice PDE emulation; couple to simple VP rheology loss for stability.
+- Differentiable data assimilation (learned observation operators) on graphs.
+- Multi-task GNN sharing across drift, SIC, and lead prediction.
+- Transfer to Antarctic; domain adaptation with physics-invariant features.
+- Active learning: prioritize SAR scenes with high forecast disagreement for human labeling.
+
+Citations
+- [P1] Graph Neural Network for spatiotemporal data: methods and applications — http://arxiv.org/abs/2306.00012v1
+- [P4] IDRIFTNET: Physics-Driven Spatiotemporal Deep Learning for Iceberg Drift Forecasting — http://arxiv.org/abs/2507.00036v1
+- [P5] Taming Local Effects in Graph-based Spatiotemporal Forecasting — http://arxiv.org/abs/2302.04071v2
+- [n] Arctic Sea Ice Prediction Based on Multi-Scale Graph Modeling With IceGAT — https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2024JD042136
+- [n] Deep Graph Neural Networks for Spatiotemporal Forecasting of Sub-Seasonal Sea Ice: Hudson Bay (manuscript) — https://essopenarchive.org/.../GraphSIFNet_JAMESv3.pdf
+- [n] Sea Ice Segmentation From SAR by Convolutional Transformer — https://export.arxiv.org/pdf/2306.07649v1.pdf
+- [n] Data-driven uncertainty-aware forecasting of sea ice conditions in the Gulf of Ob — https://arxiv.org/pdf/2410.19782.pdf
+- [n] Reconstruction of Antarctic sea ice thickness from sparse altimetry using partial conv — https://arxiv.org/abs/2505.06255
+
+Note on evidence: Direct, peer-reviewed GNN-for-sea-ice papers are emerging; IceGAT (2024) and GraphSIFNet (preprint) are the most directly relevant anchors found. Broader ST-GNN and physics-informed literature informs methodology [P1], [P5]. Where sources are generic (e.g., traffic forecasting), we proposed targeted pilot validations and ablations to confirm transferability before full-scale claims.
+
+Optional next step
+If you want, I can generate the first experiment card (for Exp1) with concrete variables, falsifier, analysis plan, and a minimal training/eval script scaffold.

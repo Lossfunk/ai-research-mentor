@@ -1,0 +1,110 @@
+Below is a concise plan to add fairness/ethics audits to the Hierarchical Transformer evaluation while preserving strict comparability to the original results on Atari 100k and Crafter, and without altering any original labels or metrics. I ground dataset/metric choices in the paper’s evaluation protocol and benchmarks; all fairness-specific instrumentation is added alongside (not inside) the existing pipeline so it cannot influence training or the primary outcomes.
+
+Scope anchored in the paper
+- Keep datasets, splits, and primary outcomes unchanged: Atari 100k and Crafter; report rollout compute cost, rollout error, and final RL performance, plus the paper’s ablations [heirarchical-transformer.pdf:3].
+- Add fairness/ethics audits as orthogonal, read-only analyses over the same runs. Do not modify training data, rollout depth, retained-token budget, model capacity, or evaluation seeds to preserve comparability [heirarchical-transformer.pdf:3].
+
+Audit objectives and metrics
+A. Task-parity (fairness across task strata)
+- Goal: Detect whether improvements are concentrated in specific task types (e.g., dense vs sparse reward, high vs low partial observability) rather than broadly useful.
+- Method: Define task strata for Atari and Crafter (e.g., reward sparsity, action entropy, observation complexity; see “Adding annotations” below). For each stratum:
+  - Report per-stratum RL performance and rollout-error AUC; compute worst-stratum score, between-stratum range, and Theil index of per-game scores. Conjecture.
+  - Statistical test: paired Wilcoxon on per-game deltas within each stratum; FDR correction across strata.
+
+B. Representation fairness in token retention (no demographic labels available)
+- Goal: Check if masking/selection systematically drops small/rare but critical features (e.g., small moving objects) and whether that correlates with higher local prediction error.
+- Method: Using sidecar objectness/region annotations, compute per-step token-retention rates for object vs background regions and error conditioned on region and object size.
+  - Metrics: Δ retention (object − background), Δ error; regression: error ~ retained_token_fraction + object_size + method + interactions. Conjecture.
+
+C. Stability and robustness fairness
+- Goal: Fairness across seeds (variance), across held-out seeds, and across minor environment variations (Crafter’s procedural generation).
+- Metrics: variance across seeds, worst-seed performance, and gap between train-seed and held-out-seed performance for each game. Conjecture.
+
+D. Resource fairness and environmental impact (ethics)
+- Goal: Ensure compute/parameter parity and quantify environmental cost.
+- Metrics: iso-FLOPs and iso-parameter comparisons (already part of compute cost), energy (kWh), and estimated CO2e per training/evaluation run; accuracy-per-kWh and accuracy-per-kgCO2e. Conjecture.
+
+E. Reporting ethics and data governance
+- Goal: Verify license compliance and provenance; ensure that no test labels or annotations are used for model selection.
+- Checks: ROM/dataset license notes; training/validation/test separation at seed level; preregistered analysis plan. Conjecture.
+
+Adding new annotations without contaminating original labels
+- Sidecar schema (non-invasive):
+  - Store all new annotations in separate, versioned sidecar files (e.g., JSONL/Parquet) keyed by (env_name, episode_id, frame_idx, token_indices) so the original datasets, rewards, and labels remain unmodified. Conjecture.
+- Annotation types:
+  1) Task strata (per-game or per-episode)
+     - Reward sparsity: dense vs sparse (threshold on mean non-zero reward frequency over episodes).
+     - Partial observability proxy: temporal mutual information drop-off in pixel space; quartile bins. Conjecture.
+     - Visual complexity: entropy of pixel intensities, number of edges, optical flow magnitude; quartile bins. Conjecture.
+  2) Region/object annotations (per-frame or per-token)
+     - Automated objectness: produce binary masks via a lightweight unsupervised/weakly supervised method (e.g., gradient-based saliency or a fixed off-the-shelf segmentation model). Map masks to tokens to label token “object vs background” and “object size bin.” Conjecture.
+     - Human spot checks: a small, blinded labeling set to validate automated masks; compute inter-rater reliability (Cohen’s kappa or Krippendorff’s alpha).
+- Contamination controls:
+  - Read-only: audits must not feed back into training, model selection, or hyperparameter tuning; keep an immutable baseline run registry.
+  - Blinding: annotators (human or automated tools) do not access model predictions or rewards; they see only raw frames (or subsets) to avoid bias.
+  - Split governance: if annotating evaluation frames, do not re-run training with these annotations; audits occur post hoc on fixed checkpoints.
+  - Versioning: use a data-versioning tool (e.g., DVC) to pin the sidecar annotations; record hash of the original dataset to guarantee immutability. Conjecture.
+
+Uncertainty reporting
+- For per-group metrics and disparities:
+  - Bootstrap 95% CIs over episodes and seeds (nested bootstrap: resample seeds, then episodes within seeds) and report bias-corrected and accelerated (BCa) intervals. Conjecture.
+  - Report both absolute disparity (max − min group) and relative disparity (max/min).
+  - Multiple comparisons: control FDR (Benjamini–Hochberg) across groups/games/metrics.
+- Bayesian alternative (optional): hierarchical model with varying intercepts for games and groups; report 95% credible intervals for disparities. Conjecture.
+- Emissions/energy uncertainty:
+  - Present mean ± 95% CI from repeated measurements; include regional carbon-intensity range (min–max intensity over measurement window). Conjecture.
+
+Minimal code changes
+- Logging hooks:
+  - During evaluation, log per-episode: seed, env_name, episode_id, rollout-error metrics, RL score, retained-token masks per step (or summary rates), compute cost, and timestamps.
+- Audit modules (offline):
+  - Read logs and sidecar annotations to compute group assignments and region-level retention/error summaries.
+  - Energy tracker wrapper (e.g., CodeCarbon/Experiment Impact Tracker) around training and evaluation loops; logs written to a separate file. Conjecture.
+- No changes to training loss, masking policy, or evaluation harness that feeds into the paper’s primary metrics [heirarchical-transformer.pdf:3].
+
+Concrete, falsifiable audit experiments
+1) Worst-group performance parity (task-parity audit)
+- Setup: Assign Atari/Crafter episodes to reward-sparsity strata via sidecar; evaluate each method’s per-stratum RL score and rollout-error AUC.
+- Hypothesis: The new method should not increase worst-stratum disparity (non-inferiority margin Δ ≤ 2% relative on RL score and error AUC).
+- Tests: TOST for non-inferiority on worst-stratum RL and error AUC; paired Wilcoxon on disparity (max − min) across games with FDR correction.
+
+2) Token-retention bias vs object regions (representation audit)
+- Setup: Use sidecar object masks; compute per-frame token-retention rates for object vs background and corresponding prediction errors.
+- Hypotheses: Retention for object regions should be ≥ background at matched token budgets; higher object-retention correlates with lower local error.
+- Tests: Paired Wilcoxon on Δ retention and Δ error; regression with cluster-robust SEs: local_error ~ retained_fraction_object − retained_fraction_background + controls; report coefficients and 95% CIs.
+
+3) Energy-accuracy ethics audit
+- Setup: Instrument identical training/eval runs with an energy tracker; estimate energy (kWh) and CO2e.
+- Hypotheses: Accuracy-per-kWh should not decline vs baseline; CO2e differences are proportional to compute cost at matched FLOPs.
+- Tests: Paired tests on accuracy-per-kWh and CO2e; report uncertainty from repeated measurements and carbon-intensity ranges.
+
+Failure modes to monitor (and mitigations)
+- Annotation leakage: fairness labels or object masks accidentally used in training or tuning. Mitigation: read-only sidecar; CI checks that training configs never load annotation files.
+- Group imbalance: tiny groups inflate variance. Mitigation: minimum support thresholds; report group sizes; aggregate rare groups or use shrinkage estimators.
+- Annotation noise: automated masks mislabel small objects. Mitigation: human-validated spot checks; sensitivity analyses with alternative maskers; report inter-rater reliability.
+- Overclaiming significance: many group/metric comparisons. Mitigation: preregister primary fairness endpoints and control FDR; provide full correction-adjusted p-values and effect sizes.
+- Compute comparability drift: audit hooks change timing. Mitigation: audits are offline; any online logging must be negligible and identical across methods; report overhead separately.
+
+Reporting format (append to original results)
+- Add a Fairness/Ethics section with:
+  - Tables of per-stratum RL score and rollout-error AUC with 95% CIs and worst-stratum values.
+  - Disparity metrics (absolute and relative) with CIs; seed-variance plots.
+  - Token-retention bias plots: retention vs local error for object vs background.
+  - Energy/CO2e with uncertainty bands; accuracy-per-kWh.
+  - Limitations: no demographic labels; fairness interpreted as parity across tasks/regions, not across people.
+- Keep the original primary metrics first, per the paper’s protocol [heirarchical-transformer.pdf:3], then add fairness/ethics results as complementary evidence.
+
+Literature anchors
+- Model Cards for Model Reporting (guidelines for transparent reporting, including evaluation context and limitations). https://arxiv.org/abs/1810.03993
+- Experiment Impact Tracker / CodeCarbon (tools and methodology for emissions and energy tracking in ML). https://arxiv.org/abs/2004.08900, https://mlco2.github.io/codecarbon/
+
+Key takeaways
+- Preserve the original evaluation completely [heirarchical-transformer.pdf:3]; attach fairness/ethics audits as read-only, sidecar analyses over the same runs.
+- Use sidecar annotations, blinding, and versioning to avoid contaminating original labels; quantify uncertainty via bootstrap/BCa CIs, FDR control, and (optionally) Bayesian hierarchical models.
+- Focus audits on task-parity, representation in token retention, robustness across seeds, and environmental impact; report both effect sizes and uncertainty.
+
+Citations
+- [heirarchical-transformer.pdf:3] Report rollout compute cost, rollout error, and final RL performance; benchmarks include Atari 100k and Crafter; ablations on hierarchical masking, causal graph guidance, and uncertainty-based masking — User-provided PDF
+- Mitchell et al., 2019. Model Cards for Model Reporting — https://arxiv.org/abs/1810.03993
+- Henderson et al., 2020. Towards the Systematic Reporting of the Energy and Carbon Footprints of Machine Learning — https://arxiv.org/abs/2004.08900
+- CodeCarbon (Emissions Tracker) — https://mlco2.github.io/codecarbon/

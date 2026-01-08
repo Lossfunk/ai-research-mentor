@@ -1,0 +1,47 @@
+Short answer: Yes, it’s viable—and there’s active precedent across sequence (DNA/protein), gene regulation, and single‑cell “foundation” models. Transformers already work well for sequence modeling (DNABERT) and long‑range regulatory prediction (Enformer), and they’re being scaled to single‑cell multi‑omics (scGPT). The most promising novelty is in multimodal integration (sequence + epigenomics + single‑cell expression + perturbations), cross‑species generalization, and decision‑relevant evaluation under distribution shift, where recent papers still report gaps [3][4][5][6].
+
+Where novelty likely lies
+- Multimodal, cross‑dataset pretraining: Jointly learn from scRNA‑seq, scATAC‑seq, and epigenomic tracks, not just one modality; tie modalities with shared gene tokens or genomic coordinates and evaluate zero‑shot on unseen tissues/datasets [1][5].
+- Causal/perturbation-aware objectives: Incorporate CRISPR perturbation or drug-response supervision to move beyond correlation (predict counterfactual expression changes), a limitation of current single‑cell foundation models [6].
+- Cross-species transfer with biological priors: Pretrain on mouse + human using ortholog mappings and pathway graphs; demonstrate robust zero-shot transfer—an open challenge in reviews [1][2].
+- Regulation-aware retrieval: Retrieval-augmented transformers that pull relevant regulatory elements (enhancers, TF motifs) or pathway subgraphs at inference time to improve interpretability and OOD robustness over sequence-only models like Enformer [3].
+
+At least three concrete, falsifiable experiments
+- E1. Multimodal pretraining → zero-shot single‑cell transfer
+  - Setup: Pretrain a transformer with masked modeling on scRNA‑seq (gene tokens) and contrastively align to scATAC/epigenomic tracks via genomic bins. Hold out whole tissues/labs during pretraining.
+  - Baselines: scGPT or similar single‑cell foundation model; a per‑modality supervised classifier [5].
+  - Metrics: Cell-type F1, ARI, calibration (ECE) on held‑out tissues/labs; OOD shift robustness.
+  - Falsifiable outcome: Zero-shot F1 improves by ≥5 points vs scGPT on ≥60% of held‑out datasets at matched label budgets. If not, multimodal pretraining isn’t adding value over current single‑cell FMs.
+
+- E2. Cross‑species generalization with orthologs
+  - Setup: Pretrain on mouse scRNA‑seq; fine‑tune with ≤1% labeled human cells using ortholog-aligned embeddings.
+  - Baselines: Training-from-scratch on human; scGPT fine‑tuned on human [5].
+  - Metrics: Human cell-type F1, data efficiency (performance vs labeled fraction).
+  - Falsifiable outcome: At 1% labels, model matches or exceeds full‑label baseline; if not, claim of efficient cross‑species transfer isn’t supported.
+
+- E3. Perturbation prediction (causal)
+  - Setup: Train a head to predict CRISPR perturbation responses (Δ expression vector) from unperturbed profiles + regulatory context (sequence/ATAC).
+  - Baselines: Linear models and non‑transformer multi‑layer perceptrons on the same features.
+  - Metrics: Pearson/Spearman correlation of predicted vs observed Δ for held‑out genes/perturbations; top‑k up/down gene AUROC.
+  - Falsifiable outcome: Transformer improves correlation by ≥0.05 absolute over baselines on held‑out targets. If not, the added complexity isn’t justified.
+
+- E4. Sequence-to-expression with retrieval vs Enformer (optional)
+  - Setup: Predict gene expression across cell types from sequence plus retrieved regulatory tracks (TF motifs/enhancers).
+  - Baseline: Enformer with sequence-only inputs [3].
+  - Metrics: Gene-level correlation on held‑out cell types; interpretation (attribution overlaps with known motifs).
+  - Falsifiable outcome: Retrieval-augmented model outperforms Enformer on held‑out cell types by ≥0.03 correlation; if not, retrieval adds little beyond long‑range sequence context.
+
+Viability and scope
+- Data availability: Ample public data (CELLxGENE/GEO for scRNA‑seq, ENCODE/ROADMAP for epigenomics, Perturb‑seq datasets) makes this practical. Reviews and recent evaluations highlight both momentum and current limitations, which your experiments directly test [1][2][5][6].
+- Compute: Start with 10–100M parameter models; pretraining on 1–10M cells is feasible with a single multi‑GPU node or efficient tokenization (genes as tokens), and you can bootstrap from open scGPT‑style checkpoints where licenses allow [5].
+- Baselines to include: DNABERT for k‑mer sequence tasks [4], Enformer for gene regulation [3], scGPT (or comparable) for single‑cell [5]. Reporting strong baselines is essential to substantiate novelty.
+
+If you can share which biological modalities you plan to mix (sequence, epigenomics, single‑cell, perturbations) and your target task, I can tailor an architecture and training plan.
+
+Sources
+[1] Transformers in single‑cell omics: a review and new perspectives — https://pubmed.ncbi.nlm.nih.gov/39122952/  
+[2] Foundation models for bioinformatics — https://onlinelibrary.wiley.com/doi/full/10.1002/qub2.69  
+[3] Enformer: Effective gene expression prediction from sequence by integrating long‑range interactions — https://www.nature.com/articles/s41592-021-01252-x  
+[4] DNABERT: pre‑trained Bidirectional Encoder Representations from Transformers model for DNA‑language in genome — https://academic.oup.com/bioinformatics/article/37/15/2112/6128680  
+[5] scGPT: toward building a foundation model for single‑cell multi‑omics — https://pubmed.ncbi.nlm.nih.gov/38409223/  
+[6] Zero‑shot evaluation reveals limitations of single‑cell foundation models — https://genomebiology.biomedcentral.com/articles/10.1186/s13059-025-03574-x

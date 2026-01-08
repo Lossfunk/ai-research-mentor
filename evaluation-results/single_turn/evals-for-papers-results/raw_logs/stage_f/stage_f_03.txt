@@ -1,0 +1,95 @@
+Here’s a concise, practical submission checklist for “Do Multiple Instance Learning Models Transfer?”, with a concrete final timeline, key risks, and missing items to resolve. I also propose falsifiable experiments, grounded where possible in prior work on transfer in histopathology and standardized cross-dataset evaluation.
+
+Core submission checklist
+- Scope and claims
+  - Clearly state the transfer setting(s): cross-dataset, cross-institution, cross-task, or domain shift type (e.g., stain/protocol). Define “transfer” operationally (train on source, test on target; or fine-tune on small target set).
+  - Position against prior work on histopathology transfer learning and standardized evaluation toolkits (e.g., ChampKit) to motivate choice of datasets/splits and metrics [P1][P3].
+- Datasets and splits
+  - List all datasets with licenses, inclusion/exclusion criteria, patient counts, slide counts, patch sampling scheme, and label provenance.
+  - Ensure patient-level, site-level, and slide-level leakage controls; document all split seeds.
+  - Specify source→target pairs, sample sizes, and whether target labels are used (zero-shot vs few-shot).
+- Models and baselines
+  - MIL models/pooling: mean/max pooling, attention-based MIL, and at least one strong recent MIL variant as a sanity check baseline. Describe instance encoder (e.g., ResNet/ViT), bag size, and sampling.
+  - Transfer levers: supervised ImageNet pretraining vs self-supervised pretraining (e.g., DINO/MoCo/MAE) [P2]; frozen vs fine-tuned encoders; stain normalization/augmentations; domain generalization baselines.
+- Training protocol
+  - Hyperparameter search space, scheduler, early stopping criteria, and number of random seeds (≥3 recommended).
+  - Compute budget (GPU type, hours), mixed precision, batch size; total runs required.
+- Evaluation and statistics
+  - Primary metrics: ROC-AUC and/or AP; class prevalence-aware reporting.
+  - Secondary: calibration (ECE/Brier), decision thresholds (Youden), confidence intervals (bootstrap stratified by patient).
+  - Stability analyses: performance distribution across seeds; delta under target-data size changes.
+  - Negative transfer check: quantify source→target drop versus target-only training [P1].
+- Robustness/shift analysis
+  - Out-of-distribution tests across sites/scanners; stain jitter vs normalization ablation.
+  - Failure mode analysis (qualitative WSI regions; error stratified by site/tissue/subtype).
+- Ablations
+  - Pooling mechanism; pretraining choice; frozen vs fine-tuned; bag size/instance sampling; color normalization; data size scaling (log-scale plots).
+- Reproducibility package
+  - Code with pinned dependencies; config files for each run; scripts to download/prepare data; exact seeds and splits; deterministic flags where feasible.
+  - Model checkpoints; README with 1-command reproduction; compute and carbon reporting.
+- Writing and artifacts
+  - Figures: pipeline diagram; transfer matrix (source rows × target columns); calibration curves; seed-violin plots.
+  - Tables: metric means±CI; ablation summary; compute cost table.
+  - Limitations, ethics/data statement, licensing, author contributions, COI.
+  - Venue formatting, anonymization (if applicable), supplementary checklist.
+
+Experiments to finalize (falsifiable; report mean±95% CI; n≥3 seeds)
+1) Pretraining strategy vs transfer
+- Hypothesis: Self-supervised pretraining improves cross-dataset transfer compared to supervised ImageNet pretraining.
+- Variables: Pretraining method (Supervised-ImageNet vs SSL method), encoder fixed; same MIL head and training budget.
+- Metrics: Target-domain ROC-AUC/AP; calibration (ECE); negative transfer gap relative to target-only training.
+- Expected outcome: SSL ≥ supervised for transfer robustness in histopathology, consistent with prior indications that SSL benefits histopathology representations [P2] and that transfer choices matter [P1].
+2) Pooling mechanism effect on transfer
+- Hypothesis: Attention-based MIL transfers better than mean/max pooling due to instance weighting.
+- Variables: Pooling (mean, max, attention); keep encoder/pretraining fixed.
+- Metrics: Cross-dataset ROC-AUC/AP; seed stability; calibration.
+- Expected outcome: Attention > mean/max on target; if not, report conditions (bag size, label noise) under which simple pooling is competitive.
+3) Frozen vs fine-tuned instance encoders
+- Hypothesis: Light fine-tuning (e.g., last N layers) on source improves transfer less than or equal to full fine-tuning; in limited-target fine-tuning, frozen+linear may avoid overfitting.
+- Variables: Encoder training regime (frozen, partial, full); same data and head.
+- Metrics: Source performance; target zero-shot performance; few-shot target fine-tune performance.
+- Expected outcome: Full fine-tune best on source; frozen/partial may retain or improve zero-shot transfer when domains diverge, aligning with transfer-learning sensitivity observed in histopathology [P1].
+4) Domain shift defenses
+- Hypothesis: Stain normalization and aggressive color/texture augmentations reduce transfer drop relative to naive training.
+- Variables: No normalization vs Macenko/Reinhard normalization; light vs strong color jitter; optional domain generalization baseline.
+- Metrics: Target ROC-AUC/AP; delta in negative transfer; calibration.
+- Expected outcome: Normalization/augmentations shrink the source→target gap; report failure cases if not.
+
+Final timeline (4 weeks; adjust to venue deadline)
+- Week 1: Lock scope and datasets; finalize splits; implement baselines and logging; run sanity checks (within-dataset). Kick off Experiment 1 (pretraining) small-scale; prepare figures templates. Anchor against prior transfer studies [P1][P3].
+- Week 2: Run Experiments 1–3 at scale (≥3 seeds); start Experiment 4; compute CI and calibration; generate initial transfer matrix; draft Methods and Experiments.
+- Week 3: Complete robustness, failure analyses, and ablations; finalize tables/figures; write Results, Limitations, and Ethics/Data statements; internal replication on a second machine/seed pack; package code/checkpoints with 1-command scripts.
+- Week 4: Polishing and compliance: reproducibility checklist, artifact evaluation dry-run, formatting/anonymization, references. External read-through. Submit.
+
+Key risks and mitigations
+- Data leakage (patient/site-level): Impact high. Mitigation: enforce patient/site stratification; audit IDs; include leakage test script in repo.
+- Negative transfer or unstable results across seeds: Impact medium. Mitigation: report seed distributions, CIs; include target-only baseline; predefine early stopping on source only; analyze shift drivers [P1].
+- Incomplete external validity (too few target domains): Impact medium. Mitigation: include ≥2 target datasets or ≥2 institutions if feasible; leverage standardized evaluation protocols/tools where possible [P3].
+- Compute/time overrun: Impact medium. Mitigation: cap search spaces; use fixed seeds; parallelize runs; prioritize Experiments 1–3; maintain a must-have vs nice-to-have list.
+- Reproducibility gaps: Impact medium. Mitigation: pin versions; save configs and random states; release checkpoints; provide CPU-only inference path.
+- Ethical/legal constraints (data use/licensing): Impact variable. Mitigation: confirm dataset licenses/DUAs; include data statement; avoid sharing restricted data—share scripts.
+
+Missing items to resolve before submission
+- Final list of datasets, licenses, and exact patient-level splits; leakage audit results.
+- Pretraining checkpoints and training details (source data, augmentations, epochs).
+- Hyperparameter search protocol and bounds; early stopping criteria; number of seeds.
+- Calibration/evaluation details (ECE bins, bootstrap plan), and choice of primary vs secondary metrics.
+- Compute disclosure (hardware, hours), carbon estimate (optional).
+- Model release plan (code, configs, weights), license, and README with one-command reproduction.
+- Final figures: pipeline, transfer matrix, calibration curves, seed stability, ablation summary.
+- Limitations and ethics/data-use statement.
+
+Literature anchors
+- HistoTransfer: Understanding Transfer Learning for Histopathology — establishes how transfer choices affect performance in histopathology; replicate key settings to contextualize your results [P1]. http://arxiv.org/abs/2106.07068v1
+- Evaluating histopathology transfer learning with ChampKit — motivates standardized cross-dataset evaluation and reusable baselines [P3]. http://arxiv.org/abs/2206.06862v1
+- Self-supervised driven consistency training — supports including SSL pretraining variants in your transfer comparison [P2]. http://arxiv.org/abs/2102.03897v3
+
+Notes on evidence
+- Prior work indicates that transfer-learning design choices materially affect histopathology performance [P1], and community toolkits exist to standardize transfer evaluations [P3]. Self-supervised pretraining is a reasonable comparator given its effectiveness in histopathology representation learning [P2]. Claims above are framed as hypotheses with falsifiable experiments and should be validated empirically.
+
+Citations
+- [P1] HistoTransfer: Understanding Transfer Learning for Histopathology — http://arxiv.org/abs/2106.07068v1
+- [P2] Self-supervised driven consistency training for annotation efficient histopathology image analysis — http://arxiv.org/abs/2102.03897v3
+- [P3] Evaluating histopathology transfer learning with ChampKit — http://arxiv.org/abs/2206.06862v1
+
+If you share your target venue and deadline, I can tailor the checklist to that venue’s artifact/reproducibility requirements and compress the timeline if needed.

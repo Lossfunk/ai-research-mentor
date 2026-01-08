@@ -1,0 +1,133 @@
+1. Problem framing and goals
+Goal: Design and execute a rigorous, IRB-approved human-centered evaluation of AI legal assistants that measures their effect on legal task quality, efficiency, reasoning structure (IRAC), citation integrity, and user trust/calibration across expertise levels (law students, paralegals, practicing attorneys). The plan emphasizes randomized controlled user studies, replicable benchmarks, and ablations of interface and model features known to affect overreliance and explanation quality [P8][P3]. We will ground automated components with established legal benchmarks (LegalBench, LexGLUE, CaseHOLD, LawBench) and holistic evaluation practices (HELM) to triangulate human and offline metrics [1][2][3][9][4].
+
+Primary research questions
+- RQ1: Does AI assistance improve end-to-end legal task quality and throughput without inducing harmful overreliance? [P8][5]
+- RQ2: Do explanation formats, citation verification, and calibrated confidence displays reduce errors and overreliance in human-AI teams? [P8][P3]
+- RQ3: Does IRAC-structured assistance improve reasoning quality versus freeform assistance? [6][P4]
+- RQ4: Can retrieval/citation verification pipelines materially reduce legal hallucinations and invalid citations in research tasks? [10][7][11]
+
+Outcomes
+- Primary: Task quality (expert-blinded rubric), issue spotting recall, rule identification F1, holding accuracy (CaseHOLD), valid-citation rate, hallucination rate, time-on-task, and human calibration (Brier score) [3][7][4][10].
+- Secondary: Overreliance rate (agreeing with wrong AI), revision rate after AI suggestion, perceived trust/appropriateness, and workload (NASA-TLX) [P8][P3].
+
+Stage: B → C (from idea to executable research plan with ablations and preregistration).
+
+Intuition: The biggest gains come from changing how people use AI, not just which model they use. Interfaces that structure reasoning (IRAC), surface verifiable citations, and calibrate confidence can preserve accuracy while avoiding overreliance.
+
+Why this is principled: Empirical work shows explanations can both reduce and induce overreliance depending on design, so you must test variants in controlled trials [P8][P3]. Using domain benchmarks (LegalBench/LexGLUE/CaseHOLD) and holistic evaluation (HELM) triangulates construct validity and external validity by aligning offline and user-centered metrics [1][2][3][4].
+
+2. Experiments
+Experiment 1: RCT on assistance, explanations, and calibration
+- Hypothesis: AI assistance improves task quality/time; adding calibrated confidence and citation verification reduces overreliance without reducing benefits [P8][5].
+- Setup: Between-subjects 4-arm RCT on short memos and legal research tasks: A) control (unaided), B) suggestions only, C) suggestions+salient explanation snippets, D) C + calibrated confidence + auto-citation verification (CAP/Bluebook checks). Participants: N≈200 law students and N≈60+ practitioners (powered per arm via G*Power with f≈0.20; finalize via pilot variance). Use realistic but non-client scenarios, statutes, and public cases [11][7].
+- Baselines: Unaided human; generic LLM (no RAG) vs legal-tuned LLM; Google/Westlaw-style search baseline (time-limited).
+- Evaluation metrics: Expert-blinded rubric (issue identification recall, rule/authority correctness, application depth, conclusion correctness), time-on-task, overreliance (accepting incorrect AI advice), Brier score for confidence calibration, valid-citation rate (Bluebook + CAP lookup), hallucination rate [5][7][11][4].
+- Expected outcomes: B>D>C>B in quality/time; D reduces overreliance vs B/C with similar or better quality [P8]. If explanations induce misinformation in C, D’s verification and calibration should mitigate [P3]. If no gains, we refine prompts/interfaces or reduce cognitive load.
+
+Experiment 2: Citation verification pipeline vs vanilla LLM for legal research
+- Hypothesis: Retrieval-augmented generation with authority-grounded citation verification reduces hallucinations and increases valid-citation rate vs vanilla LLM [10].
+- Setup: Compare Vanilla LLM, RAG (statute/caselaw corpora), and RAG + structured Bluebook formatting + automatic validation (CAP API and rule-based Bluebook checks). Tasks: draft research summaries with citations for assigned issues; time cap uniform [11][7].
+- Baselines: Vanilla LLM zero-shot; Legal-tuned model without retrieval; human-only search as reference.
+- Evaluation metrics: Valid-citation rate (% matching CAP or Westlaw IDs), authority relevance precision/recall, hallucination rate (unsupported claims), summary quality (expert rubric), time [10][11].
+- Expected outcomes: RAG+verification outperforms vanilla on valid citations and hallucination reduction; if authority relevance remains low, add query expansion or LegalBench-RAG tasks to stress-test retrieval [9].
+
+Experiment 3: IRAC-structured assistance vs freeform assistance
+- Hypothesis: IRAC scaffolding improves reasoning structure and final quality, especially for novices, without increasing time [6].
+- Setup: Two conditions: Freeform AI assistant vs IRAC-guided assistant (issue prompts, retrieved rules, structured application checklists, conclusion) with snippet-level citations. Use case analyses and short-answer exam-style prompts from LexGLUE/LegalBench tasks adapted for human writing [1][2][6].
+- Baselines: Unaided writing; IRAC template without AI.
+- Evaluation metrics: IRAC completeness score, rule statement correctness, application specificity (rubric), final answer accuracy, time, and self-reported understanding [6]. Secondary: explanation helpfulness, subjective trust [P4].
+- Expected outcomes: IRAC assistance yields higher structure and accuracy gains for students; if experts find it constraining, allow “structured-freeform toggle.” If freeform wins, investigate cognitive load and scaffold granularity.
+
+Experiment 4: Trust calibration and error awareness
+- Hypothesis: Calibrated confidence displays and disagreement highlighting improve human calibration and reduce harmful acceptance of incorrect AI suggestions [P8].
+- Setup: Within-subjects counterbalanced tasks where the assistant occasionally injects plausible but incorrect suggestions (ethically disclosed post-study). Conditions: no confidence vs calibrated confidence + “disagreement affordances” (quick access to sources and alternatives). Safety: debrief and minimize deception by using synthetic or public cases [P3].
+- Baselines: Confidence-free UI; static disclaimer-only UI.
+- Evaluation metrics: Brier score, selective acceptance rate (of incorrect advice), correction rate after source-check, final task quality [4][P8].
+- Expected outcomes: Improved calibration and lower overreliance with calibrated displays and quick-verification UX; if not, revise visualization (intervals, traffic-light) or add mandatory source peek for high-stakes claims.
+
+Each experiment includes preregistration, power analysis, and at least one ablation (e.g., explanation style, retrieval corpus, citation checker strictness) to identify the dominant factor behind any gains [4][P8].
+
+3. Timeline for the next 6 months with milestones
+Phase 0 (Weeks 1–2) — Gate before scaling
+- Deliverables: (1) Preregistration (OSF) with hypotheses, metrics, stop rules, and analysis plan; (2) Pilot with ≥20 participants and one reproduced benchmark figure/metric (e.g., CaseHOLD accuracy) within ≤10% of reported numbers; (3) One ablation or negative result with post-mortem; (4) IRB protocol drafted and submitted.
+- Milestones: IRB submission; interface prototype; benchmark harness for LegalBench/LexGLUE [1][2][3].
+
+Month 2
+- IRB approval; finalize instruments (rubrics, tasks), consent, debrief. Complete power analysis using pilot variance. Implement RAG+verification pipeline (CAP API). Recruit pilot participants (students) [11].
+- Milestone: Stable pipeline and validated rubrics; small-sample RCT dry run.
+
+Month 3
+- Run Experiment 1 with students (N≈120–160). Parallel: automated benchmark evaluation (LegalBench/LawBench) for model baselines [1][9].
+- Milestone: Interim analysis against preregistered criteria; adjust sample size if variance higher than expected.
+
+Month 4
+- Run Experiments 2 and 3 with students; expand to practitioners (N≈30–60) via professional networks. Begin qualitative interviews (subset) for failure modes.
+- Milestone: Cross-cohort analysis (novice vs expert differences).
+
+Month 5
+- Run Experiment 4 (calibration). Synthesize results; run targeted ablations (explanation style, verification strictness). Conduct reproducibility checks (≥3 prompt seeds or interface replicates).
+- Milestone: Ablation clarity: top factor explains ≥50% of gains or record a falsified hypothesis with rationale.
+
+Month 6
+- Write paper; external preregistered replication or cross-institutional validation (if feasible). Venue selection (HCI/AI+Law). Release datasets, code, and UI screenshots with redactions.
+- Milestone: Submission-ready draft; artifacts on OSF/HF; reproduction package; prediction log (≥14 entries) and fidelity checks complete.
+
+4. Resources (compute, tools, datasets)
+- Compute: 1–2 GPUs (A100 or 4090) for RAG indexing and batch inference; cloud API access to frontier and open models (e.g., GPT-4-class, Llama 3.1, Mistral). Retrieval infra (Elasticsearch/FAISS). Minimal cluster suffices.
+- Tools: Survey/experiment platform (Qualtrics or Gorilla/Prolific for students; private practitioner recruitment), G*Power for power analysis, OSF for preregistration, annotation with blinded expert graders, Bluebook formatting checks (rule-based), CAP API for citation validation, logging for prompts and interactions [11][7].
+- Datasets and benchmarks:
+  - LegalBench (broad legal reasoning tasks) [1]; LegalBench-RAG (RAG stress tests) [9].
+  - LexGLUE (multi-task legal NLP) [2]; CaseHOLD (holding prediction) [3].
+  - LawBench (legal knowledge assessments) [9].
+  - Caselaw Access Project (citations, opinions for authority validation) [11].
+  - HELM framework/harness ideas for holistic metric design and reporting [4].
+- Human data: Synthetic or public case scenarios; no client data. Store interaction logs de-identified; follow IRB data management.
+
+5. Risks and mitigations table
+- Overreliance causing poor decisions — Mitigate via calibrated confidence, disagreement affordances, mandatory source peeks in some conditions; debrief and restrict tasks to non-stakes scenarios [P8][P3].
+- Hallucinated or invalid citations — Use RAG with authoritative corpora and CAP-based validation; measure valid-citation rate explicitly [10][11].
+- Explanation-induced misinformation — Compare explanation styles; include verification and counter-arguments; preregister to avoid HARKing [P3].
+- IRB/ethics (deception, undue influence) — Minimize deception; full debrief; consent emphasizes no legal advice; use public/synthetic cases; data minimization and retention limits.
+- Unauthorized practice of law concerns — Clear disclaimers; participants informed outputs are for research only; no client-specific guidance.
+- Recruitment bias (mostly students) — Stratify by expertise; include practitioners; report heterogeneity; replicate at second site if possible [5].
+- Low external validity vs real practice — Include tasks mimicking memos/research; triangulate with practitioner subset and benchmark correlations [1][4].
+- Compute/API/model drift — Version-pin models; log prompts; repeat key runs; keep local baselines (open models).
+- Reviewer skepticism about novelty — Emphasize controlled ablations tying UI design to causal effects; link to RCT precedents in legal education [5].
+- Rubric subjectivity — Blinded grading, inter-rater reliability (Cohen’s kappa), rubric piloting; calibration sessions with experts.
+
+6. Stretch ideas or follow-up directions
+- Longitudinal field study: multi-week use in clinic courses or pro bono settings (no client-identifying info) to observe skill transfer and reliance patterns over time.
+- Domain-specific assistants (e.g., immigration, IP): test whether retrieval specialization plus domain checklists shift the trade-off curve between speed and accuracy.
+- Judge/jury-perspective evaluation: craft bench-memo and jury-instruction tasks with expert panels; compare to LegalBench/LawBench subtask performance [1][9].
+- Fairness and disparities: test whether assistance differentially benefits novices vs experts; probe whether citation verification narrows gaps.
+- Adversarial red-teaming: craft hard counterfactuals (nearly identical cases with pivotal distinctions) to probe susceptibility to precedent mismatches; align with LegalBench-RAG [9].
+
+IRB and ethics steps (integrated across phases)
+- Protocol: Minimal-risk human-subjects research with deception elements only where necessary; detailed debrief plan. Consent clarifies “no legal advice,” data usage, compensation, and withdrawal rights.
+- Data protection: No client data; public/synthetic cases; de-identification and separation of contact info and logs; retention ≤12 months unless participants consent to longer archiving.
+- Risk management: Pre-screen participants to avoid active-client conflicts; provide resources if discomfort occurs; report adverse events promptly.
+- Preregistration and transparency: OSF preregistration; upload anonymized materials, analysis code, and debrief scripts after data lock.
+- Compensation: Fair pay targeted at ≥$20/hr equivalent for tasks; justify in IRB to avoid undue influence for students.
+
+Literature anchors
+- LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning in Large Language Models — arXiv:2308.11462 [1]
+- Lawyering in the Age of Artificial Intelligence (Randomized Controlled Trial with Law Students) — Minnesota Law Review (2024) [5]
+
+Optional next step
+- Build a minimal IRAC-structured assistant with CAP citation validation and run a 20-participant pilot to finalize rubrics and variance estimates for power analysis, then submit/fast-track IRB with these artifacts.
+
+Citations
+- [P3] Don’t be Fooled: The Misinformation Effect of Explanations in Human-AI Collaboration — http://arxiv.org/abs/2409.12809v2
+- [P4] Reframing Human-AI Collaboration for Generating Free-Text Explanations — http://arxiv.org/abs/2112.08674v2
+- [P8] Explanations Can Reduce Overreliance on AI Systems During Decision-Making — http://arxiv.org/abs/2212.06823v2
+- [1] LegalBench: A Collaboratively Built Benchmark for Measuring Legal Reasoning in Large Language Models — https://arxiv.org/abs/2308.11462
+- [2] LexGLUE: A Benchmark Dataset for Legal Language Understanding in English — https://ar5iv.labs.arxiv.org/html/2110.00976
+- [3] CaseHOLD: When Does Pretraining Help? Assessing Self-Supervised Learning for Law and the CaseHOLD Dataset — https://arxiv.org/abs/2104.08671
+- [4] Holistic Evaluation of Language Models (HELM) — https://crfm.stanford.edu/helm/
+- [5] Lawyering in the Age of Artificial Intelligence — Minnesota Law Review (RCT) — https://minnesotalawreview.org/wp-content/uploads/2024/11/3-ChoiMonahanSchwarcz.pdf
+- [6] Can ChatGPT Perform Reasoning Using the IRAC Method in Analyzing Legal Scenarios Like a Lawyer? — https://aclanthology.org/2023.findings-emnlp.929/
+- [7] Bluebook Legal Citation Guides (Marquette; UT Austin) — https://libraryguides.law.marquette.edu/CiteCheckers/BluebookTips; https://tarlton.law.utexas.edu/bluebook-legal-citation
+- [9] LawBench and LegalBench-RAG — https://arxiv.org/pdf/2309.16289.pdf; https://arxiv.org/html/2408.10343v1
+- [10] Hallucination-Free? Assessing the Reliability of Leading AI Legal Research Tools — https://arxiv.org/html/2405.20362v1
+- [11] Caselaw Access Project (CAP) — https://lil.law.harvard.edu/projects/caselaw-access-project

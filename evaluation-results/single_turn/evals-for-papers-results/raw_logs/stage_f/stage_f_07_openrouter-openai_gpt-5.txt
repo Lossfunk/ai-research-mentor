@@ -1,0 +1,73 @@
+Reviewer-style summary (for rebuttal)
+
+Overall assessment and score
+- Summary: The paper introduces a federated learning (FL) benchmark suite evaluating multiple algorithms under heterogeneous client populations. It emphasizes non-IID partitions, variable client availability, and system metrics. The study is timely and addresses the reproducibility gap in FL.
+- Score: 6 (borderline accept). Strong potential if missing artifacts and several methodological clarifications are addressed.
+
+Major strengths
+- Clear problem motivation: Benchmarks realistic FL challenges (non-IID, partial participation, system heterogeneity).
+- Breadth of algorithms: Includes several families (e.g., FedAvg-style, proximal/correction, adaptive server optimizers, personalization).
+- Multi-metric reporting: Reports both utility (accuracy/AUROC) and system metrics (rounds, bytes, wall-clock), with attention to stragglers and client drift.
+- Sensible task diversity: Covers multiple modalities or datasets (if applicable) and both cross-device and cross-silo regimes.
+- Reusability focus: Abstraction appears clean; potential to standardize FL evaluation protocols.
+
+Primary concerns (methodology/claims)
+- Realism of client heterogeneity and availability traces: It’s unclear whether availability/latency/compute profiles come from real traces (e.g., mobile usage, enterprise workloads) or synthetic approximations. If synthetic, justify the parameterization and show sensitivity; otherwise results risk overfitting to a simulator.
+- Non-IID construction and leakage: The non-IID partitioning scheme is not fully specified (label-skew vs feature-skew vs quantity-skew; shard sizes; overlap). Without a partition ledger and seeds, claims about difficulty and fairness across algorithms are hard to assess.
+- Tuning fairness and budgets: Hyperparameter tuning procedures per method (client LR, local steps, server optimizer, proximal coefficients, personalization knobs) may not be matched by budget. Methods with more tunable knobs might be under- or over-favored.
+- Statistical rigor and stability: Limited seeds/repeats and lack of client-level confidence intervals (per-client distribution, 10th percentile performance) weaken claims about robustness and fairness.
+- Personalization and evaluation protocol: If personalization is included, it’s unclear whether test metrics are global or personalized per client, and how the evaluation balances average vs worst-case clients. Clarify adaptation budget at test time and any use of target data.
+- Privacy/security scope: Benchmarks mention DP/secure aggregation only superficially. If privacy-preserving settings are in scope, specify whether results include DP noise (ε, δ) and secure aggregation overheads; otherwise, scope claims to non-privacy FL.
+- Asynchrony and fault tolerance: The benchmark seems predominantly synchronous. Many production FL systems are asynchronous or semi-synchronous; clarify whether asynchronous baselines or staleness-robust methods are included or explicitly out of scope.
+- External validity: Datasets may not reflect real FL deployments (e.g., public vision/NLP corpora with artificial shards). Add at least one setting closer to deployment (e.g., long-tail client data sizes, drifting distributions).
+
+Missing artifacts (blocking reproducibility)
+- Code and configs
+  - End-to-end runnable code for server and client; per-benchmark config files with exact hyperparameters; seed control and determinism flags.
+  - Scripts to generate the exact client partitions (non-IID settings), with fixed seeds and a partition manifest (client→indices).
+- Data and licenses
+  - Dataset ledger (name, version, URL/DOI, license, redistribution policy); no redistribution of restricted data. Data acquisition scripts rather than mirrors.
+- Traces and simulators
+  - Client availability/compute/network traces and how they were derived (real vs synthetic). If synthetic, the generator + parameters and justification; if real, anonymization and license/consent notes.
+- Metrics and logs
+  - Per-round logs of participating clients, bytes up/down, wall-clock, failures, and per-client metrics; summary scripts to reproduce figures/tables.
+- Baseline parity
+  - Tuning protocol per method, search spaces, budgets, and early stopping criteria; checkpoint selection rules.
+- Containers/environment
+  - Docker/Conda with pinned versions; hardware requirements; CI-style smoke test; instructions to run at small scale locally and larger scale on a cluster.
+- Checkpoints
+  - Optional but useful: final global model checkpoints and, if feasible, a few anonymized client-side models for personalization baselines.
+- Documentation
+  - Reproducibility guide (one-command runs for 1–2 core benchmarks), expected vs obtained results table, and limitations of the simulator.
+
+Questions for authors (answer in rebuttal)
+- Heterogeneity realism: Are client availability/latency/compute distributions from real logs or synthetic? Provide derivation and sensitivity to key parameters.
+- Partitioning: Provide the exact non-IID recipe(s), seeds, and a partition manifest. How do algorithm rankings change across label-skew vs feature-skew vs quantity-skew?
+- Tuning fairness: What is the per-method tuning budget (trials, search space)? Were budgets matched across methods and datasets?
+- Stability: How many seeds? Provide CIs and worst-10% client metrics. Do conclusions hold across seeds and alternative partitions?
+- Personalization protocol: Is test-time adaptation allowed? If yes, what budget and data? Report both global and personalized metrics.
+- Privacy/security: Are any results under DP or secure aggregation? If no, please scope the claims; if yes, report ε/δ and communication overhead.
+- Asynchrony: Any asynchronous or partial staleness experiments? If not, please note as out of scope.
+- External validity: Can you include one benchmark closer to deployment (long-tail clients, non-stationary drift) or justify why current tasks suffice?
+
+Rebuttal guidance (what to include now)
+- Add an artifact table with availability at submission: code, configs, partition scripts and seeds, traces (or generators), environment files, and a minimal example run. Provide anonymized link or supplementary bundle.
+- Insert a “Methods parity” paragraph detailing tuning budgets per method and cite search spaces. Add a figure/table with per-method sensitivity to one key hyperparameter.
+- Provide client-level statistics: distribution plots and 10th percentile metrics; add 3-seed CIs for all headline numbers.
+- Attach a short sensitivity study: rankings under label-skew vs quantity-skew, and with/without availability skew; include a brief asynchronous or straggler-tolerant variant if feasible.
+- Clarify scope: explicitly state whether DP/secure aggregation are evaluated. If not, add a limitations note and, optionally, one DP baseline at a modest ε to demonstrate compatibility.
+- Upload logs and a script to regenerate the main figures from raw logs; include expected-vs-obtained table from a fresh machine run.
+
+Minor notes
+- Define cross-device vs cross-silo explicitly in the setup.
+- Report both communication rounds and wall-clock; include bytes communicated per round and per successful client update.
+- State client sampling policy (uniform vs weighted; min participation) and failure handling (dropouts, retries).
+
+Decision rationale
+- If the authors provide the missing artifacts, document heterogeneity realism, and strengthen tuning/stability evidence, the benchmark will be a useful community resource. Without these, conclusions about method rankings and systems trade-offs remain fragile. Hence a borderline accept contingent on artifact completeness and methodological clarifications.
+
+Optional follow-ups (post-rebuttal or camera-ready)
+- Add a standardized “scenario matrix” (axes: non-IID type, availability skew, asynchrony, client count, personalization allowed) to ease future comparisons.
+- Provide a lightweight “small-scale mode” enabling laptop reproduction and a “large-scale mode” for clusters with the same APIs.
+
+No external sources used (simulation based on standard FL review practices).

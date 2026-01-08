@@ -1,0 +1,61 @@
+Short answer: Using graph neural networks for sea-ice forecasting is no longer novel by itself. There are already domain-specific GNN applications for sea-ice concentration and related variables (e.g., GraphSIFNet for sub-seasonal sea-ice forecasting in Hudson Bay and IceGAT for Arctic sea-ice with graph attention and conservation laws). The novel angle will need to come from your graph construction (e.g., dynamic/Lagrangian graphs using drift), physics/constraints, uncertainty, generalization, or evaluation framing rather than “using a GNN” per se. Spatiotemporal GNN methodology and uncertainty calibration are active areas you can leverage and extend [P3][P2].
+
+Stage: A – Pre idea → B – Idea. Let’s pin down the novelty and feasibility.
+
+Strategic questions (answer briefly so I can tailor a plan):
+1) Variables and horizon: What exactly do you want to forecast (concentration, drift/velocity, thickness, ice edge) and at what lead times (24 h, 3–10 days, sub-seasonal)?  
+2) Data and mesh: Which datasets/grids will you use (OSISAF/NSIDC SIC, OSISAF drift, TOPAZ/neXtSIM, unstructured mesh vs polar stereographic)?  
+3) Compute/time: Weekly time budget and available compute (A100s/V100s/TPUs vs a single GPU)?  
+4) Contribution focus: Which likely novelty do you prefer: (a) dynamic Lagrangian graphs via drift, (b) conservation/physics-aware training, or (c) calibrated probabilistic forecasts?  
+5) Target venue/timeline: Where and when do you hope to submit?
+
+Recommendations (how to make it novel and testable)
+- Baselines: Include a gridded baseline (U-Net or ConvLSTM) and a simple fixed-topology GCN/ST-GCN on the same grid to isolate the value of graph design. Consider a strong general baseline (FourCastNet/GraphCast-like) if compute allows, but prioritize clean apples-to-apples comparisons on the sea-ice domain [P8].  
+- Graph design: Explore dynamic edges driven by observed/predicted drift to approximate Lagrangian advection, and compare to static k-NN or geodesic edges (this is an obvious domain-specific differentiator not always done in generic ST-GNNs) [P3].  
+- Uncertainty and sparsity: Sea-ice changes (formation/melt/lead opening) are sparse; borrow sparsity-aware uncertainty calibration ideas from recent ST-GNN work to report CRPS/ECE alongside RMSE/IIEE and show calibration improvements [P2].  
+- Physical consistency: Track conservation (mass/area), non-negativity, and boundedness (0–1) violations during multi-day rollouts; incorporate soft penalties or constrained outputs.
+
+Phase 0 (≤14 days, gating)
+Deliverables: (1) One reproduced baseline figure/metric with ≤10% relative gap; (2) An experiment card and one ablation/negative result with a brief post-mortem; plus a prediction log with ≥14 entries. If gates aren’t met, iterate before scaling.
+
+Three concrete, falsifiable experiments
+1) Dynamic vs static graph connectivity for multi-day SIC forecasts  
+Hypothesis: Using dynamic edges derived from sea-ice drift (OSISAF) reduces 3–10 day error versus a static k-NN graph.  
+Setup: Build two ST-GNNs with identical node features and capacity; only edge sets differ (static geodesic k-NN vs edges advected by daily drift fields). Train on 5+ years Arctic SIC, evaluate on a held-out season.  
+Metrics: RMSE/MAE, Integrated Ice Edge Error (IIEE), and mass-balance error over 3, 5, 10 days; significance via paired bootstrap.  
+Expected outcome: Dynamic edges improve IIEE and long-horizon RMSE by capturing advection; null result would falsify the value of Lagrangian graphs for this task.  
+Follow-ups: Replace observed drift with model-predicted drift; test seasonal regimes and regional generalization. Grounded by the general ST-GNN premise that spatiotemporal structure matters [P3] and by forecasting best practices [P8].
+
+2) Conservation-aware training improves stability and physical plausibility  
+Hypothesis: Adding a conservation penalty (area/mass) and non-negativity constraints reduces long-horizon blow-up without hurting accuracy.  
+Setup: Compare ST-GNN with standard loss vs. an augmented loss (MSE + λ·|Δtotal_ice| + hinge penalties for <0 or >1). Same data/splits; 10-day rollouts.  
+Metrics: Physical-violation counts, mass-balance error, RMSE/IIEE; calibration if probabilistic.  
+Expected outcome: Fewer violations and lower mass-balance error with parity or better forecast skill; if accuracy drops, document trade-off curve and falsify the hypothesis.  
+Follow-ups: Enforce constraints via output parameterization (e.g., sigmoid with rescaling) and test different λ values. Uncertainty calibration reporting aligns with ST-GNN UQ guidance [P2].
+
+3) Sparsity-aware uncertainty calibration for rare ice-change events  
+Hypothesis: A sparsity-aware calibration method improves CRPS and ECE, especially on edge-change and rapid-melt subsets.  
+Setup: Train a probabilistic ST-GNN (e.g., heteroscedastic Gaussian or quantile regression). Apply a sparsity-aware calibration approach adapted from SAUC-style methods for ST data. Evaluate on seasonal transitions and coastal zones.  
+Metrics: CRPS, ECE, sharpness, and skill scores vs climatology and deterministic baselines; reliability diagrams stratified by event rarity.  
+Expected outcome: Better calibration (lower CRPS/ECE) without excessive loss of sharpness; if not, document failure modes and when deterministic models suffice.  
+Follow-ups: Class-conditional calibration (freeze-up vs melt); integrate conformal prediction for finite-sample guarantees. Motivated by UQ needs in ST-GNNs [P2] and standard weather-forecast evaluation practices [P8].
+
+Next actions (2–3 days)
+- Decide your target variable/horizon and novelty axis (pick a or b or c above).  
+- Assemble a minimal dataset slice (e.g., 2016–2020 train, 2021 val, 2022 test; OSISAF SIC+drift on a polar grid).  
+- Draft an experiment card for Experiment 1 with hypothesis, falsifier, minimal test, variables, metrics (RMSE, IIEE), and stop rule. I can review it before you train.
+
+Intuition: If ice motion advects information, then representing interactions through edges that move with drift should improve longer-horizon forecasts; adding soft physical constraints can prevent compounding errors; rare events demand explicit calibration so forecasts are useful for decision-making. This frames novelty around the physics-informed graph and the quality of uncertainty, not the mere model class.
+
+Why this is principled: In spatiotemporal GNNs, performance depends on matching graph structure to the underlying dynamics; disentangling spatial-temporal factors and edges is a core design lever [P3]. Forecasting work emphasizes rigorous baselines and multi-lead evaluation; uncertainty metrics like CRPS/ECE are standard in weather/climate settings [P8]. Recent ST-GNN literature highlights uncertainty calibration gaps and introduces sparsity-aware methods you can adapt to sea-ice, making a clear, testable contribution [P2].
+
+Literature anchors to read next
+- GraphSIFNet: Deep Graph Neural Networks for Spatiotemporal Forecasting of Sub-Seasonal Sea Ice (Hudson Bay case study). https://essopenarchive.org/users/709857/articles/694248/master/file/data/GraphSIFNet_JAMESv3/GraphSIFNet_JAMESv3.pdf  
+- IceGAT: Arctic Sea Ice Prediction Based on Multi-Scale Graph Modeling With Conservation Laws. https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2024JD042136
+
+Citations
+- [P2] SAUC: Sparsity-Aware Uncertainty Calibration for Spatiotemporal Prediction with Graph Neural Networks — http://arxiv.org/abs/2409.08766v1
+- [P3] Disentangled Spatiotemporal Graph Generative Models — http://arxiv.org/abs/2203.00411v1
+- [P8] A case study of spatiotemporal forecasting techniques for weather forecasting — http://arxiv.org/abs/2209.14782v2
+- GraphSIFNet: Deep Graph Neural Networks for Spatiotemporal Forecasting of Sub-Seasonal Sea Ice — https://essopenarchive.org/users/709857/articles/694248/master/file/data/GraphSIFNet_JAMESv3/GraphSIFNet_JAMESv3.pdf
+- IceGAT: Arctic Sea Ice Prediction Based on Multi-Scale Graph Modeling With Conservation Laws — https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2024JD042136

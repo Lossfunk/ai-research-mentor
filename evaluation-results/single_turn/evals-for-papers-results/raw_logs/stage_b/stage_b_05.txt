@@ -1,0 +1,55 @@
+Short answer: Using GANs to generate poetry has prior work; using GANs specifically for “poetry analysis” (e.g., measuring meter/rhyme/style, authorship cues, or quality) is less explored, so originality will hinge on a precise analysis problem and why a GAN-based setup offers a measurable advantage over more standard language-model or discriminative baselines [P10][P1].
+
+Stage: A – Pre idea
+
+Clarifying questions (to scope novelty and feasibility)
+- What does “analysis” mean for you: authorship/era classification, meter/rhyme detection, style similarity, quality/poeticity scoring, or interpretability of poetic devices?
+- Why GANs over alternatives (e.g., supervised classifiers, contrastive representation learning, or LM-based discriminators)? What capability do you expect the adversarial game to add?
+- Resources: weekly time and available compute (e.g., single GPU/TPU?), and datasets you can use (Sonnets, Tang/Song poetry, curated modern corpora)?
+- Mentorship/collaboration and target milestone/venue/timeline?
+- Biggest bottleneck right now (problem framing, data, baselines, or evaluation)?
+
+Recommendations
+- Focus on a concrete analysis task with a falsifiable claim where the discriminator (or GAN’s learned features) is plausibly better than strong baselines (e.g., authorship/era classification, meter violation detection, or a “poeticity” score). The literature mostly uses GANs for text generation and reviews training/evaluation challenges; positioning a discriminator-as-critic for poetry analysis can be novel if you show clear gains and interpretability [P10][P1].
+- Pre-commit to rigorous evaluation: human-free automatic metrics for meter/rhyme plus human judgments only as secondary, with preregistered criteria to avoid moving goalposts [P10].
+
+Three concrete, falsifiable experiments
+1) Prosody-aware discriminator for meter violations
+- Hypothesis: A GAN discriminator trained to distinguish authentic lines from minimally corrupted lines (stress/rhyme violations) learns features that outperform supervised baselines on meter/rhyme error detection.
+- Setup: Create paired data by introducing controlled perturbations (stress swaps, rhyme mismatches) into real poems. Train a text GAN (generator optional) where the discriminator separates real vs. perturbed lines; compare to RoBERTa/BiLSTM classifiers trained directly on the same task [P10].
+- Metrics: AUC/F1 on held-out detection of perturbations; success if discriminator features yield ≥3–5 point F1 improvement over baselines.
+- Interpretation: Improvement suggests adversarial training captures prosodic regularities useful for analysis; no gain implies simpler supervised objectives suffice.
+- Follow-ups: Probe token-level attributions; evaluate transfer to unseen forms (e.g., sonnets → blank verse).
+
+2) Discriminator embeddings for authorship/era classification
+- Hypothesis: Features from a GAN discriminator trained on real vs. generator-produced poems encode stylistic signals that improve authorship/era classification vs. non-adversarial representation learning.
+- Setup: Train a text GAN on a multi-author poetry corpus; freeze discriminator penultimate layer as features; train a linear probe for author/era; compare to features from masked-LM or SimCSE-style encoders [P10][P1].
+- Metrics: Accuracy/F1, calibration (ECE). Success if discriminator features beat non-adversarial baselines by a statistically significant margin.
+- Interpretation: Positive results indicate adversarial contrast accentuates stylistic boundaries; parity suggests standard encoders are sufficient.
+- Follow-ups: Analyze which stylistic attributes (rhyme density, vocabulary richness) correlate with decision boundaries.
+
+3) GAN-based “poeticity” critic aligned with evaluation signals
+- Hypothesis: Training a discriminator to distinguish human poems from automatically paraphrased/flattened versions yields a learned score that correlates with expert judgments and rule-based prosody metrics better than LM perplexity.
+- Setup: Construct negative samples via paraphrase/flattening that retain semantics but reduce poetic form. Train discriminator and compute its score on a held-out set; gather small expert ratings and compute rule-based meter/rhyme metrics [P10].
+- Metrics: Spearman correlation with expert ratings and automatic prosody metrics; compare to LM perplexity and supervised regressors. Success if correlation is significantly higher (e.g., Δρ ≥ 0.1–0.2).
+- Interpretation: If correlation is stronger, the adversarial critic is a useful analysis tool; otherwise, perplexity/supervised regressors may be preferable.
+- Follow-ups: Stress-test on different forms (haiku, sonnet) and languages.
+
+Next actions (3–5 days)
+- Define one primary analysis task and write an experiment card (hypothesis, falsifier, minimal test, metrics, stop rule).
+- Stand up a strong non-GAN baseline for that task (e.g., RoBERTa or a small encoder) to establish a bar.
+- Assemble/prototype a minimal corpus and perturbation pipeline; run a 1–2 seed pilot to estimate effect sizes and feasibility.
+
+Intuition
+- If a discriminator learns to distinguish “poem-like” from “not quite,” its features may encode prosody and style cues that standard objectives don’t emphasize, making it useful for analysis, not just generation.
+
+Why this is principled
+- Text GANs face stability and evaluation issues, but the discriminator’s contrastive signal can yield informative representations when measured against strong baselines with clear metrics [P10]. Prior work shows GANs applied to poetry generation; reframing the discriminator as an analysis tool targets a less-explored slice while staying grounded in established adversarial training mechanics [P1].
+
+Resources (literature anchors)
+- A survey on text generation using generative adversarial networks — https://export.arxiv.org/pdf/2212.11119v1.pdf [P10]
+- Creative GANs for generating poems, lyrics, and metaphors — https://dbis.uibk.ac.at/sites/default/files/2019-12/saeed_creativity_2019.pdf [P1]
+
+Citations
+- [P1] Creative GANs for generating poems, lyrics, and metaphors — https://dbis.uibk.ac.at/sites/default/files/2019-12/saeed_creativity_2019.pdf
+- [P10] A survey on text generation using generative adversarial networks — https://export.arxiv.org/pdf/2212.11119v1.pdf

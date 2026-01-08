@@ -1,0 +1,1075 @@
+{
+  "agent_label": "multi_turn_eval_baselines_gpt5",
+  "system_id": "openrouter:openai/gpt-5",
+  "scenario_id": "medical_imaging_postbac",
+  "turns": [
+    {
+      "turn_index": 1,
+      "mentor_reply": "Stage: A — Pre-idea shaping toward a concrete plan\n\nQuick intake to tailor the plan\n- Compute/time: What GPU/CPU resources do you have and weekly hours you can dedicate?\n- Data: Which modality (MRI/CT/X-ray/US), how many rare-disease cases and controls, and what labels are available now vs. can be obtained this month?\n- Governance: Do you have an IRB protocol or waiver covering secondary use of de-identified scans, and have you verified DICOM de-identification (e.g., Supp. 142) end-to-end? [P2][P3]\n- Collaboration: Do you have access to a radiologist/clinician for labeling and error analysis?\n- Milestone: What’s your target venue/timeline (e.g., MICCAI/ISBI/RSNA) and the smallest publishable unit you’d accept?\n\nRecommendations to start (HIPAA-safe, data-scarce setup)\n1) Lock down data governance early\n- Verify DICOM de-identification pipeline (burned-in PHI removal, DICOM tags) per established guidance; DICOM Supplement 142 and related tooling are standard references [P3]. Confirm your IRB path (consent or waiver) and data use agreements for research under HIPAA [P2]. Document this in your repo’s compliance README.\n\n2) Scope a minimal, high-signal task\n- Pick one clinically meaningful binary task (e.g., presence/absence of the rare condition or a pathognomonic sign), or a segmentation of a characteristic lesion. Plan metrics for extreme imbalance: AUPRC as primary; report AUROC, sensitivity at fixed FPR, and calibration (ECE) [P7]. Reserve a small, untouched external or temporal split for final validation; rigorous reporting/validation is emphasized by CLAIM 2024 [P7].\n\n3) Build a privacy-preserving baseline stack\n- Start with a simple CNN/ViT baseline and class-imbalance strategies (weighted loss or focal loss). Add self-supervised pretraining (SSL) on your anonymized unlabeled scans—strong evidence supports SSL under limited labels in medical imaging [P9]. Keep all work inside a secure compute environment; export only aggregate metrics.\n\n4) Few-shot adaptation of foundation models\n- Evaluate zero-shot and few-shot transfer from medical foundation models (linear probe vs. light fine-tuning). Recent benchmarks show foundation models can help in scarce-label regimes [P8].\n\n5) Plan reporting to clinical standards\n- Adopt the CLAIM checklist from day one to guide methods, dataset splits, calibration, and external validation; this saves time at submission [P7].\n\nIntuition\n- With rare diseases, labels are scarce and class imbalance is severe. You’ll get the most leverage by pretraining on your own unlabeled scans (SSL) and adapting strong priors (foundation models), then validating carefully to avoid overclaiming.\n\nWhy this is principled\n- SSL systematically improves performance with limited labels in medical imaging and provides implementation guidance you can follow [P9]. Foundation models enable robust few-shot/zero-shot transfer under data scarcity [P8]. CLAIM provides field-accepted reporting standards around validation and transparency, reducing reviewer friction and common pitfalls [P7]. HIPAA-safe pipelines emphasize de-identification at both metadata and pixel level (burned-in text) per DICOM guidance [P3] and IRB/HIPAA rules [P2].\n\nThree concrete, falsifiable experiments\n1) SSL pretraining on your anonymized corpus\n- Objective & hypothesis: Pretraining with SSL on in-domain unlabeled scans yields higher AUPRC than ImageNet pretraining or training from scratch under label scarcity [P9]. \n- Setup: Pretrain a ViT or ResNet using MoCo/DINO/SimCLR on all de-identified scans; fine-tune on the rare-disease labels (K=10–100 positives). Controls: same architecture with (a) ImageNet weights and (b) scratch. \n- Metrics & success: AUPRC (primary), AUROC, sensitivity at 95% specificity, ECE; 95% CIs via bootstrapping. Success if SSL > ImageNet by ≥0.05 AUPRC. \n- Interpretation: If SSL improves, in-domain representation helps; if not, check pretext augmentations and train length. \n- Follow-ups: Compare SSL methods and augmentations; add class-balanced sampling; analyze calibration shift [P9].\n\n2) Few-shot adaptation of a medical foundation model\n- Objective & hypothesis: A medical imaging foundation model will outperform SSL and scratch in the K∈{5,10,20} positive-sample regime, especially for linear-probe and LoRA fine-tuning [P8]. \n- Setup: Select a public medical foundation model (e.g., MedCLIP/ViT pre-trained on large med corpora). Evaluate zero-shot (prompt templates) vs. linear probe vs. LoRA fine-tune with early stopping. \n- Metrics & success: AUPRC across K-shot splits; report variance across 5 resamplings. Success if foundation model beats SSL at K≤10 by ≥0.03 AUPRC. \n- Interpretation: If zero-shot is competitive, pursue prompt engineering; if few-shot beats zero-shot, prioritize label curation. \n- Follow-ups: Try domain-specific prompts; test sensitivity to augmentations and class weights; probe feature attributions for clinical plausibility [P8][P7].\n\n3) Synthetic augmentation under privacy constraints\n- Objective & hypothesis: Adding carefully validated synthetic images (diffusion/GAN) of the rare class improves recall without harming precision on real held-out data [P10]. \n- Setup: Train a conditional diffusion model on de-identified positives (if ≥50); generate synthetic positives; add in 1:1 and 1:2 real:synthetic ratios. Include a “no-synthetic” control. \n- Metrics & success: ΔAUPRC and recall@95% specificity on real holdout; Fréchet Inception Distance (or CLIP-based) for diversity; privacy leakage checks (nearest-neighbor distances/memorization tests). Success if recall improves ≥5% with no drop in precision. \n- Interpretation: Gains suggest diversity helps; no gains imply synthetic-close-to-real gap or overfitting. \n- Follow-ups: Try class-conditional augmentations only; compare with classic augmentations; consider privacy audits and clinician Turing tests [P10]. If feasible, compare to synthetic-data guidance specifically for rare diseases [P4].\n\nOptional extension (if partners available)\n- Federated fine-tuning across sites with secure aggregation to test generalization without data pooling; evaluate on cross-site held-out splits [P10].\n\nPhase 0 (next ≤14 days) and gates\n- Deliverables:\n  1) Reproduction: One reproduced baseline figure/metric within 10% relative gap on your internal split, plus a prediction log with ≥14 daily entries.\n  2) Experiment card: Draft for Experiment 1, and run one ablation (e.g., SSL method or augmentation) with a brief post-mortem.\n- If gates are missed, stay in Phase 0 and iterate.\n\nNext actions (1–3 days)\n- Confirm IRB/waiver status and DICOM de-identification pipeline; archive a compliance README [P2][P3].\n- Assemble a secure dataset manifest with counts by class/site/time; define train/val/test splits aligned to CLAIM [P7].\n- Implement a minimal SSL pretraining script and baseline fine-tune; pre-register metrics and stop rules.\n\nLiterature anchors\n- Self-supervised learning for medical image classification: a systematic review and implementation guidelines — https://www.nature.com/articles/s41746-023-00811-0.pdf [P9]\n- Checklist for Artificial Intelligence in Medical Imaging (CLAIM): 2024 Update — https://pubs.rsna.org/doi/full/10.1148/ryai.240300 [P7]\n\nCitations\n- [P2] HIPAA Privacy Rule Guidance | Division of Research — https://division-research.brown.edu/research-cycle/conduct-research/research-data-management/hipaa-privacy-rule-guidance\n- [P3] Image Data Sharing for Biomedical Research—Meeting HIPAA ... — https://pmc.ncbi.nlm.nih.gov/articles/PMC3264712/\n- [P4] A privacy-preserving approach to accelerate rare disease research — https://research.unl.pt/ws/portalfiles/portal/114847263/fdgth-1-1563991.pdf\n- [P7] Checklist for Artificial Intelligence in Medical Imaging (CLAIM): 2024 Update — https://pubs.rsna.org/doi/full/10.1148/ryai.240300\n- [P8] Navigating Data Scarcity Using Foundation Models: A Benchmark of Few-Shot and Zero-Shot Learning Approaches in Medical Imaging — https://link.springer.com/chapter/10.1007/978-3-031-73471-7_4\n- [P9] Self-supervised learning for medical image classification: a systematic review and implementation guidelines — https://www.nature.com/articles/s41746-023-00811-0.pdf\n- [P10] Privacy-Preserving in Medical Image Analysis: A Review of Methods and Applications — https://arxiv.org/html/2412.03924v1",
+      "student_message": "Hey, I'm post-bacc researcher collaborating with a hospital lab. I want to get started in research in medical imaging for rare diseases. Constraints: must comply with HIPAA and only has anonymized scans. How should I start?",
+      "scores": {
+        "student_actionability": 1.8333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7,
+        "student_confidence_gain": 1.7666666666666666,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.7983333333333331
+      },
+      "overall_score": 1.7983333333333331,
+      "cumulative_avg": 1.7983333333333331,
+      "delta": null,
+      "success_at_turn": true,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Confirm IRB/waiver status and DICOM de-identification pipeline; archive a compliance README.\",\n    \"Assemble a secure dataset manifest with counts by class/site/time; define train/val/test splits aligned to CLAIM.\",\n    \"Implement a minimal SSL pretraining script and baseline fine-tune; pre-register metrics and stop rules.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.81,\n  \"justification\": \"This response is incredibly detailed and provides concrete, actionable steps that directly address my constraints and initial questions. The 'Next actions (1–3 days)' section is perfect for getting started immediately, and the 'Phase 0' deliverables give me clear short-term goals. The mentor also explicitly flags critical prerequisites like IRB and de-identification, which is very helpful.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Confirm IRB/waiver status and DICOM de-identification pipeline; archive a compliance README.",
+              "Assemble a secure dataset manifest with counts by class/site/time; define train/val/test splits aligned to CLAIM.",
+              "Implement a minimal SSL pretraining script and baseline fine-tune; pre-register metrics and stop rules."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.81,
+            "justification": "This response is incredibly detailed and provides concrete, actionable steps that directly address my constraints and initial questions. The 'Next actions (1–3 days)' section is perfect for getting started immediately, and the 'Phase 0' deliverables give me clear short-term goals. The mentor also explicitly flags critical prerequisites like IRB and de-identification, which is very helpful."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Verify IRB/waiver status and DICOM de-identification pipeline compliance\", \"Assemble secure dataset manifest with counts by class/site/time and define train/val/test splits\", \"Implement minimal SSL pretraining script and baseline fine-tune with pre-registered metrics\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.6,\n    \"constraint_fit_for_student\": 1.4,\n    \"confidence_gain_for_student\": 1.5\n  },\n  \"binary_checks\": {\n    \"path_ready\": 0,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.6,\n  \"justification\": \"The response provides excellent technical guidance and flags important HIPAA/IRB considerations, but as a student I'm overwhelmed by the complexity and unsure if I have the GPU resources or technical skills to implement SSL pretraining and foundation model adaptation within 1-3 days without more basic scaffolding.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Verify IRB/waiver status and DICOM de-identification pipeline compliance",
+              "Assemble secure dataset manifest with counts by class/site/time and define train/val/test splits",
+              "Implement minimal SSL pretraining script and baseline fine-tune with pre-registered metrics"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.6,
+              "constraint_fit_for_student": 1.4,
+              "confidence_gain_for_student": 1.5
+            },
+            "binary_checks": {
+              "path_ready": 0,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.6,
+            "justification": "The response provides excellent technical guidance and flags important HIPAA/IRB considerations, but as a student I'm overwhelmed by the complexity and unsure if I have the GPU resources or technical skills to implement SSL pretraining and foundation model adaptation within 1-3 days without more basic scaffolding."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Confirm my IRB/waiver status and verify the DICOM de-identification pipeline, then create a compliance README in my repo.\",\n    \"Assemble a secure dataset manifest listing counts by class, site, and time, and define train/validation/test splits following the CLAIM guidelines.\",\n    \"Set up and implement a basic SSL pretraining script using something like MoCo on my anonymized scans, along with a simple baseline fine-tune, and pre-register my metrics and stopping rules.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a post-bacc researcher with limited time and only anonymized scans, this response gives me straightforward, HIPAA-focused steps I can tackle in 1-3 days without needing extra resources, directly easing my worries about compliance and data scarcity by explaining why SSL and foundation models fit my rare disease setup.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Confirm my IRB/waiver status and verify the DICOM de-identification pipeline, then create a compliance README in my repo.",
+              "Assemble a secure dataset manifest listing counts by class, site, and time, and define train/validation/test splits following the CLAIM guidelines.",
+              "Set up and implement a basic SSL pretraining script using something like MoCo on my anonymized scans, along with a simple baseline fine-tune, and pre-register my metrics and stopping rules."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a post-bacc researcher with limited time and only anonymized scans, this response gives me straightforward, HIPAA-focused steps I can tackle in 1-3 days without needing extra resources, directly easing my worries about compliance and data scarcity by explaining why SSL and foundation models fit my rare disease setup."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 2,
+      "mentor_reply": "Stage: B — Idea to concrete plan\n\nGot it: single RTX 3090, ~20–25 hrs/week; 50 MRI cases/100 controls; lesion masks available; IRB/de-ID in progress; clinician collaborator. Before we lock a plan, a few steering questions:\n- MRI specifics: which sequences (T1/T2/FLAIR), voxel sizes, number of sites/scanners, and 2D vs 3D processing preference?\n- Labels: Are controls truly disease-free or “other neuro dx”? Any clinical covariates (age/sex/scanner/site) we should control for?\n- Segmentation masks: who annotated and with what protocol? Inter-rater reliability available or plausible to estimate on a 10-case subset?\n- Validation: Can you hold out a temporal or cross-site test split from day 1 to reduce leakage risk?\n\nRecommendations tailored to your setup\n- Governance first: finalize the secondary-use IRB and verify the de-identification pipeline against MIDI Task Group best practices; use synthetic DICOMs or validation tools to spot burned-in PHI and tag anomalies [P2][P1]. Keep a compliance README with your checks and decisions.\n- Start with a lesion-aware minimal task: classify disease presence using whole-brain inputs vs lesion-ROI crops, with AUPRC as the primary metric due to class imbalance. Add calibration (ECE) and report sensitivity at fixed FPR.\n- Use what you already have: leverage lesion masks for (a) ROI-focused modeling and (b) multi-task learning (segmentation + classification) to regularize features. This is compute-feasible on a 3090 with 3D patches or 2.5D slices.\n- Build strong non-DL baselines: lesion volume and radiomics (from the masks) with ridge/logistic or gradient boosting; these are quick, interpretable yardsticks for the DL models.\n- Plan for privacy/harmonization: if you later expand multi-site, consider privacy-preserving harmonization or federated strategies to avoid pooling raw data [P6]. If you explore synthetic augmentation, apply generative reporting standards (MI-CLAIM-GEN) and privacy checks [P3][P5].\n\nThree concrete, falsifiable experiments\n1) Lesion-ROI vs whole-brain classifier\n- Objective & hypothesis: ROI-cropping around annotated lesions improves detection under scarcity by reducing background confounders. \n- Setup: Train identical 3D CNNs on (a) whole-brain volumes and (b) lesion-centered crops (plus context), controlling for total voxels and augmentations. \n- Metrics & success: AUPRC primary; success if ROI model improves AUPRC by ≥0.05 and maintains calibration (ECE ≤ baseline). \n- Interpretation: Gains indicate lesion-focused signal dominates; no gain suggests diffuse/non-local cues or ROI over-cropping. \n- Follow-ups: Vary crop sizes; add context channels (e.g., distance-to-lesion map); compare 2.5D vs 3D.\n\n2) Multi-task learning with segmentation masks\n- Objective & hypothesis: Jointly predicting lesion segmentation and disease label improves classification vs classification-only by encouraging anatomically grounded features. \n- Setup: Shared encoder with (a) classifier head; (b) segmentation head trained on available masks, with loss-balancing. Control: classifier-only. \n- Metrics & success: ΔAUPRC on classification; Dice for segmentation (for monitoring). Success if multi-task outperforms by ≥0.03 AUPRC without worse calibration. \n- Interpretation: If multi-task helps, retain; if it hurts, test loss weights and decouple decoders. \n- Follow-ups: Freeze encoder after seg-pretraining; try curriculum (seg first, then joint).\n\n3) Radiomics baseline vs DL\n- Objective & hypothesis: Simple radiomics from masked lesions with clinical covariates provides a strong baseline and may match early DL baselines given 50/100 samples. \n- Setup: Extract intensity/shape/texture features; train ridge/logistic and gradient boosting with nested CV; compare to 3D CNN. \n- Metrics & success: AUPRC, AUROC, sensitivity at 95% specificity. Success if DL exceeds radiomics by ≥0.03 AUPRC; otherwise prioritize feature engineering/regularization. \n- Interpretation: If radiomics ties DL, expand features or pursue semi-supervised approaches; if DL wins, proceed to ablations.\n\nOptional Experiment 4) Synthetic augmentation for positives\n- Objective & hypothesis: Few-shot lesion synthesis increases recall without harming precision on real hold-out [P4]. \n- Setup: Train a lightweight 2D slice-conditional model on lesion slices; generate synthetic positives; mix ratios 1:0, 1:1, 1:2 real:synthetic. \n- Metrics & success: Recall at 95% specificity, ΔAUPRC; privacy checks (nearest-neighbor/memorization) and reporting per MI-CLAIM-GEN [P3][P5]. Success if recall improves ≥5% with no precision drop. \n- Interpretation: Gains imply diversity benefit; no gains suggest domain gap or quality issues.\n\nPhase 0 (≤14 days) and gates\n- Deliverables: \n  1) Dataset manifest and compliance README with de-ID validation steps [P2][P1]. \n  2) One reproduced baseline (radiomics or whole-brain CNN) within 10% of cross-validated performance; prediction log with ≥14 entries. \n  3) Completed experiment card for Experiment 1 and one ablation (crop size or class weighting) with a brief post-mortem.\n\nNext actions (pick one 2-hour path)\n- A) Draft the dataset manifest + splits and run a leakage audit; note site/sequence covariates. \n- B) Implement the radiomics baseline pipeline and produce first AUPRC with confidence intervals. \n- C) Prototype ROI cropping and train a 30-minute toy model to sanity check feasibility.\n\nIntuition\n- With 50/100 samples, reducing problem complexity and exploiting existing lesion masks should boost signal-to-noise. ROI focus and multi-tasking inject anatomy into the representation while keeping compute modest.\n\nWhy this is principled\n- Robust de-identification and governance reduce rework and risk; MIDI best practices and validation tooling provide concrete checks [P2][P1]. Generative/synthetic explorations benefit from structured reporting (MI-CLAIM-GEN) and privacy audits to maintain trustworthiness [P3][P5]. Cross-site generalization often hinges on harmonization; privacy-preserving approaches like PRISM motivate planning for multi-center robustness without data pooling [P6].\n\nTwo quick clarifications\n- You mentioned working closely with a neurologist—can they commit to a 1-hour weekly review for labeling/error analysis? \n- Which sequences are most consistent across your scans (e.g., FLAIR)? That choice will determine pre-processing and model input.\n\nLiterature anchors\n- Report of the Medical Image De-Identification (MIDI) Task Group — Best Practices and Recommendations — https://arxiv.org/abs/2303.10473\n- The Minimum Information about CLinical AI for Generative Modeling (MI-CLAIM-GEN) — https://arxiv.org/abs/2403.02558\n\nCitations\n- [P1] Medical Image De-Identification Resources: Synthetic DICOM Data and Tools for Validation — https://arxiv.org/abs/2508.01889\n- [P2] Report of the Medical Image De-Identification (MIDI) Task Group -- Best Practices and Recommendations — https://arxiv.org/abs/2303.10473\n- [P3] The Minimum Information about CLinical Artificial Intelligence Checklist for Generative Modeling Research (MI-CLAIM-GEN) — https://arxiv.org/abs/2403.02558\n- [P4] Few-Shot Generation of Brain Tumors for Secure and Fair Data Sharing — https://arxiv.org/abs/2504.00150\n- [P5] Privacy-Preserving in Medical Image Analysis: A Review of Methods and Applications — https://arxiv.org/html/2412.03924v1\n- [P6] PRISM: Privacy-preserving Inter-Site MRI Harmonization via Disentangled Representation Learning — https://arxiv.org/abs/2411.06513",
+      "student_message": "This is incredibly helpful, thank you! It's a lot to digest, but I appreciate the structured approach. \n\nTo answer your questions:\n\n- **Compute/time:** I have access to a decent workstation with a single NVIDIA RTX 3090 and can dedicate about 20-25 hours per week.\n- **Data:** We're focusing on MRI scans for a specific rare neurological disorder. We have about 50 anonymized cases and 100 anonymized controls. Currently, we have basic segmentation masks for the primary lesion, but no other detailed labels. Obtaining more labels this month might be challenging due to clinician availability.\n- **Governance:** We're still in the process of finalizing the IRB protocol for secondary use. The scans we have access to have undergone DICOM de-identification, but I'll double-check the specific pipeline and ensure it aligns with DICOM Supplement 142 before proceeding.\n- **Collaboration:** Yes, I'm working closely with a neurologist who specializes in this rare disease, so",
+      "scores": {
+        "student_actionability": 1.8,
+        "student_clarity": 1.8,
+        "student_constraint_fit": 1.6333333333333335,
+        "student_confidence_gain": 1.6000000000000003,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.7283333333333335
+      },
+      "overall_score": 1.7283333333333335,
+      "cumulative_avg": 1.7633333333333332,
+      "delta": -0.06999999999999962,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Draft the dataset manifest and splits, and run a leakage audit, noting site/sequence covariates. This will help me understand my data better and ensure compliance.\",\n    \"Implement the radiomics baseline pipeline and produce the first AUPRC with confidence intervals. This is a concrete, achievable step to get a baseline model running.\",\n    \"Prototype ROI cropping and train a 30-minute toy model to sanity check feasibility. This will help me understand the practicalities of using the lesion masks with my compute.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.825,\n  \"justification\": \"The mentor provides highly actionable and specific next steps that directly address my constraints and current data. The 'Phase 0' and 'Next actions' sections are particularly helpful for immediate execution, and the steering questions help me think about future steps.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Draft the dataset manifest and splits, and run a leakage audit, noting site/sequence covariates. This will help me understand my data better and ensure compliance.",
+              "Implement the radiomics baseline pipeline and produce the first AUPRC with confidence intervals. This is a concrete, achievable step to get a baseline model running.",
+              "Prototype ROI cropping and train a 30-minute toy model to sanity check feasibility. This will help me understand the practicalities of using the lesion masks with my compute."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.825,
+            "justification": "The mentor provides highly actionable and specific next steps that directly address my constraints and current data. The 'Phase 0' and 'Next actions' sections are particularly helpful for immediate execution, and the steering questions help me think about future steps."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Finalize secondary-use IRB protocol and verify de-identification pipeline against MIDI best practices\", \"Implement radiomics baseline pipeline with lesion volume and texture features using gradient boosting\", \"Set up cross-validation splits and create dataset manifest with compliance documentation\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.6,\n    \"constraint_fit_for_student\": 1.4,\n    \"confidence_gain_for_student\": 1.5\n  },\n  \"binary_checks\": {\n    \"path_ready\": 0,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.6,\n  \"justification\": \"The response provides excellent technical direction and concrete experiments, but fails to acknowledge that IRB approval is still pending, making immediate action impossible despite the detailed planning.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Finalize secondary-use IRB protocol and verify de-identification pipeline against MIDI best practices",
+              "Implement radiomics baseline pipeline with lesion volume and texture features using gradient boosting",
+              "Set up cross-validation splits and create dataset manifest with compliance documentation"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.6,
+              "constraint_fit_for_student": 1.4,
+              "confidence_gain_for_student": 1.5
+            },
+            "binary_checks": {
+              "path_ready": 0,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.6,
+            "justification": "The response provides excellent technical direction and concrete experiments, but fails to acknowledge that IRB approval is still pending, making immediate action impossible despite the detailed planning."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Draft the dataset manifest including splits, site/sequence covariates, and run a quick leakage audit on the 50 cases and 100 controls using the de-identification validation tools mentioned, which should take about 4-6 hours on my workstation.\",\n    \"Implement the radiomics baseline by extracting features from the existing lesion masks with a simple pipeline using scikit-learn for ridge regression, aiming for an initial AUPRC estimate in 8-10 hours.\",\n    \"Prototype a toy ROI-cropping classifier with a basic 3D CNN on lesion-centered crops versus whole-brain inputs using PyTorch on my RTX 3090, running a short training session to check feasibility in 6-8 hours.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.76,\n  \"justification\": \"As a post-bacc with limited time and compute, this response gives me clear, bite-sized next actions like the 2-hour paths that fit my 20-25 hours/week and RTX 3090 without needing new skills, while addressing my IRB and data scarcity worries through feasible baselines and privacy checks. It reduces my uncertainty by explaining why lesion-focused experiments should work with my small dataset, making me feel ready to start experimenting right away.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Draft the dataset manifest including splits, site/sequence covariates, and run a quick leakage audit on the 50 cases and 100 controls using the de-identification validation tools mentioned, which should take about 4-6 hours on my workstation.",
+              "Implement the radiomics baseline by extracting features from the existing lesion masks with a simple pipeline using scikit-learn for ridge regression, aiming for an initial AUPRC estimate in 8-10 hours.",
+              "Prototype a toy ROI-cropping classifier with a basic 3D CNN on lesion-centered crops versus whole-brain inputs using PyTorch on my RTX 3090, running a short training session to check feasibility in 6-8 hours."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.76,
+            "justification": "As a post-bacc with limited time and compute, this response gives me clear, bite-sized next actions like the 2-hour paths that fit my 20-25 hours/week and RTX 3090 without needing new skills, while addressing my IRB and data scarcity worries through feasible baselines and privacy checks. It reduces my uncertainty by explaining why lesion-focused experiments should work with my small dataset, making me feel ready to start experimenting right away."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 3,
+      "mentor_reply": "Stage: B — Idea to concrete plan (nudging toward C — Research plan with Phase 0 gates)\n\nQuick confirmations to de-risk the plan\n- Can you share the distribution of lesion volumes (median, IQR) and whether controls show any incidental lesions? This affects ROI sizing and confounding.\n- Will you standardize to a single sequence (FLAIR) and resample to 1 mm iso, or preserve native spacing? Consistency matters for 3D models.\n- Can your neuroradiologist provide a 10-case second read to estimate inter-rater reliability (e.g., Dice) this month? That will calibrate your segmentation supervision.\n- Will your held-out test be temporal or cross-site? Either is fine—just lock it now and don’t touch it until the end.\n\nRecommendations tailored to your setting (3D FLAIR, 50/100, single 3090)\n- Preprocessing: skull strip, N4 bias correction, resample to 1 mm, z-score or WhiteStripe normalization per brain, rigid-align to a study template, and crop to brain bounding box. Record parameters for reproducibility.\n- Confound checks: compute correlations of age/sex/site with labels; train a site/scanner classifier from images as a leakage probe (should be near chance if harmonized). Include age/sex as covariates or as a small MLP branch into the classifier.\n- Modeling: start with a 3D encoder (e.g., 3D ResNet or UNet encoder) with ~128×128×128 patches, mixed precision, weighted BCE or focal loss. Use the lesion masks to create lesion-centered crops for an ROI branch. Consider SSL pretraining on all scans; SSL often helps in scarce-label regimes in medical imaging [1].\n- Evaluation: use AUPRC as primary given imbalance; report AUROC, sensitivity at fixed FPR, and Expected Calibration Error (ECE). Calibrate via temperature scaling on a validation split and report post-calibration metrics [2].\n- Governance note: mentorship-guidelines tool found no specific entries; proceeding with literature-cited guidance. For de-identification/IRB, follow your institution’s policy; document checks in a compliance README. Conjecture.\n\nThree concrete, falsifiable experiments\n1) Lesion-ROI versus whole-brain classification\n- Objective/hypothesis: Focusing on lesion-centered crops with context outperforms whole-brain classification by reducing background confounds.\n- Setup: Train the same 3D encoder with two inputs: (a) whole-brain 128–160 mm cubes; (b) lesion-centered crops of 64–96 mm with an extra channel for the distance-to-lesion map. Control total voxels and augmentations; handle class imbalance via weighted loss.\n- Metrics/success: AUPRC primary; success if ROI ≥0.05 AUPRC over whole-brain and equal/better ECE after temperature scaling [2].\n- Interpretation: If ROI wins, lesion-local signal dominates; if not, broaden crop context or test 2.5D stacks to capture diffuse signs.\n- Follow-ups: Vary crop size; add age/sex branch; test stratified performance by lesion volume tertiles to see size effects.\n\n2) Multi-task segmentation + classification\n- Objective/hypothesis: Joint segmentation supervision induces anatomically grounded features that improve classification versus classifier-only.\n- Setup: Shared 3D encoder with two heads: Dice/focal loss for segmentation on masked cases and BCE/focal for classification on all subjects; balance losses (e.g., λseg in {0.2, 0.5, 1.0}). Control: classifier-only with identical encoder.\n- Metrics/success: ΔAUPRC on classification; monitor Dice for sanity. Success if multi-task ≥0.03 AUPRC gain without worse ECE [2].\n- Interpretation: Gains support anatomy-informed features; no gains suggest loss imbalance or noisy masks—try pretrain-on-seg then fine-tune for cls.\n- Follow-ups: Freeze encoder after seg pretraining; try pseudo-masks in controls using low-threshold predictions to test robustness.\n\n3) Radiomics+clinical baseline versus 3D DL\n- Objective/hypothesis: With 50/100 samples, a radiomics+clinical baseline is competitive; DL should surpass it if representation helps.\n- Setup: From lesion masks, extract shape/intensity/texture features; add age/sex; train logistic or gradient-boosting with nested CV and class weights. Compare against your best 3D model evaluated with the same CV protocol.\n- Metrics/success: AUPRC, AUROC, sensitivity at 95% specificity; success if DL ≥0.03 AUPRC over radiomics; otherwise prioritize SSL pretraining and ROI tuning [1].\n- Interpretation: If radiomics ties DL, you may be underpowered or overfitting—tighten regularization, simplify the DL model, or enrich with SSL.\n- Follow-ups: Feature selection stability; SHAP for interpretability; add site as a covariate to detect hidden confounding.\n\nOptional Experiment 4) SSL pretraining on all scans\n- Objective/hypothesis: In-domain SSL (e.g., SimCLR/DINO on FLAIR volumes or slices) improves downstream AUPRC versus ImageNet init or scratch [1].\n- Setup: Pretrain on all de-identified scans with 2.5D or 3D augmentations; fine-tune on labels; compare to ImageNet and scratch baselines.\n- Metrics/success: AUPRC gain ≥0.05 over ImageNet; report ECE pre/post temperature scaling [2].\n- Interpretation: If SSL helps, keep it; if not, check augmentations, batch size, and pretrain length.\n\nPhase 0 (≤14 days) and gates\n- Deliverables:\n  1) Frozen test split + compliance README + preprocessing script with fixed parameters.\n  2) One reproduced baseline (radiomics or whole-brain CNN) within 10% CV fidelity, plus a prediction log with ≥14 entries.\n  3) Completed experiment card for Experiment 1 and one ablation (crop size or class weighting) with a brief post-mortem.\n- If any gate is missed, stay in Phase 0 and iterate before scaling.\n\nNext actions (pick one 2-hour path)\n- A) Finalize splits and run a leakage audit (site/temporal) and covariate balance table.\n- B) Stand up the radiomics baseline (feature extraction + nested CV) and compute first AUPRC with CIs.\n- C) Prototype ROI cropping with distance-to-lesion channel and train a 30-minute toy 3D model to sanity-check.\n\nIntuition\n- With limited labels and lesion masks, injecting anatomy (ROI and segmentation) and controlling confounds raises signal-to-noise; SSL can further stabilize features under scarcity.\n\nWhy this is principled\n- SSL shows consistent gains in medical imaging when labeled data are scarce, providing practical implementation guidance [1]. Calibrated reporting (e.g., ECE, temperature scaling) improves reliability and interpretability of clinical classifiers, and should accompany AUPRC/AUROC in imbalanced settings [2].\n\nCitations\n- [1] Self-supervised learning methods and applications in medical imaging analysis: A survey — http://arxiv.org/abs/2109.08685\n- [2] Understanding Calibration of Deep Neural Networks for Medical Image Classification — http://arxiv.org/abs/2309.13132",
+      "student_message": "This is fantastic, thank you for breaking it all down so clearly! The recommendations are incredibly helpful, especially starting with a lesion-aware minimal task and leveraging the segmentation masks. \n\nTo answer your questions:\n\n- **MRI specifics:** We primarily have T2-FLAIR sequences, with voxel sizes around 0.7x0.7x1.0 mm. It's mostly 3D processing. We have data from two sites, but they used the same scanner model. We're hoping to focus on 3D processing.\n- **Labels:** The controls are indeed 'other neuro dx,' not strictly healthy. We should definitely control for age and sex. Scanner/site won't be a major issue as it's mostly from one model across two sites.\n- **Segmentation masks:** The masks were annotated by a neuroradiologist following a specific protocol. We can definitely estimate inter-rater reliability on a small subset if needed.\n- **Validation:** Yes, we can absolutely hold out a test split from day one. That's a",
+      "scores": {
+        "student_actionability": 1.8333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.6666666666666667,
+        "student_confidence_gain": 1.8333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.7999999999999998
+      },
+      "overall_score": 1.7999999999999998,
+      "cumulative_avg": 1.7755555555555553,
+      "delta": 0.07166666666666632,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Finalize the test split, create a compliance README, and write a preprocessing script with fixed parameters for skull stripping, N4 bias correction, resampling to 1mm, z-score/WhiteStripe normalization, rigid alignment to a study template, and cropping to the brain bounding box.\",\n    \"Run a leakage audit (site/temporal) and generate a covariate balance table for age, sex, and site with respect to the labels.\",\n    \"Prototype ROI cropping with a distance-to-lesion channel and train a small 3D model (e.g., 3D ResNet encoder) with ~128x128x128 patches to sanity-check the cropping and model setup.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.83,\n  \"justification\": \"This response provides extremely clear, actionable steps that directly address my constraints and previous questions. The 'Phase 0' deliverables and 'Next actions' are perfectly tailored for immediate execution within my time and compute limits, significantly boosting my confidence.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Finalize the test split, create a compliance README, and write a preprocessing script with fixed parameters for skull stripping, N4 bias correction, resampling to 1mm, z-score/WhiteStripe normalization, rigid alignment to a study template, and cropping to the brain bounding box.",
+              "Run a leakage audit (site/temporal) and generate a covariate balance table for age, sex, and site with respect to the labels.",
+              "Prototype ROI cropping with a distance-to-lesion channel and train a small 3D model (e.g., 3D ResNet encoder) with ~128x128x128 patches to sanity-check the cropping and model setup."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.83,
+            "justification": "This response provides extremely clear, actionable steps that directly address my constraints and previous questions. The 'Phase 0' deliverables and 'Next actions' are perfectly tailored for immediate execution within my time and compute limits, significantly boosting my confidence."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\"Confirm lesion volume distribution and incidental lesions in controls with your lab's data manager\", \"Standardize FLAIR sequences to 1mm isotropic resolution and document parameters in a preprocessing script\", \"Prototype lesion-centered ROI cropping with distance-to-lesion channel on 5 sample cases\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.6,\n    \"constraint_fit_for_student\": 1.4,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.65,\n  \"justification\": \"The response provides highly specific technical steps I can execute immediately with my 3090 and data constraints, though some ML implementations might require more than 2-3 days for a post-bacc researcher; the concrete experiment designs and Phase 0 gates significantly reduce uncertainty about how to structure this rare disease imaging project.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Confirm lesion volume distribution and incidental lesions in controls with your lab's data manager",
+              "Standardize FLAIR sequences to 1mm isotropic resolution and document parameters in a preprocessing script",
+              "Prototype lesion-centered ROI cropping with distance-to-lesion channel on 5 sample cases"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.6,
+              "constraint_fit_for_student": 1.4,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.65,
+            "justification": "The response provides highly specific technical steps I can execute immediately with my 3090 and data constraints, though some ML implementations might require more than 2-3 days for a post-bacc researcher; the concrete experiment designs and Phase 0 gates significantly reduce uncertainty about how to structure this rare disease imaging project."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Finalize the held-out test split from my anonymized scans and create a compliance README documenting HIPAA checks and preprocessing parameters, which I can do in a couple of hours using my existing data access.\",\n    \"Run a quick confound check by computing correlations between age, sex, and labels on my dataset, plus a simple site classifier to probe for leakage, feasible on my single 3090 GPU in under a day.\",\n    \"Prototype the lesion-ROI classification experiment by preparing lesion-centered crops from a small subset of scans and training a toy 3D encoder for 30 minutes to check basic setup, respecting my limited compute and skills.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.9,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.98,\n  \"justification\": \"As a post-bacc researcher with limited time and a single GPU, this response gives me clear, bite-sized next actions like the 2-hour paths that I can actually start right away without needing new resources, while addressing my data constraints and reducing my worries about confounds and small sample sizes through specific experiments and checks. It feels tailored to my hospital lab setup, making me confident to proceed without getting stuck on generics.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Finalize the held-out test split from my anonymized scans and create a compliance README documenting HIPAA checks and preprocessing parameters, which I can do in a couple of hours using my existing data access.",
+              "Run a quick confound check by computing correlations between age, sex, and labels on my dataset, plus a simple site classifier to probe for leakage, feasible on my single 3090 GPU in under a day.",
+              "Prototype the lesion-ROI classification experiment by preparing lesion-centered crops from a small subset of scans and training a toy 3D encoder for 30 minutes to check basic setup, respecting my limited compute and skills."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.9,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.98,
+            "justification": "As a post-bacc researcher with limited time and a single GPU, this response gives me clear, bite-sized next actions like the 2-hour paths that I can actually start right away without needing new resources, while addressing my data constraints and reducing my worries about confounds and small sample sizes through specific experiments and checks. It feels tailored to my hospital lab setup, making me confident to proceed without getting stuck on generics."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 4,
+      "mentor_reply": "Stage: B — Idea to concrete plan (nudging toward C — Research plan with Phase 0 gates)\n\nGreat—thanks for the specifics. Option C (ROI prototype) is the right call given small lesions and 3D FLAIR.\n\nTwo quick questions to shape the prototype\n- Are lesions typically single and focal per case, or can there be multiple foci we should handle when generating crops?\n- For controls, are you okay with sampling 2–3 anatomically plausible “pseudo-ROI” crops per subject (within white matter) so the model can’t trivially learn “no crop = control”?\n\n2-hour ROI prototype plan (on a single RTX 3090)\n- Preprocess small batch (10 cases/20 controls): skull strip, N4 bias correction, resample to 1 mm iso, z-score per brain; save standardized NIfTI.\n- Crop policy:\n  - Cases: compute lesion bbox from the mask; pad by 20–30 mm margin each side; clamp to brain bbox; resize to 96×96×96.\n  - Controls: sample 3 random 96×96×96 crops within the brain (seeded for reproducibility), restricted to white matter via a simple FLAIR-based threshold or atlas if available.\n- Model: 3D ResNet-18 or 3D EfficientNet-B0 encoder, mixed precision, batch size 8 (96^3 fits on 24 GB). Loss = weighted BCE (class weight ≈ controls/cases). Optimizer = AdamW (lr 3e-4, wd 1e-4), cosine decay, 30 epochs with early stopping (patience 5).\n- Aggregation: Instance-level training, subject-level inference by averaging logits across a subject’s crops; use a small validation split from your training period for early stopping.\n- Metrics for the prototype: AUPRC, AUROC, sensitivity at 95% specificity on validation; quick ECE with temperature scaling on validation only. Log runtime and VRAM.\n- Success criteria for the prototype: end-to-end run <60 minutes; stable training curves; subject-level AUPRC ≥0.65 on the small validation set without obvious calibration collapse. If unstable, reduce to 64^3 crops or shrink model width.\n\nThree concrete, falsifiable experiments (scoped to your data)\n1) Lesion-ROI vs whole-brain classification\n- Objective/hypothesis: Lesion-centered crops with sufficient context outperform whole-brain due to better SNR given small lesions (~10 mm diameter).\n- Setup: Same encoder, two inputs: (a) whole-brain downsampled to 128^3; (b) lesion-centered 96^3 crops for cases; 3 random 96^3 crops for controls. Keep augmentations and total voxels comparable; balanced sampling per epoch.\n- Metrics/success: AUPRC primary; success if ROI ≥0.05 AUPRC over whole-brain and no worse ECE after temperature scaling.\n- Interpretation: If ROI wins, lesion-local signal dominates; if not, enlarge context (128^3) or add a second branch that ingests a downsampled whole brain alongside ROI.\n- Follow-ups: Stratify by lesion volume tertiles; test 2.5D stacks for larger spatial context at lower memory.\n\n2) Multi-task segmentation + classification\n- Objective/hypothesis: Joint segmentation supervision induces anatomically grounded features that improve classification versus classifier-only.\n- Setup: Shared 3D encoder; segmentation head (Dice+focal) on cases; classification head (weighted BCE) on all subjects; λseg ∈ {0.2, 0.5, 1.0}. Control: classifier-only, identical encoder.\n- Metrics/success: ΔAUPRC on subject-level classification; monitor Dice as QA. Success if multi-task ≥0.03 AUPRC gain without calibration degradation.\n- Interpretation: Gains → keep joint training; no gains → pretrain on segmentation for 25 epochs then fine-tune classifier; inspect inter-rater Dice to quantify mask noise.\n\n3) Radiomics + clinical covariates baseline vs 3D DL\n- Objective/hypothesis: A radiomics+age/sex baseline is competitive at n=150; DL should exceed it if ROI truly helps.\n- Setup: Extract IBSI-compliant shape/intensity/texture features from lesion masks; add age/sex; train logistic and gradient boosting with nested CV, class weights, and standardization. Compare to best DL model under the same CV folds.\n- Metrics/success: AUPRC, AUROC, sensitivity at 95% specificity; success if DL ≥0.03 AUPRC over radiomics; if not, prioritize SSL pretraining and ROI context tuning.\n- Interpretation: If radiomics ties/wins, simplify DL or expand features; if DL clearly wins, proceed to ablations (crop size, loss, augmentations).\n\nPhase 0 gates (≤14 days)\n- Deliverables:\n  1) Frozen temporal test split and compliance README; preprocessing script with fixed parameters.\n  2) Prototype ROI model trained and logged; one ablation (crop size 64^3 vs 96^3) with a brief post-mortem.\n  3) Experiment card for Experiment 1 (hypothesis, falsifier, minimal test, variables, metrics, stop rule).\n- Stay in Phase 0 until these are done; don’t touch the held-out test.\n\nNext actions (today)\n- Proceed with Option C as above. If time remains, add whole-brain 128^3 baseline to prep for Experiment 1.\n\nIntuition\n- Your lesions are small; focusing computation on lesion-centered context raises signal-to-noise. Subject-level aggregation over multiple control crops prevents trivial “mask/no-mask” cues and reduces sampling bias.\n\nWhy this is principled\n- Self-supervised or anatomy-informed representations are particularly beneficial under label scarcity in medical imaging; you can layer SSL later if DL underperforms radiomics. Temperature scaling is a simple, well-validated post-hoc calibration method that improves clinical interpretability of predicted probabilities.\n\nLiterature anchors\n- Chen et al., Self-supervised learning for medical image classification: a systematic review and implementation guidelines — https://www.nature.com/articles/s41746-023-00811-0\n- Guo et al., On Calibration of Modern Neural Networks — https://arxiv.org/abs/1706.04599\n\nNote\n- I attempted to fetch formal mentorship guidelines specific to rare-disease ROI starts; no specific entries found. Proceeding with literature-cited best practices and your constraints.",
+      "student_message": "This is incredibly detailed, thank you! I'll definitely be poring over these recommendations. \n\nTo answer your questions:\n\n- **Lesion volumes:** The median lesion volume is around 0.5 cm³, with an IQR of 0.2-1.2 cm³. Controls do not show any incidental lesions, which is a relief for our classification task.\n- **Standardization:** We'll standardize to a single FLAIR sequence and resample to 1 mm isotropic spacing. This seems like the most robust approach for 3D models.\n- **Second read:** Yes, I can ask the neuroradiologist for a second read on 10 cases this month to estimate inter-rater reliability. I'll aim for a Dice score as the metric.\n- **Held-out test:** We'll use a temporal split for the held-out test set to simulate real-world deployment, keeping it locked from the start.\n\nI'm leaning towards option C for the next action, prototyping the ROI cropping. It feels like",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9000000000000001,
+        "student_constraint_fit": 1.7666666666666666,
+        "student_confidence_gain": 1.8,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.875
+      },
+      "overall_score": 1.875,
+      "cumulative_avg": 1.8004166666666666,
+      "delta": 0.07500000000000018,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement the 2-hour ROI prototype plan, starting with preprocessing 10 cases/20 controls and then training the 3D ResNet-18/EfficientNet-B0 model with the specified cropping policy.\",\n    \"Evaluate the prototype using AUPRC, AUROC, sensitivity at 95% specificity, and ECE on the validation set, ensuring the end-to-end run is under 60 minutes and subject-level AUPRC is >= 0.65.\",\n    \"If the prototype is successful, begin setting up Experiment 1 (Lesion-ROI vs whole-brain classification) by preparing the whole-brain 128^3 baseline as suggested.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.9,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.92,\n  \"justification\": \"This response provides extremely clear, concrete, and sequenced steps for prototyping the ROI cropping, directly addressing my stated next action. It respects my compute constraints (RTX 3090) and provides specific model and training parameters, significantly reducing my uncertainty and increasing my confidence in moving forward.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement the 2-hour ROI prototype plan, starting with preprocessing 10 cases/20 controls and then training the 3D ResNet-18/EfficientNet-B0 model with the specified cropping policy.",
+              "Evaluate the prototype using AUPRC, AUROC, sensitivity at 95% specificity, and ECE on the validation set, ensuring the end-to-end run is under 60 minutes and subject-level AUPRC is >= 0.65.",
+              "If the prototype is successful, begin setting up Experiment 1 (Lesion-ROI vs whole-brain classification) by preparing the whole-brain 128^3 baseline as suggested."
+            ],
+            "scores": {
+              "clarity_for_student": 1.9,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.92,
+            "justification": "This response provides extremely clear, concrete, and sequenced steps for prototyping the ROI cropping, directly addressing my stated next action. It respects my compute constraints (RTX 3090) and provides specific model and training parameters, significantly reducing my uncertainty and increasing my confidence in moving forward."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Run the 2-hour ROI prototype plan on 10 cases/20 controls with skull stripping, N4 bias correction, and 1 mm isotropic resampling\", \"Implement the crop policy: lesion-centered 96×96×96 crops for cases with 20-30mm padding, and 3 random white matter crops for controls\", \"Train the 3D ResNet-18 model with mixed precision, batch size 8, and evaluate against the success criteria (end-to-end run <60 minutes, subject-level AUPRC ≥0.65)\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.77,\n  \"justification\": \"The response provides highly specific, executable steps with clear technical details and success metrics that I can implement immediately using my available RTX 3090 and anonymized data, while flagging potential failure modes like reducing crop size if unstable.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Run the 2-hour ROI prototype plan on 10 cases/20 controls with skull stripping, N4 bias correction, and 1 mm isotropic resampling",
+              "Implement the crop policy: lesion-centered 96×96×96 crops for cases with 20-30mm padding, and 3 random white matter crops for controls",
+              "Train the 3D ResNet-18 model with mixed precision, batch size 8, and evaluate against the success criteria (end-to-end run <60 minutes, subject-level AUPRC ≥0.65)"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.77,
+            "justification": "The response provides highly specific, executable steps with clear technical details and success metrics that I can implement immediately using my available RTX 3090 and anonymized data, while flagging potential failure modes like reducing crop size if unstable."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Preprocess a small batch of 10 cases and 20 controls: skull strip, N4 bias correction, resample to 1 mm isotropic, z-score per brain, and save as standardized NIfTI files using my anonymized scans.\",\n    \"Implement the ROI cropping policy: for cases, compute lesion bbox from masks with 20-30 mm padding clamped to brain, resize to 96x96x96; for controls, sample 3 random 96x96x96 crops in white matter using FLAIR threshold.\",\n    \"Train a 3D ResNet-18 model on the cropped data with weighted BCE loss, AdamW optimizer, 30 epochs, and evaluate subject-level AUPRC on a small validation split to check if it runs under 60 minutes on the RTX 3090.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.9,\n  \"justification\": \"As a post-bacc researcher with limited time and access to anonymized scans, this gives me a clear, bite-sized prototype I can run in a couple hours on available compute without needing new data or approvals, and the experiments with success criteria make me feel like I can test ideas quickly and know when to pivot if small lesions cause issues.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Preprocess a small batch of 10 cases and 20 controls: skull strip, N4 bias correction, resample to 1 mm isotropic, z-score per brain, and save as standardized NIfTI files using my anonymized scans.",
+              "Implement the ROI cropping policy: for cases, compute lesion bbox from masks with 20-30 mm padding clamped to brain, resize to 96x96x96; for controls, sample 3 random 96x96x96 crops in white matter using FLAIR threshold.",
+              "Train a 3D ResNet-18 model on the cropped data with weighted BCE loss, AdamW optimizer, 30 epochs, and evaluate subject-level AUPRC on a small validation split to check if it runs under 60 minutes on the RTX 3090."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.9,
+            "justification": "As a post-bacc researcher with limited time and access to anonymized scans, this gives me a clear, bite-sized prototype I can run in a couple hours on available compute without needing new data or approvals, and the experiments with success criteria make me feel like I can test ideas quickly and know when to pivot if small lesions cause issues."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 5,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates\n\nTwo quick questions that will shape thresholds and analysis\n- Clinical operating point: what sensitivity/specificity would your neurologist accept for a triage tool? If unsure, start with sensitivity at 95% specificity and adjust after first readout.\n- Export policy: are you allowed to export trained weights/checkpoints outside the secure enclave, or only metrics/plots? This affects reproducibility artifacts you can share with collaborators.\n\nROI prototype checklist you can run today (single 3090)\n- Preprocess 10 cases/20 controls: skull strip, N4 bias correction, resample to 1 mm iso, per-brain z-score normalization; save standardized NIfTI.\n- Crop generation\n  - Cases: connected components on lesion mask, select largest; compute bounding box; pad with 20–30 mm margin; clamp to brain bbox; resample/crop to 96×96×96. Add a distance-to-lesion channel (Euclidean transform, clipped and normalized).\n  - Controls: sample 2–3 random 96×96×96 crops within a white-matter mask (simple intensity threshold or atlas); seed RNG for repeatability.\n- Model/training: 3D ResNet-18 (or UNet encoder) with mixed precision; batch size ≈8 at 96^3 on 24 GB; AdamW (lr 3e-4, wd 1e-4), cosine decay; weighted BCE (weight ≈ controls/cases). Early stopping with patience 5.\n- Aggregation/eval: subject-level logits = mean over that subject’s crops; report AUPRC (primary), AUROC, sensitivity at 95% specificity; compute ECE and apply temperature scaling on validation to calibrate probabilities. Log runtime/VRAM.\n- Success for the prototype: finish end-to-end in <60 minutes with stable curves; subject-level AUPRC ≥0.65 on validation without severe miscalibration. If memory is tight, drop to 64^3 or use gradient checkpointing.\n\nThree concrete, falsifiable experiments\n1) ROI vs whole-brain classification\n- Hypothesis: Lesion-centered 96^3 crops with a distance channel yield higher AUPRC than whole-brain 128^3 due to better signal-to-noise with small lesions.\n- Minimal test: Train identical 3D encoders on ROI vs whole-brain with matched voxel counts and augmentations; balanced sampling per epoch.\n- Success/falsifier: Success if ROI improves AUPRC by ≥0.05 and ECE is no worse after temperature scaling; falsified if difference <0.01 or ROI underperforms.\n- Analysis: Stratify by lesion volume tertiles; if ROI loses, enlarge context (128^3) or add a second downsampled whole-brain branch.\n\n2) Multi-task segmentation + classification\n- Hypothesis: Joint segmentation supervision improves classification by ≥0.03 AUPRC over classifier-only.\n- Minimal test: Shared 3D encoder; segmentation head (Dice+focal) on cases, classification head (weighted BCE) on all; λseg ∈ {0.2, 0.5, 1.0}. Control: classifier-only.\n- Success/falsifier: Success if ΔAUPRC ≥0.03 without worse ECE; falsified if ΔAUPRC ∈ [−0.01, +0.01] across 3 seeds.\n- Analysis: If no gain, try seg-pretrain then cls-finetune; examine inter-rater Dice to estimate supervision noise.\n\n3) Radiomics + clinical vs DL\n- Hypothesis: A radiomics+age/sex model is competitive at n=150; your best DL model should exceed it by ≥0.03 AUPRC if ROI helps.\n- Minimal test: Extract IBSI-compliant radiomics from lesion masks; train logistic and gradient boosting with nested CV and class weights; compare to DL under identical folds.\n- Success/falsifier: Success if DL ≥0.03 AUPRC over radiomics; falsified if radiomics ties or wins.\n- Analysis: If radiomics ties/wins, focus on SSL pretraining and stronger regularization; if DL wins, proceed to ablations (crop size, loss, augmentations).\n\nPhase 0 (≤14 days) gates\n- Deliverables:\n  1) Frozen temporal test split + compliance README + fixed preprocessing script.\n  2) ROI prototype trained and logged, plus one ablation (64^3 vs 96^3) with a brief post-mortem.\n  3) Completed experiment card for Experiment 1 (hypothesis, falsifier, minimal test, variables, metrics, stop rule).\n\nNext 48 hours\n- Day 1: Implement preprocessing and crop pipeline; train the ROI prototype; record metrics and ECE pre/post calibration.\n- Day 2: Train whole-brain 128^3 baseline; run ROI vs whole-brain comparison and write the Experiment 1 card; schedule 1-hour review with your neurologist to pick a clinical operating point.\n\nIntuition\n- Your lesions are small and mostly focal; concentrating model capacity on lesion-centered context should boost signal-to-noise and reduce shortcut learning from global anatomy. Multi-tasking with segmentation injects anatomical structure into the representation, which tends to help under label scarcity.\n\nWhy this is principled\n- Self-supervised or anatomy-informed features generally improve performance in medical imaging when labels are limited, and are a recommended first-line tactic before scaling model size or complexity. Calibration via temperature scaling is a simple, effective post-hoc method that improves the reliability of predicted probabilities at clinically relevant operating points.\n\nLiterature anchors\n- Chen et al., Self-supervised learning for medical image classification: a systematic review and implementation guidelines — https://www.nature.com/articles/s41746-023-00811-0\n- Guo et al., On Calibration of Modern Neural Networks — https://arxiv.org/abs/1706.04599",
+      "student_message": "This is incredibly detailed and actionable! Thank you for outlining the ROI prototype plan and the three experiments so clearly. \n\nTo answer your questions:\n\n- Lesions are typically single and focal per case, but occasionally there can be 2-3 smaller foci. For the prototype, focusing on the largest or most prominent lesion for cropping should be sufficient. \n- For controls, sampling 2-3 anatomically plausible \"pseudo-ROI\" crops within white matter sounds like a great approach to prevent trivial learning. I'm comfortable with that. \n\nI'm excited to get started on the prototype and Experiment 1 today. The Phase 0 gates and success criteria are very helpful for staying focused.",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 2.0,
+        "student_constraint_fit": 1.8333333333333333,
+        "student_confidence_gain": 1.9333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.925
+      },
+      "overall_score": 1.925,
+      "cumulative_avg": 1.8253333333333335,
+      "delta": 0.050000000000000044,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement preprocessing and crop pipeline for 10 cases/20 controls, saving standardized NIfTI files.\",\n    \"Train the ROI prototype using a 3D ResNet-18 on a single 3090, recording metrics (AUPRC, AUROC, sensitivity at 95% specificity) and ECE pre/post calibration.\",\n    \"Train the whole-brain 128^3 baseline and run the ROI vs whole-brain comparison (Experiment 1).\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is incredibly clear and actionable. It provides specific steps for the next 48 hours, directly addressing my constraints (single 3090, anonymized scans) and building on my previous input. The detailed prototype plan and experiments reduce my uncertainty significantly, making me confident I can start immediately.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement preprocessing and crop pipeline for 10 cases/20 controls, saving standardized NIfTI files.",
+              "Train the ROI prototype using a 3D ResNet-18 on a single 3090, recording metrics (AUPRC, AUROC, sensitivity at 95% specificity) and ECE pre/post calibration.",
+              "Train the whole-brain 128^3 baseline and run the ROI vs whole-brain comparison (Experiment 1)."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is incredibly clear and actionable. It provides specific steps for the next 48 hours, directly addressing my constraints (single 3090, anonymized scans) and building on my previous input. The detailed prototype plan and experiments reduce my uncertainty significantly, making me confident I can start immediately."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\"Implement preprocessing (skull strip, N4, resample, z-score) for 10 cases/20 controls and save standardized NIfTIs\", \"Generate ROI crops: for cases, compute largest lesion bbox with margin; for controls, sample 2-3 white-matter crops; both at 96×96×96\", \"Train 3D ResNet-18 with weighted BCE, mixed precision, and early stopping; evaluate subject-level AUPRC/AUROC and calibrate with temperature scaling\"],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 1.8,\n    \"constraint_fit_for_student\": 1.5,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The response provides highly specific, executable steps tailored to my HIPAA-compliant setting with a 3090, but the crop generation and model training may exceed my skills if I'm new to 3D medical imaging pipelines.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement preprocessing (skull strip, N4, resample, z-score) for 10 cases/20 controls and save standardized NIfTIs",
+              "Generate ROI crops: for cases, compute largest lesion bbox with margin; for controls, sample 2-3 white-matter crops; both at 96×96×96",
+              "Train 3D ResNet-18 with weighted BCE, mixed precision, and early stopping; evaluate subject-level AUPRC/AUROC and calibrate with temperature scaling"
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 1.8,
+              "constraint_fit_for_student": 1.5,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The response provides highly specific, executable steps tailored to my HIPAA-compliant setting with a 3090, but the crop generation and model training may exceed my skills if I'm new to 3D medical imaging pipelines."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement preprocessing on 10 cases and 20 controls including skull stripping, N4 bias correction, resampling to 1mm iso, and z-score normalization, then save as standardized NIfTI files.\",\n    \"Generate ROI crops for cases using the largest lesion bounding box with 20-30mm padding and resample to 96x96x96, adding a distance-to-lesion channel; for controls, sample 2-3 random crops in white matter and train a 3D ResNet-18 model with the specified hyperparameters to get initial AUPRC metrics.\",\n    \"Train a whole-brain 128x128x128 baseline model for comparison, compute subject-level metrics like AUPRC and sensitivity at 95% specificity with temperature scaling, and draft the Experiment 1 card summarizing the hypothesis and results.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a post-bacc researcher with anonymized scans and limited compute like a single 3090, this response gives me super clear, bite-sized steps I can knock out in a day or two without violating HIPAA, and the success criteria and fallback ideas make me feel way more confident about not wasting time on dead ends.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement preprocessing on 10 cases and 20 controls including skull stripping, N4 bias correction, resampling to 1mm iso, and z-score normalization, then save as standardized NIfTI files.",
+              "Generate ROI crops for cases using the largest lesion bounding box with 20-30mm padding and resample to 96x96x96, adding a distance-to-lesion channel; for controls, sample 2-3 random crops in white matter and train a 3D ResNet-18 model with the specified hyperparameters to get initial AUPRC metrics.",
+              "Train a whole-brain 128x128x128 baseline model for comparison, compute subject-level metrics like AUPRC and sensitivity at 95% specificity with temperature scaling, and draft the Experiment 1 card summarizing the hypothesis and results."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a post-bacc researcher with anonymized scans and limited compute like a single 3090, this response gives me super clear, bite-sized steps I can knock out in a day or two without violating HIPAA, and the success criteria and fallback ideas make me feel way more confident about not wasting time on dead ends."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 6,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; great)\n\nTwo quick calibrating questions\n- Prevalence at deployment: What’s the expected disease prevalence in your target triage population? This affects PPV/NPV at the 95% sensitivity, 85% specificity operating point.\n- Decision utility: If sensitivity drops slightly (e.g., 92–94%) with fewer false positives, would the neurologist accept a small abstention rate? This determines whether to include a “defer to human” option.\n\nOperating-point and reproducibility guidance tailored to your constraints\n- Thresholding and calibration: Set thresholds on the validation split to meet 95% sensitivity and then report resulting specificity and calibration (ECE) pre/post-calibration. Start with temperature scaling; it’s simple and often effective [1]. Add a “fixed-sensitivity” analysis and confidence intervals via bootstrapping to quantify uncertainty.\n- Selective abstention option: Consider a “defer” region based on calibrated confidence or conformal prediction, so you can maintain 95% sensitivity while optimizing specificity on the non-deferred subset and reporting coverage (fraction auto-classified) [3]. This is valuable for triage safety.\n- Decision-curve analysis: Complement AUPRC/AUROC by computing net benefit across thresholds to show clinical utility and to compare ROI vs whole-brain and radiomics baselines at the 95/85 region [2].\n- Reproducibility in a secure enclave: Since you can’t export weights, archive inside the enclave: environment lockfile (conda/pip freeze), CUDA/cuDNN versions, code commit SHAs, seed values, data split manifest hashes, and a one-click replay script. Export only metrics/plots and a text model card summarizing the run.\n\nThree concrete, falsifiable experiments (integrated with your clinical 95/85 target)\n1) ROI vs whole-brain classification at fixed sensitivity\n- Objective & hypothesis: Lesion-centered 3D crops with a distance-to-lesion channel outperform whole-brain downsampled inputs when tuned to 95% sensitivity.\n- Setup: Train identical 3D encoders on (a) ROI 96^3 with distance channel and (b) whole-brain 128^3. Match augmentations and voxel counts. Tune thresholds on validation to achieve 95% sensitivity; apply temperature scaling before thresholding [1].\n- Metrics & success: Primary: specificity at fixed 95% sensitivity with 95% CIs; AUPRC, AUROC, and ECE. Success if ROI improves specificity by ≥5% absolute at the fixed sensitivity and is equally or better calibrated post-scaling.\n- Interpretation: If ROI wins, lesion-local signal dominates; if not, increase ROI context (128^3) or add a second low-res whole-brain branch.\n- Follow-ups: Stratify by lesion volume tertiles; report decision curves to compare net benefit around the operating point [2].\n\n2) Multi-task segmentation + classification improves reliability\n- Objective & hypothesis: Segmentation supervision induces anatomically grounded features, increasing specificity at fixed 95% sensitivity by ≥3% absolute versus classifier-only.\n- Setup: Shared 3D encoder; segmentation head (Dice+focal) on cases; classification head (weighted BCE) on all; λseg ∈ {0.2, 0.5, 1.0}. Control: classifier-only. Calibrate with temperature scaling; re-tune thresholds to 95% sensitivity on validation [1].\n- Metrics & success: Specificity at fixed sensitivity (primary), AUPRC, ECE, and segmentation Dice (QA). Success if specificity improves ≥3% absolute without worse ECE.\n- Interpretation: If gains are absent, try seg-pretraining then classifier fine-tuning; examine inter-rater Dice to estimate supervision noise.\n- Follow-ups: Test curriculum (seg first, then joint), and sensitivity to λseg.\n\n3) Safety via selective prediction (abstention)\n- Objective & hypothesis: Allowing the model to defer on uncertain cases retains 95% sensitivity while increasing specificity and net benefit on the auto-classified subset, with acceptable coverage (>70%).\n- Setup: After calibration, implement (a) confidence-threshold abstention and (b) conformal prediction to control error rates; compare coverage–performance trade-offs. Thresholds are tuned on validation to ensure 95% sensitivity on the non-deferred set [1][3].\n- Metrics & success: Specificity at 95% sensitivity on non-deferred cases, coverage, AUPRC, ECE, and decision-curve net benefit [2]. Success if specificity increases ≥5% absolute at ≥70% coverage.\n- Interpretation: If coverage is too low, improve calibration or adjust ROI context; if gains are large, propose abstention as a triage feature to your clinician.\n\nPhase 0 gates (≤14 days; unchanged with one addition)\n- Deliverables:\n  1) Frozen temporal test split + compliance README + fixed preprocessing script.\n  2) ROI prototype trained and logged; one ablation (64^3 vs 96^3) with post-mortem.\n  3) Experiment card for Experiment 1 (including fixed-sensitivity thresholding and calibration plan).\n  4) Inside-enclave reproducibility bundle (env lockfile, seeds, commit SHAs, split hashes, replay script).\n- Do not touch the held-out test until Phase 0 gates are met.\n\nNext 48 hours\n- Today: Finish the ROI prototype; add temperature scaling; set threshold to 95% sensitivity on validation; report resulting specificity, ECE, and AUPRC with CIs.\n- Tomorrow: Train whole-brain baseline; run decision-curve analysis for both models; start implementing selective abstention.\n\nIntuition\n- Your lesions are small and focal: ROI crops concentrate capacity on the informative region, which should translate to better specificity when sensitivity is fixed high. Post-hoc calibration stabilizes probabilities so thresholding and abstention decisions are reliable.\n\nWhy this is principled\n- Temperature scaling is a simple, well-validated post-hoc calibration method that often improves probability reliability without changing discrimination [1]. Decision-curve analysis quantifies clinical net benefit across thresholds and is widely used to assess whether a model adds value in practice [2]. Conformal and selective prediction frameworks provide finite-sample guarantees and systematic control of errors and coverage, aligning with triage safety goals [3].\n\nNote\n- No specific mentorship guidelines found for this query; proceeding with literature-backed recommendations.\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Vickers & Elkin, Decision Curve Analysis: A Novel Method for Evaluating Prediction Models — https://pubmed.ncbi.nlm.nih.gov/16908459/\n\nCitations\n- [1] On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- [2] Decision Curve Analysis: A Novel Method for Evaluating Prediction Models — https://pubmed.ncbi.nlm.nih.gov/16908459/\n- [3] A Tutorial on Conformal Prediction for Classification — https://arxiv.org/abs/2107.07511",
+      "student_message": "This is incredibly helpful, thank you for laying out the ROI prototype and the three experiments so clearly! The checklist is exactly what I needed to get started. \n\nTo answer your questions:\n\n*   **Clinical operating point:** For a triage tool, the neurologist suggested aiming for **95% sensitivity and 85% specificity** initially. They mentioned we can adjust this based on the first readouts, but this feels like a good starting point.\n*   **Export policy:** Unfortunately, due to HIPAA, we **cannot export trained weights or checkpoints outside the secure enclave**. We can only export metrics and plots. This is a good point about reproducibility artifacts; I'll make sure to document everything meticulously within the enclave.\n\nI'm excited to dive into the ROI prototype and the first experiment. The intuition about small, focal lesions really resonates with our data.",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.8,
+        "student_confidence_gain": 1.8,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8633333333333333
+      },
+      "overall_score": 1.8633333333333333,
+      "cumulative_avg": 1.8316666666666668,
+      "delta": -0.06166666666666676,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement temperature scaling for the ROI prototype and set the threshold to achieve 95% sensitivity on the validation set, then report specificity, ECE, and AUPRC with CIs.\",\n    \"Train the whole-brain baseline model and perform decision-curve analysis for both the ROI prototype and the whole-brain model.\",\n    \"Begin implementing selective abstention techniques (confidence-threshold and conformal prediction) for the ROI prototype.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.83,\n  \"justification\": \"This response is incredibly actionable and directly addresses my constraints. The mentor provides specific, sequenced steps for the next 48 hours, integrating the clinical operating point and the no-export policy into the experimental design. The detailed explanations for each experiment and the 'why this is principled' section significantly reduce my uncertainty and boost my confidence.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling for the ROI prototype and set the threshold to achieve 95% sensitivity on the validation set, then report specificity, ECE, and AUPRC with CIs.",
+              "Train the whole-brain baseline model and perform decision-curve analysis for both the ROI prototype and the whole-brain model.",
+              "Begin implementing selective abstention techniques (confidence-threshold and conformal prediction) for the ROI prototype."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.83,
+            "justification": "This response is incredibly actionable and directly addresses my constraints. The mentor provides specific, sequenced steps for the next 48 hours, integrating the clinical operating point and the no-export policy into the experimental design. The detailed explanations for each experiment and the 'why this is principled' section significantly reduce my uncertainty and boost my confidence."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Finish ROI prototype with temperature scaling and set threshold to achieve 95% sensitivity on validation split\", \"Train whole-brain baseline model using identical 3D encoder architecture and matching augmentations\", \"Run decision-curve analysis for both models and start implementing selective abstention framework\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.6,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.76,\n  \"justification\": \"The response provides highly specific technical steps I can execute immediately within my HIPAA constraints, with clear instructions for calibration methods and baseline comparisons, though implementing conformal prediction might be challenging given my current skill level.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Finish ROI prototype with temperature scaling and set threshold to achieve 95% sensitivity on validation split",
+              "Train whole-brain baseline model using identical 3D encoder architecture and matching augmentations",
+              "Run decision-curve analysis for both models and start implementing selective abstention framework"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.6,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.76,
+            "justification": "The response provides highly specific technical steps I can execute immediately within my HIPAA constraints, with clear instructions for calibration methods and baseline comparisons, though implementing conformal prediction might be challenging given my current skill level."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Finish the ROI prototype by adding temperature scaling, setting the threshold to 95% sensitivity on the validation set, and reporting specificity, ECE, and AUPRC with confidence intervals.\",\n    \"Train the whole-brain baseline model using 128^3 inputs with matching augmentations, then apply the same calibration and thresholding to compare against the ROI model.\",\n    \"Run decision-curve analysis for both the ROI and whole-brain models to compute net benefit around the 95/85 operating point and start implementing selective abstention based on confidence thresholds.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a post-bacc researcher with limited time and HIPAA constraints, this response gives me super clear, bite-sized steps for the next 48 hours that I can actually execute in the secure enclave using my existing anonymized scans and basic 3D modeling skills, without needing to export anything risky. It directly tackles my reproducibility worries and builds my confidence by explaining why these experiments will work for our focal lesion data, making me feel ready to start without second-guessing.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Finish the ROI prototype by adding temperature scaling, setting the threshold to 95% sensitivity on the validation set, and reporting specificity, ECE, and AUPRC with confidence intervals.",
+              "Train the whole-brain baseline model using 128^3 inputs with matching augmentations, then apply the same calibration and thresholding to compare against the ROI model.",
+              "Run decision-curve analysis for both the ROI and whole-brain models to compute net benefit around the 95/85 operating point and start implementing selective abstention based on confidence thresholds."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a post-bacc researcher with limited time and HIPAA constraints, this response gives me super clear, bite-sized steps for the next 48 hours that I can actually execute in the secure enclave using my existing anonymized scans and basic 3D modeling skills, without needing to export anything risky. It directly tackles my reproducibility worries and builds my confidence by explaining why these experiments will work for our focal lesion data, making me feel ready to start without second-guessing."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 7,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; great momentum)\n\nTwo quick, high-impact questions\n- Cost balance: Is there a rough “cost ratio” the clinician would accept for FP vs FN at triage (e.g., 1 FN = 5 FP)? This informs decision-curve interpretation at your operating point.\n- Deferred workflow: For abstentions, who reviews them and on what timeline? If deferred cases trigger expedited radiologist review, we should target ≥70% coverage to keep the workflow efficient.\n\nCalibrated expectations at your operating point\n- At 95% sensitivity and 85% specificity:\n  - Prevalence 8%: PPV ≈ 35.5%, NPV ≈ 99.5%\n  - Prevalence 10%: PPV ≈ 41.3%, NPV ≈ 99.3%\n- Use these as sanity anchors when you set thresholds; if PPV is materially lower, the model is likely overconfident or picking up confounds.\n\nActionable next steps (48 hours)\n- Calibrate and threshold: After training your ROI prototype, apply temperature scaling on the validation set, then set the threshold to achieve 95% sensitivity. Report specificity, PPV/NPV at 8% and 10% prevalence, and ECE with 95% CIs (bootstrap).\n- Selective abstention: Implement a confidence-based defer rule. Tune it to maintain 95% sensitivity on the non-deferred subset with coverage ≥70%; report resultant specificity and decision curves.\n- Reproducibility in-enclave: Save env lockfile, CUDA/cuDNN versions, commit SHAs, seeds, split manifest hashes, and a one-click replay script. Export only metrics/plots and a model card summary.\n\nThree concrete, falsifiable experiments (aligned to 95% sensitivity and abstention)\n1) ROI vs whole-brain at fixed sensitivity\n- Objective/hypothesis: Lesion-centered 3D crops with a distance-to-lesion channel increase specificity at fixed 95% sensitivity versus whole-brain.\n- Setup: Train identical 3D encoders on ROI 96^3 vs whole-brain 128^3 with matched augmentations; temperature-scale both; choose thresholds on validation to hit 95% sensitivity.\n- Metrics/success: Specificity at fixed sensitivity (primary), PPV/NPV at 8% and 10% prevalence, AUPRC, ECE. Success if ROI improves specificity by ≥5% absolute and equals/betters ECE.\n- Interpretation: If ROI wins, local signal dominates; if not, enlarge ROI context (128^3) or add a low-res whole-brain branch.\n\n2) Multi-task segmentation + classification for reliability\n- Objective/hypothesis: Adding a segmentation head improves specificity at 95% sensitivity by ≥3% absolute relative to classifier-only, with equal or better calibration.\n- Setup: Shared 3D encoder; seg head (Dice+focal) on cases, cls head (weighted BCE) on all; λseg in {0.2, 0.5, 1.0}. Calibrate and re-threshold to 95% sensitivity on validation.\n- Metrics/success: Specificity at fixed sensitivity (primary), ECE, AUPRC; monitor Dice for QA. Success if specificity ↑ ≥3% without worse ECE across 3 seeds.\n- Interpretation: No gain → seg-pretraining then cls fine-tune; check inter-rater Dice to quantify supervision noise.\n\n3) Safety via selective prediction\n- Objective/hypothesis: Allowing abstention preserves 95% sensitivity while raising specificity and net benefit on the auto-classified subset at practical coverage.\n- Setup: After calibration, implement confidence-threshold abstention; optionally add conformal prediction. Tune to maintain 95% sensitivity on non-deferred cases with coverage targets {60%, 70%, 80%}.\n- Metrics/success: Specificity at fixed sensitivity on non-deferred subset, coverage, AUPRC, ECE, decision-curve net benefit around your operating point. Success if specificity ↑ ≥5% absolute at ≥70% coverage.\n- Interpretation: Low coverage → improve calibration or context; strong gains → propose abstention workflow to clinicians.\n\nPhase 0 gates (≤14 days; unchanged)\n- Deliverables: frozen temporal test + compliance README + fixed preprocessing; ROI prototype + one ablation (64^3 vs 96^3) with post-mortem; Experiment 1 card including fixed-sensitivity and calibration plan; in-enclave reproducibility bundle.\n\nIntuition\n- With 8–10% prevalence and small focal lesions, concentrating capacity on lesion-centered context should translate to better specificity once sensitivity is fixed high. Calibration stabilizes probabilities, enabling trustworthy thresholding and abstention that meaningfully improves clinical utility.\n\nWhy this is principled\n- Temperature scaling reliably improves probability calibration without altering discrimination, which is essential when optimizing fixed-sensitivity thresholds [Guo et al., 2017]. Decision-curve analysis quantifies net clinical benefit across thresholds and is standard for evaluating whether a model adds value at a chosen operating point [Vickers & Elkin, 2006].\n\nNote on mentorship sources\n- No specific mentorship-guidelines entry retrieved for this query; proceeding with literature-backed recommendations and your constraints.\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Vickers & Elkin, Decision Curve Analysis — https://pubmed.ncbi.nlm.nih.gov/16908459/",
+      "student_message": "This is fantastic, thank you for elaborating on the decision utility and selective abstention! The guidance on thresholding, calibration, and decision-curve analysis is exactly what I need to move forward. \n\nTo answer your questions:\n\n- **Prevalence:** Based on our preliminary analysis of the anonymized dataset, we're estimating a disease prevalence of around 8-10% in the target triage population.\n- **Decision utility:** Yes, the neurologist I'm collaborating with would definitely accept a small abstention rate if it means maintaining high sensitivity and improving specificity. The goal is to flag potential cases efficiently without overwhelming the specialists with too many false positives.\n\nI'm excited to get started on the ROI prototype and the experiments. I'll be sure to document everything within the secure enclave as you've outlined.",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7,
+        "student_confidence_gain": 1.8333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8433333333333333
+      },
+      "overall_score": 1.8433333333333333,
+      "cumulative_avg": 1.8333333333333335,
+      "delta": -0.020000000000000018,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Calibrate and threshold my ROI prototype on the validation set, aiming for 95% sensitivity, and report the specified metrics (specificity, PPV/NPV, ECE).\",\n    \"Implement a confidence-based defer rule for selective abstention, tuning it to maintain 95% sensitivity on the non-deferred subset with at least 70% coverage, and report the resulting specificity and decision curves.\",\n    \"Document all reproducibility details within the secure enclave, including environment lockfile, CUDA/cuDNN versions, commit SHAs, seeds, split manifest hashes, and a one-click replay script.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 0\n  },\n  \"student_outcome_score\": 1.82,\n  \"justification\": \"The mentor provides highly specific, sequenced steps that directly address my current stage and previous questions. The advice is tailored to my constraints and the specific problem, making me feel confident I can execute these actions within the next few days.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Calibrate and threshold my ROI prototype on the validation set, aiming for 95% sensitivity, and report the specified metrics (specificity, PPV/NPV, ECE).",
+              "Implement a confidence-based defer rule for selective abstention, tuning it to maintain 95% sensitivity on the non-deferred subset with at least 70% coverage, and report the resulting specificity and decision curves.",
+              "Document all reproducibility details within the secure enclave, including environment lockfile, CUDA/cuDNN versions, commit SHAs, seeds, split manifest hashes, and a one-click replay script."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 0
+            },
+            "student_outcome_score": 1.82,
+            "justification": "The mentor provides highly specific, sequenced steps that directly address my current stage and previous questions. The advice is tailored to my constraints and the specific problem, making me feel confident I can execute these actions within the next few days."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Calibrate and threshold your ROI prototype using temperature scaling on validation set to achieve 95% sensitivity, then report specificity, PPV/NPV at both 8% and 10% prevalence with ECE and 95% CIs\", \"Implement confidence-based defer rule to maintain 95% sensitivity on non-deferred subset with ≥70% coverage, reporting resultant specificity and decision curves\", \"Set up reproducibility bundle in secure enclave with environment lockfile, CUDA/cuDNN versions, commit SHAs, seeds, split manifest hashes, and one-click replay script\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.6,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.77,\n  \"justification\": \"The response provides highly specific, sequenced technical steps I could execute immediately with my anonymized HIPAA-compliant data, though some steps like temperature scaling and confidence-based defer rules might stretch my current ML skills within the 1-3 day timeframe.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Calibrate and threshold your ROI prototype using temperature scaling on validation set to achieve 95% sensitivity, then report specificity, PPV/NPV at both 8% and 10% prevalence with ECE and 95% CIs",
+              "Implement confidence-based defer rule to maintain 95% sensitivity on non-deferred subset with ≥70% coverage, reporting resultant specificity and decision curves",
+              "Set up reproducibility bundle in secure enclave with environment lockfile, CUDA/cuDNN versions, commit SHAs, seeds, split manifest hashes, and one-click replay script"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.6,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.77,
+            "justification": "The response provides highly specific, sequenced technical steps I could execute immediately with my anonymized HIPAA-compliant data, though some steps like temperature scaling and confidence-based defer rules might stretch my current ML skills within the 1-3 day timeframe."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Apply temperature scaling to the ROI prototype on the validation set and set the threshold to achieve 95% sensitivity, then compute and report specificity, PPV/NPV at 8% and 10% prevalence, and ECE with bootstrap CIs.\",\n    \"Implement a confidence-based defer rule tuned to maintain 95% sensitivity on the non-deferred subset with at least 70% coverage, and generate decision curves for the results.\",\n    \"Create a reproducibility bundle by saving the environment lockfile, versions, seeds, split hashes, and a one-click replay script, exporting only metrics, plots, and a model card summary within the secure enclave.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.95,\n  \"justification\": \"As a post-bacc researcher with limited time and only anonymized scans, this response gives me clear, bite-sized steps I can tackle in 48 hours using my hospital lab setup and secure enclave, without needing extra resources. It directly reduces my uncertainty about calibration and abstention by providing prevalence-specific anchors and what-if interpretations, making me feel ready to experiment confidently while staying HIPAA-compliant.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Apply temperature scaling to the ROI prototype on the validation set and set the threshold to achieve 95% sensitivity, then compute and report specificity, PPV/NPV at 8% and 10% prevalence, and ECE with bootstrap CIs.",
+              "Implement a confidence-based defer rule tuned to maintain 95% sensitivity on the non-deferred subset with at least 70% coverage, and generate decision curves for the results.",
+              "Create a reproducibility bundle by saving the environment lockfile, versions, seeds, split hashes, and a one-click replay script, exporting only metrics, plots, and a model card summary within the secure enclave."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.95,
+            "justification": "As a post-bacc researcher with limited time and only anonymized scans, this response gives me clear, bite-sized steps I can tackle in 48 hours using my hospital lab setup and secure enclave, without needing extra resources. It directly reduces my uncertainty about calibration and abstention by providing prevalence-specific anchors and what-if interpretations, making me feel ready to experiment confidently while staying HIPAA-compliant."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 8,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; great momentum)\n\nTwo quick, high-impact questions\n- White-matter mask for control crops: will you use an atlas (e.g., MNI-registered) or an intensity-based heuristic for WM masking? This affects the reliability of “pseudo-ROIs.”\n- Covariates: do you plan to feed age/sex as a small MLP branch into the classifier or adjust for them only in analysis? Choose one now to avoid later confounding.\n\nCost-sensitive operating point and reporting\n- With FN:FP ≈ 3–4, mark threshold probabilities around pt ≈ 1/(1+λ) = 0.20–0.25 on your decision curves; that’s the cost-equivalent band for interpreting net benefit. Calibrate first (temperature scaling), then:\n  - Set threshold to 95% sensitivity on validation; report specificity, PPV/NPV at 8% and 10% prevalence, and ECE with 95% CIs (bootstrap).\n  - Add expected cost per 100 (or per 1,000) patients: Cost = λ·FN + FP at the chosen operating point. Plot this against coverage when you enable abstention.\n\nSelective abstention minimal recipe (calibrated)\n- Confidence-based: after temperature scaling, defer when max probability ∈ [0.45, 0.55] (start here), then tune the defer band to maintain 95% sensitivity with ≥70% coverage. Report specificity, PPV/NPV on the non-deferred subset plus overall coverage.\n- Practical checks: verify no class-conditional calibration drift (separate reliability plots by case/control); ensure abstention doesn’t disproportionately drop hard positives.\n\nThree concrete, falsifiable experiments (cost- and safety-aware)\n1) Utility-aligned ROI vs whole-brain\n- Objective/hypothesis: ROI 96^3 with a distance-to-lesion channel achieves higher specificity and lower expected cost than whole-brain 128^3 at 95% sensitivity.\n- Setup: Train identical 3D encoders on ROI vs whole-brain, matched augmentations/voxels; temperature-scale; choose thresholds to hit 95% sensitivity on validation.\n- Metrics/success: Primary: specificity at fixed sensitivity with 95% CIs; secondary: expected cost per 1,000 at λ ∈ {3,4} and prevalence {8%, 10%}; AUPRC and ECE. Success if ROI improves specificity by ≥5% absolute and reduces expected cost by ≥15% versus whole-brain.\n- Interpretation: If ROI underperforms, increase context (128^3) or add a parallel low-res whole-brain branch; stratify by lesion volume tertiles.\n\n2) Selective abstention trade-off curve\n- Objective/hypothesis: A calibrated abstention band preserves 95% sensitivity while increasing specificity by ≥5% absolute at ≥70% coverage.\n- Setup: On calibrated models, sweep defer bands to target coverage in {60%, 70%, 80%}; re-tune the decision threshold on the non-deferred subset to maintain 95% sensitivity.\n- Metrics/success: Specificity at fixed sensitivity on the non-deferred subset, coverage, expected cost, decision-curve net benefit around pt = 0.20–0.25. Success if specificity ↑ ≥5% at ≥70% coverage with lower expected cost than no-abstention.\n- Interpretation: If coverage collapses, improve calibration or ROI context; if gains are strong, formalize abstention as a triage feature.\n\n3) Cost-sensitive training vs cost-insensitive with post-hoc thresholding\n- Objective/hypothesis: Modestly cost-sensitive training (e.g., class weights or focal loss tuned to λ ≈ 3–4) reduces expected cost at the 95% sensitivity operating point compared to standard training plus post-hoc thresholding.\n- Setup: Train (a) standard weighted BCE (balanced by class frequency) and (b) cost-weighted BCE or focal loss with α reflecting λ. Calibrate both; set thresholds to 95% sensitivity on validation.\n- Metrics/success: Expected cost per 1,000 at λ ∈ {3,4} and prevalence {8%, 10%}; specificity at fixed sensitivity; ECE. Success if cost-sensitive training reduces expected cost by ≥10% without worse ECE.\n- Interpretation: If no benefit, keep cost-insensitive training and tune only thresholds; if beneficial, retain cost-sensitive loss for downstream experiments.\n\nNext actions (pick one 2-hour path)\n- A) Implement temperature scaling + fixed-sensitivity thresholding and export a one-page calibration/threshold report (metrics with CIs, reliability curves).\n- B) Add confidence-based abstention; sweep defer bands to hit ≥70% coverage and recompute specificity and expected cost.\n- C) Stand up expected-cost computation and decision curves (mark pt ∈ [0.20, 0.25]) for ROI vs whole-brain; use the same validation split.\n\nIntuition\n- Aligning training and evaluation with clinical costs and a high-sensitivity target directs model capacity toward reducing false positives where it matters. Calibration stabilizes probabilities so thresholding and abstention rules behave as intended, and ROI focus amplifies local lesion signal under scarce labels.\n\nWhy this is principled\n- Temperature scaling improves probability reliability without changing discrimination, making fixed-sensitivity targeting and abstention more trustworthy [Guo et al., 2017]. Decision-curve analysis summarizes clinical net benefit across threshold choices, letting you compare ROI and whole-brain models in a way that reflects your FN:FP trade-offs [Vickers & Elkin, 2006].\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Vickers & Elkin, Decision Curve Analysis — https://pubmed.ncbi.nlm.nih.gov/16908459/",
+      "student_message": "This is incredibly helpful, thank you for breaking down the experiments and next steps so clearly! The ROI vs. whole-brain experiment sounds like a great way to test our hypothesis about local signal dominance.  Regarding the cost balance, I'll need to discuss this with the clinical team, but a rough starting point for FP vs. FN might be around 1:3 or 1:4, given the rarity of the disease and the potential for unnecessary follow-ups. For deferred workflows, the plan is for expedited radiologist review within 24 hours, so targeting ≥70% coverage aligns well with that. I'll focus on implementing temperature scaling and thresholding for 95% sensitivity first, then move on to selective abstention. The reproducibility steps are crucial, and I'll make sure to lock down the environment thoroughly.",
+      "scores": {
+        "student_actionability": 1.7666666666666666,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.5666666666666667,
+        "student_confidence_gain": 1.7333333333333332,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.7366666666666666
+      },
+      "overall_score": 1.7366666666666666,
+      "cumulative_avg": 1.82125,
+      "delta": -0.10666666666666669,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement temperature scaling on our current model and set the threshold for 95% sensitivity on the validation set.\",\n    \"Generate a one-page report including specificity, PPV/NPV at 8% and 10% prevalence, and ECE with 95% CIs (bootstrap) for the calibrated model.\",\n    \"Discuss with the clinical team about the white-matter mask approach (atlas vs. intensity-based) and the covariate handling (MLP branch vs. analysis adjustment) for the next iteration of experiments.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.7,\n    \"constraint_fit_for_student\": 1.5,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.66,\n  \"justification\": \"The mentor provides clear, actionable steps that directly address my previous follow-up, focusing on calibration and thresholding which I explicitly mentioned. The 'Next actions' section is particularly helpful for prioritizing, and the questions about WM mask and covariates are crucial for planning future experiments within my constraints.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling on our current model and set the threshold for 95% sensitivity on the validation set.",
+              "Generate a one-page report including specificity, PPV/NPV at 8% and 10% prevalence, and ECE with 95% CIs (bootstrap) for the calibrated model.",
+              "Discuss with the clinical team about the white-matter mask approach (atlas vs. intensity-based) and the covariate handling (MLP branch vs. analysis adjustment) for the next iteration of experiments."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.7,
+              "constraint_fit_for_student": 1.5,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.66,
+            "justification": "The mentor provides clear, actionable steps that directly address my previous follow-up, focusing on calibration and thresholding which I explicitly mentioned. The 'Next actions' section is particularly helpful for prioritizing, and the questions about WM mask and covariates are crucial for planning future experiments within my constraints."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\n    \"Choose between atlas-based or intensity-based white-matter masking for ROI experiments and document the choice to ensure consistency\",\n    \"Implement temperature scaling and thresholding to fix 95% sensitivity on the validation set, outputting calibration curves and specificity/PPV/NPV metrics\",\n    \"Compute expected cost per 1000 patients at λ=3–4 and prevalence 8–10% for the current model to establish a baseline before ROI/abstention tests\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.6,\n    \"constraint_fit_for_student\": 1.4,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.64,\n  \"justification\": \"The response provides highly specific, executable technical steps aligned with my HIPAA constraints and immediate experiment goals, though some steps like cost-curve implementation may require more than 2–3 days given my compute limits.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Choose between atlas-based or intensity-based white-matter masking for ROI experiments and document the choice to ensure consistency",
+              "Implement temperature scaling and thresholding to fix 95% sensitivity on the validation set, outputting calibration curves and specificity/PPV/NPV metrics",
+              "Compute expected cost per 1000 patients at λ=3–4 and prevalence 8–10% for the current model to establish a baseline before ROI/abstention tests"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.6,
+              "constraint_fit_for_student": 1.4,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.64,
+            "justification": "The response provides highly specific, executable technical steps aligned with my HIPAA constraints and immediate experiment goals, though some steps like cost-curve implementation may require more than 2–3 days given my compute limits."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement temperature scaling on my current model using the validation split from anonymized scans, then set threshold to 95% sensitivity and export a one-page report with metrics like specificity, PPV/NPV, and reliability curves.\",\n    \"Add confidence-based abstention by sweeping defer bands starting at [0.45, 0.55] to target ≥70% coverage while maintaining 95% sensitivity, recomputing specificity and expected cost on the non-deferred subset.\",\n    \"Set up expected-cost computation and decision curves marking pt 0.20–0.25 for comparing ROI vs whole-brain models on the same validation data, using λ=3–4 and prevalence 8–10%.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.9,\n  \"justification\": \"From my perspective as a post-bacc with only anonymized scans and limited weekly hours, the 2-hour next actions and sequenced experiments feel doable in 1-3 days using my lab's compute for 3D models, directly building on my plan for temperature scaling without needing new data access. The clear hypotheses, metrics, and interpretations for pitfalls like calibration drift reduce my worries about costs and reproducibility, boosting my confidence to discuss with the clinical team soon.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling on my current model using the validation split from anonymized scans, then set threshold to 95% sensitivity and export a one-page report with metrics like specificity, PPV/NPV, and reliability curves.",
+              "Add confidence-based abstention by sweeping defer bands starting at [0.45, 0.55] to target ≥70% coverage while maintaining 95% sensitivity, recomputing specificity and expected cost on the non-deferred subset.",
+              "Set up expected-cost computation and decision curves marking pt 0.20–0.25 for comparing ROI vs whole-brain models on the same validation data, using λ=3–4 and prevalence 8–10%."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.9,
+            "justification": "From my perspective as a post-bacc with only anonymized scans and limited weekly hours, the 2-hour next actions and sequenced experiments feel doable in 1-3 days using my lab's compute for 3D models, directly building on my plan for temperature scaling without needing new data access. The clear hypotheses, metrics, and interpretations for pitfalls like calibration drift reduce my worries about costs and reproducibility, boosting my confidence to discuss with the clinical team soon."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 9,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; excellent)\n\nTwo quick clarifiers before you run calibration\n- Registration scope: Will you do all model training in native space and use MNI only to derive/control WM masks (warped back via inverse transform), or will you also train on MNI-aligned volumes? Training in native space usually preserves fine lesion detail better; confirm your choice.\n- Age/sex branch: Will you standardize age (z-score by training split) and one-hot sex, and when/how will you ablate this branch to ensure it’s helping rather than leaking correlations? Decide now so logs are comparable.\n\nActionable plan for Next Action A: temperature scaling + fixed-sensitivity thresholding\n- Data splits and leakage guard\n  - Freeze validation split inside the training period; do not tune on test.\n  - If using cross-validation, learn one temperature per fold from that fold’s validation and apply only to that fold’s val/test.\n- Temperature scaling implementation\n  - Fit scalar T on validation by minimizing NLL: p̂ = sigmoid(logit(z)/T). Initialize T=1; optimize with LBFGS or Adam for 200–500 steps.\n  - Class-conditional check: plot reliability curves for positives and negatives separately; if strong asymmetry, consider class-conditional temperatures (two scalars) as a sensitivity analysis.\n- Fixed-sensitivity thresholding\n  - After calibration, sweep thresholds on validation to find the smallest threshold achieving ≥95% sensitivity. Interpolate if needed.\n  - Lock this threshold (per fold) for reporting validation metrics; record it to replay later on the locked test split.\n- Metrics and uncertainty\n  - Primary: specificity at fixed 95% sensitivity. Secondary: AUPRC, AUROC, ECE (n_bins=15–20, equal-frequency), Brier score.\n  - Prevalence-adjusted PPV/NPV: compute at 8% and 10% prevalence from sensitivity/specificity via Bayes rule (export both sets).\n  - Uncertainty: 1,000× bootstrap on the validation set at the subject level; report 95% CIs for specificity, AUPRC, ECE, PPV/NPV.\n- Reporting artifacts (inside enclave)\n  - Calibration curves (overall and class-conditional), pre- and post-temperature scaling.\n  - Sensitivity-specificity curve with the 95% sensitivity operating point marked.\n  - Decision curve with cost lines for FN:FP = 3 and 4; mark probability thresholds corresponding to pt ≈ 0.25 and 0.20.\n  - A one-page run card: data manifest hash, seed, preprocessing version, model commit SHA, T value, fixed threshold, metrics with CIs.\n\nImplementation sketch (pseudocode)\n- Fit T on validation:\n  - z_val = model(x_val); optimize T to minimize mean BCE(sigmoid(z_val/T), y_val).\n- Pick threshold τ at 95% sensitivity:\n  - p_val = sigmoid(z_val/T); sort thresholds; for each τ compute sensitivity; choose min τ with sens ≥ 0.95.\n- Evaluate:\n  - specificity_val = TN/(TN+FP) using τ; compute ECE with equal-frequency bins on p_val; compute AUPRC/AUROC.\n  - For prevalence π ∈ {0.08, 0.10}: PPV = (sens·π)/[(sens·π) + (1−spec)·(1−π)], NPV = [spec·(1−π)]/[(1−sens)·π + spec·(1−π)].\n- Bootstrap:\n  - Resample subjects with replacement; recompute all metrics and CIs; log median and 2.5–97.5 percentiles.\n\nIntegration details you’ve chosen\n- Atlas-based WM masks: register atlas to subject space; apply inverse warp with nearest-neighbor to maintain discrete labels; sanity-check Dice vs a tissue segmentation on a few cases. Use these masks to sample 2–3 pseudo-ROI control crops.\n- Age/sex branch: standardize age on training split only; sex one-hot; 2-layer MLP (e.g., 16→8 with ReLU and dropout 0.1) concatenated with image features before the classifier. Add an ablation run without this branch to quantify contribution.\n\nThree concrete, falsifiable experiments focused on calibration and confounding\n1) Calibration method comparison at fixed sensitivity\n- Objective/hypothesis: Simple temperature scaling outperforms no calibration and matches or exceeds isotonic/Platt scaling in ECE while preserving discrimination at 95% sensitivity.\n- Setup: Train a fixed ROI model; on validation, compare three post-hoc methods: none, temperature scaling, isotonic regression (on logits). Re-tune threshold per method to 95% sensitivity.\n- Metrics/success: ECE (primary), Brier score, specificity at fixed sensitivity, AUPRC; 95% CIs via bootstrap. Success if temperature scaling reduces ECE by ≥30% relative to none and matches isotonic within ±0.01 ECE without worse specificity.\n- Interpretation: If isotonic is clearly better but unstable across folds, stick with temperature for robustness.\n\n2) Native-space vs MNI-aligned training\n- Objective/hypothesis: Training in native space yields better specificity at fixed 95% sensitivity than training in MNI space due to preserved lesion detail; atlas is used only to derive WM masks warped back to native.\n- Setup: Two pipelines: (a) native-space ROI crops; (b) MNI-warped images and crops in template space. Same model and augmentations; temperature-scale both; threshold to 95% sensitivity.\n- Metrics/success: Specificity at fixed sensitivity (primary), AUPRC, ECE; runtime. Success if native-space improves specificity by ≥3% absolute or AUPRC by ≥0.02.\n- Interpretation: If MNI ties, prefer native for simplicity; if MNI wins, inspect interpolation/resampling choices and potential alignment benefits.\n\n3) Age/sex branch utility and subgroup reliability\n- Objective/hypothesis: Adding the age/sex MLP branch improves specificity at fixed 95% sensitivity by ≥2% absolute and improves subgroup calibration (ECE) without increasing disparity.\n- Setup: Train ROI model with and without the covariate branch; temperature-scale each; threshold to 95% sensitivity. Evaluate subgroup-specific metrics by age quartiles and sex.\n- Metrics/success: Specificity at fixed sensitivity (primary), subgroup ECE and AUPRC; disparity = max subgroup–min subgroup metric. Success if branch improves specificity and reduces or does not worsen disparity.\n- Interpretation: If gains come with higher disparity, consider regularization (dropout/weight decay on branch) or include covariates only for analysis, not as inputs.\n\nNext 24–48 hours\n- Today: Implement temperature scaling, fixed-sensitivity thresholding, and the full calibration report with bootstrap CIs. Log T and τ with seed and split hashes.\n- Tomorrow: Run Experiment 1 (calibration comparison) on the ROI model; pick the calibration method to standardize. If time allows, kick off the native vs MNI training comparison (Experiment 2) on a subset to estimate effect size.\n\nIntuition\n- Calibrating probabilities stabilizes the mapping from scores to risk, so fixed-sensitivity thresholds reflect true trade-offs; ROI crops focus capacity on lesion-local signal, making specificity gains more attainable. Atlas-derived WM masks for control crops prevent trivial shortcuts while keeping anatomical plausibility.\n\nWhy this is principled\n- Temperature scaling is a simple, strong baseline that consistently improves calibration without hurting discrimination, which is crucial when you must meet a fixed-sensitivity requirement. Decision-curve and cost-aware evaluation align model selection with clinical utility rather than raw AUC, and subgroup calibration checks reduce the risk of hidden performance disparities.\n\nLiterature anchors\n- On Calibration of Modern Neural Networks — Guo et al., 2017 — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Predicting Good Probabilities with Supervised Learning — Niculescu-Mizil & Caruana, 2005 — https://dl.acm.org/doi/10.1145/1102351.1102430",
+      "student_message": "Thank you for the detailed breakdown of the experiments and the next actions! This is incredibly helpful for structuring my work. \n\nTo answer your questions:\n\n- For the white-matter mask, we'll be using an atlas-based approach, specifically registering our anonymized scans to the MNI space. This should provide more consistent \"pseudo-ROIs\" compared to intensity-based methods.\n- For covariates, we'll plan to feed age/sex as a small MLP branch into the classifier. This feels more integrated than adjusting only in analysis.\n\nI'm going to focus on Next Action A first, implementing temperature scaling and fixed-sensitivity thresholding to get a solid calibration report. This seems like a foundational step before diving deeper into abstention or cost-sensitive training.",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7666666666666666,
+        "student_confidence_gain": 1.9000000000000001,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8816666666666668
+      },
+      "overall_score": 1.8816666666666668,
+      "cumulative_avg": 1.827962962962963,
+      "delta": 0.14500000000000024,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement temperature scaling, fixed-sensitivity thresholding, and the full calibration report with bootstrap CIs, logging T and τ with seed and split hashes.\",\n    \"Run Experiment 1 (calibration comparison) on the ROI model to compare temperature scaling, no calibration, and isotonic regression.\",\n    \"If time permits, initiate training for Experiment 2 (native vs MNI training comparison) on a subset of data.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.83,\n  \"justification\": \"This response provides extremely clear, actionable steps with specific metrics and implementation details. It directly addresses my previous follow-up and respects my current stage of work, making me feel very confident about what to do next within my constraints.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling, fixed-sensitivity thresholding, and the full calibration report with bootstrap CIs, logging T and τ with seed and split hashes.",
+              "Run Experiment 1 (calibration comparison) on the ROI model to compare temperature scaling, no calibration, and isotonic regression.",
+              "If time permits, initiate training for Experiment 2 (native vs MNI training comparison) on a subset of data."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.83,
+            "justification": "This response provides extremely clear, actionable steps with specific metrics and implementation details. It directly addresses my previous follow-up and respects my current stage of work, making me feel very confident about what to do next within my constraints."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement temperature scaling on validation set using LBFGS/Adam for 200-500 steps, minimizing BCE loss with initialized T=1\",\n    \"Find the threshold for ≥95% sensitivity on validation after calibration, then compute specificity, ECE, AUPRC, and bootstrapped CIs\",\n    \"Generate calibration curves, sensitivity-specificity plot with marked operating point, and a one-page run card with all metrics and parameters\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.6,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.85,\n  \"justification\": \"The response provides highly specific technical steps I can implement immediately with clear metrics and pseudocode, though the bootstrap CI computation might strain my 1-3 day timeline if data is large.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling on validation set using LBFGS/Adam for 200-500 steps, minimizing BCE loss with initialized T=1",
+              "Find the threshold for ≥95% sensitivity on validation after calibration, then compute specificity, ECE, AUPRC, and bootstrapped CIs",
+              "Generate calibration curves, sensitivity-specificity plot with marked operating point, and a one-page run card with all metrics and parameters"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.6,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.85,
+            "justification": "The response provides highly specific technical steps I can implement immediately with clear metrics and pseudocode, though the bootstrap CI computation might strain my 1-3 day timeline if data is large."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement temperature scaling by fitting scalar T on the validation split using LBFGS or Adam optimization to minimize NLL, then apply fixed-sensitivity thresholding to select the smallest threshold achieving ≥95% sensitivity on anonymized ROI model outputs.\",\n    \"Generate the calibration report inside the enclave, including overall and class-conditional calibration curves, metrics like specificity at 95% sensitivity, AUPRC, ECE, and prevalence-adjusted PPV/NPV at 8% and 10% prevalence, with 95% CIs from 1,000 subject-level bootstraps on the validation set.\",\n    \"Run Experiment 1 by training a fixed ROI model and comparing post-hoc calibration methods (none, temperature scaling, isotonic regression) on the validation set, re-tuning thresholds to 95% sensitivity each time, and selecting the method based on ECE reduction and specificity preservation.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a post-bacc with limited time and only anonymized scans under HIPAA, this gives me precise pseudocode and 24-48 hour steps I can execute on my existing validation split without extra compute, directly clarifying my WM mask and covariate choices to reduce my worries about consistency and integration. The experiments and pitfalls like data leakage or subgroup disparities make me feel ready to proceed confidently without major gaps.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling by fitting scalar T on the validation split using LBFGS or Adam optimization to minimize NLL, then apply fixed-sensitivity thresholding to select the smallest threshold achieving ≥95% sensitivity on anonymized ROI model outputs.",
+              "Generate the calibration report inside the enclave, including overall and class-conditional calibration curves, metrics like specificity at 95% sensitivity, AUPRC, ECE, and prevalence-adjusted PPV/NPV at 8% and 10% prevalence, with 95% CIs from 1,000 subject-level bootstraps on the validation set.",
+              "Run Experiment 1 by training a fixed ROI model and comparing post-hoc calibration methods (none, temperature scaling, isotonic regression) on the validation set, re-tuning thresholds to 95% sensitivity each time, and selecting the method based on ECE reduction and specificity preservation."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a post-bacc with limited time and only anonymized scans under HIPAA, this gives me precise pseudocode and 24-48 hour steps I can execute on my existing validation split without extra compute, directly clarifying my WM mask and covariate choices to reduce my worries about consistency and integration. The experiments and pitfalls like data leakage or subgroup disparities make me feel ready to proceed confidently without major gaps."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 10,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; strong progress)\n\nTwo quick, high-impact questions\n- Multi-foci policy: for cases with 2–3 foci, do you want to train on the largest-component crop only, or also include a second crop centered on the second-largest component when it exists? This affects class sampling and aggregation.\n- Variance estimation: will you run 3 seeds for your ROI prototype to quantify variance before locking calibration/thresholds, or move straight to abstention? A small seed sweep now can prevent anchoring on a lucky run.\n\nTargeted guidance for Next Action A (temperature scaling + fixed-sensitivity)\n- Registration/MNI use: precompute subject-to-MNI and inverse warps; apply nearest-neighbor for label masks and at most linear interpolation for images when generating WM masks. Log a simple registration QC (mutual information or Dice vs tissue segmentation) and exclude failures from pseudo-ROI sampling.\n- Temperature scaling stability: fit T on the validation split only; initialize T=1 with LBFGS; cap T to [0.5, 5] as a safeguard. Plot class-conditional reliability to check asymmetric miscalibration; if extreme, try two-scalar class-conditional T as a sensitivity analysis.\n- Thresholding at 95% sensitivity: after calibration, sweep thresholds and select the minimum threshold achieving ≥0.95 sensitivity on validation. Record τ, T, seed, split hashes. Report specificity with 95% CIs (1,000× subject-level bootstrap), AUPRC/AUROC, ECE (equal-frequency, 15–20 bins), Brier, and PPV/NPV at 8% and 10% prevalence.\n\nThree concrete, falsifiable experiments you can run next\n1) Context window and aggregation\n- Objective/hypothesis: Increasing lesion-context padding and smarter aggregation will improve specificity at fixed 95% sensitivity. Hypothesis: 30–40 mm padding and attention pooling outperform 20 mm padding with mean pooling.\n- Setup: Train ROI models with padding ∈ {20, 30, 40 mm}; aggregate per subject via {mean, max, attention-weighted} pooling over crops (cases: 1–2 crops; controls: 2–3 WM crops). Calibrate each, then threshold to 95% sensitivity on validation.\n- Metrics/success: Specificity at fixed sensitivity (primary), ECE, AUPRC; runtime/VRAM. Success if any configuration yields ≥3% absolute specificity gain without worse ECE.\n- Interpretation: If max pooling increases FPs, prefer attention or mean; if larger padding helps, standardize to 30–40 mm for later studies.\n\n2) Control crop policy and count\n- Objective/hypothesis: Atlas-based WM masking plus more control crops reduces overfitting and improves calibration. Hypothesis: 3 WM crops outperform 1–2 at fixed 95% sensitivity by ≥2% specificity and lower ECE.\n- Setup: Compare WM-masked sampling vs simple intensity-threshold sampling; vary control crop count ∈ {1, 2, 3}. Keep total instances per epoch constant by adjusting sampling weights. Calibrate and threshold each variant.\n- Metrics/success: Specificity at fixed sensitivity, ECE, and decision-curve net benefit near pt ∈ [0.20, 0.25] (FN:FP ≈ 3–4). Success if WM+3 crops improves specificity ≥2% and ECE by ≥0.01 over baselines.\n- Interpretation: If extra crops don’t help, down-weight highly correlated crops or add crop-diversity constraints (distance between crop centers).\n\n3) Distance-to-lesion and multi-foci handling\n- Objective/hypothesis: A distance-to-lesion channel and including the second-largest lesion (when present) improve specificity at fixed 95% sensitivity. Hypothesis: distance channel yields ≥0.02 AUPRC gain and ≥2% specificity gain.\n- Setup: Train four variants: (a) base ROI, (b) + distance transform channel, (c) + second-lesion crop, (d) both. Aggregate logits per subject (mean or attention). Calibrate and threshold to 95% sensitivity.\n- Metrics/success: Specificity at fixed sensitivity (primary), AUPRC, ECE; stratify by single vs multi-foci cases. Success if (d) outperforms (a) by ≥2% specificity without worse ECE.\n- Interpretation: If distance helps but multi-foci adds noise, keep distance-only; if multi-foci helps only for multi-foci subjects, use a conditional policy (add second crop only when multiple components exist).\n\nNext 24–48 hours\n- Today: Implement temperature scaling, fixed-sensitivity thresholding, and the calibration report with bootstrap CIs; log T and τ with seeds and split hashes.\n- Tomorrow: Run Experiment 1 (context + aggregation) on a small subset to estimate effect size; if promising, scale to full training. In parallel, kick off 2 additional seeds of your ROI prototype to get variance bars.\n\nIntuition\n- With small, focal lesions, performance at a high-sensitivity operating point is driven by how much relevant context you feed the model and how you aggregate uncertain instance-level signals. Calibration makes scores reliable, so thresholding and any abstention/aggregation rules behave predictably.\n\nWhy this is principled\n- Temperature scaling is a robust post-hoc method that improves probability reliability without altering discrimination, enabling faithful fixed-sensitivity targeting [Guo et al., 2017]. Comparing calibration methods and crop/aggregation policies isolates the levers that change specificity and expected clinical utility, aligning model selection with cost-aware goals rather than raw AUC [Niculescu-Mizil & Caruana, 2005].\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Niculescu-Mizil & Caruana, Predicting Good Probabilities with Supervised Learning — https://dl.acm.org/doi/10.1145/1102351.1102430",
+      "student_message": "This is an incredibly thorough plan for calibration and experimentation! Thank you for outlining the next steps so clearly, especially the actionable plan for temperature scaling and fixed-sensitivity thresholding. I'll prioritize implementing those today.\n\nTo answer your clarifiers:\n\nFor registration scope, we'll do all model training in native space and use MNI only to derive/control WM masks (warped back via inverse transform). This aligns with preserving lesion detail. We'll sanity-check the Dice scores against tissue segmentation as you suggested.\n\nFor the age/sex branch, we will standardize age (z-score by training split) and one-hot encode sex. We'll ablate this branch in Experiment 3 to ensure it's beneficial and not introducing leakage.\n\nI'm excited to dive into Experiment 1 and compare the calibration methods. The pseudocode for implementation is very helpful!",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7333333333333334,
+        "student_confidence_gain": 1.8,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8466666666666667
+      },
+      "overall_score": 1.8466666666666667,
+      "cumulative_avg": 1.8298333333333336,
+      "delta": -0.03500000000000014,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement temperature scaling and fixed-sensitivity thresholding, including the calibration report with bootstrap CIs, logging T and τ with seeds and split hashes.\",\n    \"Run Experiment 1 (context + aggregation) on a small subset to estimate effect size.\",\n    \"Kick off 2 additional seeds of the ROI prototype to get variance bars.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.825,\n  \"justification\": \"This response provides extremely clear and actionable steps for the next 1-3 days, directly building on my previous work. The mentor addresses my follow-up questions and provides concrete implementation details for the calibration methods, which I can start immediately. The proposed experiments are well-defined and respect my current stage of work.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling and fixed-sensitivity thresholding, including the calibration report with bootstrap CIs, logging T and τ with seeds and split hashes.",
+              "Run Experiment 1 (context + aggregation) on a small subset to estimate effect size.",
+              "Kick off 2 additional seeds of the ROI prototype to get variance bars."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.825,
+            "justification": "This response provides extremely clear and actionable steps for the next 1-3 days, directly building on my previous work. The mentor addresses my follow-up questions and provides concrete implementation details for the calibration methods, which I can start immediately. The proposed experiments are well-defined and respect my current stage of work."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement temperature scaling on validation set with T initialized at 1, capped [0.5,5], using LBFGS, and log T values.\",\n    \"Apply fixed-sensitivity thresholding at 95% on validation to find minimum τ, then bootstrap 1,000x for specificity CIs.\",\n    \"Run small-scale Experiment 1 subset: compare 20/30/40mm padding with mean/max/attention pooling to gauge specificity gains.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.79,\n  \"justification\": \"The response gives exact technical steps I can execute immediately with my anonymized data and compute, like tuning temperature scaling and running bootstrap CIs, while flagging pitfalls like registration QC, making it highly actionable and confidence-building for my constrained setup.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling on validation set with T initialized at 1, capped [0.5,5], using LBFGS, and log T values.",
+              "Apply fixed-sensitivity thresholding at 95% on validation to find minimum τ, then bootstrap 1,000x for specificity CIs.",
+              "Run small-scale Experiment 1 subset: compare 20/30/40mm padding with mean/max/attention pooling to gauge specificity gains."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.79,
+            "justification": "The response gives exact technical steps I can execute immediately with my anonymized data and compute, like tuning temperature scaling and running bootstrap CIs, while flagging pitfalls like registration QC, making it highly actionable and confidence-building for my constrained setup."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement temperature scaling on the validation split using LBFGS initialization at T=1, capped between 0.5 and 5, and apply fixed-sensitivity thresholding at 95% sensitivity to select the minimum threshold τ, logging T, τ, seeds, and split hashes.\",\n    \"Generate a calibration report including specificity with 95% CIs via 1,000 bootstrap samples, plus AUPRC, AUROC, ECE, Brier, and PPV/NPV at 8-10% prevalence on the validation set.\",\n    \"Run Experiment 1 on a small data subset: train ROI models with padding sizes of 20, 30, 40 mm and aggregation methods (mean, max, attention), calibrate each, threshold to 95% sensitivity, and compare specificity and ECE to identify promising configurations.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.95,\n  \"justification\": \"As a post-bacc researcher with limited compute and time in a hospital lab using anonymized scans, this response gives me clear, bite-sized steps I can execute in 24-48 hours on a small subset without needing extra resources, directly addressing my setup questions and boosting my confidence by explaining why these tweaks should improve specificity while flagging QC checks to avoid pitfalls.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement temperature scaling on the validation split using LBFGS initialization at T=1, capped between 0.5 and 5, and apply fixed-sensitivity thresholding at 95% sensitivity to select the minimum threshold τ, logging T, τ, seeds, and split hashes.",
+              "Generate a calibration report including specificity with 95% CIs via 1,000 bootstrap samples, plus AUPRC, AUROC, ECE, Brier, and PPV/NPV at 8-10% prevalence on the validation set.",
+              "Run Experiment 1 on a small data subset: train ROI models with padding sizes of 20, 30, 40 mm and aggregation methods (mean, max, attention), calibrate each, threshold to 95% sensitivity, and compare specificity and ECE to identify promising configurations."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.95,
+            "justification": "As a post-bacc researcher with limited compute and time in a hospital lab using anonymized scans, this response gives me clear, bite-sized steps I can execute in 24-48 hours on a small subset without needing extra resources, directly addressing my setup questions and boosting my confidence by explaining why these tweaks should improve specificity while flagging QC checks to avoid pitfalls."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 11,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; strong momentum)\n\nTwo quick clarifiers to avoid confusion tomorrow\n- Experiment 1 label: do you want “Experiment 1” to be ROI vs whole-brain at fixed 95% sensitivity, or Calibration method comparison? Pick one and lock the naming so results don’t get cross-wired in logs.\n- Per-seed calibration: will you fit a separate temperature T and threshold τ per seed (recommended) or reuse a single T, τ across seeds? I recommend per-seed, per-fold to correctly capture process variance.\n\nConcrete guidance for your plan today and seed variance\n- Three-seed protocol\n  - Keep data splits fixed; vary only the random seed affecting weight init, sampling, and augmentations.\n  - For each seed: train once, fit T on validation, find τ achieving ≥95% sensitivity, then compute metrics and 1,000× subject-level bootstrap CIs.\n  - Aggregate: report per-seed metrics plus the median across seeds; also compute a two-level uncertainty by bootstrapping seeds (resample seeds with replacement) and, within each resampled seed, bootstrapping subjects to get a seed-aware CI for specificity and ECE.\n  - Stability gate: proceed only if SD across seeds for specificity at fixed sensitivity ≤2% absolute and ECE SD ≤0.02. If larger, increase regularization (wd ↑2×), mild label smoothing (e.g., 0.05), or longer training with early-stop patience +2.\n- Largest-component-only policy\n  - Detect multiple components but crop only the largest; log the number of foci per case and the proportion of multi-foci cases. Keep the distance-to-lesion channel defined from the largest component only for consistency.\n- Logging template (per seed)\n  - run_id, seed, split hashes, T, τ, achieved sensitivity, specificity at fixed 95% sensitivity, AUPRC, AUROC, ECE (15–20 equal-frequency bins), Brier, PPV/NPV at 8%/10%, runtime, peak VRAM, WM-mask QC stats (mean Dice vs tissue segmentation), and count of excluded registrations.\n\nThree concrete, falsifiable experiments (aligned to your choices)\n1) ROI vs whole-brain at fixed sensitivity\n- Objective & hypothesis: Lesion-centered ROI 96^3 with a distance-to-lesion channel yields higher specificity at fixed 95% sensitivity than a whole-brain 128^3 model, due to improved signal-to-noise around small focal lesions.\n- Setup: Train matched 3D encoders on ROI vs whole-brain with identical augmentations and voxel budgets; 3 seeds each. Calibrate with temperature scaling per seed; choose τ on validation to hit 95% sensitivity, then freeze τ for test/readout.\n- Metrics & success: Primary: specificity at fixed sensitivity with 95% CIs; secondary: AUPRC, ECE, PPV/NPV at 8%/10% prevalence. Success if ROI improves specificity by ≥5% absolute and has equal or better ECE after calibration.\n- Interpretation: If ROI underperforms, increase ROI context (128^3) or add a parallel low-res whole-brain branch; stratify by lesion-volume tertiles to see where whole-brain helps.\n\n2) Calibration method comparison at fixed sensitivity\n- Objective & hypothesis: Temperature scaling reduces ECE by ≥30% versus no calibration and performs on par with isotonic regression without hurting specificity at 95% sensitivity.\n- Setup: On the same trained ROI model(s), compare three post-hoc calibrations on validation: none, temperature scaling, and isotonic regression; refit τ to 95% sensitivity for each method; evaluate on validation and then on the locked test split using those τ.\n- Metrics & success: ECE (primary), Brier, specificity at fixed sensitivity, AUPRC with 95% CIs. Success if temperature scaling meets the ECE reduction target and matches isotonic within ±0.01 ECE without worse specificity.\n- Interpretation: If isotonic consistently wins but is unstable across folds, prefer temperature scaling for robustness and reproducibility.\n\n3) Age/sex covariate branch ablation and subgroup reliability\n- Objective & hypothesis: Adding a small MLP branch for age/sex improves specificity at fixed 95% sensitivity by ≥2% absolute and does not increase subgroup disparity in ECE across sex and age quartiles.\n- Setup: Train ROI models with and without the covariate branch (age z-scored on training split; sex one-hot). Calibrate each per seed; set τ to 95% sensitivity on validation; evaluate subgroup AUPRC/ECE.\n- Metrics & success: Specificity at fixed sensitivity (primary), subgroup ECE and AUPRC; disparity = max–min across subgroups. Success if specificity improves and disparity does not worsen.\n- Interpretation: If gains come with higher disparity, increase regularization on the covariate branch or drop it and instead adjust for covariates in analysis only.\n\nNext actions (24–48 hours)\n- Today: Implement per-seed temperature scaling and fixed-sensitivity thresholding; produce a one-page calibration report per seed plus an aggregate seed-aware CI. Lock T and τ per seed in your run cards.\n- Tomorrow: Run Experiment 1 (confirm which one); kick off 2 additional seeds for the chosen setup; draft the experiment card with hypothesis, falsifier, minimal test, variables, analysis plan, and stop rule.\n\nIntuition\n- With small focal lesions, the key levers for performance at a high-sensitivity operating point are calibrated probabilities and the degree of lesion-centric context. Per-seed calibration ensures that thresholding reflects true risk for each trained instance, and isolating single-lesion crops reduces variability while you establish a robust baseline.\n\nWhy this is principled\n- Temperature scaling is a simple, strong baseline that improves probability reliability without altering discrimination, enabling trustworthy fixed-sensitivity thresholding and between-model comparisons. Comparing calibration methods and running multi-seed evaluations are standard practices to separate true effects from training noise and avoid overinterpreting single runs.\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Niculescu-Mizil & Caruana, Predicting Good Probabilities with Supervised Learning — https://dl.acm.org/doi/10.1145/1102351.1102430\n\nCitations\n- On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Predicting Good Probabilities with Supervised Learning — https://dl.acm.org/doi/10.1145/1102351.1102430",
+      "student_message": "This is fantastic, thank you for the detailed guidance on temperature scaling, thresholding, and the experimental designs! \n\nTo answer your questions:\n\n- For the multi-foci policy, I think we should train on the largest component crop only for now. Given our anonymized scans and the rare disease focus, having a very robust method for single lesions is crucial, and adding a second crop might introduce too much variability or noise initially. We can explore including a second crop later if needed.\n\n- For variance estimation, I'll definitely run 3 seeds for the ROI prototype. It makes perfect sense to quantify variance before locking in calibration and thresholds. It's a small investment now to prevent issues down the line.\n\nI'm excited to get started on implementing temperature scaling and thresholding today, and then diving into Experiment 1 tomorrow. Running the additional seeds for the ROI prototype in parallel is a great idea too.",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9333333333333333,
+        "student_constraint_fit": 1.8,
+        "student_confidence_gain": 1.8333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8966666666666665
+      },
+      "overall_score": 1.8966666666666665,
+      "cumulative_avg": 1.835909090909091,
+      "delta": 0.04999999999999982,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement per-seed temperature scaling and fixed-sensitivity thresholding for the ROI prototype model, generating a one-page calibration report per seed and an aggregate seed-aware CI. Lock T and τ per seed in run cards.\",\n    \"Run Experiment 1 (ROI vs whole-brain at fixed 95% sensitivity) with 3 seeds, ensuring data splits are fixed and only random seeds vary. Draft the experiment card with hypothesis, falsifier, minimal test, variables, analysis plan, and stop rule.\",\n    \"Kick off 2 additional seeds for the ROI prototype model (total of 3 seeds) to quantify variance, ensuring data splits are fixed and only random seeds vary.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.93,\n  \"justification\": \"The mentor provides extremely clear, concrete, and sequenced steps that directly address my previous follow-up and allow me to act immediately. The advice respects my constraints by focusing on manageable experiments and flagging potential issues like high variance across seeds.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement per-seed temperature scaling and fixed-sensitivity thresholding for the ROI prototype model, generating a one-page calibration report per seed and an aggregate seed-aware CI. Lock T and τ per seed in run cards.",
+              "Run Experiment 1 (ROI vs whole-brain at fixed 95% sensitivity) with 3 seeds, ensuring data splits are fixed and only random seeds vary. Draft the experiment card with hypothesis, falsifier, minimal test, variables, analysis plan, and stop rule.",
+              "Kick off 2 additional seeds for the ROI prototype model (total of 3 seeds) to quantify variance, ensuring data splits are fixed and only random seeds vary."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.93,
+            "justification": "The mentor provides extremely clear, concrete, and sequenced steps that directly address my previous follow-up and allow me to act immediately. The advice respects my constraints by focusing on manageable experiments and flagging potential issues like high variance across seeds."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Implement per-seed temperature scaling and fixed-sensitivity thresholding code\", \"Run 3 seeds for ROI prototype with largest-component-only cropping\", \"Generate calibration report with seed-aware confidence intervals\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The response provides highly specific technical steps I can implement immediately with clear metrics and success criteria, though the computational requirements for multiple seeds and bootstrapping might strain my post-bacc resources.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement per-seed temperature scaling and fixed-sensitivity thresholding code",
+              "Run 3 seeds for ROI prototype with largest-component-only cropping",
+              "Generate calibration report with seed-aware confidence intervals"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The response provides highly specific technical steps I can implement immediately with clear metrics and success criteria, though the computational requirements for multiple seeds and bootstrapping might strain my post-bacc resources."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Implement per-seed temperature scaling and fixed-sensitivity thresholding on the existing ROI prototype using one seed, then produce a one-page calibration report including T, τ, achieved sensitivity, and initial metrics.\",\n    \"Run two additional seeds in parallel for the ROI prototype, keeping data splits fixed and varying only the random seed for weight init and augmentations, while logging per-seed metrics like specificity, AUPRC, and ECE.\",\n    \"Draft an experiment card for Experiment 1 (ROI vs whole-brain at fixed 95% sensitivity), including hypothesis, setup, metrics, success criteria, and start training the models with 3 seeds each tomorrow.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.9,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.98,\n  \"justification\": \"As a post-bacc with limited time and compute, I can realistically implement the temperature scaling today on my anonymized scans and run parallel seeds tomorrow without needing extra resources, and the specific stability gates and interpretations reduce my worries about variability in rare disease imaging. The detailed protocols and success criteria make me feel ready to execute and interpret results confidently.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Implement per-seed temperature scaling and fixed-sensitivity thresholding on the existing ROI prototype using one seed, then produce a one-page calibration report including T, τ, achieved sensitivity, and initial metrics.",
+              "Run two additional seeds in parallel for the ROI prototype, keeping data splits fixed and varying only the random seed for weight init and augmentations, while logging per-seed metrics like specificity, AUPRC, and ECE.",
+              "Draft an experiment card for Experiment 1 (ROI vs whole-brain at fixed 95% sensitivity), including hypothesis, setup, metrics, success criteria, and start training the models with 3 seeds each tomorrow."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.9,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.98,
+            "justification": "As a post-bacc with limited time and compute, I can realistically implement the temperature scaling today on my anonymized scans and run parallel seeds tomorrow without needing extra resources, and the specific stability gates and interpretations reduce my worries about variability in rare disease imaging. The detailed protocols and success criteria make me feel ready to execute and interpret results confidently."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 12,
+      "mentor_reply": "Stage: C — Research plan with Phase 0 gates (you’re executing; strong momentum)\n\nTwo quick, high-impact questions\n- Scanner/sequence heterogeneity: How many scanners/sequences are in your training vs. held-out periods, and will you stratify validation/test by scanner to quantify threshold transport risk? This can materially affect realized sensitivity on test.\n- Threshold freeze policy: After choosing τ at 95% sensitivity on validation per seed/fold, will you report realized sensitivity/specificity on test without re-tuning, and predefine acceptable drift (e.g., ±2% sensitivity)? Lock this now to avoid retrospective bias.\n\nTargeted guidance for today\n- Per-seed/per-fold: Fit T and select τ independently for each seed and fold; log achieved sensitivity on validation to verify ≥95% with small variance. Keep the largest-component-only policy and record the fraction of multi-foci cases for later analyses.\n- Seed-aware CIs: Produce per-seed bootstrap CIs (1,000× subjects) and an aggregate seed-aware CI by resampling seeds and, within each, subjects. Flag instability if specificity SD across seeds >2% absolute; if so, try +2× weight decay or label smoothing 0.05.\n\nThree concrete, falsifiable experiments you can queue next\n1) Threshold transport stability (validation→test)\n- Objective & hypothesis: The validation-set τ achieving 95% sensitivity transports to test with ≤2% absolute drop in realized sensitivity; calibration minimizes drift. Hypothesis: per-seed temperature scaling keeps drift within this bound.\n- Setup: For each seed/fold, freeze τ from validation. Evaluate on the locked test set once (no re-tuning). Report realized sensitivity, specificity, PPV/NPV at 8%/10% prevalence, and ECE; compute drift = Sensval − Senstest.\n- Metrics & success: Success if median drift ≥−2% and specificity does not fall >5% absolute; report seed-aware CIs. If drift is worse on a scanner subset, stratify and inspect calibration curves.\n- Interpretation: Stable transport supports your calibration pipeline; instability suggests recalibration per scanner or adding domain-targeted augmentations.\n\n2) Regularization sweep for variance reduction\n- Objective & hypothesis: Mild regularization reduces seed variance without hurting fixed-sensitivity specificity. Hypothesis: doubling weight decay and adding label smoothing 0.05 reduces specificity SD across seeds to ≤2% absolute.\n- Setup: Baseline ROI model vs. variants: weight decay ×2, label smoothing 0.05, and both. Train 3 seeds each; per-seed T and τ to hit 95% sensitivity on validation.\n- Metrics & success: Primary: across-seed SD of specificity at fixed sensitivity; Secondary: mean specificity, ECE, AUPRC. Success if SD drops and mean specificity/ECE do not worsen (Δspec ≥ −1%, ΔECE ≤ +0.01).\n- Interpretation: If smoothing hurts calibration, keep weight decay only; if both help, adopt combined regularization going forward.\n\n3) Early abstention probe (calibrated, coverage ≥70%)\n- Objective & hypothesis: A simple confidence-based defer band preserves 95% sensitivity while boosting specificity ≥5% absolute at ≥70% coverage on validation.\n- Setup: After temperature scaling, define a symmetric defer band around 0.5; tune the band width to maintain 95% sensitivity on the non-deferred subset with target coverage {60%, 70%, 80%}. Freeze τ from validation for these analyses.\n- Metrics & success: Specificity on the non-deferred subset, coverage, ECE, and expected cost at FN:FP ∈ {3,4}. Success if specificity gain ≥5% at ≥70% coverage without worse ECE.\n- Interpretation: If coverage collapses, revisit calibration or increase ROI context; if gains hold, plan a formal abstention study with decision curves.\n\nNext 24–48 hours\n- Today: Finish per-seed/per-fold temperature scaling, τ selection to 95% sensitivity, and seed-aware CI report. Log T, τ, achieved sensitivity, and validation metrics with CIs.\n- Tomorrow: Kick off Experiment 1 (ROI vs whole-brain) across 3 seeds with the same calibration/threshold protocol; in parallel, run the small regularization sweep to bound variance.\n\nIntuition\n- Locking per-seed calibration and thresholds makes your operating point reproducible and comparable; the main risks are transport drift and variance. Tightening regularization and probing abstention early tackles both: variance shrinks, and abstention provides a pressure valve to maintain safety without overwhelming false positives.\n\nWhy this is principled\n- Temperature scaling improves probability reliability without altering discrimination, enabling trustworthy fixed-sensitivity targeting and between-model comparisons [Guo et al., 2017]. Comparing calibration methods and modest regularization choices is a standard way to reduce variance while preserving bias; fixed operating-point evaluation aligns with best practice for clinical deployment where thresholds, not just AUC, drive decisions [Niculescu-Mizil & Caruana, 2005].\n\nLiterature anchors\n- Guo et al., On Calibration of Modern Neural Networks — https://proceedings.mlr.press/v70/guo17a/guo17a.pdf\n- Niculescu-Mizil & Caruana, Predicting Good Probabilities with Supervised Learning — https://dl.acm.org/doi/10.1145/1102351.1102430",
+      "student_message": "This is incredibly helpful! Thank you for clarifying the experiment labels and the per-seed calibration recommendation. I'll definitely go with per-seed, per-fold calibration to capture variance. \n\nTo answer your questions:\n\n- For Experiment 1 label, I'll lock it to 'ROI vs whole-brain at fixed 95% sensitivity'. This aligns with the objective of comparing the two approaches directly.\n- For per-seed calibration, I will fit a separate temperature T and threshold τ per seed and fold, as you recommended. This makes the most sense for capturing the process variance.\n\nI'm excited to implement the three-seed protocol and the largest-component-only policy today. The logging template is also very clear. I'll get started on the calibration report and aggregate seed-aware CI right away.",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7,
+        "student_confidence_gain": 1.8,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8383333333333334
+      },
+      "overall_score": 1.8383333333333334,
+      "cumulative_avg": 1.8361111111111112,
+      "delta": -0.058333333333333126,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement per-seed/per-fold temperature scaling and tau selection to achieve 95% sensitivity, logging T, tau, achieved sensitivity, and validation metrics with CIs.\",\n    \"Kick off Experiment 1 (Threshold transport stability) across 3 seeds, using the established calibration/threshold protocol and evaluating on the locked test set.\",\n    \"In parallel with Experiment 1, run the small regularization sweep (Experiment 2) to bound variance, training 3 seeds each for the baseline and variants (weight decay x2, label smoothing 0.05, and both).\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.82,\n  \"justification\": \"The mentor provides highly specific, sequenced steps that directly build on my previous work. The advice is tailored to my current stage and explicitly addresses potential pitfalls like scanner heterogeneity and threshold transport, which are critical for medical imaging. The experiments are concrete and feasible within my typical research workflow.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement per-seed/per-fold temperature scaling and tau selection to achieve 95% sensitivity, logging T, tau, achieved sensitivity, and validation metrics with CIs.",
+              "Kick off Experiment 1 (Threshold transport stability) across 3 seeds, using the established calibration/threshold protocol and evaluating on the locked test set.",
+              "In parallel with Experiment 1, run the small regularization sweep (Experiment 2) to bound variance, training 3 seeds each for the baseline and variants (weight decay x2, label smoothing 0.05, and both)."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.82,
+            "justification": "The mentor provides highly specific, sequenced steps that directly build on my previous work. The advice is tailored to my current stage and explicitly addresses potential pitfalls like scanner heterogeneity and threshold transport, which are critical for medical imaging. The experiments are concrete and feasible within my typical research workflow."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Complete per-seed/per-fold temperature scaling and τ selection to achieve 95% sensitivity on validation data\", \"Generate seed-aware bootstrap CIs (1,000× subjects) and aggregate CI by resampling seeds and subjects\", \"Begin Experiment 1 comparing ROI vs whole-brain approaches across 3 seeds using the same calibration protocol\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.6,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.77,\n  \"justification\": \"The response provides highly specific, executable steps that respect my HIPAA constraints with anonymized data and addresses my uncertainty about calibration variance and threshold transport, though the computational intensity of 1,000× bootstrapping might strain my resources.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Complete per-seed/per-fold temperature scaling and τ selection to achieve 95% sensitivity on validation data",
+              "Generate seed-aware bootstrap CIs (1,000× subjects) and aggregate CI by resampling seeds and subjects",
+              "Begin Experiment 1 comparing ROI vs whole-brain approaches across 3 seeds using the same calibration protocol"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.6,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.77,
+            "justification": "The response provides highly specific, executable steps that respect my HIPAA constraints with anonymized data and addresses my uncertainty about calibration variance and threshold transport, though the computational intensity of 1,000× bootstrapping might strain my resources."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Finish per-seed/per-fold temperature scaling and τ selection to achieve 95% sensitivity on validation data using my anonymized scans, logging T, τ, achieved sensitivity, and seed-aware CIs for the report.\",\n    \"Queue and run Experiment 1: Train ROI vs whole-brain models across 3 seeds with the calibration protocol, evaluating threshold transport stability on the held-out test set and reporting drift metrics.\",\n    \"In parallel, conduct the regularization sweep by training baseline and variant models (weight decay ×2, label smoothing 0.05) on 3 seeds each, measuring specificity SD across seeds to check variance reduction.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.9\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.9,\n  \"justification\": \"From my perspective as a post-bacc researcher with limited time and anonymized scans only, this response outlines exact experiments and logging I can execute in 24-48 hours using my lab's compute, directly tackling my calibration uncertainties with clear success criteria and drift checks that make me feel ready to proceed without major hurdles.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Finish per-seed/per-fold temperature scaling and τ selection to achieve 95% sensitivity on validation data using my anonymized scans, logging T, τ, achieved sensitivity, and seed-aware CIs for the report.",
+              "Queue and run Experiment 1: Train ROI vs whole-brain models across 3 seeds with the calibration protocol, evaluating threshold transport stability on the held-out test set and reporting drift metrics.",
+              "In parallel, conduct the regularization sweep by training baseline and variant models (weight decay ×2, label smoothing 0.05) on 3 seeds each, measuring specificity SD across seeds to check variance reduction."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.9
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.9,
+            "justification": "From my perspective as a post-bacc researcher with limited time and anonymized scans only, this response outlines exact experiments and logging I can execute in 24-48 hours using my lab's compute, directly tackling my calibration uncertainties with clear success criteria and drift checks that make me feel ready to proceed without major hurdles."
+          }
+        }
+      ]
+    }
+  ]
+}

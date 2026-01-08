@@ -1,0 +1,104 @@
+1. Problem framing and goals
+- Problem: Build a no-/low-code, publication-grade evaluation of prompt strategies and lightweight RAG for factual faithfulness and reliability, using LLM-as-a-judge plus small, targeted human validation. HELM highlights the need for holistic, task-diverse evaluations with careful reporting [1]. MT-Bench/Chatbot Arena show practical, scalable judgment methods and agreement analyses for LLM-as-a-judge [2]. G-Eval provides well-specified rubric prompts for reliable LLM judging [3]. For RAG, RAGAS proposes faithfulness and answer-relevance metrics you can approximate with judge prompts if you avoid coding [4].
+- Goals (6 months):
+  1) Deliver a reproducible benchmark of prompt and retrieval prompts on dialogue summarization and QA for faithfulness.
+  2) Quantify LLM-judge vs human agreement and calibration.
+  3) Produce a clean, shareable dataset of model outputs, judge ratings, and human labels with a preregistered analysis plan, suitable for a short paper.
+
+Intuition
+If you standardize prompts, hold datasets constant, and measure with structured rubrics, you can create reliable, comparable evaluations without writing code. LLM-judges scale cheaply; small human samples anchor validity.
+
+Why this is principled
+HELM argues for holistic, transparent evaluation and careful methodology [1]. MT-Bench demonstrates pairwise LLM judging and human correlation techniques [2]. G-Eval shows rubric-driven judging improves alignment with humans [3]. RAGAS formalizes faithfulness and relevance metrics you can approximate with judge prompts [4].
+
+Note on guidelines evidence
+A curated mentorship-guidelines source was not retrieved; to strengthen methodology, we’ll align to HELM-style reporting and add a preregistration plus a prediction log. We can also incorporate a standard ML reproducibility checklist in the write-up (plan to source NeurIPS/ACM checklists explicitly during writing).
+
+2. Experiments
+Experiment 1: Summarization faithfulness via prompt design (SAMSum)
+- Hypothesis: Quote-grounded and fact-check prompts reduce hallucinations more than plain or generic CoT prompts on dialogue summarization. Prior work shows summarization faithfulness is a primary failure mode [P1], while CoT helps reasoning but can drift on factual tasks [5].
+- Setup: Use 200–300 SAMSum examples [6]. Prompts: (a) Base, (b) Quote-grounded (“only use exact utterances; cite line indices”), (c) Fact-check reminder (“flag unverifiable claims”), (d) CoT + self-consistency (sample 5 and select majority) [5]. Run in a web UI (e.g., GPT-4o/Claude) and save outputs to a spreadsheet.
+- Baselines: Base prompt and a widely shared “concise summary” prompt.
+- Metrics: LLM-judge with G-Eval rubric for factual consistency, coherence, and coverage (1–5 each), plus hallucination rate tags; human validation on 50 examples; report judge–human agreement (Spearman ρ, Cohen’s κ) [3].
+- Expected: Quote-grounded and fact-check prompts reduce hallucination vs base; CoT may not reliably improve faithfulness but could improve coverage [P1][5].
+
+Experiment 2: Lightweight RAG faithfulness on multi-hop QA (HotpotQA)
+- Hypothesis: “Retrieval-quote gating” prompts (require answers to cite retrieved spans verbatim) improve faithfulness vs no-RAG prompting on multi-hop questions [4].
+- Setup: Use 200 HotpotQA questions [8]. Provide a small packet of Wikipedia snippets (exported to PDF/notes). Conditions: (a) No-RAG prompt, (b) RAG with pasted snippets, (c) RAG + quote-gating (“only answer with cited spans; abstain if insufficient”). Run via chat UI; store outputs and cited spans in a sheet.
+- Baselines: No-RAG prompt; RAG without gating.
+- Metrics: Approximate RAGAS metrics via judge prompts: faithfulness (are claims supported by provided context?), answer relevance, and context precision [4]. Human verification on 50 items; report calibration curves and abstain behavior.
+- Expected: Quote-gating increases faithfulness and abstention when context is insufficient; small precision–recall trade-off on coverage.
+
+Experiment 3: LLM-as-judge reliability and calibration vs humans
+- Hypothesis: With rubric prompts (G-Eval), LLM-judge scores correlate moderately with human labels and can be calibrated to minimize false positives [2][3].
+- Setup: Sample 150 items across Experiments 1–2; collect judge scores twice (different models or temperatures) and 3 human ratings per item. Randomize order and blind raters.
+- Baselines: Simple heuristic (length-normalized ROUGE for summaries; EM/F1 for QA) as weak automatic baselines.
+- Metrics: Judge–human agreement (Pearson/Spearman, κ), inter-judge reliability, and calibration (Brier score, reliability plots). Use MT-Bench-style pairwise comparisons on a 50-item subset [2].
+- Expected: Rubric-judged scores show moderate agreement (ρ ~0.4–0.6) with humans and improve after simple calibration (isotonic or threshold tuning; document method even if done manually in a spreadsheet) [2][3].
+
+3. Timeline for the next 6 months with milestones
+- Phase 0 (Weeks 1–2, gate to proceed):
+  - Deliverables: (1) Prediction log with ≥14 entries and one reproduced metric/figure from a small pilot; (2) One filled experiment card + one ablation or negative result with a short post-mortem.
+  - Tasks: Finalize datasets (200–300 SAMSum; 200 HotpotQA), draft judge rubrics, run a 30-item pilot per experiment.
+- Month 2:
+  - Full runs for Exp. 1 and 2 (collect all model outputs), start human validation (n=50 each).
+  - Draft methods section and preregistration doc.
+- Month 3:
+  - Run Exp. 3; compute agreement/calibration; finalize figures for E1–E2.
+- Month 4:
+  - Error analysis and ablations (e.g., vary number of self-consistency samples; change quote-gating strictness).
+  - Write results; internal review.
+- Month 5:
+  - Robustness checks (different LLM judge; temperature sensitivity), finalize human evals; complete reproducibility checklist.
+- Month 6:
+  - Paper polish, camera-ready tables/appendix, public data card, and artifact (spreadsheet + rubric + prompts). Target submission to a workshops track.
+
+4. Resources (compute, tools, datasets)
+- Compute: Laptop + web access; no GPU required. Budget: ~$300–$1,000 for model usage + $300–$800 for human evaluation (Prolific/experts).
+- Tools (no/low-code):
+  - Web UIs: GPT-4o/Claude for generation and judging (rubric prompts).
+  - Data/Tracking: Google Sheets/Airtable with versioned tabs; randomized assignment via spreadsheet functions.
+  - Human eval: Prolific/Qualtrics for instructions and form logic.
+  - Optional light automation: Zapier/Make.com to paste prompts/collect outputs.
+- Datasets:
+  - SAMSum (dialogue summarization) [6].
+  - FEVER (fact verification; for spot checks or stretch study) [7].
+  - HotpotQA (multi-hop QA) [8].
+
+5. Risks and mitigations
+- LLM-judge bias or drift
+  - Mitigation: Use two different judges; calibrate to human subset; record model/version; re-run spot checks monthly [2][3].
+- Data leakage from pretraining overlap
+  - Mitigation: Use hidden-dev splits; emphasize faithfulness-to-provided-context metrics; analyze verbatim copying.
+- Manual evaluation fatigue/inconsistency
+  - Mitigation: Short, clear rubrics; 3 raters per item; attention checks; adjudication protocol.
+- Costs overrun
+  - Mitigation: Pilot first; cap tokens/output length; sample sizes fixed by power estimates; track spend weekly.
+- Reproducibility gaps (no code)
+  - Mitigation: Share full prompts, seeds/temps, judge rubrics, and outputs; lock spreadsheets; provide a public artifact and checklist [1].
+- Ambiguous rubrics
+  - Mitigation: Pretest rubrics on 20 items; revise; include concrete examples and counterexamples.
+
+6. Stretch ideas or follow-up directions
+- Add a small domain-specific RAG set (10–20 pages in your field) and replicate Exp. 2; compare domain vs open-domain.
+- Agreement under adversarial cases: inject distractor passages; measure judge sensitivity [2].
+- Collaborate with a light-coding partner to package your Sheets workflow into a minimal open artifact; add true RAGAS scripts to replicate metrics exactly [4].
+- Compare self-consistency effects on factual vs reasoning tasks to test when it helps/hurts [5].
+
+Literature anchors
+- Holistic Evaluation of Language Models (HELM) — https://arxiv.org/abs/2211.09110 [1]
+- Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://arxiv.org/pdf/2306.05685.pdf [2]
+
+Citations
+- [P1] Analyzing and Evaluating Faithfulness in Dialogue Summarization — http://arxiv.org/abs/2210.11777v1
+- [1] Holistic Evaluation of Language Models — https://arxiv.org/abs/2211.09110
+- [2] Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — https://arxiv.org/pdf/2306.05685.pdf
+- [3] G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment — https://ar5iv.labs.arxiv.org/html/2303.16634
+- [4] RAGAS: Automated Evaluation of Retrieval Augmented Generation — https://arxiv.org/abs/2309.15217
+- [5] Self-Consistency Improves Chain of Thought Reasoning in Language Models — https://arxiv.org/abs/2203.11171
+- [6] SAMSum Corpus: A Human-annotated Dialogue Dataset for Abstractive Summarization — https://aclanthology.org/D19-5409.pdf
+- [7] FEVER: a Large-scale Dataset for Fact Extraction and VERification — https://arxiv.org/abs/1803.05355
+- [8] HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering — https://arxiv.org/abs/1809.09600
+
+Optional next step
+Draft your first experiment card (for Exp. 1) in a Google Doc using the fields: Hypothesis, Falsifier, Minimal Test, Variables, Expected Patterns, Analysis Plan, Stop Rule—then run a 30-item pilot and log 14 predictions before scaling.

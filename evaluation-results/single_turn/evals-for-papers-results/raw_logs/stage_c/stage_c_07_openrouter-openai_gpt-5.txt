@@ -1,0 +1,128 @@
+1. Problem framing and goals
+- Objective: Deliver low-power, field-ready computer vision workflows that volunteer divers can run to monitor coral reef health. Focus areas: (a) robust underwater color correction/enhancement on-device, (b) lightweight coral cover/bleaching classification from photo-quadrats, (c) human-in-the-loop annotation pipelines that minimize expert time while preserving scientific rigor.
+- Constraints and design choices:
+  - Underwater imaging is degraded by wavelength-dependent attenuation and backscatter; color correction methods such as Sea-Thru (physics-based, offline) and DeepSeeColor (real-time, DL-based) improve visibility and can boost downstream analysis accuracy [1][2].
+  - Automated annotation platforms (CoralNet) and national monitoring services (ReefCloud) already enable benthic cover estimation and AI-assisted workflows; integrating with them reduces bespoke tooling and improves reproducibility [3][4].
+  - Volunteer protocols should align with established methods (Reef Check photo-quadrats/belt transects) and simple bleaching scoring (CoralWatch chart) to ensure comparable, usable data [5][6].
+- Six-month success criteria:
+  - On-device pre-processing: ≥0.10 absolute gain in non-reference underwater image quality metrics (UCIQE/UIQM) vs. raw captures on a held-out dive set [7].
+  - Classification: Lightweight model (e.g., quantized MobileNet/EfficientNet-Lite) achieves ≥85% accuracy for coarse benthic classes and ≥80% accuracy for binary bleaching detection on standardized photo-quadrats, with ≤1.5 W average device power during inference [3][8][9]. For power, if no authoritative baseline exists, we will report measured draw with a power meter (see Experiment 5).
+  - Human-in-the-loop: ≥2× increase in annotation throughput with CoralNet auto-suggest + diver verification vs. manual-only, without significant loss in accuracy [3][4].
+
+2. Experiments
+Experiment 1: On-device underwater color correction for volunteer imagery
+- Hypothesis: Real-time color correction (DeepSeeColor) on low-power hardware yields higher perceptual quality (UCIQE/UIQM) and better downstream classification than raw or simple white balance; Sea-Thru (offline) provides an upper bound [1][2][7].
+- Setup:
+  - Data: 1,000 volunteer images (tropical reefs), plus 300 Sea-Thru benchmark images for ablation [1].
+  - Methods: Deploy DeepSeeColor (int8/FP16) on a Jetson-class device; compare to simple gray-card white balance and unprocessed. Offline Sea-Thru on a desktop provides a reference [1][2].
+  - Hardware: Low-power compute in underwater housing (or topside) with synchronized camera.
+- Baselines: Raw images; gray-world/white balance.
+- Metrics: UCIQE and UIQM scores; Top-1 accuracy of a fixed coral/benthic classifier on corrected vs. raw images; latency/frame; failure cases [7].
+- Expected outcomes: DeepSeeColor improves UCIQE/UIQM and downstream classification over raw and simple WB; Sea-Thru remains best but impractical for real-time [1][2][7].
+
+Experiment 2: Lightweight benthic cover and bleaching classification on photo-quadrats
+- Hypothesis: A quantized MobileNet/EfficientNet-Lite trained on CoralNet-style annotations and Moorea Labeled Corals achieves field-usable accuracy with sub-watt inference on embedded hardware [3][8][9].
+- Setup:
+  - Data: Curate 5–10 benthic superclasses (hard coral, soft coral, algae, sand, rubble) from CoralNet exports and Moorea Labeled Corals; add binary bleaching labels using the CoralWatch chart in-frame for calibration [3][6][8].
+  - Model: MobileNetV3-Small / EfficientNet-Lite0; int8 quantization (TFLite/ONNX Runtime Mobile).
+  - Protocol: Volunteers collect standardized photo-quadrats (e.g., 0.5×0.5 m) per Reef Check guidance [5].
+- Baselines: Server-side CoralNet or ReefCloud predictions; a majority-class baseline [3][4].
+- Metrics: Accuracy/F1 per class; macro-F1; confusion matrix; bleaching ROC-AUC; inference latency; mAh/Wh per 100 images (measured) [3][4][5].
+- Expected outcomes: ≥85% macro-accuracy on benthic superclasses and ≥0.85 AUC for bleaching; on-device latency <200 ms/image at QVGA–VGA; energy-per-image recorded (see Experiment 5) [3][8][9].
+
+Experiment 3: Human-in-the-loop annotation to scale labels
+- Hypothesis: CoralNet auto-annotation with volunteer verification doubles throughput without sacrificing accuracy relative to expert-only labeling [3].
+- Setup:
+  - Workflow: Upload quadrats to CoralNet; enable automated point annotations; volunteers verify a subset (e.g., 50 points per quadrat), experts audit 10% [3].
+  - Active sampling: Prioritize low-confidence images for expert review; export training sets periodically to fine-tune the lightweight model (Exp. 2).
+- Baselines: Manual-only expert labeling (same budget).
+- Metrics: Annotations/hour; agreement with experts; time-to-model-update; model performance delta after each cycle [3][4].
+- Expected outcomes: ≥2× throughput with non-inferior agreement (κ within 0.05 of expert-only) and faster model iteration [3].
+
+Experiment 4: Protocol adherence and sampling design with volunteers
+- Hypothesis: Standardized photo-quadrat protocols (Reef Check) and inclusion of CoralWatch color charts reduce variance and domain shift vs. opportunistic captures, improving model generalization across sites [5][6].
+- Setup:
+  - Collect paired datasets at the same sites: (A) standardized quadrats per Reef Check manual vs. (B) free-swim opportunistic photos [5].
+  - Train on A, test on A and B; then train on B, test on A and B.
+- Baselines: Mixed-protocol training without standardization.
+- Metrics: Generalization gap (Δ accuracy/F1) between protocols; calibration error (ECE); qualitative error taxonomy (motion blur, turbidity) [5][6].
+- Expected outcomes: Smaller generalization gap when training on standardized quadrats; color chart presence improves white balance estimation and bleaching label reliability [5][6].
+
+Experiment 5: Field pilot on energy, usability, and reliability
+- Hypothesis: With int8 models and batched inference, volunteer kits can process quadrats for an entire 60–90 min dive on battery, and UI-guided capture reduces unusable images.
+- Setup:
+  - Participants: 10–15 trained volunteers over 6–8 dives.
+  - Hardware: Jetson Nano/Orin Nano or smartphone in housing; inline USB power meter; desiccant and pressure-rated cases.
+  - Protocol: Log per-image latency, device temperature, Wh consumption, and post-dive subjective usability.
+- Baselines: No on-device processing (record-only).
+- Metrics: Wh per 100 images; runtime to depletion; crash rate; missed images due to lag; user-reported SUS score.
+- Expected outcomes: ≥500 images per kit per dive with <10 Wh consumption and <1% crash rate. Note: We did not find high-confidence, peer-reviewed energy benchmarks for these exact devices underwater; this experiment will generate authoritative, open measurements (limitation acknowledged).
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Governance, protocols, and data plan
+  - Finalize Reef Check–aligned protocols and CoralWatch use; secure permits; set QA checklist; assemble initial dataset from CoralNet/Moorea Labeled Corals [3][5][6][8].
+  - Milestones: Protocol v1; data license review; baseline classifier (server-side) trained.
+- Month 2: Color correction prototypes and metrics
+  - Implement DeepSeeColor on embedded device; set up Sea-Thru offline reference; define UCIQE/UIQM evaluation; collect 300 pilot images [1][2][7].
+  - Milestones: Report on quality gains vs. raw/WB; select embedded color pipeline.
+- Month 3: Lightweight model training and integration
+  - Train quantized MobileNet/EfficientNet-Lite on curated data; integrate with color pipeline; dry-run inference; prepare CoralNet human-in-loop [3][8][9].
+  - Milestones: On-device model meeting accuracy latency targets in lab tests.
+- Month 4: Human-in-loop and protocol A/B
+  - Launch CoralNet verification workflow; run standardized vs. opportunistic capture comparison at 2–3 sites [3][5].
+  - Milestones: Annotation throughput report; generalization-gap analysis.
+- Month 5: Field pilot and energy study
+  - Deploy volunteer kits; log power/latency/failure metrics; iterate UI guidance; begin drafting methods [pilot results feeding back into Exp. 2–4].
+  - Milestones: Energy/usability report; revised SOPs; preliminary manuscript figures.
+- Month 6: Consolidation and dissemination
+  - Freeze models; finalize evaluation; package open datasets (where permitted), code, model cards; submit preprint and a practical guide for NGOs.
+  - Milestones: Releasable toolkit (models, SOPs, data cards); preprint submission.
+
+4. Resources (compute, tools, datasets)
+- Hardware
+  - Capture: Action camera or smartphone in underwater housing; attach CoralWatch color chart in frame for calibration [6].
+  - Compute: Embedded device (e.g., Jetson Nano/Orin Nano) or modern smartphone; external battery; USB power meter for logging. Note: Public, peer-reviewed power benchmarks for these devices underwater are limited; we will log empirical consumption (see Exp. 5).
+- Software
+  - Color correction: DeepSeeColor (WHOI implementation) for real time; Sea-Thru (offline reference) [1][2].
+  - Models: TFLite/ONNX Runtime Mobile; MobileNet/EfficientNet-Lite; OpenCV for capture pipelines [9].
+  - Annotation/analysis: CoralNet for auto-annotation and QA; optional ReefCloud for reporting to management partners [3][4].
+  - Metrics: UCIQE/UIQM scripts for quality evaluation [7].
+- Datasets
+  - Training: CoralNet exports, Moorea Labeled Corals (public) [3][8].
+  - Evaluation: Sea-Thru benchmark images for color; new field photo-quadrats following Reef Check [1][5].
+
+5. Risks and mitigations table
+- Turbidity, low light, and backscatter degrade images
+  - Mitigations: Use color correction (DeepSeeColor), strobes/continuous lights when safe, and enforce minimum camera-to-subject distance in SOPs [2].
+- Volunteer variability (motion blur, framing)
+  - Mitigations: Short training, laminated underwater SOP cards, live capture UI prompts, standardized quadrat frames per Reef Check [5].
+- Domain shift across sites and seasons
+  - Mitigations: Periodic fine-tuning with CoralNet human-in-loop; include CoralWatch chart for color reference in every shot [3][6].
+- Energy/battery limits underwater
+  - Mitigations: Int8 quantization, batch processing between captures, external battery packs; empirical logging to tune duty cycles (no strong prior literature; we will publish measurements).
+- Label noise and class imbalance
+  - Mitigations: Expert audit of 10% of images; active learning to focus expert time; aggregate to robust superclasses [3].
+- Safety and environmental impact
+  - Mitigations: Avoid touching corals; maintain neutral buoyancy; adhere to local regulations and Reef Check guidelines [5].
+- Data governance and licensing
+  - Mitigations: Consent for image use; publish data cards; share de-identified imagery; align with ReefCloud/CoralNet policies [3][4].
+
+6. Stretch ideas or follow-up directions
+- Semi/self-supervised pretraining on large unlabeled underwater video to improve robustness before fine-tuning with scarce labels.
+- Embedded segmentation for crown-of-thorns/starfish or disease lesions; alert divers in real time for removal/flagging.
+- Low-bandwidth syncing to ReefCloud dashboards for site managers; offline-first field apps for immediate feedback [4].
+- Multimodal add-ons: integrate simple temperature loggers and turbidity sensors in the kit to contextualize imagery.
+
+Sources
+[1] Sea-Thru: A Method for Removing Water From Underwater Images (CVPR 2019) — https://openaccess.thecvf.com/content_CVPR_2019/html/Akkaynak_Sea-Thru_A_Method_for_Removing_Water_From_Underwater_Images_CVPR_2019_paper.html  
+[2] DeepSeeColor (WHOI WARPLab) — https://warp.whoi.edu/deepseecolor/ and https://github.com/warplab/DeepSeeColor  
+[3] CoralNet: Towards Automated Annotation of Benthic Survey Images (PLOS ONE) and platform — https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0130312 and https://coralnet.ucsd.edu/about/  
+[4] ReefCloud (AIMS) — https://reefcloud.ai/ and https://www.aims.gov.au/research/technology/reefcloud  
+[5] Reef Check tropical monitoring instruction manual — https://www.reefcheckaustralia.org/methods and manual PDF links therein  
+[6] CoralWatch color chart and citizen-science program — https://coralwatch.org/product/coral-health-chart/ and program overview https://esajournals.onlinelibrary.wiley.com/doi/10.1890/110266  
+[7] Underwater image quality metrics (UCIQE/UIQM) overview — https://ietresearch.onlinelibrary.wiley.com/doi/full/10.1049/ipr2.70068  
+[8] Moorea Labeled Corals dataset — https://vision.ucsd.edu/datasets/moorea-labeled-corals  
+[9] Example of MobileNet applied to coral classification — https://ieeexplore.ieee.org/document/10456502
+
+Optional next step
+- Approve Month 1–2 activities (protocol finalization, dataset curation, and color-correction prototypes); we will return with a down-selected embedded pipeline and a lab-tested lightweight classifier before the Month 3 field integration.

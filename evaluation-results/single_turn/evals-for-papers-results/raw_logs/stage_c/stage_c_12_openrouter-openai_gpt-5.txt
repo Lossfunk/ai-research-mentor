@@ -1,0 +1,130 @@
+1. Problem framing and goals
+- Objective: Build a compute-lean, reproducible benchmark to evaluate open‑weight LLMs for multilingual fact‑checking (claim verification and evidence retrieval) across ≥6 languages, emphasizing retrieval‑augmented pipelines, cross‑lingual transfer, and calibrated uncertainty under limited GPU access.
+- Scope:
+  - Tasks: (a) claim verification with evidence (labels: SUPPORTS/REFUTES/NOT‑ENOUGH‑INFO), (b) retrieval of previously fact‑checked claims, (c) cross‑lingual evidence retrieval (claim language ≠ evidence language) [1][2][7].
+  - Datasets: FEVER (en) for groundwork; X‑FACT (multi‑lingual fact‑checking); XFEVER (FEVER‑style across languages); Multilingual Previously Fact‑Checked Claim Retrieval for real‑world claim search [3][1][2][7].
+- Outputs per sample (expected): language code; predicted label; top‑k evidence doc IDs and spans; model confidence/probability and calibrated 90% interval; optional short rationale; retrieval scores; latency/bytes sent (if any). These structured outputs enable precise scoring and governance.
+- Constraints:
+  - Limited GPU: prioritize small open models (e.g., 7–9B) with 4/8‑bit quantization; precompute cross‑lingual embeddings (mE5, mContriever) on CPU clusters to avoid GPU contention [4][5].
+  - Bandwidth and storage: use compact FAISS indexes (IVF‑PQ) over Wikipedia/verified sources; allow “embeddings‑only” upload for server‑side verification if needed [4][5][6].
+- Success criteria (6 months):
+  - Utility: On X‑FACT/XFEVER, RAG‑augmented open models outperform non‑retrieval baselines by ≥5–10 Macro‑F1 points in ≥4 languages (target; to be verified empirically) [1][2][6].
+  - Cross‑lingual retrieval: Dense retrievers (mE5/mContriever) improve Recall@10 over BM25 by ≥10–20% absolute on cross‑lingual splits (target; based on retrieval literature trends) [4][5][7].
+  - Efficiency: ≤16 GB GPU (or CPU‑only) suffices for end‑to‑end evaluation with quantized LLMs; 80–90% of fp16 accuracy retained after 4/8‑bit quantization (target; to be measured).
+  - Calibration: Post‑hoc calibration yields ECE ≤0.08 on verification probabilities; conformal 90% intervals achieve ≈90% coverage (target; to be validated).
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+Experiment 1: Retrieval‑augmented multilingual verification vs claim‑only prompts
+- Hypothesis: RAG substantially improves multilingual fact‑verification accuracy over claim‑only prompting across X‑FACT and XFEVER; improvements persist under int8/4‑bit quantization [1][2][6].
+- Setup:
+  - Data: X‑FACT (multi‑lingual), XFEVER (multilingual FEVER), FEVER‑en for sanity/baselines [1][2][3].
+  - Retrieval: Build multilingual FAISS indexes of Wikipedia (per language + cross‑links). Use mE5‑base‑multilingual and mContriever; compare to BM25 [4][5].
+  - Verifier: Open LLMs (e.g., Llama 3.1‑8B‑Instruct, Mistral‑7B) with system prompts to output JSON: {label, evidence_ids, spans, confidence}. Quantize to 4/8‑bit (llama.cpp/AutoGPTQ) [8].
+- Baselines: (a) claim‑only LLM classification, (b) BM25+LR/DeBERTa‑small verifier (no LLM), (c) RAG with BM25 only.
+- Metrics: Macro‑F1/Accuracy by language; Evidence Precision/Recall@k; end‑to‑end latency; GPU RAM; ECE and Brier score for calibrated probabilities.
+- Expected outcomes: RAG with mE5/mContriever > claim‑only by ≥5–10 Macro‑F1 on X‑FACT/XFEVER; quantized models retain ≥85–95% of fp16 performance while fitting ≤16 GB GPU or CPU‑only with acceptable latency [1][2][4][5][6][8].
+
+Experiment 2: Cross‑lingual evidence retrieval (claim L1, evidence L2)
+- Hypothesis: Dense multilingual retrievers (mE5/mContriever) recover cross‑lingual evidence more reliably than BM25, enabling correct verification when the claim language differs from the evidence language [4][5][6][7].
+- Setup:
+  - Data: XFEVER cross‑lingual subsets where claims are translated but evidence remains in original language; optionally construct X‑FACT cross‑lingual pairs via interlanguage links [1][2].
+  - Retrieval: Compare BM25 (per‑language) vs. mE5/mContriever over a unified multilingual index; re‑rank with cross‑encoder if CPU budget allows [4][5][7].
+  - Verifier: Same quantized LLM as Exp. 1; prompt includes retrieved cross‑lingual passages.
+- Baselines: BM25‑only retrieval + LLM; claim‑only LLM.
+- Metrics: Cross‑lingual Recall@10; end‑to‑end Macro‑F1 by claim->evidence language pairs; bytes and latency per query.
+- Expected outcomes: Dense retrieval improves cross‑lingual Recall@10 and yields higher Macro‑F1 than BM25‑only; RAG notably reduces NOT‑ENOUGH‑INFO misuse when relevant evidence exists [2][4][5][7].
+
+Experiment 3: Previously fact‑checked claim retrieval (real‑world triage)
+- Hypothesis: A multilingual dense retriever retrieves prior fact‑checks (headlines/URLs) with higher MRR/Recall@k than BM25 across languages [7].
+- Setup:
+  - Data: Multilingual Previously Fact‑Checked Claim Retrieval dataset [7].
+  - Models: mE5/mContriever vs. BM25; optional lightweight bi‑encoder fine‑tuning on CPU/GPU for 1–2 epochs if permitted by compute budget [4][5][7].
+- Baselines: BM25; random.
+- Metrics: Recall@1/5/10, MRR; latency; index size; ablation by language.
+- Expected outcomes: Dense models outperform BM25, especially for morphologically rich/low‑resource languages [7][4][5].
+
+Experiment 4: Calibration and abstention under weak evidence
+- Hypothesis: Temperature scaling or isotonic regression reduces ECE; conformal prediction yields near‑nominal coverage for abstention intervals, improving risk awareness.
+- Setup:
+  - Data: Held‑out splits from X‑FACT/XFEVER [1][2].
+  - Methods: Calibrate verifier probabilities; implement conformal risk control on logits/probabilities; add abstain option when interval width > threshold.
+- Baselines: Uncalibrated outputs.
+- Metrics: ECE, Brier, coverage of 90% intervals, abstain rate vs. accuracy.
+- Expected outcomes: Improved calibration (ECE ≤0.08); abstention reduces high‑risk errors, particularly in low‑evidence cases.
+
+Experiment 5: Robustness and sanity checks
+- Hypotheses and checks:
+  - Evidence necessity: Removing top retrieved passages should degrade accuracy more than removing random ones (deletion AOPC‑style sanity) [general methodology].
+  - Non‑leakage: Shuffling claims across retrieved evidence should push accuracy toward random.
+  - Translation stability: Back‑translation of claims preserves labels for non‑ambiguous cases.
+  - Negation test: Minimal negation flips labels reliably.
+- Setup: Automated perturbation harness over small balanced subsets from FEVER/X‑FACT.
+- Metrics: ΔMacro‑F1 under controlled perturbations; invariance/error rates; hallucinated citation rate (does evidence actually support the claim?).
+- Expected outcomes: RAG‑based verifier passes necessity and non‑leakage checks; identifies increased uncertainty under noisy/translated inputs.
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Datasets, indexes, and baselines
+  - Acquire FEVER, X‑FACT, XFEVER; clean splits; build per‑language Wikipedia dumps and multilingual FAISS indexes (mE5/mContriever) [1][2][3][4][5].
+  - Milestones: Reproducible data pipeline; BM25 and dense retrieval baselines with Recall@k.
+- Month 2: Compute‑lean verifier prototypes
+  - Stand up quantized LLMs (Llama 3.1‑8B‑Instruct, Mistral‑7B) with llama.cpp/AutoGPTQ; implement JSON output schema; claim‑only vs RAG on FEVER‑en [8].
+  - Milestones: ≤16 GB GPU demo; initial Macro‑F1 and latency report.
+- Month 3: Multilingual RAG and cross‑lingual retrieval
+  - Run Exp. 1 on X‑FACT/XFEVER; run Exp. 2 cross‑lingual; instrument bytes/latency [1][2][6][7].
+  - Milestones: Multilingual verification report; retrieval ablation (BM25 vs mE5/mContriever).
+- Month 4: Prior fact‑check retrieval and calibration
+  - Execute Exp. 3; implement calibration and conformal intervals (Exp. 4) [7].
+  - Milestones: MRR/Recall@k report; calibration/coverage plots; abstention policy draft.
+- Month 5: Robustness and sanity checks
+  - Run Exp. 5; finalize perturbation harness; document failure modes by language.
+  - Milestones: Sanity‑check report; pass/fail thresholds proposed.
+- Month 6: Consolidation and release
+  - Optimize CPU‑first path; package code, configs, and docker; draft preprint with compute/bandwidth budget; publish benchmark cards.
+  - Milestones: Public repo; artifact evaluation checklist; camera‑ready draft.
+
+4. Resources (compute, tools, datasets)
+- Compute
+  - 1× T4/A10 (≤16 GB) occasional access for verifier runs; CPU nodes for embedding/index builds; 1–2 TB storage for Wikipedia and indexes.
+- Tools
+  - Retrieval/embeddings: mE5 (Hugging Face), mContriever, FAISS IVF‑PQ; BM25 (Pyserini) [4][5].
+  - LLM serving: llama.cpp or vLLM with 4/8‑bit quantized weights; Hugging Face Transformers [8].
+  - Evaluation: Scikit‑learn metrics; calibration (temperature scaling/isotonic); conformal prediction; benchmarking harness for latency/bytes.
+- Datasets
+  - FEVER (en) [3].
+  - X‑FACT (multilingual fact‑checking) [1].
+  - XFEVER (multilingual FEVER) [2].
+  - Multilingual Previously Fact‑Checked Claim Retrieval [7].
+  - Wikipedia dumps per language for retrieval corpora.
+
+5. Risks and mitigations table
+- Cross‑lingual retrieval fails for low‑resource languages
+  - Mitigation: Use multilingual dense retrievers (mE5/mContriever); add machine‑translated queries/evidence for dual‑encoder robustness; fallback to BM25 where scripts/tokenization break [4][5][7].
+- Quantization hurts reasoning
+  - Mitigation: Evaluate 8‑bit first; mixed‑precision for final layers; small CPU‑only de‑quantized verifier for tie‑breaks; cache intermediate reasoning.
+- Dataset label mismatch or leakage
+  - Mitigation: Strict splits; verify no overlap between training and evaluation sources; run non‑leakage sanity checks (shuffled evidence).
+- Hallucinated citations and rationales
+  - Mitigation: Require evidence spans; enforce entailment checks between evidence and claim; penalize unsupported rationales in scoring.
+- Compute/bandwidth limits delay runs
+  - Mitigation: Precompute embeddings; schedule batch inference; prefer CPU‑first retrieval; use small language subsets for ablations.
+- Governance/ethics (misuse)
+  - Mitigation: Do not deploy as a public fact‑checker; publish evaluation‑only artifacts; document limitations and bias per language.
+
+6. Stretch ideas or follow-up directions
+- Lightweight cross‑encoder re‑ranks only the top‑50 dense hits on CPU to boost precision.
+- Knowledge‑intensive RAG with cross‑lingual entity linking to align claims and pages.
+- Teacher‑student distillation: transfer a stronger verifier’s judgments into a compact classifier for offline/CPU deployments.
+- Error‑aware active evaluation: focus robustness testing on negation, temporal claims, and numeracy—common LLM failure modes.
+
+Sources
+[1] X‑FACT: A New Benchmark Dataset for Multilingual Fact Checking — https://arxiv.org/abs/2106.09248
+[2] XFEVER: Exploring Fact Verification across Languages — https://arxiv.org/abs/2310.16278
+[3] FEVER: a large-scale dataset for Fact Extraction and VERification — https://www.amazon.science/publications/fever-a-large-scale-dataset-for-fact-extraction-and-verification
+[4] Multilingual E5 Text Embeddings: A Technical Report — https://arxiv.org/abs/2402.05672
+[5] MultiContrievers: Analysis of Dense Retrieval Representations — https://arxiv.org/abs/2402.15925
+[6] Retrieval‑augmented generation in multilingual settings — https://aclanthology.org/2024.knowllm-1.15.pdf
+[7] Multilingual Previously Fact‑Checked Claim Retrieval — https://arxiv.org/abs/2305.07991
+[8] Introducing Llama 3.1 (Meta AI blog, multilingual open‑weight family) — https://ai.meta.com/blog/meta-llama-3-1/
+
+Optional next step
+- Approve Months 1–2 to build multilingual indexes and run quantized verifier baselines; we will return with an initial multilingual RAG vs claim‑only comparison and a concrete compute/bandwidth budget.

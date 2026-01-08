@@ -1,0 +1,120 @@
+Stage: B → C (you have a clear problem; moving into a structured plan with falsifiable experiments and ablation coverage)
+
+1) Problem framing and goals
+Objective: Build a rigorous, 9‑month ablation roadmap for federated reinforcement learning (FRL) in smart grids (microgrids, demand response, and voltage/VAR control), with explicit privacy and reliability checks. Deliverables: (a) a public FRL benchmark suite and ablation matrix; (b) privacy-utility Pareto curves across ε, clipping, and secure aggregation; (c) robustness profiles under non-IID data and Byzantine/adversarial clients; (d) safe/risk-sensitive performance under grid constraints; and (e) a reproducibility package (configs, seeds, experiment cards, and prediction logs).
+Key axes to ablate: privacy (ε, δ; clipping norm; local vs global DP; secure aggregation vs HE), reliability (robust aggregators; adversary fraction/type; non-IID heterogeneity; stragglers/asynchrony), communication/computation (rounds, client fraction, compression), and control-task specifics (reward shaping, constraint penalties, CVaR level). Differential privacy in RL has formal utility/privacy trade-offs under online and offline regimes, providing principled ablation axes [P4][P7][P2]. Robust FL under Byzantine clients motivates aggregator comparisons and variance-reduction/DP hybrids for reliability [P1].
+
+Intuition: FRL in power systems sits at the intersection of privacy-sensitive deployments (utilities, prosumers) and safety-critical control. Systematic ablations along privacy and robustness knobs reveal where performance breaks and which defenses offer the best price-of-privacy/robustness for a given grid task.
+Why this is principled: DP-RL literature provides regret and sample-complexity bounds guiding privacy-utility sweeps [P4][P7], while Byzantinerobust FL gives attack models and defense baselines to quantify reliability under adversarial updates [P1]. Risk-sensitive RL with CVaR formalizes tail-risk reduction for safety-critical constraints, aligning with grid reliability objectives [P6].
+
+2) Experiments
+All experiments: 3+ seeds, confidence intervals; report train/valid/test splits by grid scenarios; publish exact configs, seeds, and prediction logs. Environments: (i) multi-microgrid energy management (day-ahead/real-time scheduling); (ii) demand response (household/prosumer control); (iii) distribution-network voltage/VAR control (IEEE 33-/123-bus). FRL algorithms: FedAvg-PPO/TRPO; optionally FedAC/IMPALA via RLlib. Privacy tooling: Opacus (PyTorch) or TF-Privacy for DP-SGD; secure aggregation prototype (SecAgg-style) and optional CKKS/SEAL HE microbenchmarks. Robust aggregation: Median, TrimmedMean, Krum/Multi-Krum, Bulyan.
+
+E1. Privacy–utility Pareto for FRL in energy management
+- Hypothesis: With per-client clipping and moderate ε (≈3–8), FRL retains ≥90% of non-private reward while preserving DP guarantees; utility loss increases sharply as ε→1 [P4][P7].
+- Setup: Flower + PyTorch + Opacus; PPO/TRPO; 50–200 simulated clients (heterogeneity via Dirichlet α∈{0.1,0.5,5}); clipping C∈{0.1,0.5,1.0}; noise multipliers σ∈{0.5,1.0,1.5}; rounds=200–500; client fraction q∈{0.1,0.2,0.5}. Compare local DP vs central DP; secure aggregation on/off.
+- Baselines: Centralized RL (upper bound), FL without DP (utility upper bound), local-only RL (no federation).
+- Metrics: Episode reward/cost; constraint violations; ε,δ via moments accountant; convergence rounds; communication and wall clock.
+- Expected outcomes: Smooth reward degradation with stronger privacy; local DP slightly worse than central DP; clipping dominates utility loss for small C [P4][P7]. Offline pretraining improves privacy-utility at fixed ε [P2].
+
+E2. Byzantine robustness under non-IID loads
+- Hypothesis: Robust aggregators (Median/TrimmedMean/Multi-Krum) maintain ≥80% of clean performance up to 20% adversarial clients; FedAvg collapses under targeted poisoning in non-IID settings [P1].
+- Setup: Introduce f∈{0,0.1,0.2,0.3} Byzantine clients performing sign-flip, scaled-noise, or model-replacement attacks; α∈{0.1,0.5} non-IID; compare FedAvg vs Median/TrimmedMean/Krum/Bulyan; with and without DP noise.
+- Baselines: Clean FL; FedAvg+DP; centralized RL.
+- Metrics: Reward; violation rate; attack success (final model drift from clean); gradient cosine similarity; variance of updates; convergence stability.
+- Expected outcomes: Median/TrimmedMean mitigates sign-flip; Krum/Bulyan handle concentrated outliers; DP can mask but also amplify aggregation variance; variance reduction + DP from robust FL is beneficial [P1].
+
+E3. Safe and risk-sensitive FRL for voltage control (CVaR)
+- Hypothesis: CVaR-PPO (α=0.05–0.2) reduces tail risk of voltage violations vs standard PPO at minor average-reward cost [P6].
+- Setup: Grid2Op-like distribution network; reward = cost − λ·violation_penalty; implement CVaR objective in policy update; FRL across feeders/microgrids; compare with PID and centralized PPO.
+- Baselines: Standard PPO; centralized PPO; heuristic Volt-VAR.
+- Metrics: CVaRα of max violation magnitude; frequency of constraint breaches; SAIDI/SAIFI proxies; average reward; stability under load ramps.
+- Expected outcomes: CVaR models achieve lower tail risk and fewer severe violations while maintaining competitive average reward [P6].
+
+E4. Secure aggregation and gradient inversion risk
+- Hypothesis: Secure aggregation (SecAgg-like) reduces membership/gradient inversion attack success to near-random while adding ≤25% comm/latency overhead for 100–200 clients.
+- Setup: Implement additive masking secure aggregation; optional HE (CKKS via SEAL) for a small model; evaluate Deep Leakage from Gradients (DLG)-style inversion and membership inference vs plaintext FL; test with/without DP noise.
+- Baselines: Plaintext FL; FL+DP only.
+- Metrics: Attack success (reconstruction PSNR/SSIM; membership ROC-AUC); comm overhead (bytes/round), runtime overhead.
+- Expected outcomes: SA blocks direct inversion even without DP; DP+SA compounds privacy defense; HE impractical for large models. Limitation: we did not retrieve a definitive SecAgg source via tools; plan to cite Bonawitz et al. (CCS’17) after a targeted search and to cross-check recent power-systems SA implementations.
+
+E5. Client participation, stragglers, and asynchrony
+- Hypothesis: Moderate asynchrony and importance-weighted sampling stabilize training under variable client availability without harming privacy accounting.
+- Setup: Compare synchronous vs buffered-asynchronous FRL; client fraction q∈{0.1,0.2,0.5}; straggler delay distributions; importance sampling by loss/gradient norm; DP-accountant adapted for partial participation.
+- Baselines: Synchronous FedAvg; synchronous FRL+DP.
+- Metrics: Convergence rate; fairness across clients; privacy accounting correctness (ε per client); wall clock.
+- Expected outcomes: Buffered asynchrony speeds convergence under stragglers; privacy composition remains valid with careful accounting. Limitation: specific async-DP proofs not retrieved; plan to validate with accountant simulations and consult recent FL-DP composition work.
+
+E6. DP offline-to-online FRL bootstrapping
+- Hypothesis: DP offline pretraining (behavioral cloning/CQL) reduces online exploration cost and tail-risk while preserving ε-budget; total online steps to target drop ≥25% [P2].
+- Setup: Offline logs (Pecan Street/AMI); DP-BC or DP-CQL pretraining; federated fine-tuning with DP; compare to online-from-scratch FRL.
+- Baselines: Online-only FRL (no pretrain); non-private offline+online.
+- Metrics: Steps to target reward; CVaR violations during early training; final ε; sample efficiency.
+- Expected outcomes: Offline DP pretraining improves safety and efficiency in early online phases [P2].
+
+3) Timeline and milestones (9 months)
+Phase 0 (Weeks 1–4): Reproduction + gating
+- Stand up environments (energy mgmt, demand response, voltage control); implement FRL (PPO/TRPO) with Flower/RLlib.
+- Integrate DP-SGD (Opacus) and at least two robust aggregators; unit tests for accountant correctness.
+- Deliverables: (1) prediction log with ≥14 entries and one reproduced figure/metric within ≤10% of baseline; (2) one experiment card + one ablation or negative result with post-mortem.
+Phase 1 (Months 2–3): Privacy-utility and non-IID sweeps
+- Run E1 sweeps over ε, clipping, α; publish Pareto curves; run E2 at f∈{0,0.1,0.2}; initial CVaR implementation on voltage control.
+- Milestones: Privacy Pareto across three tasks; robustness curves vs f; draft ablation matrix v1.
+Phase 2 (Months 4–5): Security and safety hardening
+- Implement secure aggregation; run E4 attack evaluations; complete E3 CVaR sweeps; start E5 asynchrony.
+- Milestones: MI/gradient inversion results; CVaR violation reduction report; asynchrony vs convergence study.
+Phase 3 (Months 6–7): Offline-to-online + integration
+- Run E6; integrate best privacy + robust aggregator + CVaR into a composite “safe-private FRL” recipe; cross-validate across tasks.
+- Milestones: Recipe achieving ≥85–95% non-private performance with formal ε; stress tests under f=0.2.
+Phase 4 (Months 8–9): Consolidation, packaging, and paper
+- Ablation completeness audit; finalize tables/figures; open-source code, configs, and logs; internal replication by a second operator.
+- Milestones: Submission-ready draft; artifact package (Docker + seeds); tutorial notebook.
+
+Progress scoreboard (tracked monthly)
+- Calibration (prediction log Brier score): ≥20% improvement by Month 3.
+- Reproduction fidelity: ≤10% gap vs baselines across ≥3 seeds by Month 2.
+- Ablation clarity: Top factor explains ≥50% of observed gains or a falsified hypothesis with rationale by Month 5.
+- Writing cadence: ≥1 page/week lab journal rated ≥4/5 for clarity, evidence, limits, next steps.
+
+4) Resources (compute, tools, datasets)
+- Compute: 1–2 multi-GPU nodes (e.g., 4×A5000/A100) or equivalent cloud; 64–128 vCPU pool for client simulation; 256–512 GB RAM; 10 Gbps intra-cluster networking. HE/SA microbenchmarks can run on CPU.
+- Frameworks: PyTorch + RLlib or Stable Baselines3; Flower or NVIDIA FLARE; Opacus/TF-Privacy; Moments accountant; Microsoft SEAL (CKKS) for HE microtests; Python cryptography for SA prototype.
+- Environments/data: Grid2Op (voltage control); IEEE 13/33/123-bus feeders; Pecan Street, UK-DALE/REFIT for demand profiles; OpenDSS for physics; public net-zero microgrid FRL preprints suggest PPO/TRPO variants for multi-microgrid management (limitation: domain-specific FRL sources are mostly preprints; planned targeted curation).
+- Reproducibility: Hydra/Weights & Biases; fixed seeds; config registry; continuous integration to rerun a smoke test suite nightly.
+
+5) Risks and mitigations
+- Non-IID divergence: Use robust aggregators, proximal updates, personalization heads; increase client fraction; tune clipping before noise.
+- Utility collapse at small ε: Start from offline DP pretraining; relax ε to policy-level DP rather than per-gradient; enlarge clipping C with adaptive noise.
+- Attack model mismatch: Evaluate diverse attacks (sign-flip, stealthy model replacement); red-team with gradient-scale constraints; report worst-case envelopes.
+- DP accounting errors: Implement unit tests; cross-validate Opacus vs independent accountant; add privacy budget dashboards.
+- Secure aggregation overhead: Measure per-round bytes/latency; use chunked masks and partial participation; limit HE to microbenchmarks.
+- Safety violations during training: Use constrained or risk-sensitive objectives (CVaR); shielded actions; rule-based fallback; early-stop on violation spikes.
+- Simulation–reality gap: Use feeder diversity, load/weather real data; domain randomization; sensitivity analyses; plan limited real-data pilot if available.
+- Reproducibility/regression: Freeze baselines; version configs; lock random seeds; require second-operator replication before Phase 4.
+
+6) Stretch ideas / follow-ups
+- Hierarchical FRL (substation → feeder → prosumer) with privacy-aware aggregation schedules.
+- Adaptive privacy: task-aware ε allocation across clients/time via constrained optimization.
+- Personalized FRL heads for non-IID households; meta-FRL for rapid adaptation.
+- Causal or counterfactual risk auditing of policies under contingency scenarios (N-1).
+- Federated offline RL with privacy-preserving data valuation to prioritize which logs to use [P2].
+
+Literature anchors (mapping to plan)
+- Differential privacy in RL: Near-Optimal Differentially Private Reinforcement Learning; DP-RL with linear function approximation; Offline RL with Differential Privacy [P4][P7][P2].
+- Byzantine-robust FL and DP: Byzantine-Robust Federated Learning with Variance Reduction and DP [P1].
+- Risk-sensitive RL: Robust Risk-Sensitive RL with CVaR [P6].
+- Domain (smart grids and FRL): recent preprints on federated multi-agent DRL for multimicrogrid energy management, and surveys of FL in smart grids (limitation: our tool pull provided preprints without curated peer-review; plan to run a targeted search and benchmark alignment before submission).
+
+Intuition: The ablation roadmap turns abstract privacy and robustness goals into concrete, measurable levers that system operators care about: cost, violations, tail risk, and convergence under realistic heterogeneity and faults. Running controlled sweeps over ε, aggregation, and adversary fractions exposes the operating envelope and yields actionable “recipes” for deployment.
+Why this is principled: The plan directly operationalizes theoretical trade-offs from DP-RL (privacy vs regret/utility) [P4][P7] and robust FL (aggregator behavior under Byzantine attacks) [P1], and integrates risk-sensitive objectives (CVaR) to align optimization with safety requirements in power systems [P6]. The gating and reproducibility standards ensure credible, reviewer-ready evidence rather than anecdotal improvements.
+
+Citations
+- [P1] Byzantine-Robust Federated Learning with Variance Reduction and Differential Privacy — http://arxiv.org/abs/2309.03437v1
+- [P2] Offline Reinforcement Learning with Differential Privacy — http://arxiv.org/abs/2206.00810v2
+- [P3] Local Differential Privacy for Regret Minimization in Reinforcement Learning — http://arxiv.org/abs/2010.07778v3
+- [P4] Near-Optimal Differentially Private Reinforcement Learning — http://arxiv.org/abs/2212.04680v2
+- [P5] Differentially Private Episodic Reinforcement Learning with Heavy-tailed Rewards — http://arxiv.org/abs/2306.01121v2
+- [P6] Robust Risk-Sensitive Reinforcement Learning with Conditional Value-at-Risk — http://arxiv.org/abs/2405.01718v1
+- [P7] Differentially Private Reinforcement Learning with Linear Function Approximation — http://arxiv.org/abs/2201.07052v2
+
+Optional next step: I can generate the first three experiment cards (E1–E3) with concrete hyperparameter grids, seed lists, accountant configs, and plotting scripts so you can launch Phase 0 within a day.

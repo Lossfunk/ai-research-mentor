@@ -1,0 +1,428 @@
+[Turn 0] SYSTEM:
+You're a first-year PhD student working on a computer vision project. You're struggling with experimental design and want guidance on how to properly ablate your contributions and report results.
+
+[Turn 1] USER:
+When people say “ablate each component,” do they mean literally removing it and seeing the accuracy drop, or is there a subtler way to check what actually matters?
+
+[Turn 1] ASSISTANT:
+Short answer: “Ablate each component” often means disabling or removing a module and measuring the performance drop. But to learn what actually matters, you usually want more than a one-off knockout. Different ablation styles answer different questions.
+
+What “ablation” can mean (and when to use each)
+- Test-time knockouts (disable/zero a component without retraining): Fast diagnostic for functional reliance, but can overstate importance because the rest of the model can’t adapt. Example: many transformers tolerate pruning many attention heads with little loss, suggesting redundancy [1].
+- Train-time ablations (remove/replace the component and retrain): More causally sound for “does this component earn its keep?”, because the rest of the model can adapt to its absence. The “remove-and-retrain” paradigm is standard when assessing feature or module importance [2].
+- Soft ablations/knockdowns (attenuate rather than delete): Scale a component’s output by α∈[0,1] or add noise; sweep α to see sensitivity and nonlinear interactions. This avoids the “all-or-nothing” artifact of hard knockouts.
+- Randomization/permutation controls: Randomize a component’s parameters or shuffle its outputs across examples; if metrics barely change, the component likely isn’t carrying signal robustly. Such sanity checks are standard for interpretability claims.
+- Factorial designs and interactions: If components interact, single knockouts can mislead. Use factorial ablations (A, B, A+B) and analyze main effects vs interactions; Shapley-attribution across component subsets is a principled but expensive variant.
+- Gate learning: Add a learned multiplicative gate per component with sparsity regularization; fine-tune and see which gates go to ~0. Useful for compressibility, but regularization strength and co-adaptation can bias conclusions.
+- Counterfactual/causal interventions: Patch or intervene on internal activations (e.g., substitute a component’s output from a baseline run) to estimate the component’s causal effect on specific behaviors. Useful when you care about particular capabilities, not just top-line accuracy.
+
+Three+ concrete, falsifiable experiments you can run
+1) Remove-and-retrain factorial ablation
+- Setup: Define two components A and B. Train four models (full, −A, −B, −A−B) under identical budgets (data, steps, seeds).
+- Measure: Report mean±95% CI across ≥5 seeds on your primary metrics. Use two-way ANOVA for main vs interaction effects.
+- Falsifiable claim: If A’s main effect is zero within CI and no interaction, removing A does not materially affect performance after retraining.
+2) Test-time sensitivity curves with controls
+- Setup: For a trained model, insert a scalar gate α on each component’s output. Sweep α from 1→0 and record performance; compute area under the performance–α curve (AUPC).
+- Controls: (a) Randomly permute the component’s outputs across the batch; (b) Replace with Gaussian noise matched in mean/variance.
+- Falsifiable claim: Components whose AUPC is indistinguishable from permutation/noise controls are not functionally necessary at inference.
+3) ROAR-style remove-and-retrain importance
+- Setup: Choose a feature-importance ranking (or component ranking). Iteratively remove the top-k% features/components (k∈{10,20,30}) and retrain to convergence with the same budget.
+- Measure: Accuracy drop vs a random-removal baseline curve; the gap quantifies utility attributable to the removed elements [2].
+- Falsifiable claim: If the drop curve is not significantly worse than random removal, your ranking (or component) is not demonstrably useful.
+4) Soft ablation with noise injection
+- Setup: Add calibrated Gaussian noise to a component’s output to achieve target SNR levels (e.g., SNR={∞, 20, 10, 5, 1} dB).
+- Measure: Sensitivity of performance to SNR; compare to injecting the same noise at adjacent layers.
+- Falsifiable claim: If performance is robust to heavy noise at that component but sensitive at neighbors, the component is less critical than the pathway.
+
+Common pitfalls
+- Conflating reliance with importance: A big test-time drop doesn’t prove the component is necessary after retraining (the rest may compensate).
+- Ignoring interactions: Single ablations can hide synergy or redundancy; use factorial designs.
+- No uncertainty estimates: Always use multiple seeds and report confidence intervals.
+- Capacity confounds: Match parameter counts when replacing/removing components to avoid “it helped because it added parameters.”
+
+When in doubt
+- Use test-time knockouts for quick triage.
+- Use remove-and-retrain (plus factorial designs) for causal claims about necessity.
+- Add soft ablations and randomization/permutation controls to guard against artifacts.
+
+Literature anchors
+- Michel et al., 2019 — Are Sixteen Heads Really Better Than One? (shows test-time pruning of many attention heads with small loss, highlighting redundancy): https://arxiv.org/abs/1905.10650 [1]
+- Hooker et al., 2019 — A Benchmark for Interpretability Methods in Deep Neural Networks (ROAR; argues for remove-and-retrain to fairly assess importance): http://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf [2]
+
+Sources
+[1] Michel, Levy, Neubig (2019). Are Sixteen Heads Really Better Than One? — https://arxiv.org/abs/1905.10650
+[2] Hooker, Erhan, Kindermans, Kim (2019). A Benchmark for Interpretability Methods in Deep Neural Networks — http://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf
+
+Key takeaways
+- “Ablate each component” can be literal (knockout), but stronger conclusions come from retraining, soft ablations, and factorial designs.
+- Always include controls, multiple seeds, and interaction analysis to avoid overinterpreting single ablations.
+
+[Turn 2] USER:
+If I do a remove-and-retrain ablation and the accuracy barely drops, does that automatically mean the component is redundant or could it still be doing something subtle the metric misses?
+
+[Turn 2] ASSISTANT:
+Short answer: No. A small drop after remove-and-retrain does not prove redundancy. It only shows that, under your training budget and metric, the rest of the model can compensate. The component might still matter for behaviors your metric doesn’t capture or for regimes your training didn’t stress.
+
+Why a near-zero drop can be misleading
+- Metric insensitivity: Top-line accuracy can hide effects on calibration, margins, F1 for rare labels, or worst-group accuracy. A component can help on hard/rare cases without moving the average.
+- Distribution shift and robustness: The component may aid robustness to corruptions, domain shift, or adversaries. i.i.d. accuracy often fails to reflect this.
+- Data/compute efficiency and stability: It might speed convergence, reduce variance across seeds, or reduce the data needed to reach a target accuracy—even if final accuracy matches.
+- Safety/constraints: It could enforce monotonicity, fairness, or other invariants that aren’t captured by your primary metric.
+- Interactions and redundancy: Other pathways can substitute after retraining; the component can still provide slack capacity that improves resilience or worst-case performance.
+
+Three+ concrete, falsifiable follow-up experiments
+1) Subgroup and tail performance
+- Design: Define subpopulations (attributes or difficulty bins). Evaluate macro-F1 and worst-group accuracy before vs after ablation.
+- Hypothesis: If the component supports rare or hard cases, worst-group accuracy will drop ≥X% even if average accuracy is unchanged.
+- Falsification: No statistically significant difference (95% CI over ≥5 seeds) in worst-group accuracy.
+
+2) Distribution shift and corruption robustness
+- Design: Evaluate on standardized shifts (e.g., ImageNet-C/CIFAR-10-C, or a domain-shift benchmark relevant to your task). Report corruption error and mean corruption error (mCE) vs the full model.
+- Hypothesis: The ablated model’s mCE increases relative to the full model.
+- Falsification: mCE and per-severity errors are indistinguishable within CI.
+
+3) Calibration and uncertainty
+- Design: Compute NLL, Brier score, and ECE on a held-out set; assess OOD detection AUROC using a related-but-different dataset.
+- Hypothesis: Ablation worsens NLL/ECE or reduces OOD AUROC at fixed accuracy.
+- Falsification: No significant change in calibration metrics and OOD AUROC.
+
+4) Data-efficiency and convergence
+- Design: Train both variants on {5%, 10%, 20%, 50%, 100%} of data; plot learning curves and compute area under the curve (AULC) and steps-to-target-accuracy.
+- Hypothesis: The full model reaches target accuracy with fewer samples/steps.
+- Falsification: Identical AULC and steps-to-target across seeds.
+
+5) Adversarial and stress tests
+- Design: Evaluate PGD/AutoAttack robustness at fixed clean accuracy; or targeted challenge sets that stress the hypothesized role of the component.
+- Hypothesis: The ablated model exhibits larger robust accuracy drop or more errors on the challenge set.
+- Falsification: Robust accuracy and challenge-set error match the full model within CI.
+
+Practical tips
+- Match capacity and training budget across variants; report mean±95% CI over multiple seeds.
+- If you suspect interactions, include factorial ablations (A, B, A+B) and analyze main vs interaction effects.
+- Predefine hypotheses and stop criteria to avoid “metric shopping.”
+
+Literature anchors
+- Hooker et al., 2019 — A Benchmark for Interpretability Methods (ROAR) argues that retraining can mask or reveal importance depending on the evaluation and stresses using appropriate metrics beyond one accuracy number: http://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf
+- Geirhos et al., 2020 — Shortcut Learning in Deep Neural Networks documents how models can achieve high i.i.d. accuracy via shortcuts that fail under shift, motivating checks beyond top-line accuracy: https://arxiv.org/abs/2004.07780
+
+Sources
+- Hooker, Erhan, Kindermans, Kim (2019). A Benchmark for Interpretability Methods in Deep Neural Networks — http://papers.neurips.cc/paper/9167-a-benchmark-for-interpretability-methods-in-deep-neural-networks.pdf
+- Geirhos, Jacobsen, Michaelis, et al. (2020). Shortcut Learning in Deep Neural Networks — https://arxiv.org/abs/2004.07780
+
+Takeaway: A tiny drop after remove-and-retrain means the component is not necessary for your chosen metric in your training regime, but it may still matter for robustness, calibration, tails, or efficiency. Probe those explicitly before declaring redundancy.
+
+[Turn 3] USER:
+How do I pick which baseline to compare against when papers use different ones—do I rerun all of them or just the strongest?
+
+[Turn 3] ASSISTANT:
+Short answer: Don’t just compare to the single strongest reported number. Re-run a small, principled set of baselines under a unified pipeline and tuning budget, then treat unmatched literature numbers as secondary context. This avoids cherry-picking and sensitivity artifacts that can reverse conclusions when methods are tuned fairly [1][2].
+
+Practical protocol
+- Define a fair comparison budget up front
+  - Same data splits, preprocessing, training steps/compute, and hyperparameter search budget for every method you re-run. Report mean±95% CI over multiple seeds [2].
+- Pick a minimal-but-sufficient baseline set to re-run
+  - Strongest prior method that is reproducible (code/checkpoints available) for your exact setting (dataset/task/size). If multiple “SOTA” papers differ in setup, pick the one you can match most faithfully and re-run it; list the others as cite-only secondary context with caveats [1].
+  - A strong, simple baseline (e.g., well-tuned classical/earlier architecture). These guard against “complexity overfitting” and weak-baseline comparisons [1].
+  - Your own method without the novel component (ablation) to isolate contribution under the same pipeline.
+- When to re-run additional baselines
+  - If prior results used different data, augmentations, or tuning scopes; or the area is known to be seed/hyperparameter sensitive (e.g., RL, small-data NLP/CV), you should re-run because reported rankings often flip under matched tuning [2].
+- When citing without re-running is acceptable
+  - Exact pipeline match is infeasible (e.g., proprietary pretraining data), or code is unavailable. Then: clearly label those numbers “unmatched,” exclude them from your main table, and discuss only qualitatively.
+- Reporting essentials
+  - Publish your search space, tuning budget per method, seeds, and all metrics you claim improvements on (not just top-line accuracy). Include training cost/throughput so readers can judge efficiency vs performance [1][2].
+
+Three concrete, falsifiable comparisons to run
+1) Matched-pipeline, matched-tuning head-to-head
+- Design: Re-run your method and the strongest reproducible baseline with identical data, compute, and a fixed hyperparameter budget (e.g., 100 trials each); 10 seeds per best configuration.
+- Claim: Your method improves mean accuracy by ≥δ (pre-registered, e.g., 1 point) over the baseline.
+- Falsification: Two-sided test or equivalence test shows difference < δ within 95% CI.
+
+2) Sample-efficiency comparison via learning curves
+- Design: Train both methods on {5%, 10%, 20%, 50%, 100%} of data with identical budgets; compute area under the learning curve and steps-to-target-accuracy.
+- Claim: Your method achieves target accuracy with fewer samples/steps than the baseline.
+- Falsification: AULC and steps-to-target are statistically indistinguishable.
+
+3) Robustness/tails under identical tuning
+- Design: Evaluate both methods on predefined shifts or tail subsets (e.g., corruptions, worst-group accuracy) after tuning only on the in-distribution validation set.
+- Claim: Your method matches in-distribution accuracy while improving worst-group accuracy or corruption error.
+- Falsification: No significant improvement on robustness/tail metrics at fixed in-distribution accuracy.
+
+If resources are tight
+- Prioritize re-running: (1) the strongest reproducible baseline; (2) a strong simple baseline; (3) your ablation. Put all other literature numbers in an appendix as “unmatched.” This yields a credible, internally consistent comparison while acknowledging external context [1][2].
+
+Common pitfalls to avoid
+- Mixing unmatched numbers in the main table (different data/tuning). Mark them clearly and separate them.
+- Unequal hyperparameter search budgets across methods; this often inflates claimed gains [2].
+- Single-seed reporting. Use multiple seeds and CIs, especially in sensitive settings [2].
+
+Literature anchors
+- Troubling Trends in Machine Learning Scholarship — motivates strong, fair baselines and transparent reporting; warns against cherry-picking and incomparable setups [1].
+- Deep Reinforcement Learning that Matters — demonstrates high sensitivity to seeds and hyperparameters; recommends multi-seed evaluation and matched, well-tuned baselines [2].
+
+Sources
+[1] Lipton & Steinhardt (2018). Troubling Trends in Machine Learning Scholarship — https://arxiv.org/pdf/1807.03341
+[2] Henderson et al. (2018). Deep Reinforcement Learning that Matters — https://arxiv.org/abs/1709.06560
+
+[Turn 4] USER:
+How many seeds and GPU-hours should I budget for the matched-pipeline reruns so reviewers won’t call it under-tuned?
+
+[Turn 4] ASSISTANT:
+Short answer: Aim for multi-seed, matched-tuning comparisons with enough power to detect your claimed improvement. In practice, 5–10 seeds for final reporting is often expected in variance‑sensitive settings, with a transparent, equal hyperparameter search per method and confidence intervals across seeds [1][2][3][4][5]. Use a small pilot to estimate variance and compute how many seeds you actually need for your target effect size [5].
+
+Defaults that usually pass review (when you can’t do a full power analysis)
+- Final evaluation seeds
+  - Low-variance, large-data supervised tasks: 5 seeds.
+  - High-variance regimes (small-data fine-tuning, RL, few-shot, small models): 10 seeds if feasible; otherwise ≥5 with power analysis to justify lower N [1][2][4][5].
+- Tuning budget parity
+  - Match search space and the number of hyperparameter trials per method; report both clearly [3]. If prior work is known to be sensitive (e.g., RL, BERT fine-tuning), matched tuning is essential [1][2].
+Note: No sources found for exact trial counts or GPU-hour prescriptions; the specific budgets below are pragmatic. Conjecture.
+
+Make it statistically justified (power-based seeds)
+- Pilot: Run one strong baseline for 8–10 seeds to estimate the standard deviation σ of your primary metric (e.g., accuracy in percentage points) [2][4].
+- Choose the minimum effect size you care about (δ), e.g., 0.5–1.0 points.
+- Compute seeds n via two-sample power analysis (80% power, α=0.05): n ≈ 2 · (zα/2 + zβ)^2 · σ^2 / δ^2. Then round up and use that many seeds per method. Card et al. argue for power analysis in NLP because many comparisons are underpowered [5].
+- Report mean±95% CI and significance/equivalence tests; Henderson et al. (RL) and Dodge et al. (NLP) stress multi-seed reporting and proper tests [1][3].
+
+How to budget GPU-hours fairly and visibly
+- Simple accounting: GPU-hours ≈ (HPO_trials × seeds_per_trial × hours_per_run × GPUs_per_run) + (confirm_top_M × seeds_confirm × hours_per_run × GPUs_per_run).
+- Pragmatic two-stage plan (Conjecture; tailor to your training time):
+  - Stage 1 (tuning): Random/ASHA search with N=50–100 trials per method, evaluate each trial on 1 seed (2 seeds if high variance). Keeps tuning fair across methods [3].
+  - Stage 2 (confirm): Take top M=3–5 configs from Stage 1 and re-run each for S=5–10 seeds; pick the best by mean validation score and report its test score with CIs [1][2][3].
+  - Example: If a run takes 2 GPU-hours on 1 GPU, N=80, M=4, S=5, seeds_per_trial=1 → Tuning = 80×1×2=160 GPUh; Confirm = 4×5×2=40 GPUh; Total ≈ 200 GPUh per method. Report these totals to preempt under‑tuning critiques [3].
+
+Three concrete, falsifiable experiments to justify your seed/tuning choices
+1) Pilot variance and power analysis
+- Design: Run the strongest baseline for 10 seeds to estimate σ; compute n needed for δ=0.5–1.0 points at 80% power. Pre-register n and use it across methods.
+- Falsifiable claim: With n seeds, your comparison has ≥80% power to detect δ. If the 95% CI width remains >δ, increase seeds. Supported motivation for power analysis in ML/NLP: Card et al. [5]; variance concerns in RL/NLP: Henderson et al., Mosbach et al., Reimers & Gurevych [1][2][4].
+
+2) Budget-scaling curve for tuning fairness
+- Design: For each method, plot best validation score vs HPO trials at checkpoints (e.g., 10, 20, 40, 80 trials). Stop when marginal gains flatten.
+- Falsifiable claim: Rankings stabilize by K trials; increasing beyond K does not change the winner within 95% CI. Transparent budget reporting and matched search are emphasized by Dodge et al. [3].
+
+3) Seed-sensitivity and equivalence testing
+- Design: Evaluate the final chosen config(s) at S=5, 10 seeds; run two-sided or equivalence tests on mean performance difference between your method and the baseline.
+- Falsifiable claim: At the chosen S, the difference is statistically significant (or within a pre-specified equivalence margin). Multi-seed instability and the need for proper tests documented in RL and NLP [1][2][4][5].
+
+Reporting checklist to preempt “under-tuned” reviews
+- Publish search spaces, number of HPO trials per method, early-stopping policy, and total GPU-hours per method [3].
+- Report mean±95% CI over seeds; include per-seed distributions (box/violin) to show stability [1][3][4].
+- If compute-limited, justify seeds via power analysis and disclose the shortfall; reviewers are more forgiving when the methodology is sound and transparent [3][5].
+
+Citations
+[1] Henderson et al. (2018). Deep Reinforcement Learning that Matters — https://arxiv.org/pdf/1709.06560
+[2] Mosbach, Andriushchenko, Klakow (2021). On the Stability of Fine-tuning BERT — https://arxiv.org/abs/2006.04884
+[3] Dodge et al. (2019). Show Your Work: Improved Reporting of Experimental Results — https://aclanthology.org/D19-1224.pdf
+[4] Reimers, Gurevych (2017). Reporting Score Distributions Makes a Difference — https://www.researchgate.net/publication/322582509_Reporting_Score_Distributions_Makes_a_Difference_Performance_Study_of_LSTM-networks_for_Sequence_Tagging
+[5] Card, Henderson, et al. (2020). With Little Power Comes Great Responsibility — https://arxiv.org/pdf/2010.06595
+
+Key takeaways
+- Use enough seeds to achieve statistical power for your claimed effect size; 5–10 seeds is a common target depending on variance [1][2][4][5].
+- Keep hyperparameter search budgets matched and reported; show budget-scaling and seed-stability analyses to head off under-tuning concerns [1][3][5].
+
+[Turn 5] USER:
+If my pilot shows huge seed-to-seed swings, is 10 seeds still enough or should I push for even more?
+
+[Turn 5] ASSISTANT:
+Short answer: If your pilot shows large seed variance, don’t lock in “10 seeds.” Set the number of seeds by a power/precision target using the variance of paired seed differences. You may need well above 10, or you can reduce variance (paired evaluation, standardized pipelines) and use a sequential stopping rule.
+
+What to do when variance is high
+- Use paired seeds to cut variance: Run both methods with the same seeds, data order, and randomness sources. Analyze per-seed differences di = scoreA,i − scoreB,i and their standard deviation σd. Paired tests have much higher power than unpaired when seed effects are shared [1][3][5].
+- Compute seeds via power or precision:
+  - For a target effect size δ and 80% power at α=0.05, seeds n ≈ ((zα/2 + zβ)·σd / δ)^2, rounded up. If σd is large, n can easily exceed 10. Report this calculation. 
+  - Precision alternative: choose n so the 95% CI half-width for the mean difference is ≤ ε (e.g., ε = δ/2): n ≈ (tα/2, n−1 · σd / ε)^2.
+- Use a sequential stopping rule (pre-registered): Start with n0 (e.g., 5) paired seeds and add seeds in batches until the 95% CI half-width ≤ ε or until a pre-set cap Nmax (e.g., 30). Report the final n and the CI. This avoids both under- and over-spending compute [3][5].
+- Reduce variance where fair:
+  - Fix all controllable randomness across methods (data shuffles, augmentation RNG, dropout masks) to use common random numbers; keep everything else identical [1].
+  - Increase evaluation set size (more test examples reduces metric noise).
+  - Stabilize training if justified for the task and applied to all methods (e.g., longer warmup, gradient clipping, larger batch with the same total updates) [2]. Be explicit and apply symmetrically.
+
+If compute is limited
+- Prefer stronger statistics over more seeds: Paired evaluation with equivalence testing (pre-specify an equivalence margin) generally needs fewer seeds than unpaired NHST for the same conclusion [3][5].
+- Be transparent: Show the pilot σd, your δ (or ε), the resulting n, and any shortfall. Reviewers are usually satisfied when the methodology is principled and well reported, even if n > 10 was infeasible [3].
+
+Three concrete, falsifiable experiments you can run
+1) Paired-vs-unpaired seed efficiency
+- Design: With the same budget, run 10 paired seeds (same RNG across methods) and 10 unpaired seeds. Compute σd (paired) and the SD of differences using unpaired estimates.
+- Claim: σd(paired) < σd(unpaired), yielding narrower 95% CIs for the mean difference at fixed n.
+- Falsification: If CIs are not narrower for paired evaluation, revert to unpaired or investigate unshared variance sources.
+
+2) Sequential precision stopping
+- Design: Pre-register ε (e.g., 0.25 percentage points). Start with n0=5 paired seeds and add 5 at a time until the 95% CI half-width ≤ ε or Nmax=30.
+- Claim: The procedure achieves the target precision before hitting Nmax; report the attained n and CI.
+- Falsification: If CI half-width > ε at Nmax, declare the comparison underpowered at that budget and report this limitation.
+
+3) Variance-reduction ablation
+- Design: Choose a stabilization (e.g., gradient clipping or larger batch with same total updates). Measure σ (per-method) and σd (paired differences) across 10 seeds before vs after stabilization.
+- Claim: Stabilization reduces σ and/or σd without changing mean performance beyond a pre-set margin.
+- Falsification: If means change materially or variance does not drop, discard the stabilization.
+
+Practical thresholds
+- If σd ≈ 0.5 points and you care about δ=0.5 points, you’ll need roughly n ≈ ((1.96+0.84)*0.5/0.5)^2 ≈ 8 paired seeds. If σd ≈ 1.0, the same δ needs ≈ 31 seeds. Let the pilot σd, not a fixed “10,” drive n.
+- Always report mean ± 95% CI over seeds, use paired tests when applicable, and disclose total HPO and evaluation budgets per method [1][3].
+
+Literature anchors
+- Henderson et al., 2018 — Deep Reinforcement Learning that Matters (multi-seed evaluation, matched conditions, and variance concerns): https://arxiv.org/abs/1709.06560
+- Mosbach et al., 2021 — On the Stability of Fine-tuning BERT (high variance in fine-tuning; recommendations to stabilize training): https://arxiv.org/abs/2006.04884
+- Dodge et al., 2019 — Show Your Work (reporting of search budgets, seeds, and transparent methodology): https://aclanthology.org/D19-1224
+- Card et al., 2020 — With Little Power Comes Great Responsibility (power analysis for NLP comparisons): https://arxiv.org/abs/2010.06595
+
+Citations
+[1] Henderson et al. (2018). Deep Reinforcement Learning that Matters — https://arxiv.org/abs/1709.06560
+[2] Mosbach, Andriushchenko, Klakow (2021). On the Stability of Fine-tuning BERT — https://arxiv.org/abs/2006.04884
+[3] Dodge et al. (2019). Show Your Work: Improved Reporting of Experimental Results — https://aclanthology.org/D19-1224
+[4] Reimers, Gurevych (2017). Reporting Score Distributions Makes a Difference — https://www.researchgate.net/publication/322582509
+[5] Card, Henderson, et al. (2020). With Little Power Comes Great Responsibility — https://arxiv.org/abs/2010.06595
+
+Takeaway: If seed variance is large, 10 seeds may be insufficient. Size n by paired-difference variance using power/precision targets, adopt a sequential stopping rule, and reduce variance fairly where possible.
+
+[Turn 6] USER:
+If I hit my pre-registered CI width early, can I stop before the max seeds or does that look like p-hacking?
+
+[Turn 6] ASSISTANT:
+Short answer: Stopping early is fine if you pre-registered an appropriate sequential procedure. If you are using ordinary fixed‑n t‑intervals and “peek until the CI is narrow,” that is (anti‑conservative) optional stopping and will look like p‑hacking. Use anytime‑valid confidence sequences or a group‑sequential/alpha‑spending design, and report the full stopping rule and trajectory [1][2][3][4].
+
+What makes early stopping valid (and review‑proof)
+- Use anytime‑valid confidence sequences (CS): These give time‑uniform coverage under arbitrary, data‑dependent stopping. You can stop as soon as the CS half‑width ≤ ε and still maintain the nominal coverage guarantee [2][4]. This directly legitimizes a “stop when CI is narrow enough” rule.
+- Or use group‑sequential designs with alpha spending: Pre‑specify interim looks (e.g., every 5 seeds) and spending function/boundaries (Pocock/O’Brien‑Fleming). This preserves Type I error under interim monitoring; stop when boundaries are crossed or precision is met [3].
+- Paired‑seed evaluation: Use common random numbers so your target is the mean paired difference; CS and group‑sequential methods both extend to paired means and reduce variance, so you hit your precision target with fewer seeds [1][2][3].
+
+If you already pre‑registered a fixed‑n t‑interval but want to stop early
+- Don’t stop based on the fixed‑n CI; that inflates error rates under optional stopping [1]. Either (a) switch to an anytime‑valid CI and apply your pre‑registered precision rule to that interval, or (b) continue to the pre‑registered Nmax. If you switch, disclose the change and justify it with citations to anytime‑valid inference [2][4].
+
+How to report to avoid p‑hacking concerns
+- State the exact stopping rule (e.g., “paired‑mean CS half‑width ≤ 0.25pp or Nmax=30 seeds”), the schedule of looks, and the method (CS or alpha‑spending) [2][3][4].
+- Plot the trajectory of the mean difference and CS/GS bounds vs seeds; show at which look you stopped and the final interval.
+- Provide a sensitivity check: what the fixed‑n t‑interval would have been at the same n, clearly labeled as post‑hoc and not used for stopping [1].
+
+Three concrete, falsifiable checks you can run
+1) Optional‑stopping calibration via simulation
+- Design: Simulate two methods with no true difference; monitor a standard t‑interval with “stop when half‑width ≤ ε” and, separately, an anytime‑valid CS with the same rule.
+- Claim: The nominal 95% coverage is violated by the t‑interval with peeking but maintained by the CS procedure.
+- Falsification: If the CS fails to maintain nominal coverage under optional stopping, your CS implementation is incorrect or assumptions are violated [2][4].
+
+2) Group‑sequential alpha‑spending validation
+- Design: Predefine K interim looks (e.g., every 5 seeds) and a Pocock or O’Brien‑Fleming spending function. Simulate Type I error at δ=0 under your exact plan.
+- Claim: Empirical Type I error ≤ nominal (e.g., 5%) across simulations.
+- Falsification: If error > nominal, revise boundaries or reduce the number of looks [3].
+
+3) Real‑experiment replication at a larger n
+- Design: After stopping early with CS/GS at n*, continue collecting to n_rep > n* (budget permitting) without further peeking; compare the final fixed‑n estimate to the stopped estimate.
+- Claim: The replication estimate lies within the stopped CS at look n* and does not change the decision (e.g., superiority/equivalence) beyond a pre‑specified margin.
+- Falsification: If replication contradicts the stopped decision, revise conclusions or adopt a larger default N.
+
+Bottom line
+- Yes, you can stop early—but only with a sequentially valid procedure (confidence sequences or alpha spending) and transparent reporting. Otherwise, it will look like p‑hacking and may actually inflate your error rates [1][2][3][4].
+
+Citations
+[1] Johari, Pekelis, Walsh. Always Valid Inference: Continuous Monitoring of A/B Tests — https://arxiv.org/pdf/1512.04922
+[2] Howard, Ramdas, et al. Time-uniform, nonparametric, nonasymptotic confidence sequences — https://arxiv.org/pdf/1810.08240
+[3] Jennison, Turnbull (review). Group sequential methods for interim monitoring of randomized clinical trials — https://pmc.ncbi.nlm.nih.gov/articles/PMC9825950/
+[4] A Tutorial on Safe Anytime-Valid Inference — https://osf.io/h5vae_v2/download/?format=pdf
+
+[Turn 7] USER:
+Should I also pre-register the equivalence margin I’ll use if the early-stopped CI straddles zero, or is that decided after I see the data?
+
+[Turn 7] ASSISTANT:
+Short answer: Pre-register the equivalence margin (SESOI) and how you’ll use it. Do not choose the margin after seeing the effect estimate—doing so biases error rates and will look like p-hacking. You can use pilot runs to size your sample (seeds) and plan stopping, but the margin itself should be justified a priori.
+
+Practical guidance
+- Define and justify the SESOI (δ) up front
+  - Base δ on domain utility/tolerance (e.g., the smallest accuracy difference that changes deployment decisions), stakeholder requirements, or established conventions/benchmarks. Document the rationale in the preregistration.
+  - Specify a single primary δ. If you anticipate debate, pre-register a hierarchy (e.g., δprimary=0.5 pp; δsensitivity=0.25 and 0.75 pp) and how conclusions will be reported across them. Do not pick among them post hoc.
+- Pre-register the decision rule
+  - Example: “Using a paired-seed confidence sequence (95%), we will declare practical equivalence if the entire interval lies within [−δ, +δ]; declare non-inferiority if the interval lies above −δ; otherwise continue sampling up to Nmax or report ‘inconclusive’ at Nmax.”
+  - If you prefer TOST at interim looks, pre-register the group-sequential boundaries/alpha-spending plan for equivalence/non-inferiority.
+- What’s okay to use the pilot for
+  - Estimating variance to compute the number of seeds and to tune your sequential stopping rule. Not to set or tweak δ.
+- If your early-stopped CI straddles zero
+  - That’s fine for equivalence: the criterion is being fully inside [−δ, +δ], not excluding zero. If your interval is wider than δ, keep sampling per the pre-registered stopping rule; if you hit Nmax and still don’t fit within [−δ, +δ], report “inconclusive.”
+
+Three concrete, falsifiable checks to make your plan reviewer-proof
+1) Sequential error-control simulation
+- Design: Simulate paired-seed outcomes under true differences θ ∈ {0, ±0.5δ, ±1.5δ} with your exact sequential rule (CS or group-sequential TOST). Run ≥10,000 simulations.
+- Claim: At θ=0, the procedure’s Type I error for equivalence is ≤5%; at |θ|=1.5δ, power ≥80%.
+- Falsification: If thresholds are not met, revise Nmax or stopping boundaries before running real experiments.
+
+2) Margin-sensitivity analysis (pre-registered)
+- Design: Alongside δprimary, pre-specify δlo and δhi. Commit to reporting whether conclusions change across {δlo, δprimary, δhi}.
+- Claim: The equivalence/non-inferiority decision is stable across pre-registered margins.
+- Falsification: If decisions flip across margins, present results as margin-dependent and avoid a single definitive claim.
+
+3) External replication with the same δ
+- Design: After the main decision, evaluate on a disjoint dataset or benchmark suite using the same pre-registered δ and stopping rule.
+- Claim: The equivalence/non-inferiority conclusion replicates.
+- Falsification: If it does not, qualify the main claim as dataset-specific.
+
+Reporting checklist
+- State δ, its justification, the full stopping rule, interim look schedule, and Nmax.
+- Show the trajectory of the mean paired difference and the CS/GS bounds over seeds; mark the stopping point.
+- Include code or pseudocode for the decision rule and the simulation that verified error control.
+
+Literature anchors
+- Lakens (2017). Equivalence testing emphasizes that the SESOI must be specified and justified a priori; post hoc margins invalidate error guarantees. https://journals.sagepub.com/doi/10.1177/1948550617697177
+- FDA (2001, rev.). Statistical Approaches to Establishing Bioequivalence requires pre-specifying equivalence margins and decision rules; widely adopted beyond pharma. https://www.fda.gov/media/70958/download
+
+Sources
+- Lakens, D. (2017). Equivalence Tests: A Practical Primer for t Tests, Correlations, and Meta-Analyses — https://journals.sagepub.com/doi/10.1177/1948550617697177
+- U.S. FDA (2001). Statistical Approaches to Establishing Bioequivalence — https://www.fda.gov/media/70958/download
+
+Takeaway: Yes—pre-register the equivalence margin and decision rule. Use pilot data only for variance and sample-size planning, not for choosing δ. A sequential, pre-registered plan with a justified SESOI and verified error control will avoid p-hacking concerns.
+
+[Turn 8] USER:
+How do I justify δ to reviewers if no domain consensus exists yet?
+
+[Turn 8] ASSISTANT:
+Short answer: When no consensus exists, justify δ (your SESOI) by tying it to a decision or utility that matters, not to the observed effect. Pre-register one primary δ with a clear rationale (and optionally 1–2 sensitivity margins), show simulations that your sequential plan controls error at that δ, and report how conclusions change across the pre-registered margins. This is consistent with guidance for equivalence/non-inferiority and SESOI selection in statistics and regulatory practice.
+
+Ways to justify δ without domain consensus
+- Decision/utility anchored (preferred)
+  - Translate the model metric into impact (cost, risk, user outcomes). Pick δ so that any difference within [−δ, +δ] yields negligible change in that impact (e.g., <X% change in expected cost or regret). Document the mapping and threshold.
+  - Example: If a 0.5 pp accuracy change moves expected false-negative cost by <1% of baseline risk, set δ=0.5 pp and justify with that bound.
+- Stakeholder tolerance anchored
+  - Elicit tolerable performance deltas from domain stakeholders via structured surveys/paired-comparison tasks on real examples. Choose δ at or below the smallest difference most stakeholders consider actionably different.
+- Benchmark or release-stability anchored
+  - Use historical release-to-release fluctuations or cross-replication variability under the same pipeline. Choose δ smaller than the smallest change that historically led to a material decision (ship/no-ship), and larger than routine “noise” changes you ignore in practice.
+- Variance/precision anchored (secondary)
+  - Avoid setting δ from the observed mean; instead, relate δ to acceptable precision and interpretability. For instance, declare that changes smaller than half a standard deviation of human label noise or test–retest variability are practically negligible. This is a fallback when utility mapping is hard.
+- Regulatory analogies (as a template, not a number to copy)
+  - Explain that you adopt the same logic as bioequivalence (pre-specify a margin based on practical interchangeability), while deriving the numeric δ from your task’s utility/precision rather than copying 80–125% ratios.
+
+What to pre-register
+- A single primary δ with written justification (utility, stakeholder tolerance, or stability evidence).
+- A sensitivity set (e.g., δlo and δhi) and a rule for how you will report if conclusions differ across them.
+- A sequential inference plan (confidence sequences or group-sequential TOST) verifying Type I error and power at δ via simulation.
+
+Three concrete, falsifiable experiments to defend δ
+1) Utility calibration study
+- Design: Build a cost model that maps errors to impact (e.g., false-negative cost cFN, false-positive cost cFP). Evaluate both methods on a large, labeled set; simulate decision outcomes to estimate expected utility U(θ). Identify the δ such that max|U(method A)−U(method B)| within ±δ is ≤ predefined tolerance τ (e.g., 1% of baseline utility).
+- Hypothesis: With δ you chose, the worst-case utility gap ≤ τ.
+- Falsification: If the utility gap exceeds τ for differences ≤ δ, your δ is too wide; tighten δ and update the preregistration before running the main study.
+
+2) Stakeholder perceptual threshold
+- Design: Create paired outputs from two models with controlled performance gaps Δ on curated, representative cases. Ask domain experts/users to choose the better model blindly. Fit a psychometric curve of “A preferred” vs Δ to estimate the just-noticeable difference JND.
+- Hypothesis: Your δ ≤ JND (or a conservative fraction of it).
+- Falsification: If experts reliably detect differences smaller than δ, reduce δ or narrow the claim to contexts where the JND is larger.
+
+3) Sequential error-control simulation at the chosen δ
+- Design: Simulate paired-seed outcomes with variance matching your pilot. Run your exact early-stopping rule (confidence sequence or group-sequential TOST). Evaluate Type I error at true difference 0 and power at ±1.5δ.
+- Hypothesis: Type I error ≤ 5% and power ≥ 80% with your Nmax.
+- Falsification: If either criterion fails, revise Nmax or the stopping boundaries; document the revision.
+
+How to write the δ justification (template)
+- “We set δ = X units because a difference ≤ X yields ≤ Y% change in [utility metric], which stakeholders deem operationally negligible based on [survey/requirements]. Historical releases showed that changes < X did not alter deployment decisions. We verified via simulation that our sequential plan controls 5% Type I error and achieves ≥80% power at ±1.5δ.”
+
+Pitfalls to avoid
+- Don’t set δ after seeing the treatment effect; base it on utility/tolerance or stability evidence decided a priori.
+- Don’t pick δ from the CI width or pilot mean; pilots are for variance and sample-size planning, not for defining SESOI.
+- Avoid copying margins from other fields without mapping to your metric and decision context.
+
+Literature anchors
+- Lakens (2017) recommends specifying and justifying SESOI a priori and using equivalence tests/intervals to formalize practical equivalence.
+- CONSORT guidance for non-inferiority/equivalence (Piaggio et al., 2006) and FDA bioequivalence guidance require pre-specifying margins with clinical/practical justification; the same principles apply to ML comparisons when you claim interchangeability.
+
+Citations
+- Lakens, D. (2017). Equivalence Tests: A Practical Primer for t Tests, Correlations, and Meta-Analyses — https://journals.sagepub.com/doi/10.1177/1948550617697177
+- Piaggio, G., Elbourne, D. R., Pocock, S. J., Evans, S. J. W., & Altman, D. G. (2006). Reporting of Noninferiority and Equivalence Randomized Trials: An Extension of the CONSORT Statement — https://jamanetwork.com/journals/jama/fullarticle/203029
+- U.S. FDA (2001). Statistical Approaches to Establishing Bioequivalence — https://www.fda.gov/media/70958/download
+
+Takeaway: In the absence of consensus, justify δ by linking it to a pre-specified decision/utility threshold, triangulated with stakeholder tolerance and historical stability, and verify via simulation that your sequential plan achieves valid error control at that δ. Pre-register the choice and sensitivity margins so the logic is transparent and robust.

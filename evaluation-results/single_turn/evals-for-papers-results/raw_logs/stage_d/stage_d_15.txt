@@ -1,0 +1,93 @@
+Below is a concrete evaluation plan to replace the paper’s hand-designed hierarchy with an automatically learned hierarchy (e.g., clustering-derived segments) and compare stability and coverage to the paper’s approach. The plan aligns with the paper’s stated focus on rollout stability and efficiency in its Hypotheses and Evaluation section and uses the paper’s method as the baseline comparator [heirarchical-transformer.pdf:3, heirarchical-transformer.pdf:2].
+
+1) Setups to compare (fair, controlled)
+- Baseline: paper’s approach with hand-designed hierarchy, as implemented in its Method section [heirarchical-transformer.pdf:2].
+- Learned-structure variant: same backbone, training data, and compute budget, but replace the hierarchy with clusters over trajectory embeddings. Start with k-means/HAC/HDBSCAN on fixed-length trajectory embeddings from the same encoder as baseline. Select k via silhouette and gap statistic (or use a GMM with BIC for model selection).
+- Matching constraints for fairness:
+  - Keep the number of high-level nodes comparable (either match k to the baseline’s hierarchy depth/branching or evaluate both matched-k and best-k-by-validation).
+  - Same random seeds, optimizer, data augmentation, and rollout budgets.
+  - Integrate clusters as “segments/options” in the SHI control flow without changing non-hierarchical components [heirarchical-transformer.pdf:2].
+- Primary endpoints: rollout stability and coverage, in line with the paper’s stated aims [heirarchical-transformer.pdf:3]. Report computational efficiency secondarily if you already track it.
+
+2) Operational definitions and metrics
+- Stability (primary):
+  - Across-seed variability in performance: variance, interquartile range (IQR), and coefficient of variation (CV) of final return and area under the learning curve (AULC).
+  - Training instability events: fraction of runs with divergence/NaNs, early collapse, or catastrophic returns below a threshold for ≥M consecutive episodes (define threshold a priori).
+  - Robust aggregates (report median and interquartile mean, IQM) to reduce sensitivity to outliers.
+- Coverage (primary):
+  - State-space coverage: count of unique states (or discretized bins via VAE/encoder embedding) visited above a minimum visitation threshold, occupancy entropy H(π), and effective coverage exp(H).
+  - Goal/region coverage (if applicable): fraction of distinct goals/rooms/skills visited; evenness of coverage (Pielou’s evenness).
+  - Segment utilization: proportion of segments ever used, effective number of segments (exp of segment-usage entropy), and per-segment minimum visitation.
+  - Distributional similarity to baseline: two-sample tests on occupancy distributions (e.g., MMD/energy distance) to check if learned hierarchy changes where the agent spends time.
+- Optional segmentation quality:
+  - If ground-truth or proxy boundaries exist: Adjusted Rand Index (ARI)/NMI between discovered segments and ground-truth/proxy labels.
+  - Stability of discovered segments across seeds: ARI/NMI/Hungarian-matched cluster consistency.
+
+3) Statistical testing and uncertainty quantification
+- Design:
+  - Pre-register primary endpoints (stability CV and IQR of AULC; coverage exp(H) and unique-state count).
+  - Use N≈20 seeds per condition if feasible; perform a power analysis for a moderate effect (Hedges’ g≈0.5) to tune N.
+- Tests for central tendency:
+  - Compare AULC and final return across seeds with Welch’s t-test; report Hedges’ g and 95% bootstrap CIs. Also report Mann–Whitney U as a robustness check.
+- Tests for variance/stability:
+  - Levene’s or Brown–Forsythe test on across-seed variance of AULC/final return.
+  - Compare instability event rates with a two-proportion z-test or Fisher’s exact test (with mid-p correction if counts are small).
+- Tests for coverage:
+  - Unique-state counts/entropy/effective coverage: Welch’s t-test + Hedges’ g + bootstrap CIs.
+  - Occupancy distributions over state bins: MMD or energy-distance two-sample test with permutation p-values; report test statistic and p-value.
+  - Segment utilization: compare entropy/effective number via Welch’s t-test; compare “fraction of segments ever used” with a two-proportion test.
+- Multiple comparisons:
+  - Control FWER with Holm–Bonferroni or FDR with Benjamini–Hochberg across the family of pre-registered endpoints.
+- Reporting:
+  - For each metric, provide mean/median, 95% bootstrap CI, and an effect size (Hedges’ g or Cliff’s delta). Use robust summary statistics such as IQM where appropriate.
+
+4) Controls and ablations
+- K sensitivity: evaluate several k values (e.g., matched-to-baseline, k/2, 2k), or select k via validation; report coverage/stability curves versus k.
+- Clustering choices: k-means vs. HAC vs. HDBSCAN; show whether findings persist.
+- Encoder freeze vs. joint learning: isolate whether improvements arise from better representation learning vs. segmentation per se.
+- Compute parity: verify wall-clock and environment-steps parity. Although efficiency is secondary here, the paper emphasizes efficiency alongside stability [heirarchical-transformer.pdf:3].
+
+5) Three concrete, falsifiable experiments
+- Exp 1: Across-seed stability of performance
+  - Hypothesis: Learned clustering reduces across-seed variability in returns vs. hand-designed hierarchy (lower variance/IQR of AULC) [heirarchical-transformer.pdf:3].
+  - Variables: hierarchy type (hand-designed vs. learned clustering); seeds (n≥20).
+  - Metrics: AULC per seed; final return; instability event rate; IQM of returns.
+  - Tests: Welch’s t-test for AULC and final return; Hedges’ g; Levene’s/Brown–Forsythe for variance; two-proportion z-test for instability events. Holm–Bonferroni corrections.
+  - Expected outcome: If learned segments provide smoother high-level control, variance and instability event rate will be lower than baseline.
+- Exp 2: State-space and goal coverage
+  - Hypothesis: Learned clustering increases effective coverage exp(H) and unique-state count vs. baseline, without sacrificing performance [heirarchical-transformer.pdf:3].
+  - Variables: hierarchy type; evaluation episodes per seed (fixed budget).
+  - Metrics: unique visited states (or discretized embeddings), occupancy entropy H, effective coverage exp(H), fraction of goals/regions visited, segment utilization entropy.
+  - Tests: Welch’s t-test for coverage metrics; MMD/energy-distance two-sample tests on occupancy distributions; Holm–Bonferroni across endpoints.
+  - Expected outcome: Learned clustering yields higher exp(H) and broader region/goal coverage while maintaining comparable returns; occupancy distributions show wider support.
+- Exp 3: Segmentation stability and utilization
+  - Hypothesis: Learned clusters are at least as stable across seeds as the hand-designed hierarchy in terms of segment identity and utilization.
+  - Variables: seeds; clustering method; k.
+  - Metrics: ARI/NMI between seed-wise segments (aligned via Hungarian matching), fraction of segments ever used, effective number of segments used.
+  - Tests: Welch’s t-test on ARI/NMI and utilization metrics; bootstrap CIs; nonparametric Mann–Whitney as robustness. If you have ground-truth/proxy boundaries, also test ARI/NMI vs. ground truth.
+  - Expected outcome: Comparable or higher ARI/NMI across seeds; higher segment utilization entropy indicates broader option use.
+- Exp 4 (optional, if efficiency is tracked): Rollout stability vs. compute
+  - Hypothesis: For a fixed compute/step budget, learned clustering achieves equal-or-better rollout stability (lower instability event rate) than baseline [heirarchical-transformer.pdf:3].
+  - Variables: hierarchy type; fixed wall-clock or environment steps; seeds.
+  - Metrics: instability event rate; AULC; time-to-threshold performance.
+  - Tests: two-proportion z-test for instability; Welch’s t-test for AULC/time-to-threshold; report effect sizes and CIs.
+  - Expected outcome: Lower instability event rate at parity compute.
+
+6) Practical analysis checklist
+- Pre-register endpoints and tests; set random seeds and log software/hardware versions.
+- Use 10k+ bootstrap resamples for CIs; publish all runs, not cherry-picked best.
+- Visualize with median/IQM and shaded 95% CIs; include violin plots for across-seed distributions.
+- Release code to reproduce clustering, k selection, and alignment procedures.
+
+Notes on grounding to the paper
+- The paper’s Hypotheses and Evaluation emphasize improving rollout stability and computational efficiency; your primary endpoints and Experiment 1/4 directly test those claims [heirarchical-transformer.pdf:3].
+- Use the paper’s Method as the baseline for hierarchy design and integration to ensure an apples-to-apples comparison [heirarchical-transformer.pdf:2].
+
+Citations
+- [1] Agarwal, R., Machado, M. C., Castro, P. S., & Bellemare, M. G. (2021). Deep Reinforcement Learning at the Edge of the Statistical Precipice — https://arxiv.org/abs/2108.13264
+- [2] Machado, M. C., Rosenbaum, C., Guo, X., Liu, M. Y., Tesauro, G., & Campbell, M. (2017). A Laplacian Framework for Option Discovery in Reinforcement Learning — https://arxiv.org/abs/1703.00956
+
+Sources
+- Paper attachment: Hypotheses and Evaluation emphasize stability and efficiency; Method defines the baseline approach [heirarchical-transformer.pdf:3, heirarchical-transformer.pdf:2].
+- Reliable evaluation practices in deep RL, including distributional summaries (median/IQM), bootstrap CIs, and multiple seeds: Agarwal et al., 2021 (RLiable).
+- Learned structure for hierarchical control and coverage via option discovery: Machado et al., 2017.

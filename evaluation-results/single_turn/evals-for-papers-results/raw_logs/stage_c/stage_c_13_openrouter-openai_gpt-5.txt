@@ -1,0 +1,134 @@
+1. Problem framing and goals
+- Objective: Produce a compute-lean, reproducible benchmark to evaluate fairness-aware recommendation methods for small e-commerce stores in emerging markets, focusing on provider-side exposure fairness (ensuring small/long-tail sellers receive exposure proportional to merit) while maintaining user utility. We emphasize multi-stakeholder fairness (users and item providers), exposure-aware re-ranking, and robust off-policy evaluation to avoid biased conclusions from click logs [1][5][8].
+- Why exposure fairness: Ranked lists confer position-dependent attention; methods that explicitly control exposure relative to estimated item merit reduce unfair concentration on popular providers/items [1]. Multi-stakeholder formulations allow trading off user utility and provider exposure in a principled way [5].
+- Known confounders: Popularity bias systematically suppresses long-tail items and small sellers; calibration and debiasing can mitigate this without collapsing utility [3][9]. Offline evaluation from logs is biased by position and selection effects; counterfactual/propensity-based evaluation is needed [6][7].
+- Success criteria (6 months)
+  - Provider fairness: ≥25% reduction in exposure disparity (e.g., between small vs. large sellers) at k∈{5,10} with ≤3% relative drop in NDCG/CTR proxy on public datasets and one small-store pilot log [1][5][9].
+  - User calibration/diversity: ≤20% reduction in category calibration error (JSD between user interest and recommended distribution) and ≥15% long-tail coverage lift [3][9].
+  - Evaluation rigor: IPS/DR off-policy estimates stable (±5% of online or semi-randomized baselines) and pass sanity checks for position bias and evidence necessity [6][7].
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+Experiment 1: Exposure-fair re-ranking vs. standard ranking
+- Hypothesis: Exposure-aware re-ranking reduces provider exposure disparity with minimal utility loss [1][5].
+- Setup:
+  - Data: Public clickstream datasets (YOOCHOOSE RecSys’15; RetailRocket) and a small-store anonymized log (if available) [10][11].
+  - Base models: Matrix factorization/LightFM or simple neural CF; generate top-50 candidates per user.
+  - Methods: (a) Standard utility-only ranking (NDCG), (b) Fairness of Exposure (FoE) re-ranking that enforces exposure proportional to merit (relevance) [1], (c) Joint Multisided Exposure fairness (JME) re-ranking balancing user utility and provider exposure [5].
+  - Provider groups: Small vs. large sellers (by inventory/traffic), new vs. established sellers, local vs. non-local (if available).
+- Baselines: Popularity ranker; random within candidates; diversity-only MMR.
+- Metrics:
+  - Utility: NDCG@k, Recall@k, CTR proxy.
+  - Provider fairness: Exposure share vs. merit share ratios per group; exposure Gini; minimum-exposure guarantee; seller coverage@k [1][5].
+  - Diversity/calibration: Intra-list diversity; category calibration error (JSD) [3].
+- Expected outcomes: FoE/JME cut exposure disparity (ΔGini ≥0.05–0.10) with ≤3% NDCG drop; JME provides better user-utility retention at similar fairness than FoE [1][5].
+
+Experiment 2: Popularity-bias mitigation and calibrated recommendations
+- Hypothesis: Popularity-bias mitigation plus calibration reduces over-recommendation of head items and aligns recommendations to users’ interest distributions, improving long-tail/provider outcomes [3][9].
+- Setup:
+  - Methods: (a) Popularity-regularized training or de-popularized sampling, (b) Post-hoc calibrated recommendations using Steck’s method to match user-level interest proportions [3].
+  - Combine with re-ranking from Exp. 1 (ablation: calibration before vs. after fairness re-ranking).
+- Baselines: Uncalibrated, utility-only ranking.
+- Metrics: Category-level calibration error (JSD), long-tail hit rate/coverage, provider exposure disparity, utility (NDCG).
+- Expected outcomes: ≥15% long-tail coverage lift and ≤20% reduction in calibration error with small utility loss; combining calibration with fairness re-ranking improves both calibration and exposure fairness vs. either alone [3][9].
+
+Experiment 3: Off-policy evaluation (OPE) with propensity correction
+- Hypothesis: IPS/Doubly Robust (DR) estimators correct position/selection bias in logs, enabling reliable offline comparisons of fairness methods [6][7].
+- Setup:
+  - Logged data: Historical impressions with positions and clicks; estimate propensities via click models or small interleaved/randomized buckets (e.g., 5% traffic) when possible [6].
+  - Policies to evaluate: Baselines and fairness methods from Exps. 1–2.
+  - Estimators: IPS, self-normalized IPS, DR; variance reduction via clipping/smoothing.
+- Baselines: Naive offline metrics (uncorrected CTR/NDCG).
+- Metrics: Policy value (CTR/utility) with CIs; OPE–online delta on a small randomized subset; sensitivity to propensity misspecification [6][7].
+- Expected outcomes: OPE aligns with randomized or semi-online estimates within ±5–10%; naive metrics show inflated utility for popularity-biased policies, validating need for OPE [6][7].
+
+Experiment 4: Cross-objective multi-stakeholder fairness (users and providers)
+- Hypothesis: JME-style constraints achieve provider fairness while preserving user-side fairness (e.g., not over-exposing unwanted categories), outperforming provider-only constraints [5].
+- Setup:
+  - Add user-side fairness terms: per-user calibration bounds and min-quality constraints; run grid of trade-off weights.
+- Baselines: Provider-only FoE; calibration-only.
+- Metrics: Provider exposure disparity; per-user calibration error; per-user utility floors (NDCG@k ≥ threshold); Pareto frontier analysis [3][5].
+- Expected outcomes: Operating points exist with simultaneous improvement in provider fairness and user calibration at ≤3% utility cost [5].
+
+Experiment 5: Cold-start fairness and exploration
+- Hypothesis: Constrained exploration (e.g., exposure amortization or minimum exposure quotas) improves small/new-seller exposure without unacceptable utility loss, especially when combined with calibration [2][5][9].
+- Setup:
+  - Policies: ε-greedy or Thompson sampling with per-provider minimum exposure constraints over rolling windows; offline replay with OPE.
+- Baselines: No exploration; uniform exploration.
+- Metrics: New-item/provider exposure uplift; time-to-first-click; utility and abandonment proxies.
+- Expected outcomes: ≥20% uplift in new-provider exposure with controlled utility cost; constrained exploration dominates uniform [2][5][9].
+
+Experiment 6: Sanity checks and robustness
+- Hypotheses/checks:
+  - Position-bias sanity: Shuffling positions in logs should change naive metrics but not IPS/DR estimates materially [6][7].
+  - Evidence necessity: Removing top-exposed items for a provider group should increase exposure disparity more than removing random items (exposure necessity).
+  - Label/control swaps: Swapping provider group labels changes fairness metrics but not relevance metrics; calibration invariance under category relabeling.
+- Setup: Automated perturbations on held-out slices; recompute metrics.
+- Expected outcomes: IPS/DR robust to position shuffles; fairness metrics respond to label swaps as expected; exposure necessity holds, indicating metric sensitivity.
+
+3. Timeline for the next 6 months with milestones
+- Month 1: Data, metrics, and governance setup
+  - Ingest YOOCHOOSE/RetailRocket; define provider groups; implement exposure fairness metrics, calibration error, and diversity; preregister evaluation protocol and OPE plan [10][11][1][3][6].
+  - Milestones: Reproducible pipeline v0.1; baseline utility/diversity and exposure metrics.
+- Month 2: Baselines and OPE infrastructure
+  - Train base recommenders; implement BM25/popularity and MF/LightFM; implement IPS/DR estimators with propensity models [6][7].
+  - Milestones: OPE sanity on synthetic/randomized buckets; baseline policy values with CIs.
+- Month 3: Fairness re-ranking and calibration
+  - Integrate FoE and JME re-ranking; add Steck calibration; run Exp. 1–2 on public datasets; ablation grid over trade-off weights [1][3][5].
+  - Milestones: Fairness–utility Pareto curves; calibration improvements report.
+- Month 4: Multi-stakeholder trade-offs and cold-start
+  - Run Exp. 4 and Exp. 5; evaluate constrained exploration offline with OPE [5][9].
+  - Milestones: Recommended operating points and exposure quotas; cold-start uplift analysis.
+- Month 5: Robustness and (if feasible) small online pilot
+  - Execute Exp. 6; if a partner store is available, run a 1–2 week low-risk online bucket (≤5% traffic) to validate OPE; otherwise, strengthen semi-randomized offline validation [6][7].
+  - Milestones: Sanity-check pass report; OPE–online alignment brief (if online).
+- Month 6: Consolidation and guidance
+  - Finalize benchmark, code, and guidelines for small stores (deployable configs with CPU-only option); publish model/metric cards and a practical checklist.
+  - Milestones: Public repo and preprint; governance/risk register; deployment playbook for small stores.
+
+4. Resources (compute, tools, datasets)
+- Compute
+  - CPU-first pipeline; single modest GPU (optional) for neural CF; 100–200 GB storage for datasets/artifacts.
+- Tools
+  - Recommenders: LightFM/implicit; RecBole or PyTorch Lightning for neural CF.
+  - Re-ranking: Custom FoE/JME implementations; linear/quadratic programming solvers for exposure constraints [1][5].
+  - Evaluation: PyTerrier/trec_eval for ranking metrics; OPE utilities (IPS/DR) per unbiased LTR tutorials [6][7].
+  - Calibration/diversity: Steck calibration; diversity and JSD metrics [3].
+- Datasets
+  - YOOCHOOSE (RecSys 2015) and RetailRocket clickstream datasets [10][11].
+  - Optional: Partner small-store anonymized logs (with DP/no PII) for external validity (limitation: public datasets may not reflect emerging-market catalog skew; we will report this and adjust thresholds).
+
+5. Risks and mitigations table
+- Public datasets not representative of emerging markets
+  - Mitigation: Complement with a small anonymized partner dataset; stress-test on synthetic long-tail skews; report sensitivity (limitation acknowledged).
+- Propensity estimation errors in OPE
+  - Mitigation: Use SNIPS/DR with clipping; incorporate small randomized buckets to validate estimators; report variance and CIs [6][7].
+- Conflicting fairness objectives (users vs providers)
+  - Mitigation: Multi-objective analysis (Pareto frontier); set minimum user-utility floors and provider-exposure floors; stakeholder review [5].
+- Calibration harms utility on sparse users
+  - Mitigation: Per-user smoothing; back-off to population-level calibration; selective calibration only for overrepresented categories [3].
+- Cold-start exploration degrades short-term CTR
+  - Mitigation: Constrained/minimum exposure quotas with caps; time-window amortization; monitor abandonment proxies [2][5][9].
+- Compute constraints at small stores
+  - Mitigation: Favor linear-time re-ranking; CPU-friendly models; precompute candidate pools.
+
+6. Stretch ideas or follow-up directions
+- Causal bandits for fair exploration with exposure constraints and off-policy safety guards.
+- Community-level fairness: Ensure regional/local sellers receive fair exposure; evaluate by geography segments.
+- Dynamic fairness controllers: Feedback loop that adapts exposure targets based on observed merit and drift.
+- Auditing toolkit: Automated fairness dashboards with alerts when exposure disparity crosses thresholds; intervention playbooks.
+
+Citations
+[1] Fairness of Exposure in Rankings — https://arxiv.org/abs/1802.07281  
+[2] Effective Exposure Amortizing for Fair Top-k Recommendation — https://openreview.net/pdf?id=PRmT6HJjnyb  
+[3] Calibrated Recommendations (KDD 2018) — https://dl.acm.org/doi/pdf/10.1145/3240323.3240372  
+[4] Fairness and Diversity in Recommender Systems: A Survey — https://dl.acm.org/doi/10.1145/3664928  
+[5] Joint Multisided Exposure Fairness for Recommendation (SIGIR 2022) — https://www.microsoft.com/en-us/research/wp-content/uploads/2022/04/sigir2022-jme-fairness.pdf  
+[6] Unbiased Learning to Rank: Counterfactual and Online Approaches (tutorial handout) — https://ilps.github.io/webconf2020-tutorial-unbiased-ltr/WWW2020handout.pdf  
+[7] Counterfactual Evaluation and Learning for Interactive Systems (KDD 2022 tutorial) — https://counterfactual-ml.github.io/kdd2022-tutorial/  
+[8] Multistakeholder Recommendation (tutorial) — https://acmrecsys.github.io/rsss2019/burke_multistakeholder1.pdf  
+[9] Popularity Bias in Recommender Systems: The Search for Fairness in the Long Tail — https://www.mdpi.com/2078-2489/16/2/151  
+[10] RecSys Challenge 2015 and the YOOCHOOSE Dataset — https://dl.acm.org/doi/10.1145/2792838.2798723  
+[11] RetailRocket Recommender System Dataset (Kaggle) — https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset
+
+Optional next step
+- Approve Months 1–2 to stand up datasets, exposure/fairness metrics, and OPE infrastructure; we will return with baseline fairness–utility trade-offs and an initial recommendation for re-ranking + calibration settings to pilot.

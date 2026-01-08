@@ -1,0 +1,528 @@
+Based on the retrieved evidence on multilingual fact-checking benchmarks [1,2,3,4,5], efficient LLM inference [6,7], and evaluation protocols [8,9,10], I can now construct a comprehensive GPU-constrained research execution plan.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Core Problem:**  
+Multilingual fact-checking is critical for combating global misinformation, yet most research focuses on English-only systems. Open-weight LLMs (Llama-3, Mistral, Qwen, Gemma) offer promise for democratizing fact-checking across languages, but their multilingual capabilities remain under-evaluated. Key challenges include:
+
+- **Benchmark fragmentation:** Existing datasets (X-FACT [1], Poly-FEVER [4], XFEVER [8]) cover different languages, tasks, and evaluation protocols
+- **Resource constraints:** State-of-the-art LLMs (70B+ parameters) require 140+ GB VRAM, infeasible for limited GPU access
+- **Language imbalance:** Most benchmarks favor high-resource languages (English, Spanish, French); low-resource languages (Swahili, Bengali, Hausa) underrepresented [5,10]
+- **Task diversity:** Fact-checking spans claim verification, evidence retrieval, stance detection, and explanation generation [1,3,9]
+- **Evaluation gaps:** No standardized protocol for comparing open-weight LLMs across multilingual fact-checking tasks
+
+**Key Gaps from Literature:**
+- Limited systematic comparison of open-weight LLMs (7B–13B) on multilingual fact-checking [1,2]
+- Unclear how quantization (4-bit, 8-bit) affects multilingual performance [6,7]
+- Sparse evaluation on low-resource languages and cross-lingual transfer [5,10]
+- No unified benchmark suite combining claim verification, retrieval, and explanation [3,9]
+
+**Primary Goals (6-month, GPU-constrained scope):**
+1. **Benchmark 6–8 open-weight LLMs** (7B–13B) on multilingual fact-checking across 10+ languages
+2. **Evaluate efficiency-accuracy tradeoffs** for quantization (4-bit, 8-bit) and parameter-efficient fine-tuning (LoRA)
+3. **Create unified evaluation protocol** combining 3–4 existing benchmarks (X-FACT, Poly-FEVER, XFEVER)
+4. **Assess cross-lingual transfer** (train on high-resource, test on low-resource languages)
+5. **Release reproducible benchmark suite** with code, results, and efficiency metrics
+
+**Scientific Contributions:**
+- First systematic comparison of open-weight LLMs on multilingual fact-checking under GPU constraints
+- Empirical analysis of quantization impact on multilingual performance
+- Unified benchmark protocol for reproducible evaluation
+- Insights on cross-lingual transfer and low-resource language performance
+- Open-source toolkit for efficient multilingual fact-checking evaluation
+
+**Constraints (GPU-Limited):**
+- **Compute budget:** Single GPU (24 GB VRAM, e.g., RTX 4090, A5000) or 2× GPUs (16 GB each)
+- **Model size:** Focus on 7B–13B models (quantized to fit in 24 GB)
+- **Inference only:** No large-scale fine-tuning (use LoRA for adaptation if needed)
+- **Batch size:** Limited to 1–4 samples per batch
+- **Time horizon:** 6 months total
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Multilingual Claim Verification**
+
+**Hypothesis:**  
+Open-weight LLMs (Llama-3-8B, Mistral-7B, Qwen-2.5-7B) will achieve 60–75% accuracy on multilingual claim verification (vs. 80–85% for GPT-4), with performance degrading 10–20% on low-resource languages compared to English.
+
+**Setup:**
+- **Models (6–8 total):**
+  - *Llama family:* Llama-3.1-8B-Instruct, Llama-3.2-3B-Instruct
+  - *Mistral family:* Mistral-7B-Instruct-v0.3, Mixtral-8x7B-Instruct (if fits with quantization)
+  - *Qwen family:* Qwen-2.5-7B-Instruct, Qwen-2.5-14B-Instruct (4-bit)
+  - *Gemma family:* Gemma-2-9B-it
+  - *Multilingual specialists:* Aya-23-8B (Cohere), BLOOM-7B1
+- **Benchmarks (3 datasets):**
+  - X-FACT [1]: 31K claims, 25 languages, 3-way classification (supported, refuted, not enough info)
+  - Poly-FEVER [4]: 10K claims, 10 languages, binary + evidence retrieval
+  - XFEVER [8]: 20K claims, 7 languages, 3-way classification
+- **Languages (10+ total):**
+  - *High-resource:* English, Spanish, French, German, Chinese, Arabic
+  - *Mid-resource:* Portuguese, Turkish, Indonesian, Vietnamese
+  - *Low-resource:* Swahili, Bengali, Hausa, Yoruba (if available in benchmarks)
+- **Prompting strategy:**
+  - Zero-shot: "Classify the following claim as supported, refuted, or not enough info: {claim}"
+  - Few-shot: 3–5 examples per language (if available)
+  - Chain-of-thought: "Explain your reasoning before classifying"
+- **Quantization:** 4-bit (GPTQ, AWQ), 8-bit (bitsandbytes)
+
+**Baselines:**
+- Random guessing (33% for 3-way, 50% for binary)
+- Majority class (dataset-specific)
+- mBERT, XLM-R (encoder-only baselines, if reproducible)
+- GPT-4, Claude-3.5 (proprietary upper bounds, API-based, limited budget)
+
+**Evaluation Metrics:**
+- **Accuracy:** Overall, per-language, per-class
+- **Macro F1:** Handle class imbalance
+- **Precision, Recall:** Per-class (supported, refuted, NEI)
+- **Cross-lingual transfer:** Train on English, test on other languages (if fine-tuning)
+- **Efficiency:**
+  - Inference time (seconds per claim)
+  - Memory usage (GB VRAM)
+  - Throughput (claims per hour)
+
+**Expected Outcomes:**
+- Llama-3.1-8B achieves 65–70% accuracy on X-FACT (vs. 80% GPT-4)
+- Qwen-2.5-7B best for Chinese, Arabic (70–75%)
+- Aya-23-8B best for low-resource languages (60–65% vs. 50–55% for others)
+- 4-bit quantization: 2–5% accuracy drop, 50% memory reduction
+- Performance gap: English 70%, high-resource 60–65%, low-resource 50–60%
+
+---
+
+### **Experiment 2: Evidence Retrieval and Stance Detection**
+
+**Hypothesis:**  
+LLMs will struggle with evidence retrieval (recall <50%) but perform better on stance detection given gold evidence (accuracy 70–80%), revealing a bottleneck in information retrieval rather than reasoning.
+
+**Setup:**
+- **Tasks (2 subtasks):**
+  - *Evidence retrieval:* Given claim, retrieve relevant sentences from Wikipedia/knowledge base
+  - *Stance detection:* Given claim + evidence, classify stance (supports, refutes, neutral)
+- **Benchmarks:**
+  - Poly-FEVER [4]: Includes evidence annotations
+  - XFEVER [8]: Evidence retrieval component
+  - Multilingual Previously Fact-Checked Claim Retrieval [3]: 28K claims, 27 languages
+- **Retrieval methods:**
+  - *Dense retrieval:* Use LLM embeddings (Llama-3 embeddings, sentence-transformers)
+  - *Reranking:* LLM scores candidate evidence passages
+  - *Generative retrieval:* LLM generates evidence queries, retrieve with BM25
+- **Stance detection:**
+  - Zero-shot: "Does the evidence support, refute, or neither for the claim?"
+  - Few-shot: 3 examples per language
+  - Chain-of-thought: "Explain how the evidence relates to the claim"
+
+**Baselines:**
+- BM25 (keyword retrieval)
+- Dense retrieval (mBERT, XLM-R embeddings)
+- Oracle evidence (gold evidence provided, upper bound for stance detection)
+
+**Evaluation Metrics:**
+- **Retrieval:**
+  - Recall@5, Recall@10 (fraction of gold evidence retrieved)
+  - Precision@5 (fraction of retrieved evidence that's relevant)
+  - Mean Reciprocal Rank (MRR)
+- **Stance detection:**
+  - Accuracy, Macro F1 (given gold evidence)
+  - End-to-end accuracy (retrieval + stance)
+- **Efficiency:**
+  - Retrieval time (seconds per claim)
+  - Total pipeline time (retrieval + stance)
+
+**Expected Outcomes:**
+- Evidence retrieval: Recall@5 30–50% (vs. 60–70% for specialized retrievers)
+- Stance detection (gold evidence): 70–80% accuracy
+- End-to-end accuracy: 40–55% (bottleneck is retrieval)
+- Identify gap: LLMs reason well but struggle to find relevant evidence
+- Recommend hybrid approach: Specialized retriever + LLM stance detection
+
+---
+
+### **Experiment 3: Quantization and Efficiency Analysis**
+
+**Hypothesis:**  
+4-bit quantization (GPTQ, AWQ) will reduce memory by 50–60% and increase throughput by 2–3× with <5% accuracy degradation, enabling deployment on single 24 GB GPU.
+
+**Setup:**
+- **Quantization methods:**
+  - *4-bit:* GPTQ (gradient-based), AWQ (activation-aware), GGUF (llama.cpp)
+  - *8-bit:* bitsandbytes (LLM.int8())
+  - *Mixed precision:* FP16 for critical layers, INT4 for others
+- **Models:** Llama-3.1-8B, Qwen-2.5-7B, Gemma-2-9B (representative sample)
+- **Evaluation:**
+  - Run Experiment 1 (claim verification) with each quantization method
+  - Measure accuracy, memory, throughput
+  - Compare to full-precision (FP16) baseline
+- **Calibration datasets:**
+  - Use X-FACT training set for calibration (if needed for GPTQ/AWQ)
+  - Multilingual calibration (mix of languages)
+
+**Baselines:**
+- Full-precision (FP16, BF16)
+- No quantization (requires 2× GPUs or offloading)
+
+**Evaluation Metrics:**
+- **Accuracy degradation:** % drop vs. full-precision
+- **Memory usage:** Peak VRAM (GB)
+- **Throughput:** Claims per second, claims per hour
+- **Latency:** Seconds per claim (batch size 1)
+- **Compression ratio:** Model size reduction (GB)
+
+**Expected Outcomes:**
+- 4-bit GPTQ: 3–5% accuracy drop, 55–60% memory reduction, 2–3× throughput
+- 4-bit AWQ: 2–4% accuracy drop (better than GPTQ), similar memory/speed
+- 8-bit: 1–2% accuracy drop, 40–45% memory reduction, 1.5–2× throughput
+- Llama-3.1-8B (4-bit): Fits in 6–8 GB VRAM (vs. 16 GB FP16)
+- Recommend: 4-bit AWQ for production, 8-bit for research (better accuracy)
+
+---
+
+### **Experiment 4: Cross-Lingual Transfer and Low-Resource Languages**
+
+**Hypothesis:**  
+Models fine-tuned on English fact-checking data will transfer to high-resource languages (70–80% of English performance) but poorly to low-resource languages (50–60%), revealing need for multilingual training data.
+
+**Setup:**
+- **Transfer scenarios:**
+  - *Zero-shot:* Train on English, test on all languages (no target-language data)
+  - *Few-shot:* Train on English + 10–50 examples per target language
+  - *Multilingual:* Train on mix of high-resource languages, test on low-resource
+- **Fine-tuning method:**
+  - LoRA (rank 8–16, targets query/value projections) [7]
+  - QLoRA (4-bit base model + LoRA adapters) [6]
+  - Train on X-FACT English subset (5K–10K claims)
+- **Target languages:**
+  - *High-resource:* Spanish, French, German, Chinese
+  - *Low-resource:* Swahili, Bengali, Hausa (if available)
+- **Evaluation:**
+  - Test on X-FACT, Poly-FEVER test sets
+  - Measure transfer gap (target language accuracy / English accuracy)
+
+**Baselines:**
+- Zero-shot (no fine-tuning)
+- Monolingual fine-tuning (train and test on same language, oracle)
+
+**Evaluation Metrics:**
+- **Transfer accuracy:** Accuracy on target language
+- **Transfer ratio:** Target accuracy / English accuracy (0–1)
+- **Few-shot improvement:** Gain from 10, 50 examples
+- **Training efficiency:**
+  - LoRA training time (GPU-hours)
+  - Memory overhead (GB)
+
+**Expected Outcomes:**
+- Zero-shot transfer: High-resource 70–80% of English, low-resource 50–60%
+- Few-shot (50 examples): +5–10% for high-resource, +10–15% for low-resource
+- Multilingual training: Improves low-resource by 10–20% vs. English-only
+- QLoRA enables fine-tuning on single 24 GB GPU (vs. 80 GB for full fine-tuning)
+- Identify languages with poor transfer: Recommend targeted data collection
+
+---
+
+### **Experiment 5: Explanation Generation and Interpretability**
+
+**Hypothesis:**  
+LLMs can generate plausible explanations for fact-checking decisions (BLEU 0.20–0.30 vs. human references), but explanations often lack factual grounding or cite non-existent evidence.
+
+**Setup:**
+- **Task:** Generate natural language explanation for claim verification decision
+- **Prompting:**
+  - "Classify the claim and explain your reasoning: {claim}"
+  - "Provide evidence and reasoning for your classification"
+- **Benchmarks:**
+  - X-FACT (if explanations available)
+  - Poly-FEVER (evidence annotations as proxy for explanations)
+  - Manual annotation: 100–200 claims per language (sample)
+- **Evaluation:**
+  - Automatic metrics: BLEU, ROUGE, BERTScore (vs. human references)
+  - Human evaluation: 3 annotators rate 100 explanations per model
+    - Factual accuracy (0–5 scale)
+    - Relevance (0–5 scale)
+    - Fluency (0–5 scale)
+  - Faithfulness: Do explanations cite evidence actually used by model?
+
+**Baselines:**
+- Template-based explanations ("The claim is supported because...")
+- Extractive explanations (copy evidence sentences)
+
+**Evaluation Metrics:**
+- **Automatic:** BLEU, ROUGE-L, BERTScore
+- **Human evaluation:** Inter-annotator agreement (Krippendorff's α), mean ratings
+- **Faithfulness:** Overlap between cited evidence and model attention (if accessible)
+- **Hallucination rate:** % of explanations citing non-existent evidence
+
+**Expected Outcomes:**
+- BLEU 0.20–0.30, BERTScore 0.60–0.70 (moderate quality)
+- Human ratings: Factual accuracy 3.5–4.0/5, relevance 3.8–4.2/5, fluency 4.0–4.5/5
+- Hallucination rate: 20–40% (LLMs cite plausible but incorrect evidence)
+- Identify gap: Explanations sound convincing but lack grounding
+- Recommend: Constrain explanations to retrieved evidence (RAG-style)
+
+---
+
+### **Experiment 6: Sanity Checks and Failure Analysis**
+
+**Hypothesis:**  
+LLMs will exhibit systematic failures: (1) bias toward "supported" class, (2) sensitivity to claim phrasing, (3) poor performance on numerical/temporal claims, (4) inconsistency across languages for same claim.
+
+**Setup:**
+- **Sanity checks (5 types):**
+  - *Class distribution:* Do models predict majority class too often?
+  - *Paraphrase robustness:* Same claim, different phrasing (manual paraphrases)
+  - *Negation sensitivity:* "X is true" vs. "X is not true"
+  - *Numerical reasoning:* Claims with numbers, dates, quantities
+  - *Cross-lingual consistency:* Same claim translated to multiple languages
+- **Adversarial examples:**
+  - Swap entity names (e.g., "Biden" → "Trump")
+  - Add irrelevant context
+  - Introduce subtle contradictions
+- **Failure mode analysis:**
+  - Manually inspect 100 errors per model
+  - Categorize: Retrieval failure, reasoning error, language-specific issue, etc.
+
+**Baselines:**
+- Random predictions (expected class distribution)
+- Human performance (if available from benchmarks)
+
+**Evaluation Metrics:**
+- **Class bias:** Predicted class distribution vs. true distribution (KL divergence)
+- **Paraphrase consistency:** Agreement between original and paraphrased claims
+- **Negation accuracy:** Correct handling of negated claims
+- **Numerical accuracy:** Accuracy on claims with numbers/dates
+- **Cross-lingual consistency:** Agreement across languages for same claim
+- **Failure mode distribution:** % of errors per category
+
+**Expected Outcomes:**
+- Class bias: 10–20% over-prediction of "supported" (optimism bias)
+- Paraphrase consistency: 80–90% agreement (some sensitivity to phrasing)
+- Negation accuracy: 60–70% (common failure mode)
+- Numerical accuracy: 50–60% (struggle with arithmetic, temporal reasoning)
+- Cross-lingual consistency: 70–80% (translation artifacts cause inconsistencies)
+- Failure modes: 40% retrieval, 30% reasoning, 20% language-specific, 10% other
+
+---
+
+## 3. Timeline for the Next 6 Months with Milestones
+
+| **Month** | **Milestone** | **Deliverables** |
+|-----------|---------------|------------------|
+| **Month 1** | Infrastructure + Data Preparation | - Set up compute environment (single 24 GB GPU, quantization libraries)<br>- Download benchmarks (X-FACT, Poly-FEVER, XFEVER)<br>- Implement evaluation pipeline (prompting, metrics)<br>- Quantize 6–8 models (4-bit, 8-bit)<br>- **Deliverable:** Quantized models, evaluation scripts, data preprocessing |
+| **Month 2** | Experiment 1 & 3 (Baselines + Quantization) | - Run baseline claim verification (6–8 models, 3 benchmarks)<br>- Evaluate quantization impact (accuracy, memory, throughput)<br>- Analyze per-language performance<br>- **Deliverable:** Baseline results table, quantization analysis, preliminary findings |
+| **Month 3** | Experiment 2 & 4 (Retrieval + Transfer) | - Implement evidence retrieval pipeline<br>- Evaluate stance detection (gold evidence vs. retrieved)<br>- Fine-tune with LoRA/QLoRA on English data<br>- Test cross-lingual transfer (high-resource, low-resource)<br>- **Deliverable:** Retrieval results, transfer learning analysis, LoRA checkpoints |
+| **Month 4** | Experiment 5 & 6 (Explanations + Sanity Checks) | - Generate explanations for 100–200 claims per language<br>- Conduct human evaluation (recruit 3 annotators)<br>- Run sanity checks (paraphrases, negations, numerical claims)<br>- Failure mode analysis (manual inspection of 100 errors per model)<br>- **Deliverable:** Explanation quality report, sanity check results, failure taxonomy |
+| **Month 5** | Integration and Analysis | - Synthesize results from all experiments<br>- Identify best models, configurations, languages<br>- Develop recommendations (model selection, quantization, prompting)<br>- Prepare visualizations (accuracy heatmaps, efficiency plots)<br>- **Deliverable:** Integrated analysis, best practices guide, figures/tables |
+| **Month 6** | Writing, Release, Dissemination | - Write manuscript (intro, methods, results, discussion)<br>- Prepare open-source release (code, results, documentation)<br>- Create leaderboard (model rankings per language/task)<br>- Submit to conferences (EMNLP, ACL, NAACL, EACL)<br>- **Deliverable:** Paper submitted, GitHub repository, leaderboard website |
+
+**Key Decision Points:**
+- End of Month 1: Confirm all models fit in 24 GB with quantization; if not, drop largest models
+- Month 2: Select top 3–4 models for deep dive (based on baseline performance)
+- Month 3: Assess LoRA feasibility; if training too slow, focus on zero-shot evaluation
+- Month 4: Evaluate human annotation quality; if low agreement, simplify evaluation criteria
+- Month 5: Decide on publication venue (NLP conference vs. fact-checking workshop)
+
+---
+
+## 4. Resources (Compute, Tools, Datasets)
+
+### **Compute Requirements**
+- **Hardware (minimal setup):**
+  - 1× GPU (24 GB VRAM): RTX 4090, A5000, RTX 6000 Ada
+  - Alternative: 2× GPUs (16 GB each): RTX 4080, A4000
+  - CPU: 16+ cores (for data preprocessing, parallel evaluation)
+  - RAM: 64 GB (handle large datasets)
+  - Storage: 500 GB–1 TB (models, datasets, results)
+- **Inference budget:**
+  - Estimated 200–400 GPU-hours total (6 months)
+  - Cost: $0 (own hardware) or $800–$1,600 (cloud rental at $4/hour)
+- **Fine-tuning (optional, LoRA):**
+  - 20–50 GPU-hours for LoRA training
+  - Cost: $80–$200 (cloud)
+- **Total compute budget:** $0–$2,000 (depending on hardware access)
+
+### **Software & Tools**
+- **LLM inference:**
+  - Hugging Face Transformers (model loading, inference)
+  - vLLM (fast inference, batching)
+  - llama.cpp (CPU/GPU inference, GGUF quantization)
+  - Text Generation Inference (TGI, Hugging Face)
+- **Quantization:**
+  - GPTQ (AutoGPTQ library)
+  - AWQ (AutoAWQ library)
+  - bitsandbytes (8-bit, 4-bit quantization)
+  - GGUF (llama.cpp format)
+- **Fine-tuning (optional):**
+  - PEFT (Parameter-Efficient Fine-Tuning, LoRA)
+  - QLoRA (4-bit + LoRA)
+  - Axolotl (fine-tuning framework)
+- **Evaluation:**
+  - scikit-learn (metrics: accuracy, F1, precision, recall)
+  - NLTK, spaCy (text processing)
+  - sentence-transformers (embeddings for retrieval)
+  - BERTScore (semantic similarity)
+- **Data processing:**
+  - pandas, datasets (Hugging Face)
+  - langdetect (language identification)
+  - googletrans, argostranslate (translation for sanity checks)
+- **Experiment tracking:**
+  - Weights & Biases (W&B)
+  - MLflow
+  - TensorBoard
+- **Visualization:**
+  - Matplotlib, Seaborn
+  - Plotly (interactive plots)
+
+### **Datasets**
+1. **X-FACT [1]:**
+   - 31,189 claims, 25 languages
+   - 3-way classification (supported, refuted, not enough info)
+   - Access: Public, downloadable from GitHub
+2. **Poly-FEVER [4]:**
+   - 10,000 claims, 10 languages
+   - Binary classification + evidence retrieval
+   - Access: Public, request from authors or GitHub
+3. **XFEVER [8]:**
+   - 20,000 claims, 7 languages
+   - 3-way classification, evidence annotations
+   - Access: Public, GitHub
+4. **Multilingual Previously Fact-Checked Claim Retrieval [3]:**
+   - 28,000 claims, 27 languages
+   - Claim matching task
+   - Access: Public, SemEval-2025 Task 7
+5. **Massively Multilingual Fact-Checked Claim Clusters [5]:**
+   - 100K+ claims, 50+ languages
+   - Claim clustering, verification
+   - Access: Public, arXiv preprint (check availability)
+6. **Additional resources:**
+   - FEVER (English baseline, 185K claims)
+   - ClaimBuster (claim detection)
+   - Snopes, PolitiFact (real-world fact-checks, for qualitative analysis)
+
+### **Models (Open-Weight LLMs)**
+1. **Llama family:**
+   - Llama-3.1-8B-Instruct (8B parameters, ~16 GB FP16, ~6 GB 4-bit)
+   - Llama-3.2-3B-Instruct (3B parameters, ~6 GB FP16, ~2 GB 4-bit)
+2. **Mistral family:**
+   - Mistral-7B-Instruct-v0.3 (7B parameters)
+   - Mixtral-8x7B-Instruct (47B parameters, requires 4-bit quantization)
+3. **Qwen family:**
+   - Qwen-2.5-7B-Instruct (7B parameters)
+   - Qwen-2.5-14B-Instruct (14B parameters, 4-bit)
+4. **Gemma family:**
+   - Gemma-2-9B-it (9B parameters)
+5. **Multilingual specialists:**
+   - Aya-23-8B (Cohere, multilingual focus)
+   - BLOOM-7B1 (multilingual, 176 languages)
+6. **Access:** All models available on Hugging Face Hub (free)
+
+### **Human Annotation (Experiment 5)**
+- **Annotators:** 3 bilingual annotators (English + 1–2 target languages)
+- **Task:** Rate 100 explanations per model (factual accuracy, relevance, fluency)
+- **Compensation:** $15–$20/hour, ~10 hours per annotator
+- **Total cost:** $450–$600
+- **Platform:** Prolific, Amazon Mechanical Turk, or direct recruitment
+
+### **Collaboration and Partnerships**
+- **Academic:** Partner with fact-checking researchers (e.g., authors of X-FACT [1], Poly-FEVER [4])
+- **Industry:** Engage with fact-checking orgs (Full Fact, Africa Check, Chequeado)
+- **Open-source:** Contribute to Hugging Face, release on Model Hub
+- **Funding:** Apply for small grants (Google Research, Microsoft AI for Good, $5K–$10K)
+
+---
+
+## 5. Risks and Mitigations Table
+
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+|----------|----------------|------------|----------------|
+| **GPU memory insufficient (models don't fit)** | Medium | High | - Use 4-bit quantization (GPTQ, AWQ) for all models<br>- Drop largest models (Mixtral-8x7B) if needed<br>- Use model offloading (CPU + GPU)<br>- Rent cloud GPU (A100 40GB) for critical experiments |
+| **Benchmark datasets unavailable or incomplete** | Low | Medium | - Download all datasets early (Month 1)<br>- Use multiple benchmarks (X-FACT, Poly-FEVER, XFEVER)<br>- Fallback: Create small custom dataset (500–1,000 claims)<br>- Contact authors for access if needed |
+| **Quantization degrades accuracy too much (>10%)** | Medium | Medium | - Test multiple quantization methods (GPTQ, AWQ, 8-bit)<br>- Use calibration datasets (X-FACT training set)<br>- Accept tradeoff: Document accuracy-efficiency Pareto frontier<br>- Fallback: Use 8-bit or FP16 for critical experiments |
+| **Low-resource languages have insufficient data** | High | Medium | - Focus on languages with >500 test samples<br>- Use cross-lingual transfer (train on high-resource)<br>- Report negative results (valuable for community)<br>- Recommend data collection for future work |
+| **Human annotation budget exceeded (>$1,000)** | Medium | Low | - Limit annotation to 100 claims per model (vs. 200)<br>- Use automatic metrics (BLEU, BERTScore) as primary<br>- Recruit volunteer annotators (students, collaborators)<br>- Fallback: Skip human evaluation, focus on automatic metrics |
+| **Models exhibit poor performance (<50% accuracy)** | Medium | Medium | - Improve prompting (few-shot, chain-of-thought)<br>- Fine-tune with LoRA (if budget permits)<br>- Ensemble predictions (majority vote across models)<br>- Report negative results (important finding) |
+| **Inference too slow (>10 seconds per claim)** | Low | Medium | - Use vLLM or TGI for fast inference<br>- Batch processing (batch size 4–8)<br>- Reduce max tokens (limit explanation length)<br>- Parallelize across multiple GPUs (if available) |
+| **Cross-lingual transfer fails (<40% of English)** | Medium | Medium | - Use multilingual training data (mix languages)<br>- Increase few-shot examples (10 → 50)<br>- Try multilingual models (Aya-23, BLOOM)<br>- Report language-specific challenges |
+| **Reproducibility issues (results vary across runs)** | Low | Low | - Set random seeds (deterministic inference)<br>- Use temperature=0 for greedy decoding<br>- Document all hyperparameters<br>- Release code and model checkpoints |
+| **Publication rejected from top-tier venues** | Medium | Low | - Target multiple venues (EMNLP, ACL, NAACL, EACL)<br>- Submit to workshops (Fact Extraction and VERification, FEVER)<br>- Post preprint on arXiv for visibility<br>- Incorporate reviewer feedback, resubmit |
+
+---
+
+## 6. Stretch Ideas or Follow-Up Directions
+
+1. **Multimodal Fact-Checking:**  
+   Extend to claims with images/videos (e.g., deepfakes, manipulated media). Use vision-language models (LLaVA, BLIP-2) for multimodal verification.
+
+2. **Real-Time Fact-Checking:**  
+   Deploy models as browser extension or API for real-time claim verification on social media (Twitter, Facebook, WhatsApp).
+
+3. **Explainable Fact-Checking:**  
+   Develop interpretability tools (attention visualization, counterfactual explanations) to understand model decisions and build user trust.
+
+4. **Adversarial Robustness:**  
+   Evaluate robustness to adversarial claims (paraphrases, typos, entity swaps). Develop defenses (adversarial training, input sanitization).
+
+5. **Low-Resource Language Data Collection:**  
+   Partner with local fact-checkers to create datasets for underrepresented languages (Swahili, Hausa, Bengali, Yoruba).
+
+6. **Federated Fact-Checking:**  
+   Enable collaborative fact-checking across organizations without sharing data (federated learning, privacy-preserving).
+
+7. **Claim Detection and Prioritization:**  
+   Extend to claim detection (identify check-worthy claims in text) and prioritization (rank claims by virality, harm potential).
+
+8. **Temporal Fact-Checking:**  
+   Handle time-sensitive claims (e.g., "COVID-19 cases are rising") that require up-to-date knowledge. Integrate with retrieval-augmented generation (RAG).
+
+9. **User Study and Deployment:**  
+   Conduct user study with fact-checkers to assess usability, trust, and adoption. Deploy in real-world fact-checking workflows.
+
+10. **Benchmark Expansion:**  
+    Create unified benchmark combining claim verification, retrieval, stance detection, and explanation generation across 50+ languages.
+
+---
+
+## Concrete Action Plan (First Month)
+
+**Week 1:**
+1. **Day 1–2:** Set up compute environment (install CUDA, PyTorch, Transformers, quantization libraries)
+2. **Day 3–4:** Download benchmarks (X-FACT, Poly-FEVER, XFEVER)
+3. **Day 5–7:** Download and quantize 6–8 models (4-bit GPTQ/AWQ)
+
+**Week 2:**
+1. **Day 8–10:** Implement evaluation pipeline (prompting, metrics, data loaders)
+2. **Day 11–12:** Test pipeline on small subset (100 claims, 1 model)
+3. **Day 13–14:** Debug issues, optimize for memory/speed
+
+**Week 3:**
+1. **Day 15–17:** Run baseline experiments (Experiment 1) on X-FACT
+2. **Day 18–19:** Evaluate quantization impact (Experiment 3)
+3. **Day 20–21:** Analyze preliminary results, adjust prompts if needed
+
+**Week 4:**
+1. **Day 22–24:** Expand to Poly-FEVER, XFEVER benchmarks
+2. **Day 25–26:** Implement evidence retrieval pipeline (Experiment 2)
+3. **Day 27–28:** Prepare Month 1 report, plan Month 2 experiments
+
+---
+
+## Sources
+
+[1] [X-FACT: A New Benchmark Dataset for Multilingual Fact Checking](https://arxiv.org/abs/2106.09248)  
+[2] [Beyond Translation: LLM-Based Data Generation for Multilingual Fact-Checking](https://arxiv.org/html/2502.15419v1)  
+[3] [Multilingual Previously Fact-Checked Claim Retrieval](https://aclanthology.org/2023.emnlp-main.1027.pdf)  
+[4] [Poly-FEVER: A Multilingual Fact Verification Benchmark for Hallucination Detection in Large Language Models](https://arxiv.org/abs/2503.16541)  
+[5] [A Massively Multilingual Dataset of Fact-Checked Claim Clusters](https://arxiv.org/abs/2503.22280)  
+[6] [QLORA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/pdf/2305.14314.pdf)  
+[7] [Efficient Multi-task LLM Quantization and Serving for Multiple LoRA Adapters](https://proceedings.neurips.cc/paper_files/paper/2024/file/747dc7c6566c74eb9a663bcd8d057c78-Paper-Conference.pdf)  
+[8] [XFEVER: Exploring Fact Verification across Languages](https://arxiv.org/pdf/2310.16278.pdf)  
+[9] [Evaluating Language Models on Fine-Grained Multilingual Claim Verification](https://aclanthology.org/2025.fever-1.5.pdf)  
+[10] [Misinformation Detection: A Review for High and Low-Resource Languages](https://pdfs.semanticscholar.org/240b/8aa450640802dcc1b2138edcdf5db43f2506.pdf)  
+
+---
+
+**Optional next step:**  
+Contact the authors of X-FACT [1] and Poly-FEVER [4] to request access to any unreleased test sets, discuss evaluation protocols, and explore potential collaboration on extending benchmarks to additional low-resource languages. Also reach out to fact-checking organizations (Full Fact, Africa Check) to validate that the benchmark tasks align with real-world fact-checking workflows and identify high-priority languages for evaluation.

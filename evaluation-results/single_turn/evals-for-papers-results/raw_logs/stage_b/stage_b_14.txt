@@ -1,0 +1,54 @@
+Stage: A – Pre-idea (scoping and novelty assessment)
+
+Short answer: It’s not crowded in the protein design community, but it’s not “blank slate” either. There are several proof-of-concept hybrid quantum–classical efforts (annealing and gate-based) mostly on toy or reduced problems (lattice models, short peptides), while state-of-the-art practical design remains dominated by classical ML and physics-based tools (e.g., RFdiffusion, ProteinMPNN). A “fresh” contribution is feasible if you (a) target a sharply defined subproblem where quantum subroutines plausibly help, and (b) benchmark rigorously against strong classical baselines.
+
+Strategic questions
+- Scope: Which subtask are you targeting—sequence design on fixed backbones, rotamer packing, loop/insert design, or binder/peptide design? What scale (length, rotamer library, constraints)?
+- Resource reality: Do you have access to specific hardware (D-Wave annealer, IonQ/Quantinuum gate devices) or only simulators? What is your weekly compute/time budget?
+- Contribution type: Are you aiming for improved objective quality, better sample efficiency at fixed time/energy budget, or provable scaling on specific combinatorial substructures?
+- Benchmarking: Which classical baselines will you commit to (RFdiffusion, ProteinMPNN, Rosetta packer/minimization), and what success criteria (energy, structure fidelity, binder enrichment) will decide the win?
+
+Recommendations
+- Define a narrow “quantum-helps-here” slot. Examples: QUBO-based rotamer packing for a fixed backbone window; k-mer peptide binder design under hard constraints; or sequence design on lattice/coarse-grained models where the landscape is rugged.
+- Pre-register head-to-head comparisons versus strong classical solvers and modern generative design, with matched time/compute budgets and clear falsifiers.
+- Start on reduced systems (short peptides or lattice backbones), then show transfer to one real protein task with AlphaFold(-Multimer) validation and Rosetta scoring.
+
+Three falsifiable experiments (compact, actionable)
+1) Rotamer packing via annealing vs classical packers
+- Hypothesis: Quantum annealing (QA) finds lower or equal Rosetta energy packings with fewer restarts for tightly constrained side-chain packing on fixed backbones.
+- Setup: Encode rotamer packing for 8–20 residues around an active site as a QUBO; solve via D-Wave (or QA simulator) and via classical Tabu/ILP; finalize with Rosetta minimization. Datasets: 10 PDB backbones with buried pockets. Metrics: post-minimization total energy, clash count, wall-clock, solution diversity.
+- Success criteria: ≥10% energy improvement at equal wall-time or same energy with ≥2× fewer restarts; otherwise hypothesis falsified.
+- Interpretation: Gains suggest QA is useful for combinatorial substructures; null result indicates classical methods saturate this regime. Follow-ups: scale rotamer library size; ablate constraint strength; test noisy vs cleaned QUBOs.
+
+2) Peptide binder design with QAOA proposals in a hybrid loop
+- Hypothesis: A QAOA-based mutational proposal generator increases hit rate (predicted binding and structural plausibility) per unit compute over classical local search.
+- Setup: Fixed epitope on a target; search 12–20mer peptides. Quantum step proposes top-N sequences under hard constraints (charge, motifs); classical step scores with Rosetta interface ΔΔG and filters by AlphaFold-Multimer pTM/interface pLDDT. Baselines: greedy/local search and ProteinMPNN constrained design. Metrics: fraction of sequences with ΔΔG < threshold, AF-M pLDDT > threshold, novelty vs training.
+- Success criteria: ≥1.5× enrichment of “high-confidence binders” at matched compute. Falsifier: no enrichment or worse diversity.
+- Interpretation: If positive, the quantum subroutine is a better proposal distribution; if negative, focus on objective/QAOA depth or constraints. Variations: change ansatz depth, noise models, tighter biophysical constraints.
+
+3) Lattice/coarse-grained sequence design stress test
+- Hypothesis: On rugged landscapes (lattice or coarse-grained contact potentials), QA/QAOA achieve better best-of-k energies and equal/better sample efficiency than simulated annealing or ILP at small-to-moderate sizes.
+- Setup: HP lattice proteins (lengths 27–64) or Miyazawa–Jernigan contact models. Compare QA/QAOA vs simulated annealing/ILP under fixed wall-time. Metrics: best energy reached, success rate to within ε of known optima, time-to-ε, solution diversity.
+- Success criteria: Statistically significant improvement in best energy or time-to-ε for at least one size regime; otherwise hypothesis falsified.
+- Interpretation: Positive results motivate embedding these subroutines in real-backbone tasks; null results argue for classical dominance or the need for better embeddings/penalties. Follow-ups: embedding quality analysis, qubit budget vs problem size, robustness to noise.
+
+Phase 0 (≤14 days) and gates
+- Deliverables: (1) One reproduced figure/metric from a quantum-protein design paper or Rosetta packer baseline with a prediction log (≥14 entries). (2) An experiment card for Experiment 1 plus one ablation or negative result with a short post-mortem.
+- If both gates pass, scale Experiment 1 to a real-backbone pocket and register target venue/timeline.
+
+Intuition
+- Quantum subroutines are most promising where the search is combinatorial, discrete, and strongly constrained; hybrid loops can let quantum propose or pack while classical tools evaluate and relax. If you benchmark on tasks where classical methods already saturate, you’re unlikely to see gains.
+
+Why this is principled
+- Best practice is to frame a crisp subproblem with a plausible advantage (mapping to QUBO/Ising or shallow circuits), compare against strong classical baselines under equal budgets, and declare clear falsifiers. Prior quantum–protein work shows feasibility on lattice/peptide scales but limited evidence of end-to-end superiority at practical sizes, so tight, head-to-head experiments are the right bar [1]. Modern classical design tools set a high baseline you must beat or complement [2].
+
+Next actions (2–3 hours each)
+- Pick one subtask (rotamer packing or peptide design) and draft the experiment card (hypothesis, falsifier, minimal test, metrics).
+- Stand up the classical baseline: Rosetta packer/minimization or constrained ProteinMPNN on a small test set.
+- Implement a minimal QUBO and solve on a simulator or annealer for 1–2 instances to sanity-check encoding and constraints.
+
+Citations
+1. Gate-based Quantum Computing for Protein Design — https://arxiv.org/abs/2201.12459
+2. RFdiffusion: Generative protein design using diffusion models guided by RoseTTAFold — https://www.biorxiv.org/content/10.1101/2022.12.09.519842v1
+
+To tailor this: What hardware (D-Wave, IonQ/Quantinuum, simulators) and classical stack (Rosetta, ProteinMPNN, RFdiffusion) do you have? What’s your weekly time/compute budget, target venue/timeline, and your biggest current bottleneck?

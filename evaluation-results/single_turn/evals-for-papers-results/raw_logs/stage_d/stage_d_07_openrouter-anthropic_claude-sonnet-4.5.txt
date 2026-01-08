@@ -1,0 +1,1762 @@
+Based on the attached paper, I'll design a comprehensive stress-test framework to evaluate the Sparse Hierarchical Imagination (SHI) Transformer on out-of-domain tasks. The original evaluation focuses on Atari 100k and Crafter benchmarks [heirarchical-transformer.pdf:3], so I'll test generalization to collaborative code and long-document tasks.
+
+## Out-of-Domain Stress-Test Framework
+
+### 1. Domain Gap Analysis
+
+**Original Domain:** Visual RL in game environments [heirarchical-transformer.pdf:3]
+- **Modality:** Visual observations (Atari frames, Crafter scenes)
+- **Sequence length:** Short-to-medium (15-step rollouts) [heirarchical-transformer.pdf:3]
+- **Hierarchy:** Spatial (objects, backgrounds)
+- **Dynamics:** Deterministic game rules
+
+**Target Domains:**
+
+**Domain 1: Collaborative Code**
+- **Modality:** Text (code tokens)
+- **Sequence length:** Long (1000-10000 tokens)
+- **Hierarchy:** Syntactic (functions, classes, modules)
+- **Dynamics:** Logical dependencies, control flow
+
+**Domain 2: Long Documents**
+- **Modality:** Text (natural language)
+- **Sequence length:** Very long (5000-50000 tokens)
+- **Hierarchy:** Semantic (paragraphs, sections, chapters)
+- **Dynamics:** Discourse structure, coreference
+
+**Key Challenges:**
+1. **Modality shift:** Visual → Text
+2. **Scale shift:** 15 steps → 10,000 tokens
+3. **Hierarchy shift:** Spatial objects → Syntactic/semantic structure
+4. **Task shift:** Prediction → Generation/completion
+
+### 2. Adaptation Strategy
+
+**Minimal Adaptation (Stress-Test):**
+- Replace VQ-VAE with text tokenizer (BPE/WordPiece)
+- Map hierarchical levels to syntactic/semantic structure
+- Keep Transformer architecture, SPARTAN, masking unchanged
+- Test zero-shot transfer (no retraining on new domain)
+
+**Controlled Adaptation (Baseline):**
+- Fine-tune on small amount of target domain data
+- Adjust hierarchy definitions for text
+- Tune masking thresholds
+- Provides upper bound on performance
+
+```python
+class SHITextAdapter:
+    """
+    Adapt SHI from visual RL to text tasks with minimal changes.
+    """
+    def __init__(self, original_shi_model, tokenizer):
+        self.shi = original_shi_model
+        self.tokenizer = tokenizer
+        
+        # Freeze original weights for zero-shot test
+        for param in self.shi.parameters():
+            param.requires_grad = False
+        
+    def adapt_tokenization(self, text):
+        """
+        Replace VQ-VAE with text tokenizer.
+        
+        Original: Image → VQ-VAE → Discrete tokens
+        Adapted:  Text → BPE → Discrete tokens
+        """
+        # Tokenize text
+        token_ids = self.tokenizer.encode(text)
+        
+        # Map to embedding space (compatible with SHI)
+        # Assume SHI expects tokens in range [0, codebook_size)
+        # BPE vocab typically 50k, may need projection
+        
+        if max(token_ids) >= self.shi.codebook_size:
+            # Project BPE tokens to SHI codebook space
+            token_ids = self._project_tokens(token_ids)
+        
+        return token_ids
+    
+    def adapt_hierarchy(self, text, hierarchy_type='syntactic'):
+        """
+        Map hierarchical levels from spatial to syntactic/semantic.
+        
+        Original hierarchy (visual):
+        - Level 0: Background
+        - Level 1: Objects
+        - Level 2: Fine-grained details
+        
+        Adapted hierarchy (code):
+        - Level 0: Module/file structure
+        - Level 1: Functions/classes
+        - Level 2: Statements/expressions
+        
+        Adapted hierarchy (documents):
+        - Level 0: Chapters/sections
+        - Level 1: Paragraphs
+        - Level 2: Sentences/phrases
+        """
+        if hierarchy_type == 'syntactic':
+            return self._syntactic_hierarchy(text)
+        elif hierarchy_type == 'semantic':
+            return self._semantic_hierarchy(text)
+        else:
+            raise ValueError(f"Unknown hierarchy type: {hierarchy_type}")
+    
+    def _syntactic_hierarchy(self, code):
+        """
+        Parse code into syntactic hierarchy using AST.
+        """
+        import ast
+        
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            # Fallback: Use indentation-based hierarchy
+            return self._indentation_hierarchy(code)
+        
+        # Assign hierarchy levels based on AST node types
+        hierarchy_levels = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef)):
+                level = 0  # Top-level structure
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                level = 1  # Function level
+            elif isinstance(node, (ast.Expr, ast.Assign, ast.If, ast.For, ast.While)):
+                level = 2  # Statement level
+            else:
+                level = 2  # Default to fine-grained
+            
+            hierarchy_levels.append(level)
+        
+        return hierarchy_levels
+    
+    def _semantic_hierarchy(self, text):
+        """
+        Parse document into semantic hierarchy.
+        """
+        # Simple heuristic: Use paragraph breaks and headers
+        lines = text.split('\n')
+        hierarchy_levels = []
+        
+        for line in lines:
+            if line.startswith('#'):  # Markdown header
+                level = 0
+            elif line.strip() == '':  # Paragraph break
+                level = 0
+            elif line.endswith('.'):  # Sentence
+                level = 2
+            else:  # Phrase/clause
+                level = 1
+            
+            hierarchy_levels.append(level)
+        
+        return hierarchy_levels
+    
+    def forward(self, text, hierarchy_type='syntactic'):
+        """
+        Forward pass through adapted SHI model.
+        """
+        # Tokenize
+        token_ids = self.adapt_tokenization(text)
+        
+        # Assign hierarchy
+        hierarchy_levels = self.adapt_hierarchy(text, hierarchy_type)
+        
+        # Ensure same length
+        min_len = min(len(token_ids), len(hierarchy_levels))
+        token_ids = token_ids[:min_len]
+        hierarchy_levels = hierarchy_levels[:min_len]
+        
+        # Forward through SHI
+        # Note: SHI expects [B, L] token sequences
+        token_tensor = torch.tensor(token_ids).unsqueeze(0)
+        hierarchy_tensor = torch.tensor(hierarchy_levels).unsqueeze(0)
+        
+        outputs = self.shi.forward(
+            tokens=token_tensor,
+            hierarchy_levels=hierarchy_tensor
+        )
+        
+        return outputs
+```
+
+### 3. Synthetic Perturbations
+
+**Objective:** Systematically stress-test robustness to distribution shifts
+
+#### 3.1 Code Perturbations
+
+**Perturbation 1: Variable Renaming**
+```python
+class VariableRenamingPerturbation:
+    """
+    Rename variables to test if model relies on surface forms vs. structure.
+    
+    Example:
+    Original: def add(x, y): return x + y
+    Perturbed: def add(a, b): return a + b
+    
+    Expected: Robust model should produce similar representations.
+    """
+    def __init__(self, renaming_rate=0.5):
+        self.renaming_rate = renaming_rate
+        
+    def perturb(self, code):
+        import ast
+        import random
+        
+        tree = ast.parse(code)
+        
+        # Collect all variable names
+        variables = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                variables.add(node.id)
+        
+        # Rename subset of variables
+        rename_map = {}
+        for var in variables:
+            if random.random() < self.renaming_rate:
+                rename_map[var] = f"var_{random.randint(1000, 9999)}"
+        
+        # Apply renaming
+        class Renamer(ast.NodeTransformer):
+            def visit_Name(self, node):
+                if node.id in rename_map:
+                    node.id = rename_map[node.id]
+                return node
+        
+        new_tree = Renamer().visit(tree)
+        perturbed_code = ast.unparse(new_tree)
+        
+        return perturbed_code, rename_map
+```
+
+**Perturbation 2: Comment Injection**
+```python
+class CommentInjectionPerturbation:
+    """
+    Inject comments to test if model can filter noise.
+    
+    Example:
+    Original: x = 5
+    Perturbed: x = 5  # This is a comment
+    
+    Expected: Robust model should ignore comments.
+    """
+    def __init__(self, comment_rate=0.3):
+        self.comment_rate = comment_rate
+        self.comments = [
+            "# TODO: Refactor this",
+            "# FIXME: Bug here",
+            "# NOTE: Important",
+            "# This is a comment",
+        ]
+        
+    def perturb(self, code):
+        import random
+        
+        lines = code.split('\n')
+        perturbed_lines = []
+        
+        for line in lines:
+            perturbed_lines.append(line)
+            if random.random() < self.comment_rate:
+                comment = random.choice(self.comments)
+                perturbed_lines.append(comment)
+        
+        return '\n'.join(perturbed_lines)
+```
+
+**Perturbation 3: Code Obfuscation**
+```python
+class CodeObfuscationPerturbation:
+    """
+    Obfuscate code structure while preserving semantics.
+    
+    Transformations:
+    - Inline simple functions
+    - Flatten nested structures
+    - Add redundant operations
+    
+    Expected: Robust model should recognize semantic equivalence.
+    """
+    def __init__(self, obfuscation_level='medium'):
+        self.level = obfuscation_level
+        
+    def perturb(self, code):
+        import ast
+        
+        tree = ast.parse(code)
+        
+        # Inline simple functions
+        if self.level in ['medium', 'high']:
+            tree = self._inline_functions(tree)
+        
+        # Flatten nested if-statements
+        if self.level == 'high':
+            tree = self._flatten_conditionals(tree)
+        
+        return ast.unparse(tree)
+    
+    def _inline_functions(self, tree):
+        """Inline single-line functions."""
+        # Implementation details omitted for brevity
+        return tree
+    
+    def _flatten_conditionals(self, tree):
+        """Flatten nested if-statements using boolean logic."""
+        # Implementation details omitted for brevity
+        return tree
+```
+
+**Perturbation 4: Syntax Errors**
+```python
+class SyntaxErrorPerturbation:
+    """
+    Introduce syntax errors to test error handling.
+    
+    Types:
+    - Missing colons
+    - Unmatched parentheses
+    - Invalid indentation
+    
+    Expected: Model should detect errors or degrade gracefully.
+    """
+    def __init__(self, error_rate=0.1):
+        self.error_rate = error_rate
+        
+    def perturb(self, code):
+        import random
+        
+        lines = code.split('\n')
+        perturbed_lines = []
+        
+        for line in lines:
+            if random.random() < self.error_rate:
+                # Randomly introduce error
+                error_type = random.choice(['missing_colon', 'unmatched_paren', 'bad_indent'])
+                
+                if error_type == 'missing_colon' and line.strip().endswith(':'):
+                    line = line[:-1]  # Remove colon
+                elif error_type == 'unmatched_paren':
+                    line = line + ')'  # Add extra paren
+                elif error_type == 'bad_indent':
+                    line = '  ' + line  # Add extra indent
+            
+            perturbed_lines.append(line)
+        
+        return '\n'.join(perturbed_lines)
+```
+
+**Perturbation 5: Dependency Reordering**
+```python
+class DependencyReorderingPerturbation:
+    """
+    Reorder function definitions to test dependency tracking.
+    
+    Example:
+    Original:
+        def helper(): ...
+        def main(): helper()
+    
+    Perturbed:
+        def main(): helper()
+        def helper(): ...
+    
+    Expected: Model should track dependencies regardless of order.
+    """
+    def __init__(self):
+        pass
+        
+    def perturb(self, code):
+        import ast
+        import random
+        
+        tree = ast.parse(code)
+        
+        # Extract top-level function definitions
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)]
+        other_nodes = [node for node in tree.body if not isinstance(node, ast.FunctionDef)]
+        
+        # Shuffle functions
+        random.shuffle(functions)
+        
+        # Reconstruct tree
+        tree.body = functions + other_nodes
+        
+        return ast.unparse(tree)
+```
+
+#### 3.2 Document Perturbations
+
+**Perturbation 6: Paragraph Shuffling**
+```python
+class ParagraphShufflingPerturbation:
+    """
+    Shuffle paragraphs to test discourse understanding.
+    
+    Expected: Model should detect incoherence.
+    """
+    def __init__(self, shuffle_rate=0.5):
+        self.shuffle_rate = shuffle_rate
+        
+    def perturb(self, text):
+        import random
+        
+        paragraphs = text.split('\n\n')
+        
+        # Shuffle subset of paragraphs
+        n_shuffle = int(len(paragraphs) * self.shuffle_rate)
+        indices_to_shuffle = random.sample(range(len(paragraphs)), n_shuffle)
+        
+        shuffled_paragraphs = paragraphs.copy()
+        shuffled_values = [paragraphs[i] for i in indices_to_shuffle]
+        random.shuffle(shuffled_values)
+        
+        for i, idx in enumerate(indices_to_shuffle):
+            shuffled_paragraphs[idx] = shuffled_values[i]
+        
+        return '\n\n'.join(shuffled_paragraphs)
+```
+
+**Perturbation 7: Coreference Corruption**
+```python
+class CoreferenceCorruptionPerturbation:
+    """
+    Replace pronouns with incorrect antecedents.
+    
+    Example:
+    Original: "John went to the store. He bought milk."
+    Perturbed: "John went to the store. She bought milk."
+    
+    Expected: Model should detect inconsistency.
+    """
+    def __init__(self, corruption_rate=0.3):
+        self.corruption_rate = corruption_rate
+        self.pronoun_map = {
+            'he': 'she',
+            'she': 'he',
+            'his': 'her',
+            'her': 'his',
+            'him': 'her',
+        }
+        
+    def perturb(self, text):
+        import random
+        import re
+        
+        words = text.split()
+        perturbed_words = []
+        
+        for word in words:
+            word_lower = word.lower()
+            if word_lower in self.pronoun_map and random.random() < self.corruption_rate:
+                # Replace with incorrect pronoun
+                replacement = self.pronoun_map[word_lower]
+                if word[0].isupper():
+                    replacement = replacement.capitalize()
+                perturbed_words.append(replacement)
+            else:
+                perturbed_words.append(word)
+        
+        return ' '.join(perturbed_words)
+```
+
+**Perturbation 8: Long-Range Dependency Insertion**
+```python
+class LongRangeDependencyPerturbation:
+    """
+    Insert references to distant context to test long-range modeling.
+    
+    Example:
+    Insert "As mentioned in Section 1.2, ..." at various points.
+    
+    Expected: Model should track long-range references.
+    """
+    def __init__(self, insertion_rate=0.2):
+        self.insertion_rate = insertion_rate
+        self.templates = [
+            "As mentioned earlier, ",
+            "Recall from the introduction that ",
+            "As we will see in the conclusion, ",
+            "This relates to the previous section where ",
+        ]
+        
+    def perturb(self, text):
+        import random
+        
+        sentences = text.split('. ')
+        perturbed_sentences = []
+        
+        for i, sentence in enumerate(sentences):
+            if i > 0 and random.random() < self.insertion_rate:
+                # Insert long-range reference
+                template = random.choice(self.templates)
+                sentence = template + sentence
+            
+            perturbed_sentences.append(sentence)
+        
+        return '. '.join(perturbed_sentences)
+```
+
+**Perturbation 9: Hierarchical Structure Flattening**
+```python
+class HierarchyFlatteningPerturbation:
+    """
+    Remove hierarchical structure (headers, sections).
+    
+    Example:
+    Original:
+        # Chapter 1
+        ## Section 1.1
+        Content...
+    
+    Perturbed:
+        Chapter 1 Section 1.1 Content...
+    
+    Expected: Model should struggle without explicit hierarchy.
+    """
+    def __init__(self):
+        pass
+        
+    def perturb(self, text):
+        import re
+        
+        # Remove markdown headers
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove section breaks
+        text = re.sub(r'\n\n+', ' ', text)
+        
+        return text
+```
+
+**Perturbation 10: Adversarial Noise Injection**
+```python
+class AdversarialNoiseInjection:
+    """
+    Inject adversarial tokens to test robustness.
+    
+    Types:
+    - Random token insertion
+    - Token deletion
+    - Token substitution
+    
+    Expected: Model should be robust to small perturbations.
+    """
+    def __init__(self, noise_rate=0.05, noise_type='all'):
+        self.noise_rate = noise_rate
+        self.noise_type = noise_type
+        
+    def perturb(self, text, tokenizer):
+        import random
+        
+        tokens = tokenizer.encode(text)
+        vocab_size = tokenizer.vocab_size
+        
+        perturbed_tokens = []
+        
+        for token in tokens:
+            if random.random() < self.noise_rate:
+                noise = random.choice(['insert', 'delete', 'substitute'])
+                
+                if noise == 'insert':
+                    # Insert random token
+                    perturbed_tokens.append(random.randint(0, vocab_size - 1))
+                    perturbed_tokens.append(token)
+                elif noise == 'delete':
+                    # Delete token (skip)
+                    pass
+                elif noise == 'substitute':
+                    # Substitute with random token
+                    perturbed_tokens.append(random.randint(0, vocab_size - 1))
+            else:
+                perturbed_tokens.append(token)
+        
+        return tokenizer.decode(perturbed_tokens)
+```
+
+### 4. Evaluation Metrics
+
+#### 4.1 Task-Specific Metrics
+
+**Code Completion Task:**
+
+```python
+class CodeCompletionMetrics:
+    """
+    Metrics for code completion/generation tasks.
+    """
+    def __init__(self):
+        pass
+        
+    def exact_match(self, predictions, references):
+        """
+        Exact match accuracy (strict).
+        """
+        matches = [pred == ref for pred, ref in zip(predictions, references)]
+        return np.mean(matches)
+    
+    def token_level_accuracy(self, predictions, references, tokenizer):
+        """
+        Token-level accuracy (more lenient).
+        """
+        pred_tokens = [tokenizer.encode(p) for p in predictions]
+        ref_tokens = [tokenizer.encode(r) for r in references]
+        
+        accuracies = []
+        for pred, ref in zip(pred_tokens, ref_tokens):
+            min_len = min(len(pred), len(ref))
+            if min_len == 0:
+                accuracies.append(0.0)
+            else:
+                matches = sum(p == r for p, r in zip(pred[:min_len], ref[:min_len]))
+                accuracies.append(matches / min_len)
+        
+        return np.mean(accuracies)
+    
+    def bleu_score(self, predictions, references):
+        """
+        BLEU score for code generation.
+        """
+        from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+        
+        smoothing = SmoothingFunction().method1
+        
+        scores = []
+        for pred, ref in zip(predictions, references):
+            pred_tokens = pred.split()
+            ref_tokens = [ref.split()]  # BLEU expects list of references
+            
+            score = sentence_bleu(ref_tokens, pred_tokens, smoothing_function=smoothing)
+            scores.append(score)
+        
+        return np.mean(scores)
+    
+    def codebleu_score(self, predictions, references):
+        """
+        CodeBLEU: BLEU + syntax matching + dataflow matching.
+        
+        Reference: Ren et al., "CodeBLEU: a Method for Automatic Evaluation
+        of Code Synthesis" (arXiv:2009.10297)
+        """
+        # Simplified version - full implementation requires AST parsing
+        
+        # Component 1: BLEU
+        bleu = self.bleu_score(predictions, references)
+        
+        # Component 2: Syntax match (AST similarity)
+        syntax_scores = []
+        for pred, ref in zip(predictions, references):
+            syntax_scores.append(self._ast_similarity(pred, ref))
+        syntax_match = np.mean(syntax_scores)
+        
+        # Component 3: Dataflow match (variable usage)
+        dataflow_scores = []
+        for pred, ref in zip(predictions, references):
+            dataflow_scores.append(self._dataflow_similarity(pred, ref))
+        dataflow_match = np.mean(dataflow_scores)
+        
+        # Weighted combination
+        codebleu = 0.25 * bleu + 0.25 * syntax_match + 0.50 * dataflow_match
+        
+        return codebleu
+    
+    def _ast_similarity(self, code1, code2):
+        """Compute AST similarity between two code snippets."""
+        import ast
+        
+        try:
+            tree1 = ast.parse(code1)
+            tree2 = ast.parse(code2)
+        except SyntaxError:
+            return 0.0
+        
+        # Extract node types
+        nodes1 = [type(node).__name__ for node in ast.walk(tree1)]
+        nodes2 = [type(node).__name__ for node in ast.walk(tree2)]
+        
+        # Jaccard similarity
+        set1 = set(nodes1)
+        set2 = set(nodes2)
+        
+        if len(set1 | set2) == 0:
+            return 0.0
+        
+        return len(set1 & set2) / len(set1 | set2)
+    
+    def _dataflow_similarity(self, code1, code2):
+        """Compute dataflow similarity (variable usage patterns)."""
+        import ast
+        
+        try:
+            tree1 = ast.parse(code1)
+            tree2 = ast.parse(code2)
+        except SyntaxError:
+            return 0.0
+        
+        # Extract variable names
+        vars1 = set()
+        vars2 = set()
+        
+        for node in ast.walk(tree1):
+            if isinstance(node, ast.Name):
+                vars1.add(node.id)
+        
+        for node in ast.walk(tree2):
+            if isinstance(node, ast.Name):
+                vars2.add(node.id)
+        
+        # Jaccard similarity
+        if len(vars1 | vars2) == 0:
+            return 0.0
+        
+        return len(vars1 & vars2) / len(vars1 | vars2)
+    
+    def pass_at_k(self, predictions, test_cases, k=1):
+        """
+        Pass@k: Probability that at least one of k predictions passes tests.
+        
+        Reference: Chen et al., "Evaluating Large Language Models Trained
+        on Code" (arXiv:2107.03374)
+        """
+        n = len(predictions)
+        c = sum(self._passes_tests(pred, test_cases) for pred in predictions)
+        
+        if n - c < k:
+            return 1.0
+        
+        # Unbiased estimator
+        pass_at_k = 1.0 - np.prod([1.0 - k / (n - i) for i in range(c)])
+        
+        return pass_at_k
+    
+    def _passes_tests(self, code, test_cases):
+        """Check if code passes all test cases."""
+        try:
+            # Execute code in isolated namespace
+            namespace = {}
+            exec(code, namespace)
+            
+            # Run test cases
+            for test in test_cases:
+                result = eval(test['expression'], namespace)
+                if result != test['expected']:
+                    return False
+            
+            return True
+        except Exception:
+            return False
+```
+
+**Document Understanding Task:**
+
+```python
+class DocumentUnderstandingMetrics:
+    """
+    Metrics for long-document understanding tasks.
+    """
+    def __init__(self):
+        pass
+        
+    def perplexity(self, model, text, tokenizer):
+        """
+        Perplexity: exp(cross-entropy loss).
+        Lower is better.
+        """
+        tokens = tokenizer.encode(text)
+        
+        # Compute log-likelihood
+        log_likelihood = 0
+        for i in range(1, len(tokens)):
+            context = tokens[:i]
+            target = tokens[i]
+            
+            logits = model.predict(context)
+            log_prob = torch.log_softmax(logits, dim=-1)[target]
+            log_likelihood += log_prob.item()
+        
+        # Perplexity
+        perplexity = np.exp(-log_likelihood / len(tokens))
+        
+        return perplexity
+    
+    def coherence_score(self, text):
+        """
+        Coherence score: Measures discourse coherence.
+        
+        Uses entity grid model (Barzilay & Lapata, 2008).
+        """
+        # Extract entities and their roles across sentences
+        sentences = text.split('. ')
+        entity_grid = self._build_entity_grid(sentences)
+        
+        # Compute transition probabilities
+        transitions = self._compute_transitions(entity_grid)
+        
+        # Coherence = log probability of transitions
+        coherence = sum(np.log(p + 1e-10) for p in transitions.values())
+        
+        return coherence
+    
+    def _build_entity_grid(self, sentences):
+        """Build entity grid for coherence computation."""
+        # Simplified implementation
+        # Full version requires coreference resolution
+        
+        import re
+        
+        entity_grid = {}
+        
+        for sent_idx, sentence in enumerate(sentences):
+            # Extract noun phrases (simple heuristic)
+            nouns = re.findall(r'\b[A-Z][a-z]+\b', sentence)
+            
+            for noun in nouns:
+                if noun not in entity_grid:
+                    entity_grid[noun] = []
+                
+                # Determine role (S=subject, O=object, X=other)
+                # Simplified: Just mark presence
+                entity_grid[noun].append(sent_idx)
+        
+        return entity_grid
+    
+    def _compute_transitions(self, entity_grid):
+        """Compute entity transition probabilities."""
+        transitions = {}
+        
+        for entity, positions in entity_grid.items():
+            for i in range(len(positions) - 1):
+                gap = positions[i+1] - positions[i]
+                
+                if gap not in transitions:
+                    transitions[gap] = 0
+                transitions[gap] += 1
+        
+        # Normalize
+        total = sum(transitions.values())
+        transitions = {k: v / total for k, v in transitions.items()}
+        
+        return transitions
+    
+    def long_range_dependency_accuracy(self, model, text, dependency_pairs):
+        """
+        Test if model can resolve long-range dependencies.
+        
+        Args:
+            dependency_pairs: List of (antecedent_position, anaphor_position, correct_resolution)
+        """
+        correct = 0
+        
+        for ante_pos, ana_pos, correct_resolution in dependency_pairs:
+            # Query model for anaphor resolution
+            prediction = model.resolve_reference(text, ana_pos)
+            
+            if prediction == correct_resolution:
+                correct += 1
+        
+        return correct / len(dependency_pairs)
+    
+    def hierarchical_structure_recovery(self, model, text, true_structure):
+        """
+        Test if model recovers hierarchical document structure.
+        
+        Args:
+            true_structure: Ground truth hierarchy (e.g., section tree)
+        """
+        # Extract model's predicted hierarchy
+        predicted_structure = model.extract_hierarchy(text)
+        
+        # Compare using tree edit distance
+        from zss import simple_distance
+        
+        distance = simple_distance(true_structure, predicted_structure)
+        
+        # Normalize by tree size
+        max_size = max(len(true_structure), len(predicted_structure))
+        normalized_distance = distance / max_size
+        
+        # Convert to similarity score
+        similarity = 1.0 - normalized_distance
+        
+        return similarity
+```
+
+#### 4.2 Robustness Metrics
+
+```python
+class RobustnessMetrics:
+    """
+    Metrics for measuring robustness to perturbations.
+    """
+    def __init__(self):
+        pass
+        
+    def performance_drop(self, clean_performance, perturbed_performance):
+        """
+        Relative performance drop under perturbation.
+        
+        Formula: (clean - perturbed) / clean
+        
+        Lower is better (more robust).
+        """
+        if clean_performance == 0:
+            return float('inf')
+        
+        drop = (clean_performance - perturbed_performance) / clean_performance
+        return drop
+    
+    def robustness_score(self, clean_performance, perturbed_performance):
+        """
+        Robustness score: 1 - performance_drop
+        
+        Higher is better (more robust).
+        Range: [0, 1] (can be negative if perturbed > clean)
+        """
+        return 1.0 - self.performance_drop(clean_performance, perturbed_performance)
+    
+    def certified_robustness(self, model, input_text, perturbation_budget, metric_fn):
+        """
+        Certified robustness: Worst-case performance within perturbation budget.
+        
+        Uses randomized smoothing (Cohen et al., 2019).
+        """
+        n_samples = 1000
+        performances = []
+        
+        for _ in range(n_samples):
+            # Sample perturbation within budget
+            perturbed_text = self._sample_perturbation(input_text, perturbation_budget)
+            
+            # Evaluate performance
+            performance = metric_fn(model, perturbed_text)
+            performances.append(performance)
+        
+        # Certified robustness = lower confidence bound
+        from scipy import stats
+        
+        mean_perf = np.mean(performances)
+        std_perf = np.std(performances)
+        
+        # 95% confidence lower bound
+        certified_perf = mean_perf - 1.96 * std_perf / np.sqrt(n_samples)
+        
+        return certified_perf
+    
+    def _sample_perturbation(self, text, budget):
+        """Sample random perturbation within budget."""
+        # Simplified: Random token substitution
+        import random
+        
+        tokens = text.split()
+        n_perturb = int(len(tokens) * budget)
+        
+        indices = random.sample(range(len(tokens)), n_perturb)
+        
+        for idx in indices:
+            tokens[idx] = random.choice(['<MASK>', '<UNK>', '<NOISE>'])
+        
+        return ' '.join(tokens)
+    
+    def consistency_score(self, model, input_text, perturbations):
+        """
+        Consistency: Agreement between predictions on perturbed inputs.
+        
+        Higher is better (more consistent/robust).
+        """
+        predictions = []
+        
+        for perturbed_text in perturbations:
+            pred = model.predict(perturbed_text)
+            predictions.append(pred)
+        
+        # Compute pairwise agreement
+        agreements = []
+        for i in range(len(predictions)):
+            for j in range(i+1, len(predictions)):
+                agreement = self._compute_agreement(predictions[i], predictions[j])
+                agreements.append(agreement)
+        
+        return np.mean(agreements)
+    
+    def _compute_agreement(self, pred1, pred2):
+        """Compute agreement between two predictions."""
+        # For classification: exact match
+        # For generation: BLEU or edit distance
+        
+        if isinstance(pred1, str) and isinstance(pred2, str):
+            # Edit distance
+            from Levenshtein import distance
+            
+            max_len = max(len(pred1), len(pred2))
+            if max_len == 0:
+                return 1.0
+            
+            return 1.0 - distance(pred1, pred2) / max_len
+        else:
+            # Exact match
+            return float(pred1 == pred2)
+    
+    def adversarial_robustness(self, model, input_text, attack_fn, metric_fn):
+        """
+        Adversarial robustness: Performance under adversarial attack.
+        
+        Args:
+            attack_fn: Function that generates adversarial example
+            metric_fn: Performance metric
+        """
+        # Generate adversarial example
+        adv_text = attack_fn(model, input_text)
+        
+        # Evaluate on clean and adversarial
+        clean_perf = metric_fn(model, input_text)
+        adv_perf = metric_fn(model, adv_text)
+        
+        # Robustness = relative performance
+        robustness = adv_perf / (clean_perf + 1e-10)
+        
+        return robustness
+```
+
+#### 4.3 Hierarchy-Specific Metrics
+
+```python
+class HierarchyMetrics:
+    """
+    Metrics specific to hierarchical modeling.
+    """
+    def __init__(self):
+        pass
+        
+    def hierarchy_utilization(self, model_outputs):
+        """
+        Measure how much the model uses hierarchical structure.
+        
+        Metrics:
+        - Entropy of level assignments
+        - Variance in masking rates across levels
+        - Cross-level attention patterns
+        """
+        token_levels = model_outputs['hierarchy_levels']  # [B, L]
+        masking_rates = model_outputs['masking_rates_by_level']  # [num_levels]
+        
+        # Entropy of level assignments
+        level_counts = np.bincount(token_levels.flatten())
+        level_probs = level_counts / level_counts.sum()
+        entropy = -np.sum(level_probs * np.log(level_probs + 1e-10))
+        
+        # Variance in masking rates
+        masking_variance = np.var(masking_rates)
+        
+        # Cross-level attention (if available)
+        if 'attention_weights' in model_outputs:
+            cross_level_attention = self._compute_cross_level_attention(
+                model_outputs['attention_weights'],
+                token_levels
+            )
+        else:
+            cross_level_attention = None
+        
+        return {
+            'level_entropy': entropy,
+            'masking_variance': masking_variance,
+            'cross_level_attention': cross_level_attention,
+        }
+    
+    def _compute_cross_level_attention(self, attention_weights, token_levels):
+        """Compute attention between different hierarchy levels."""
+        # attention_weights: [B, H, L, L]
+        # token_levels: [B, L]
+        
+        B, H, L, _ = attention_weights.shape
+        
+        cross_level_attn = 0
+        total_attn = 0
+        
+        for b in range(B):
+            for i in range(L):
+                for j in range(L):
+                    if token_levels[b, i] != token_levels[b, j]:
+                        cross_level_attn += attention_weights[b, :, i, j].sum()
+                    total_attn += attention_weights[b, :, i, j].sum()
+        
+        return cross_level_attn / (total_attn + 1e-10)
+    
+    def hierarchy_alignment(self, predicted_hierarchy, true_hierarchy):
+        """
+        Measure alignment between predicted and true hierarchy.
+        
+        Uses Adjusted Rand Index (ARI).
+        """
+        from sklearn.metrics import adjusted_rand_score
+        
+        ari = adjusted_rand_score(true_hierarchy, predicted_hierarchy)
+        
+        return ari
+    
+    def level_specific_performance(self, model_outputs, annotations, metric_fn):
+        """
+        Compute performance separately for each hierarchy level.
+        
+        Identifies which levels are well-modeled vs. poorly-modeled.
+        """
+        token_levels = annotations['hierarchy_levels']
+        
+        performance_by_level = {}
+        
+        for level in np.unique(token_levels):
+            # Filter to tokens at this level
+            level_mask = (token_levels == level)
+            
+            level_outputs = {
+                k: v[level_mask] for k, v in model_outputs.items()
+            }
+            level_annotations = {
+                k: v[level_mask] for k, v in annotations.items()
+            }
+            
+            # Compute metric
+            performance = metric_fn(level_outputs, level_annotations)
+            performance_by_level[level] = performance
+        
+        return performance_by_level
+```
+
+### 5. Statistical Analysis Plan
+
+#### 5.1 Experimental Design
+
+**Factorial Design:**
+
+| Factor | Levels |
+|--------|--------|
+| **Domain** | Code, Documents |
+| **Task** | Completion, Understanding, Generation |
+| **Perturbation** | None, Var-Rename, Comment-Inject, Obfuscate, Syntax-Error, Dependency-Reorder, Para-Shuffle, Coref-Corrupt, LongRange-Insert, Hierarchy-Flatten, Adversarial |
+| **Adaptation** | Zero-shot, Fine-tuned |
+
+**Total Conditions:** 2 domains × 3 tasks × 11 perturbations × 2 adaptations = 132 conditions
+
+**Sample Size:**
+- 100 examples per condition
+- 5 random seeds
+- Total: 132 × 100 × 5 = 66,000 evaluations
+
+#### 5.2 Primary Hypotheses
+
+**H1: Domain Transfer Hypothesis**
+- **Null:** SHI performance on code/documents = random baseline
+- **Alternative:** SHI transfers some capabilities from visual RL
+- **Test:** One-sample t-test against random baseline
+- **Metric:** Task-specific accuracy (CodeBLEU, perplexity)
+
+**H2: Hierarchy Transfer Hypothesis**
+- **Null:** Hierarchical structure does not transfer across domains
+- **Alternative:** Hierarchical masking provides benefit in code/documents
+- **Test:** Compare SHI vs. flat baseline (no hierarchy)
+- **Metric:** Hierarchy utilization, level-specific performance
+
+**H3: Robustness Hypothesis**
+- **Null:** SHI is equally robust to all perturbations
+- **Alternative:** Robustness varies by perturbation type
+- **Test:** Repeated measures ANOVA (perturbation type as within-subject factor)
+- **Metric:** Performance drop, robustness score
+
+**H4: Adaptation Hypothesis**
+- **Null:** Fine-tuning does not improve robustness
+- **Alternative:** Fine-tuning improves both performance and robustness
+- **Test:** Paired t-test (zero-shot vs. fine-tuned)
+- **Metric:** All task metrics
+
+#### 5.3 Statistical Tests
+
+**Test 1: Domain Transfer (H1)**
+
+```python
+def test_domain_transfer(shi_performance, random_baseline):
+    """
+    Test if SHI performs better than random on new domain.
+    
+    H0: μ_SHI = μ_random
+    H1: μ_SHI > μ_random
+    """
+    from scipy.stats import ttest_1samp
+    
+    # One-sample t-test
+    t_stat, p_value = ttest_1samp(
+        shi_performance,
+        popmean=random_baseline,
+        alternative='greater'
+    )
+    
+    # Effect size (Cohen's d)
+    d = (np.mean(shi_performance) - random_baseline) / np.std(shi_performance)
+    
+    return {
+        't_statistic': t_stat,
+        'p_value': p_value,
+        'effect_size': d,
+        'interpretation': 'Significant transfer' if p_value < 0.05 else 'No transfer'
+    }
+```
+
+**Test 2: Hierarchy Transfer (H2)**
+
+```python
+def test_hierarchy_transfer(shi_hierarchical, shi_flat):
+    """
+    Test if hierarchical structure provides benefit.
+    
+    H0: μ_hierarchical = μ_flat
+    H1: μ_hierarchical > μ_flat
+    """
+    from scipy.stats import ttest_rel
+    
+    # Paired t-test (same examples, different models)
+    t_stat, p_value = ttest_rel(
+        shi_hierarchical,
+        shi_flat,
+        alternative='greater'
+    )
+    
+    # Effect size (Cohen's d for paired samples)
+    diff = shi_hierarchical - shi_flat
+    d = np.mean(diff) / np.std(diff)
+    
+    # Bayes Factor (evidence for H1 vs H0)
+    from scipy.stats import bayes_mvs
+    
+    bf = compute_bayes_factor(shi_hierarchical, shi_flat)
+    
+    return {
+        't_statistic': t_stat,
+        'p_value': p_value,
+        'effect_size': d,
+        'bayes_factor': bf,
+        'interpretation': interpret_bayes_factor(bf)
+    }
+
+def compute_bayes_factor(group1, group2):
+    """
+    Compute Bayes Factor using Savage-Dickey ratio.
+    
+    BF10 > 10: Strong evidence for H1
+    BF10 > 3: Moderate evidence for H1
+    BF10 < 1/3: Moderate evidence for H0
+    BF10 < 1/10: Strong evidence for H0
+    """
+    # Simplified implementation using t-test
+    # Full implementation would use Bayesian t-test
+    
+    from scipy.stats import ttest_rel
+    
+    t_stat, p_value = ttest_rel(group1, group2)
+    
+    # Approximate BF from t-statistic
+    # (Rouder et al., 2009)
+    n = len(group1)
+    bf = np.exp(-0.5 * t_stat**2 / n)
+    
+    return bf
+
+def interpret_bayes_factor(bf):
+    """Interpret Bayes Factor."""
+    if bf > 10:
+        return 'Strong evidence for hierarchy benefit'
+    elif bf > 3:
+        return 'Moderate evidence for hierarchy benefit'
+    elif bf > 1:
+        return 'Weak evidence for hierarchy benefit'
+    elif bf > 1/3:
+        return 'Inconclusive'
+    elif bf > 1/10:
+        return 'Moderate evidence against hierarchy benefit'
+    else:
+        return 'Strong evidence against hierarchy benefit'
+```
+
+**Test 3: Robustness Comparison (H3)**
+
+```python
+def test_robustness_differences(performance_by_perturbation):
+    """
+    Test if robustness varies across perturbation types.
+    
+    H0: All perturbations have equal effect
+    H1: Perturbations have different effects
+    
+    Uses repeated measures ANOVA.
+    """
+    import pandas as pd
+    from scipy.stats import f_oneway
+    from statsmodels.stats.anova import AnovaRM
+    
+    # Prepare data for repeated measures ANOVA
+    data = []
+    for example_id in range(len(performance_by_perturbation['clean'])):
+        for pert_type, performances in performance_by_perturbation.items():
+            data.append({
+                'example_id': example_id,
+                'perturbation': pert_type,
+                'performance': performances[example_id]
+            })
+    
+    df = pd.DataFrame(data)
+    
+    # Repeated measures ANOVA
+    aovrm = AnovaRM(
+        df,
+        depvar='performance',
+        subject='example_id',
+        within=['perturbation']
+    )
+    
+    results = aovrm.fit()
+    
+    # Post-hoc pairwise comparisons (with Bonferroni correction)
+    from scipy.stats import ttest_rel
+    
+    perturbations = list(performance_by_perturbation.keys())
+    n_comparisons = len(perturbations) * (len(perturbations) - 1) // 2
+    alpha_corrected = 0.05 / n_comparisons
+    
+    pairwise_results = {}
+    for i, pert1 in enumerate(perturbations):
+        for pert2 in perturbations[i+1:]:
+            t_stat, p_value = ttest_rel(
+                performance_by_perturbation[pert1],
+                performance_by_perturbation[pert2]
+            )
+            
+            pairwise_results[f"{pert1}_vs_{pert2}"] = {
+                't_statistic': t_stat,
+                'p_value': p_value,
+                'significant': p_value < alpha_corrected,
+                'mean_diff': np.mean(performance_by_perturbation[pert1]) - 
+                            np.mean(performance_by_perturbation[pert2])
+            }
+    
+    return {
+        'anova_results': results,
+        'pairwise_comparisons': pairwise_results,
+        'interpretation': 'Robustness varies by perturbation' if results.anova_table['Pr > F'][0] < 0.05 
+                         else 'No significant difference in robustness'
+    }
+```
+
+**Test 4: Adaptation Effect (H4)**
+
+```python
+def test_adaptation_effect(zero_shot_perf, finetuned_perf):
+    """
+    Test if fine-tuning improves performance and robustness.
+    
+    H0: μ_finetuned = μ_zero_shot
+    H1: μ_finetuned > μ_zero_shot
+    """
+    from scipy.stats import ttest_rel, wilcoxon
+    
+    # Paired t-test
+    t_stat, p_value_t = ttest_rel(
+        finetuned_perf,
+        zero_shot_perf,
+        alternative='greater'
+    )
+    
+    # Wilcoxon signed-rank test (non-parametric alternative)
+    w_stat, p_value_w = wilcoxon(
+        finetuned_perf,
+        zero_shot_perf,
+        alternative='greater'
+    )
+    
+    # Effect size
+    diff = finetuned_perf - zero_shot_perf
+    d = np.mean(diff) / np.std(diff)
+    
+    # Percentage improvement
+    pct_improvement = (np.mean(finetuned_perf) - np.mean(zero_shot_perf)) / np.mean(zero_shot_perf) * 100
+    
+    return {
+        't_test': {
+            'statistic': t_stat,
+            'p_value': p_value_t
+        },
+        'wilcoxon_test': {
+            'statistic': w_stat,
+            'p_value': p_value_w
+        },
+        'effect_size': d,
+        'percent_improvement': pct_improvement,
+        'interpretation': f"Fine-tuning improves performance by {pct_improvement:.1f}%" 
+                         if p_value_t < 0.05 else "No significant improvement from fine-tuning"
+    }
+```
+
+#### 5.4 Robustness Gap Analysis
+
+**Objective:** Quantify and characterize robustness gaps
+
+```python
+class RobustnessGapAnalysis:
+    """
+    Comprehensive analysis of robustness gaps.
+    """
+    def __init__(self):
+        pass
+        
+    def compute_robustness_gap(self, clean_perf, perturbed_perf):
+        """
+        Robustness gap: Difference between clean and perturbed performance.
+        
+        Returns:
+            gap: Absolute gap
+            relative_gap: Gap relative to clean performance
+            gap_ci: 95% confidence interval for gap
+        """
+        gap = clean_perf - perturbed_perf
+        relative_gap = gap / (clean_perf + 1e-10)
+        
+        # Bootstrap CI for gap
+        n_bootstrap = 10000
+        bootstrap_gaps = []
+        
+        for _ in range(n_bootstrap):
+            indices = np.random.choice(len(clean_perf), size=len(clean_perf), replace=True)
+            boot_gap = np.mean(clean_perf[indices]) - np.mean(perturbed_perf[indices])
+            bootstrap_gaps.append(boot_gap)
+        
+        gap_ci = np.percentile(bootstrap_gaps, [2.5, 97.5])
+        
+        return {
+            'gap': np.mean(gap),
+            'relative_gap': np.mean(relative_gap),
+            'gap_ci': gap_ci,
+            'gap_std': np.std(gap)
+        }
+    
+    def identify_vulnerability_patterns(self, performance_matrix):
+        """
+        Identify patterns in robustness vulnerabilities.
+        
+        Args:
+            performance_matrix: [examples × perturbations] matrix
+        
+        Returns:
+            vulnerable_examples: Examples with large performance drops
+            vulnerable_perturbations: Perturbations causing largest drops
+            interaction_effects: Perturbation combinations with synergistic effects
+        """
+        # Identify vulnerable examples (large average drop)
+        clean_perf = performance_matrix[:, 0]  # Assume first column is clean
+        avg_drop = np.mean(clean_perf[:, None] - performance_matrix[:, 1:], axis=1)
+        
+        vulnerable_examples = np.argsort(avg_drop)[-10:]  # Top 10 most vulnerable
+        
+        # Identify vulnerable perturbations (largest average drop)
+        avg_drop_per_pert = np.mean(clean_perf[:, None] - performance_matrix[:, 1:], axis=0)
+        vulnerable_perturbations = np.argsort(avg_drop_per_pert)[-5:]  # Top 5
+        
+        # Interaction effects (PCA on performance matrix)
+        from sklearn.decomposition import PCA
+        
+        pca = PCA(n_components=3)
+        pca.fit(performance_matrix)
+        
+        # Principal components represent interaction patterns
+        interaction_effects = {
+            'explained_variance': pca.explained_variance_ratio_,
+            'components': pca.components_,
+            'interpretation': self._interpret_pca_components(pca.components_)
+        }
+        
+        return {
+            'vulnerable_examples': vulnerable_examples,
+            'vulnerable_perturbations': vulnerable_perturbations,
+            'interaction_effects': interaction_effects
+        }
+    
+    def _interpret_pca_components(self, components):
+        """Interpret PCA components as perturbation patterns."""
+        interpretations = []
+        
+        for i, component in enumerate(components):
+            # Find perturbations with high loadings
+            high_loading_indices = np.argsort(np.abs(component))[-3:]
+            
+            interpretations.append({
+                'component': i,
+                'high_loading_perturbations': high_loading_indices.tolist(),
+                'variance_explained': f"PC{i+1} captures common vulnerability pattern"
+            })
+        
+        return interpretations
+    
+    def regression_analysis(self, performance_drops, example_features):
+        """
+        Regression analysis to identify features predicting robustness.
+        
+        Args:
+            performance_drops: [N] array of performance drops
+            example_features: [N × F] matrix of example features
+                             (e.g., length, complexity, hierarchy depth)
+        
+        Returns:
+            coefficients: Feature importance for predicting drops
+            r_squared: Variance explained
+        """
+        from sklearn.linear_model import LinearRegression
+        from sklearn.preprocessing import StandardScaler
+        
+        # Standardize features
+        scaler = StandardScaler()
+        features_scaled = scaler.fit_transform(example_features)
+        
+        # Fit regression
+        model = LinearRegression()
+        model.fit(features_scaled, performance_drops)
+        
+        r_squared = model.score(features_scaled, performance_drops)
+        
+        # Feature importance (absolute coefficients)
+        feature_importance = np.abs(model.coef_)
+        feature_ranking = np.argsort(feature_importance)[::-1]
+        
+        return {
+            'coefficients': model.coef_,
+            'intercept': model.intercept_,
+            'r_squared': r_squared,
+            'feature_ranking': feature_ranking,
+            'interpretation': self._interpret_regression(model.coef_, feature_ranking)
+        }
+    
+    def _interpret_regression(self, coefficients, ranking):
+        """Interpret regression coefficients."""
+        feature_names = ['length', 'complexity', 'hierarchy_depth', 'nesting_level']
+        
+        interpretations = []
+        for i in ranking[:3]:  # Top 3 features
+            interpretations.append({
+                'feature': feature_names[i] if i < len(feature_names) else f'feature_{i}',
+                'coefficient': coefficients[i],
+                'interpretation': f"{'Positive' if coefficients[i] > 0 else 'Negative'} predictor of vulnerability"
+            })
+        
+        return interpretations
+```
+
+#### 5.5 Multiple Comparisons Correction
+
+```python
+def apply_multiple_comparisons_correction(p_values, method='holm'):
+    """
+    Apply multiple comparisons correction.
+    
+    Methods:
+    - bonferroni: Most conservative
+    - holm: Less conservative, more powerful
+    - fdr_bh: Benjamini-Hochberg FDR control
+    """
+    from statsmodels.stats.multitest import multipletests
+    
+    reject, p_values_corrected, alpha_sidak, alpha_bonf = multipletests(
+        p_values,
+        alpha=0.05,
+        method=method
+    )
+    
+    return {
+        'reject_null': reject,
+        'corrected_p_values': p_values_corrected,
+        'method': method,
+        'n_significant': np.sum(reject),
+        'n_tests': len(p_values)
+    }
+```
+
+### 6. Evaluation Pipeline
+
+```python
+class StressTestPipeline:
+    """
+    End-to-end stress-test evaluation pipeline.
+    """
+    def __init__(self, shi_model, adapter, perturbations, metrics):
+        self.shi = shi_model
+        self.adapter = adapter
+        self.perturbations = perturbations
+        self.metrics = metrics
+        
+    def run_stress_test(self, dataset, domain='code'):
+        """
+        Execute complete stress-test pipeline.
+        """
+        print("=" * 80)
+        print(f"STRESS-TEST PIPELINE: {domain.upper()} DOMAIN")
+        print("=" * 80)
+        
+        results = {
+            'clean': [],
+            'perturbed': {pert_name: [] for pert_name in self.perturbations.keys()}
+        }
+        
+        # Step 1: Evaluate on clean data
+        print("\n[1/3] Evaluating on clean data...")
+        for example in tqdm(dataset):
+            clean_perf = self._evaluate_example(example, perturbation=None)
+            results['clean'].append(clean_perf)
+        
+        # Step 2: Evaluate on perturbed data
+        print("\n[2/3] Evaluating on perturbed data...")
+        for pert_name, pert_fn in self.perturbations.items():
+            print(f"  - Perturbation: {pert_name}")
+            
+            for example in tqdm(dataset):
+                perturbed_example = pert_fn(example)
+                perturbed_perf = self._evaluate_example(perturbed_example, perturbation=pert_name)
+                results['perturbed'][pert_name].append(perturbed_perf)
+        
+        # Step 3: Statistical analysis
+        print("\n[3/3] Running statistical analysis...")
+        analysis = self._analyze_results(results)
+        
+        # Generate report
+        self._generate_report(results, analysis, domain)
+        
+        return results, analysis
+    
+    def _evaluate_example(self, example, perturbation=None):
+        """Evaluate model on single example."""
+        # Adapt to text domain
+        adapted_input = self.adapter.forward(example['text'])
+        
+        # Model prediction
+        prediction = self.shi.predict(adapted_input)
+        
+        # Compute metrics
+        performance = {}
+        for metric_name, metric_fn in self.metrics.items():
+            performance[metric_name] = metric_fn(prediction, example['target'])
+        
+        return performance
+    
+    def _analyze_results(self, results):
+        """Run statistical analysis on results."""
+        analysis = {}
+        
+        # Test 1: Domain transfer
+        random_baseline = 0.1  # Assume 10% random baseline
+        analysis['domain_transfer'] = test_domain_transfer(
+            np.array([r['accuracy'] for r in results['clean']]),
+            random_baseline
+        )
+        
+        # Test 2: Robustness comparison
+        performance_by_pert = {
+            'clean': np.array([r['accuracy'] for r in results['clean']])
+        }
+        for pert_name, pert_results in results['perturbed'].items():
+            performance_by_pert[pert_name] = np.array([r['accuracy'] for r in pert_results])
+        
+        analysis['robustness'] = test_robustness_differences(performance_by_pert)
+        
+        # Test 3: Robustness gap analysis
+        gap_analyzer = RobustnessGapAnalysis()
+        analysis['robustness_gaps'] = {}
+        
+        for pert_name, pert_perf in performance_by_pert.items():
+            if pert_name != 'clean':
+                analysis['robustness_gaps'][pert_name] = gap_analyzer.compute_robustness_gap(
+                    performance_by_pert['clean'],
+                    pert_perf
+                )
+        
+        return analysis
+    
+    def _generate_report(self, results, analysis, domain):
+        """Generate stress-test report."""
+        report = f"""
+# Stress-Test Report: {domain.upper()} Domain
+
+## Summary Statistics
+
+### Clean Performance
+- Mean Accuracy: {np.mean([r['accuracy'] for r in results['clean']]):.3f}
+- Std Dev: {np.std([r['accuracy'] for r in results['clean']]):.3f}
+
+### Robustness Gaps
+
+"""
+        for pert_name, gap_stats in analysis['robustness_gaps'].items():
+            report += f"""
+#### {pert_name}
+- Absolute Gap: {gap_stats['gap']:.3f}
+- Relative Gap: {gap_stats['relative_gap']:.1%}
+- 95% CI: [{gap_stats['gap_ci'][0]:.3f}, {gap_stats['gap_ci'][1]:.3f}]
+
+"""
+        
+        report += f"""
+## Statistical Tests
+
+### Domain Transfer Test
+- t-statistic: {analysis['domain_transfer']['t_statistic']:.3f}
+- p-value: {analysis['domain_transfer']['p_value']:.4f}
+- Effect size (Cohen's d): {analysis['domain_transfer']['effect_size']:.3f}
+- **Interpretation:** {analysis['domain_transfer']['interpretation']}
+
+### Robustness ANOVA
+- F-statistic: {analysis['robustness']['anova_results'].anova_table['F Value'][0]:.3f}
+- p-value: {analysis['robustness']['anova_results'].anova_table['Pr > F'][0]:.4f}
+- **Interpretation:** {analysis['robustness']['interpretation']}
+
+"""
+        
+        # Save report
+        with open(f'stress_test_report_{domain}.md', 'w') as f:
+            f.write(report)
+        
+        print(f"\nReport saved to: stress_test_report_{domain}.md")
+```
+
+### 7. Expected Outcomes & Interpretation
+
+**Scenario 1: Strong Transfer**
+- Clean performance > 50% of supervised baseline
+- Hierarchy utilization > 0.7
+- **Interpretation:** Visual hierarchy transfers to syntactic/semantic structure
+- **Recommendation:** SHI is a promising general-purpose world model
+
+**Scenario 2: Weak Transfer, Strong Adaptation**
+- Clean performance < 30% of baseline
+- Fine-tuned performance > 80% of baseline
+- **Interpretation:** Architecture is flexible but requires domain-specific training
+- **Recommendation:** Use SHI as architecture template, not zero-shot
+
+**Scenario 3: Robustness Gaps**
+- Large performance drops (>30%) on structural perturbations (obfuscation, hierarchy flattening)
+- Small drops (<10%) on surface perturbations (renaming, comments)
+- **Interpretation:** Model relies on surface structure, not deep semantics
+- **Recommendation:** Improve structural understanding via auxiliary losses
+
+**Scenario 4: Hierarchy Collapse**
+- Hierarchy utilization < 0.3
+- No difference between hierarchical and flat variants
+- **Interpretation:** Learned hierarchy doesn't transfer to text
+- **Recommendation:** Redesign hierarchy learning for text domains
+
+## Sources
+
+This stress-test framework is based on:
+- [heirarchical-transformer.pdf] - "Sparse Hierarchical Imagination for Efficient Transformer World Models" - provides the original evaluation on Atari 100k and Crafter benchmarks [heirarchical-transformer.pdf:3], the hierarchical token organization approach [heirarchical-transformer.pdf:2], and the SPARTAN causal graph component [heirarchical-transformer.pdf:2]
+
+For stress-testing methodology, I recommend:
+- **Code evaluation:** Chen et al. (2021) "Evaluating Large Language Models Trained on Code" (arXiv:2107.03374) - for pass@k and CodeBLEU metrics
+- **Robustness testing:** Ribeiro et al. (2020) "Beyond Accuracy: Behavioral Testing of NLP Models with CheckList" (ACL) - for perturbation-based testing
+- **Long-document modeling:** Beltagy et al. (2020) "Longformer: The Long-Document Transformer" - for document understanding tasks
+- **Statistical testing:** Dror et al. (2018) "The Hitchhiker's Guide to Testing Statistical Significance in Natural Language Processing" (ACL) - for proper statistical methodology
+- **Adversarial robustness:** Morris et al. (2020) "TextAttack: A Framework for Adversarial Attacks, Data Augmentation, and Adversarial Training in NLP" (EMNLP) - for adversarial perturbations

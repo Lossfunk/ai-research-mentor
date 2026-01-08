@@ -1,0 +1,129 @@
+1. Problem framing and goals
+- Objective: Develop and evaluate graph neural network (GNN) methods for sea ice analysis across three scales: (A) pan-Arctic spatiotemporal forecasting of concentration and ice edge, (B) floe-scale interaction and collision dynamics from SAR-derived tracks, and (C) fast emulation/parameter tuning of dynamic–thermodynamic sea ice models on unstructured meshes. Prior work indicates multi-scale graph modeling can improve Arctic sea ice prediction [1], floe interactions can be framed as particle collisions on graphs [2], and graph surrogates can efficiently emulate finite-element/mesh-based simulators [7,9]. RGPS-based deformation statistics provide rigorous evaluation targets for dynamics and lead/ridge processes [4–6].
+- Deliverables: (i) Open, reproducible codebase; (ii) benchmarked models and baselines; (iii) pan-Arctic forecast skill and ice-edge metrics; (iv) floe-collision prediction and deformation-statistics fidelity; (v) emulator speed/accuracy tradeoffs enabling parameter tuning workflows.
+- Scientific stakes: Better short-to-subseasonal forecasts and interpretable, fast surrogates could improve hazard prediction (leads/ridges), shipping route planning, and model calibration. Evidence-backed evaluation will use established ice-edge and RGPS deformation metrics [1,4–6] and published floe-tracking pipelines [3,10].
+
+2. Experiments
+Experiment 1: Multi-scale spatiotemporal GNN for sea ice concentration (SIC) and ice-edge forecasting (1–30 days)
+- Hypothesis: Multi-scale graph modeling over geodesic/mesh graphs with learned cross-scale edges improves SIC and ice-edge forecast skill vs. persistence, CNN/LSTM, and non-graph baselines, consistent with recent pan-Arctic graph modeling results [1].
+- Setup:
+  - Graph: Nodes = grid cells (25 km OSI-SAF/NSIDC); Edges = k-NN geodesic + dynamic edges via correlation/attention; Multi-scale via pooled coarser graphs.
+  - Inputs: SIC, SIC uncertainty, ancillary forcings (10 m winds, 2 m air temp, ocean surface currents, SST, sea level pressure), sea ice thickness (if available). Conditioning on calendar/seasonal phase.
+  - Model: Spatiotemporal GNN (message passing + temporal attention), with cross-scale fusion; residual losses for anomaly forecasting; optional physics-guided features (freezing degree days).
+  - Training: 2002–2018, validate 2019, test 2020–2023; strict forward-in-time split to avoid leakage.
+- Baselines: Persistence; climatology; UNet+ConvLSTM; GraphWaveNet; Graph Transformer (grid treated as graph). Include a naive linear autoregressor to contextualize gains.
+- Evaluation metrics:
+  - SIC RMSE and anomaly correlation.
+  - Ice edge location error (mean great-circle distance between 15% contour lines).
+  - Brier score / reliability for probabilistic ice presence; CRPS for probabilistic SIC.
+  - Regional skill stratification (e.g., marginal ice zone vs. interior).
+- Expected outcomes: GNN improves ice-edge distance and anomaly correlation over persistence and CNN/LSTM at 3–10 day horizons, in line with multi-scale graph modeling benefits reported for Arctic sea ice prediction [1]. If gains are small in summer, investigate regime-conditioned models.
+
+Experiment 2: Floe-level interaction GNN for collision and velocity-change prediction from SAR tracks
+- Hypothesis: Modeling floes as nodes with proximity/contact edges enables accurate prediction of imminent collisions and post-collision velocity/heading changes, outperforming non-graph sequence models and simple inelastic-collision heuristics [2,3,10].
+- Setup:
+  - Data: Sentinel-1 SAR sequences; floe tracks and shapes via Ice Floe Tracker and/or optical methods; optionally super-resolved motion fields for sub-pixel drift [3,10].
+  - Graph: Nodes = floes with geometry/kinematics; Edges = Delaunay/k-NN within 2–5 floe diameters; features include relative velocities, size ratios, separation.
+  - Model: Message-passing GNN with two heads: (i) edge-level collision probability within Δt (6–24 h) and (ii) node-level Δv, Δheading regression post-collision.
+  - Training: Arctic sectors and seasons split to test generalization; augment with synthetic collisions from agent-based simulators when rare-event scarcity is severe.
+- Baselines: LSTM/Transformer on per-floe sequences; social-force model; analytical inelastic collision predictor; random forest on pairwise features.
+- Evaluation metrics:
+  - Collision classification AUROC, precision–recall (rare-event focus).
+  - MAE/RMSE of velocity/heading change; continuity metrics (track breaks).
+  - Deformation statistics matched to RGPS benchmarks (divergence, shear PDFs, intermittency) in regions reconstructed from floe motions [4–6].
+- Expected outcomes: GNN yields higher precision–recall for imminent collisions and better Δv prediction vs. non-graph baselines; deformation-statistics alignment improves vs. heuristics [2,4–6]. Note: Ground truth collisions may be noisy; report confidence intervals.
+
+Experiment 3: MeshGraphNet surrogate for sea-ice dynamics to emulate stress–strain and deformation
+- Hypothesis: A mesh/graph GNN can emulate a continuum sea-ice dynamic core (e.g., EVP/EB rheology) with substantial speedup while preserving key deformation statistics when forced with realistic winds/currents [7,9].
+- Setup:
+  - Data: Paired inputs/outputs from a high-resolution sea-ice model (e.g., neXtSIM/DEMSI/CICE) on unstructured meshes for 5–10 Arctic years. Inputs: winds, ocean stress, thermodynamic terms; Targets: velocity, internal stress, deformation (divergence/shear).
+  - Model: MeshGraphNet or similar graph-PDE surrogate with edge operators approximating gradient/divergence; physics-informed losses penalizing mass/momentum imbalance; optional boundary-condition conditioning.
+  - Training: Train on subsets of years/regions; test on withheld seasons and on Antarctic to assess domain shift.
+- Baselines: UNet surrogate on lat–lon grids; reduced-order linear model; kernel regression with local stencils.
+- Evaluation metrics:
+  - Field-wise RMSE/MAE for velocity/stress; spectral error over scales.
+  - RGPS-style deformation statistics (PDFs of divergence/shear, scaling exponents) [4–6].
+  - Emulator wall-clock speedup and energy-to-solution vs. simulator.
+- Expected outcomes: 10–100× speedup with subdominant increase in RMSE vs. simulator, while retaining first-order deformation statistics within tolerance windows, consistent with graph surrogates for finite-element physics [7,9]. If statistics drift, add constraints or multi-task training.
+
+Experiment 4: Parameter tuning/data assimilation with GNN-in-the-loop
+- Hypothesis: A fast GNN surrogate enables efficient tuning of rheology/drag parameters against RGPS deformation and ice-edge targets, reducing simulation–observation mismatch vs. default parameters [8].
+- Setup:
+  - Use Emulator (Exp. 3) inside Bayesian optimization or gradient-based calibration loops targeting multi-objective losses: RGPS deformation PDFs/scalings, ice-edge location error, and velocity RMSE [4–6].
+  - Optionally hybrid DA: surrogate provides forecast operator in EnKF/4D-Var for short-window assimilation of SIC and motion vectors.
+- Baselines: Tuning with full simulator (feasible for small windows); simpler ML surrogates (UNet).
+- Evaluation metrics:
+  - Reduction in multi-objective loss vs. default; generalization to withheld periods.
+  - Post-tuning forecast skill for SIC/edge and deformation stats.
+- Expected outcomes: Improved deformation-statistics fidelity and edge skill vs. untuned model within practical compute budgets, aligning with ML-based parameter tuning evidence [8]. If surrogate bias misleads tuning, regularize with small numbers of truth simulations.
+
+3. Timeline (6 months)
+- Month 1:
+  - Build data pipelines (SIC, winds, currents, thickness; SAR ingestion; model outputs).
+  - Define graphs (grid graph for SIC; proximity graphs for floes; mesh graphs for emulator).
+  - Implement baselines; finalize metrics and time splits.
+- Month 2:
+  - Train/validate Experiment 1; ablations on graph topology and cross-scale fusion.
+  - Preliminary report: 3–10 day edge distance vs. baselines.
+- Month 3:
+  - SAR preprocessing and floe tracking; curate labeled collision events.
+  - Train Experiment 2; evaluate across regimes (MIZ vs. interior).
+- Month 4:
+  - Generate simulator datasets; train Experiment 3 surrogate; measure speed/accuracy.
+  - Add physics-informed losses; test Antarctic generalization.
+- Month 5:
+  - Run Experiment 4 calibration/DA with surrogate; compare to limited full-simulator tuning.
+  - Uncertainty quantification (ensembles) for Exps. 1–3.
+- Month 6:
+  - Integrate results; stress-test generalization (extreme years, 2012/2020 minima).
+  - Prepare manuscript(s), release code/data cards, and reproducibility package.
+
+4. Resources (compute, tools, datasets)
+- Compute:
+  - Training: 4× A100 40–80 GB or equivalent; ~10 TB fast storage; optional CPU cluster for simulator data generation.
+  - Inference/emulation: 1× A100/3090; cloud burst for SAR preprocessing.
+- Tools:
+  - PyTorch + PyTorch Geometric/DGL; torch-geometric-temporal; JAX for MeshGraphNet variants; cuGraph for sparsity; xarray/rioxarray/zarr for geospatial data; DVC/W&B for tracking; Ice Floe Tracker pipeline [10].
+- Datasets:
+  - SIC: OSI-SAF/NSIDC gridded products; uncertainty fields where available.
+  - Forcings: ERA5 reanalysis; ocean surface currents (e.g., TOPAZ/GLORYS).
+  - Motion/Deformation: RGPS/MEaSUREs; SAR (Sentinel-1 GRD); simulator outputs (CICE/neXtSIM/DEMSI).
+  - Validation targets: Ice-edge contours (15% SIC); RGPS deformation stats [4–6]; SAR-derived floe tracks [3,10].
+Note: The tool search did not retrieve canonical dataset DOIs. We recommend collecting dataset DOIs from NSIDC/OSI-SAF portals during Month 1 and recording them in the project data card.
+
+5. Risks and mitigations
+- Data sparsity/label noise for collisions; rare-event class imbalance
+  - Mitigations: Self-supervised pretraining on motion; hard negative mining; synthetic augmentation via agent-based floe simulators; focal loss; calibrate probabilities [2,3,10].
+- Non-stationarity across seasons/regions
+  - Mitigations: Regime-aware conditioning; domain-adaptive normalization; pretrain on long climatologies; evaluate per-region/per-season splits [1].
+- Graph scale and memory limits on high-res meshes
+  - Mitigations: Neighbor sampling, subgraph training, sparse attention, multi-scale pooling, mixed precision; partitioned inference [7].
+- Surrogate bias leading to miscalibrated parameter tuning
+  - Mitigations: Hybrid loops with periodic truth simulations; physics-informed constraints; multi-fidelity BO; uncertainty-aware objectives [7–9].
+- Metric leakage/time leakage in forecasting
+  - Mitigations: Strict forward splits; purge overlapping windows; hold-out extreme years for blind tests.
+- SAR coverage gaps and pre-processing complexity
+  - Mitigations: Use multiple sensors; fallback motion vectors from passive microwave; leverage established tracking pipelines and super-resolution methods [3,10].
+
+6. Stretch ideas or follow-up directions
+- Physics-constrained GNNs: Enforce mass/momentum or plastic yield constraints via differentiable penalties or Lagrange multipliers in message passing [7,9].
+- Equivariant/rotationally aware GNNs for drift fields; spherical graph transformers on geodesic grids.
+- Operator learning: Graph Neural Operators for mapping forcings to state over horizons; compare to Fourier Neural Operators on irregular meshes [7].
+- Hybrid DA: Embed surrogate as forecast operator in EnKF/4D-Var for real-time SIC/motion assimilation [8].
+- Uncertainty quantification: Deep ensembles + conformal calibration for reliable ice-edge probabilities; probabilistic emulators for parameter tuning.
+- Cross-basin transfer: Train on Arctic; test/adapt to Antarctic; quantify transfer gap.
+
+Citations
+[1] Arctic Sea Ice Prediction Based on Multi‐Scale Graph Modeling With ... — https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2024JD042136
+[2] Graph neural network for colliding particles with an application to sea ice floe modeling — https://sciety-labs.elifesciences.org/articles/by?article_doi=10.21203/rs.3.rs-6243496/v1
+[3] Super-Resolved Fine Scale Sea Ice Motion Tracking (TGRS 2017) — https://media-lab.ccny.cuny.edu/YLTCCNYHomepage/Publications/TGRS-SR-2017.pdf
+[4] Scale Dependence and Localization of the Deformation of Arctic Sea Ice (Phys. Rev. Lett. 2004) — https://link.aps.org/doi/10.1103/PhysRevLett.93.178501
+[5] Sea Ice Deformation Rates From Satellite Measurements and in a ... — http://psc.apl.washington.edu/lindsay/pdf_files/rgps_model_deformation.pdf
+[6] Leads and ridges in Arctic sea ice from RGPS data and a new ... (The Cryosphere 2019) — https://tc.copernicus.org/articles/13/627/2019/
+[7] Graph Neural Networks as Fast and High-fidelity Emulators for Finite ... — https://arxiv.org/html/2402.05291v1
+[8] Tuning parameters of a sea ice model using machine learning (GMD 2025) — https://gmd.copernicus.org/articles/18/885/2025/
+[9] Emulating damage in ice sheet models using graph networks — https://research.kuleuven.be/portal/en/project/3E241235
+[10] Ice Floe Tracker: An Open-Source Tool Enabling Novel Observations of Sea Ice Motion — https://essopenarchive.org/users/599762/articles/695215-ice-floe-tracker-an-open-source-tool-enabling-novel-observations-of-sea-ice-motion-from-visual-remote-sensing-imagery
+
+Optional next step
+- Confirm target regions and forecast horizons (e.g., pan-Arctic 3–10 day focus), then greenlight Month 1 data acquisition and graph definitions; in parallel, secure simulator access (CICE or neXtSIM) to begin generating training pairs for the emulator.

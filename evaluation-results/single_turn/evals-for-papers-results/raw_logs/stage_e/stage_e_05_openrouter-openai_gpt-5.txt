@@ -1,0 +1,55 @@
+Below is a concise discussion-frame you can include to address concerns about domain transferability, plus targeted new experiments/ablations that directly test the claim.
+
+How we acknowledge the concern
+- We agree that aspect score models can overfit venue/year-specific norms, rubrics, and topic distributions. As a result, in-domain gains may not translate across venues or time. Our goal is therefore not just to optimize in-domain error, but to maximize out-of-domain retention under realistic shifts in topic, rubric, and writing style [Kang et al., 2018].
+
+What we commit to show
+- Pre-registered out-of-domain (OOD) evaluations: We will report cross-venue (train on ACL, test on ICLR; and vice versa) and cross-year (train on ACL-YY, test on ACL-YY+1) results with retained-performance ratio (RPR = OOD/ID). We will treat RPR ≥ 0.90 as acceptable transfer and flag any result < 0.80 as non-transferable.
+- Distribution-shift diagnostics and invariance: We will quantify feature and representation shift (e.g., length, sectioning, lexical and embedding distributions) and prioritize models/inputs that preserve invariants across domains, following domain generalization best practices [Gulrajani & Lopez-Paz, 2021].
+- Conservative inputs to reduce spurious transfer: We will prefer section-limited text (title+abstract+intro) and mask venue/metadata cues, and we will verify that any reported transfer holds under these constraints.
+
+Targeted experiments and ablations (falsifiable; will be included)
+1) Cross-venue and cross-year transfer with retained-performance ratio
+- Design: Train aspect models on ACL-YY, test on ACL-YY+1 and ICLR-YY; repeat with ICLR as source. Compare text-only, hand-engineered features only, and combined models.
+- Metrics: Kendall’s tau (ranking), RMSE/MSE, and RPR (OOD/ID) with 95% CIs.
+- Decision criteria: Claim transfer only if RPR ≥ 0.90 for tau and RMSE deltas ≤ 0.01; if combined < text-only RPR, we drop or down-weight hand-engineered features for OOD use.
+
+2) Topic- and length-matched transfer test
+- Design: Within each source–target pair, create matched paper pairs by topic embedding (nearest neighbors), length (±5%), and parser quality. Evaluate pairwise accuracy (which paper has higher aspect score) across domains.
+- Metrics: Pairwise accuracy with sign test; Δ vs. in-domain.
+- Decision criteria: If cross-domain matched-pair accuracy ≤ 55% or CI overlaps 50%, we conclude models rely on non-transferable correlates and pivot to section-limited inputs and domain-invariant training.
+
+3) Venue/metadata leakage ablation
+- Design: Mask venue names, arXiv IDs/comments, acknowledgments, explicit “Accepted at …” strings, and reference section; re-train and re-evaluate OOD.
+- Metrics: Δtau/ΔRMSE ID and OOD; feature-importance shift.
+- Decision criteria: If masking reduces OOD performance by >0.01 tau or increases RMSE by >0.01, we adopt masked inputs as the primary setting and revise prior claims as partially driven by leakage.
+
+4) Section-restricted transfer
+- Design: Train/evaluate on title+abstract+intro only (fixed token budget), vs. full paper. Repeat cross-venue/year splits.
+- Metrics: RPR and absolute performance; variance across domains.
+- Decision criteria: Prefer the smallest section set achieving ≥0.90 RPR and within 0.01 of full-text tau; otherwise report section sensitivity as a limitation.
+
+5) Domain-conditional calibration
+- Design: Calibrate models (temperature scaling) on source domain only; evaluate calibration error (ECE) and coverage of prediction intervals OOD.
+- Metrics: ECE and coverage gaps ID vs. OOD.
+- Decision criteria: If OOD ECE degrades by >5 points, we adopt domain-robust calibration (e.g., ensemble or conformal calibration using only source residuals) and report calibrated intervals in all OOD results.
+
+6) Invariance-focused training vs. ERM baseline
+- Design: Compare ERM to simple domain-generalization baselines (e.g., group DRO, representation whitening/CORAL, or leave-one-domain-out early stopping) using only source labels.
+- Metrics: OOD tau/RMSE; stability across domain splits.
+- Decision criteria: Adopt DG variant only if it improves OOD tau by ≥0.02 without harming ID by >0.01; otherwise keep ERM and emphasize input-side fixes.
+
+7) Error decomposition and feature-importance shift
+- Design: Compute per-domain residuals and SHAP/permutation importances for hand-engineered features; cluster errors by domain, topic, and length.
+- Outcome: Identify non-transferable features (e.g., document length, reference count, equation density) and remove or down-weight them; re-check OOD results.
+- Decision criteria: If removing a feature family improves OOD tau by ≥0.02 (CI excludes 0) with ≤0.01 ID loss, we exclude that family from the main model.
+
+What we will report if transfer is weak
+- We will clearly state where transfer fails (venue, year, aspect), quantify the gap to in-domain and to human agreement where available, and shift our claims toward (a) robust ranking within the same venue/year and (b) calibrated uncertainty for OOD use. We will also release domain-split benchmarks and scripts to facilitate future work on transfer.
+
+Why this addresses the critique
+- The above directly tests generalization under realistic shifts, constrains inputs to reduce venue-specific shortcuts, and separates transferable signal (e.g., argument quality, clarity cues) from spurious correlates (e.g., venue markers, length). By pre-registering RPR thresholds and reporting confidence intervals, we avoid overclaiming and make any remaining gaps explicit.
+
+Sources
+- Kang, Ammar, Schwartz, Cohen (2018). A Dataset of Peer Reviews (PeerRead): Collection, Insights and NLP Applications — https://aclanthology.org/N18-1149.pdf
+- Gulrajani, Lopez-Paz (2021). In Search of Lost Domain Generalization — https://arxiv.org/abs/2007.01434

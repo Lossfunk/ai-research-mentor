@@ -1,0 +1,134 @@
+Below is a compact, reviewer-aligned submission checklist for “Do Multiple Instance Learning Models Transfer?”, plus a realistic final timeline, key risks, and missing items to address before submission. I’ve assumed a general ML venue (NeurIPS/ICML/ICLR); adapt minor venue-specific items as needed.
+
+Submission checklist (what reviewers and ACs expect)
+
+A) Problem framing and claims
+- Clear problem statement: Define “transfer” precisely (e.g., source→target performance without target labels, few-shot, or fine-tune). State hypotheses and success criteria.
+- Scope: Clarify MIL setting (bag definition, label granularity), domains (e.g., histopathology, audio, remote sensing), and intended generality.
+
+B) Datasets and splits
+- Dataset ledger in the paper and repo: name, version/date, URL/DOI, license (SPDX/link), bag construction, instance preprocessing, label provenance, and whether you redistribute anything.
+- Train/val/test protocol: No leakage across domains; document dedup and near-duplicate removal across source–target pairs. Describe bag size distributions and how they differ across domains.
+- Transfer protocol: State if zero-shot, frozen-feature evaluation, linear probe, or full fine-tune. Hyperparameters chosen only on source (for zero-shot) or with a fixed small target-valid set; no target-test peeking.
+
+C) Methods and baselines
+- Baselines: Strong MIL variants (e.g., Attention-MIL, mean/Max pooling, Set-Transformer/Transformer-based MIL) and simple non-MIL baselines (e.g., instance-level majority vote, linear probe on pooled features).
+- Ablations: Pooling mechanism, instance encoder (frozen vs fine-tuned), bag size effects, domain-specific vs domain-agnostic normalization.
+- Metrics: Primary (e.g., AUROC/AUPRC/accuracy) with 95% CIs; calibration (ECE/Brier); efficiency (params, inference latency per bag, memory).
+- Statistics: Paired bootstrap or DeLong test where applicable; report variance across seeds.
+
+D) Ethics/compliance and reproducibility
+- Licenses/TOS: Ledger and attributions; confirm redistribution permissions for data and checkpoints. Exclude NC/SA/TOS-restricted sources or align model license.
+- Human data: If present, IRB/ethics approval or exemption ID, consent, compensation details; data de-identification and sharing plan.
+- Compute disclosure: Hardware counts, device-hours, software versions, kernels/backends, seeds; energy/emissions estimate with assumptions.
+- Safety impacts: If domains involve sensitive content, report pre/post-transfer shifts in toxicity/bias (even a brief audit if relevant).
+- Artifacts: Code, configs, scripts, seeds, environment files; pretrained weights; data download scripts (not raw mirrors); LICENSE + NOTICE with third-party attributions.
+- Checklists: Venue ethics/reproducibility checklist completed; model/data cards linked in appendix or repo.
+
+E) Writing, formatting, and packaging
+- Anonymization and template compliance; page limits respected; appendices for extra details.
+- Figures/tables: Legible, with captions stating protocol (zero-shot vs fine-tuned), data regimes, and bag statistics.
+- Negative results: Explicitly reported; position them as empirical evidence informing transfer boundaries.
+- Supplementary: Detailed protocols, hyperparameter tables, failure analyses, per-domain results, and data access notes.
+- README: One-command reproduction for 1–2 core experiments; results table expected vs obtained.
+
+Final timeline (8 weeks to submission; compress if needed)
+
+Week 1: Protocol freeze and risk audit
+- Lock transfer settings (zero-shot/few-shot/fine-tune), datasets, and baselines.
+- Run license/TOS audit; remove/replace restricted sources. Draft dataset ledger.
+
+Week 2: Reproducible pipeline + seed sweep
+- Solidify training/eval scripts; pin versions; implement dedup across domains.
+- Run 3-seed baselines on source and one target; validate splits and CIs.
+
+Week 3: Core experiments across all domains
+- Complete zero-shot and few-shot transfer runs across all source–target pairs.
+- Log compute, memory, latency per bag; begin emissions calculation.
+
+Week 4: Ablations and diagnostics
+- Pooling, bag-size stress tests, frozen vs fine-tuned encoders.
+- Calibration and robustness checks; preliminary failure analysis.
+
+Week 5: Writing pass 1 + artifacts
+- Draft main paper (Intro/Related/Method/Exp), appendices, and dataset ledger.
+- Prepare code release (private repo), model/data cards, LICENSE/NOTICE.
+
+Week 6: Completeness + ethics/repro
+- Add compute/emissions section; finalize checklists (ethics, reproducibility).
+- IRB statement (if applicable); safety audit results (if applicable).
+
+Week 7: Polishing and external read
+- Tighten figures/tables; ensure results reproducible from scripts.
+- External dry-run review; address clarity/positioning/novelty concerns.
+
+Week 8: Final buffer
+- Finalize supplementary; verify template/anonymization.
+- Tag release commit; archive artifacts (e.g., Zenodo) for stable DOIs.
+- Submit 48–72 hours before deadline.
+
+Key risks and mitigations
+
+Methodological/empirical
+- Risk: Hyperparameter tuning on target data inflates “transfer.” Mitigation: Tune only on source; if few-shot, strictly document target budget; use held-out target test.
+- Risk: Cross-domain leakage (duplicates). Mitigation: Perceptual hashing/embedding similarity dedup across domains before splitting.
+- Risk: Weak baselines. Mitigation: Include attention-MIL and transformer-style MIL; add simple non-MIL baselines; report calibration and efficiency.
+- Risk: Unclear transfer definition. Mitigation: Pre-register definitions and success criteria; report all regimes (zero-shot, few-shot, full fine-tune) side-by-side.
+
+Compliance/review
+- Risk: Licensing/TOS conflicts or missing attributions. Mitigation: Dataset ledger; scripts-only redistribution; align model license.
+- Risk: Missing compute/emissions disclosure. Mitigation: Include device-hours, power/PUE assumptions, and formula; release seeds/configs.
+- Risk: Paper hygiene (formatting/anonymity/checklists). Mitigation: Internal “desk-reject” pass 1 week before deadline.
+
+Likely missing items to fill now
+- Dataset ledger with license IDs, versions, URLs, and attribution statements.
+- Explicit transfer protocol (zero-shot/few-shot/fine-tune) and tuning policy.
+- Deduplication method and confirmation across domains.
+- Confidence intervals and statistical tests; seed counts specified.
+- Calibration metrics (ECE/Brier) and reliability diagrams.
+- Compute/emissions appendix with formulas and assumptions.
+- Reproducibility package: exact configs, seeds, environment, and run scripts.
+- Ethics/IRB statement (if human data); safety/bias audit note if applicable.
+- Model/data cards; LICENSE and NOTICE with third-party attributions.
+
+Three concrete, falsifiable experiments to de-risk reviews
+
+1) Cross-domain zero-shot transfer matrix
+- Setup: Train MIL on each source domain; evaluate zero-shot on all targets. Hyperparameters chosen on source only; no target tuning. 3–5 seeds.
+- Hypothesis: Attention-based MIL transfers better than mean/Max pooling across ≥50% of source–target pairs.
+- Measurements: AUROC/AUPRC with 95% CIs; paired bootstrap or DeLong for differences.
+- Falsification: If attention-MIL is not significantly better than simple pooling on most pairs, claim is rejected or must be narrowed.
+
+2) Bag-size distribution sensitivity
+- Setup: For a fixed source-trained model, evaluate on target subsets stratified by bag size (e.g., terciles) and on synthetic re-bagging that matches source vs target distributions.
+- Hypothesis: Performance drop correlates with bag-size shift; bag-size-aware normalization or attention temperature fixes ≥50% of the gap.
+- Measurements: AUROC vs bag size; regression of performance vs bag-size mismatch; ablation with/without normalization.
+- Falsification: No significant correlation or mitigation effect implies bag-size shift is not the driver; revise mechanism claims.
+
+3) Frozen vs fine-tuned instance encoders
+- Setup: Compare transfer with frozen self-supervised encoder (e.g., DINO/SimCLR) + MIL head vs end-to-end fine-tuning on source only.
+- Hypothesis: Frozen encoders yield equal or better zero-shot transfer than end-to-end source fine-tuning in at least two target domains due to reduced overfitting to source.
+- Measurements: AUROC/CIs; calibration metrics; parameter/compute costs.
+- Falsification: If fine-tuning consistently outperforms frozen across targets, adjust recommendations and analysis.
+
+Optional robustness additions (if time permits)
+- Label noise stress test at bag level (e.g., 10–20% flips) and its effect on transfer.
+- OOD detection/calibration under domain shift (ECE/Brier; temperature scaling fit on source only).
+- Duplicate/near-duplicate removal ablation showing its effect on transfer estimates.
+
+Quick package pre-flight (tick before submitting)
+- Paper: Template-compliant, anonymized, <= page limit; clear definition of “transfer” and claims bound to evidence; CIs and stats included.
+- Ethics/repro: Checklists complete; dataset ledger; IRB (if any); compute/emissions; safety note (if sensitive domain).
+- Code: One-command reproduction; seeds/configs/checkpoints; LICENSE/NOTICE; third-party attributions.
+- Data: No redistribution of restricted data; scripts to re-fetch; dedup documented.
+- Results: All regimes reported (zero-shot/few-shot/fine-tune) or explicitly scoped; negative results included with analysis.
+
+Literature anchors
+- Ilse, Tomczak, and Welling (2018). Attention-based Deep Multiple Instance Learning — https://arxiv.org/abs/1802.04712
+- Koh et al. (2021). WILDS: A Benchmark of in-the-Wild Distribution Shifts — https://arxiv.org/abs/2012.07421
+
+Sources
+- Ilse et al., 2018. Attention-based Deep Multiple Instance Learning — https://arxiv.org/abs/1802.04712
+- Koh et al., 2021. WILDS: A Benchmark of in-the-Wild Distribution Shifts — https://arxiv.org/abs/2012.07421
+
+If you share your current draft or experiment plan, I can map each checklist item to specific sections/figures and mark remaining gaps line-by-line.

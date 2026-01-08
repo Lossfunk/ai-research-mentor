@@ -1,0 +1,986 @@
+{
+  "agent_label": "multi_turn_eval_baseline_sonnet",
+  "system_id": "openrouter_anthrophic_claude-sonnet-4.5",
+  "scenario_id": "climate_policy_grad",
+  "turns": [
+    {
+      "turn_index": 1,
+      "mentor_reply": "Great area to jump into. With 5 hours/week and county-level data, aim for a lightweight, transparent simulation that answers a focused policy question. Here’s a pragmatic path to a publishable first project in ~8–12 weeks.\n\nStep 1: Pick a narrow research question\n- Examples\n  - How much could a clean electricity standard plus EV adoption cut County X’s CO2 by 2030?\n  - What mix of EV adoption, building electrification, and efficiency gets County X to 50% below 2019 by 2035?\n  - Which single lever yields the lowest abatement cost per ton for County X by 2030?\n- Scope to 1–2 sectors at first (transportation, buildings) and a simple time horizon (e.g., 2020–2035).\n\nStep 2: Build a minimal baseline emissions inventory\n- Sectors to include first\n  - On-road transportation: county VMT × grams CO2/mi by vehicle type.\n  - Electricity use: county electricity consumption × eGRID subregion emission factor.\n  - Direct building fuels (optional in v1): county natural gas + heating oil use × CO2 factors.\n- Practical data sources or proxies\n  - Population and growth: ACS.\n  - VMT by county: FHWA HPMS (or state DOT).\n  - Emission factors: gasoline/diesel CO2 per mile (use simple fleet-average if needed).\n  - Electricity mix: EPA eGRID subregion emission factor; map counties to subregions.\n  - Electricity and gas consumption: use county data if you have it; if not, downscale state totals by population or heating degree days.\n- Quality checks\n  - Sanity-check totals against an external benchmark if possible (e.g., Vulcan CO2 for your county, or state-level EPS numbers scaled down).\n\nStep 3: Define simple policy levers to simulate\n- Clean electricity standard: schedule the grid CO2e factor to decline to a target by year T.\n- EV adoption: logistic curve for EV share of new sales; stock turnover to convert sales to fleet share; emissions per mile drop accordingly.\n- Efficiency: percentage reductions in electricity and VMT demand.\n- Building electrification: annual replacement rate of gas furnaces/water heaters with heat pumps; adjust electricity and gas use.\n\nStep 4: Implement a transparent, deterministic model in Python\n- Time step yearly. Keep it in a single Jupyter notebook at first.\n- Data stack\n  - pandas, numpy, matplotlib/seaborn\n  - geopandas if you’ll map results\n- Optional later: uncertainty with numpy’s random or PyMC; simple cost module.\n\nMinimal model sketch (pseudo-code-ish Python)\n\n- Parameters\n  - years = np.arange(2020, 2036)\n  - base_pop, pop_growth\n  - base_VMT, VMT_growth\n  - base_kWh, kWh_growth\n  - egrid_EF0, egrid_EF_target, target_year\n  - EV_sales_logistic params (midpoint, steepness)\n  - vehicle survival curve, mpg_gas, kWh_per_mile_EV\n  - efficiency improvements per year\n- Baseline\n  - pop_t = base_pop * (1 + pop_growth) ** (t - 2020)\n  - VMT_t = base_VMT * (1 + VMT_growth) ** (t - 2020)\n  - kWh_t = base_kWh * (1 + kWh_growth) ** (t - 2020)\n- Policies\n  - egrid_EF_t = linear_or_piecewise_decline(egrid_EF0 → egrid_EF_target by target_year)\n  - EV_sales_share_t = logistic(years)\n  - EV_fleet_share_t = stock_turnover(EV_sales_share_t, survival_curve)\n  - On-road CO2: (1 − EV_fleet_share_t) * VMT_t * gCO2_per_mile_gas + EV_fleet_share_t * VMT_t * kWh_per_mile_EV * egrid_EF_t\n  - Electricity CO2: kWh_t * (1 − efficiency) * egrid_EF_t (plus load increases from EVs/heat pumps if modeled)\n- Outputs\n  - Total CO2e by year and sector, wedge charts, percent change vs 2019, policy contributions.\n\nStep 5: Add uncertainty and sensitivity (lite)\n- Pick 5–8 key parameters with ranges (EV adoption steepness, mpg, kWh/mi, eGRID trajectory, efficiency gains).\n- Run 500–2,000 Monte Carlo draws.\n- Report median, 5–95% intervals for 2030/2035 emissions; probability of meeting target.\n- Simple tornado chart for parameter sensitivities.\n\nStep 6: Optional cost layer (only after emissions are working)\n- EV: use $/kWh for charging, TCO deltas per mile; or simple $/ton from literature.\n- Clean electricity: approximate $/MWh incremental cost of renewables/clean firm power applied to displaced fossil generation.\n- Efficiency: $/MWh saved.\n- Report cost per ton by policy and combined portfolio.\n\nA 10–12 week, 5-hours/week plan\n- Week 1: Choose county, sectors, time horizon, and 1–2 policy levers. Write research question and success metrics.\n- Week 2: Gather baseline inputs (VMT, electricity EF, electricity consumption). Decide on proxies if county data missing.\n- Week 3: Code baseline inventory and validate against an external benchmark; make first chart.\n- Week 4: Implement clean electricity pathway and plot impact on electricity emissions.\n- Week 5: Implement EV adoption (sales logistic + fleet turnover) and on-road emissions update.\n- Week 6: Add efficiency lever for electricity; combine levers; produce wedge chart.\n- Week 7: Add EV load to electricity demand; ensure energy balance; document assumptions.\n- Week 8: Write clear methods section; parameter table; replicate baseline and policy charts.\n- Week 9: Add Monte Carlo uncertainty; probability of meeting a target by 2030/35.\n- Week 10: Draft results and limitations; robustness checks.\n- Weeks 11–12 (optional): Add building electrification or a simple cost module; polish figures; prep a short paper or memo.\n\nRepository structure\n- data_raw/ and data_processed/\n- src/ with small modules (data_load.py, baseline.py, policies.py, plots.py)\n- notebooks/ 01_baseline, 02_policies, 03_uncertainty\n- results/ figures and csv outputs\n- config.yaml for parameters to make scenarios reproducible\n\nLightweight parameter defaults to get moving\n- Gasoline CO2 per mile: 350–420 g/mi range (use 404 g/mi baseline if no fleet detail).\n- EV energy: 0.26–0.33 kWh/mi (use 0.30 kWh/mi baseline).\n- eGRID EF: start with your subregion’s current value; test linear decline to 100–150 kgCO2/MWh by 2035 under a CES scenario.\n- Vehicle survival half-life: 12–15 years; average lifetime ~17 years.\n- EV sales S-curve: midpoint year where 50% of new sales are EVs; steepness tuned to reflect state policy context.\n\nHow this becomes a paper\n- Provide a transparent, county-scale model; validate baseline; run policy scenarios; quantify uncertainty; interpret feasibility to meet targets.\n- Frame contributions: localizing policy portfolios with clear, reproducible assumptions; show trade-offs and path dependencies (e.g., EVs depend on grid decarbonization).\n\nIf you share the county (and a preference for sector focus), I can draft:\n- A parameter file pre-populated with reasonable defaults,\n- A minimal Jupyter notebook template with the functions above,\n- A short list of data links tailored to your county’s eGRID subregion and state VMT sources.",
+      "student_message": "Hey, I'm public policy grad student with basic Python. I want to get started in research in climate policy simulation. Constraints: has access to county-level datasets and 5 hours/week. How should I start?",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9333333333333333,
+        "student_constraint_fit": 1.9000000000000001,
+        "student_confidence_gain": 1.9333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9366666666666668
+      },
+      "overall_score": 1.9366666666666668,
+      "cumulative_avg": 1.9366666666666668,
+      "delta": null,
+      "success_at_turn": true,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Choose a specific county, 1-2 sectors (e.g., transportation, buildings), and a simple time horizon (e.g., 2020-2035) for my simulation, and formulate a narrow research question.\",\n    \"Gather baseline input data for my chosen county and sectors, focusing on VMT (from FHWA HPMS or state DOT) and electricity consumption/emission factors (from EPA eGRID or downscaled state totals).\",\n    \"Start coding the baseline emissions inventory in a Jupyter notebook using pandas and numpy, and validate it against an external benchmark if possible (e.g., Vulcan CO2 for my county).\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is incredibly helpful. It breaks down a complex task into manageable, concrete steps that I can actually start working on within my 5 hours/week constraint. The mentor explicitly addresses my constraints and offers to provide tailored resources, which significantly reduces my uncertainty and boosts my confidence.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Choose a specific county, 1-2 sectors (e.g., transportation, buildings), and a simple time horizon (e.g., 2020-2035) for my simulation, and formulate a narrow research question.",
+              "Gather baseline input data for my chosen county and sectors, focusing on VMT (from FHWA HPMS or state DOT) and electricity consumption/emission factors (from EPA eGRID or downscaled state totals).",
+              "Start coding the baseline emissions inventory in a Jupyter notebook using pandas and numpy, and validate it against an external benchmark if possible (e.g., Vulcan CO2 for my county)."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is incredibly helpful. It breaks down a complex task into manageable, concrete steps that I can actually start working on within my 5 hours/week constraint. The mentor explicitly addresses my constraints and offers to provide tailored resources, which significantly reduces my uncertainty and boosts my confidence."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Choose a specific county and narrow research question focusing on 1-2 sectors (transportation/electricity)\", \"Gather baseline data: VMT from FHWA HPMS, electricity EF from EPA eGRID, and consumption data\", \"Set up Python environment with pandas/numpy/matplotlib and create initial baseline emissions calculation\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The response provides exceptionally concrete steps with specific data sources and Python implementation details that fit my 5-hour weekly constraint, directly addressing my uncertainty about how to start while flagging potential data gaps and validation needs.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Choose a specific county and narrow research question focusing on 1-2 sectors (transportation/electricity)",
+              "Gather baseline data: VMT from FHWA HPMS, electricity EF from EPA eGRID, and consumption data",
+              "Set up Python environment with pandas/numpy/matplotlib and create initial baseline emissions calculation"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The response provides exceptionally concrete steps with specific data sources and Python implementation details that fit my 5-hour weekly constraint, directly addressing my uncertainty about how to start while flagging potential data gaps and validation needs."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Choose a specific county (like my home county), select 1-2 sectors such as transportation and electricity, define a time horizon like 2020-2035, and write a narrow research question like 'How much could a clean electricity standard plus EV adoption cut County X’s CO2 by 2030?' using the examples provided.\",\n    \"Gather baseline inputs for the chosen sectors: look up population and growth from ACS, VMT from FHWA HPMS or state DOT, and electricity emission factors from EPA eGRID subregion, using proxies like downscaling state totals by population if county-specific data is missing.\",\n    \"Set up a basic Jupyter notebook with pandas and numpy, input the gathered data as parameters (e.g., base_VMT, egrid_EF0), and code a simple baseline emissions calculation for one year to sanity-check against an external benchmark like Vulcan CO2.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with only basic Python and 5 hours a week, this response feels perfectly tailored with a realistic weekly plan, specific data sources I can access quickly, and starter code sketches that reduce my fear of getting stuck on technical details right away.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Choose a specific county (like my home county), select 1-2 sectors such as transportation and electricity, define a time horizon like 2020-2035, and write a narrow research question like 'How much could a clean electricity standard plus EV adoption cut County X’s CO2 by 2030?' using the examples provided.",
+              "Gather baseline inputs for the chosen sectors: look up population and growth from ACS, VMT from FHWA HPMS or state DOT, and electricity emission factors from EPA eGRID subregion, using proxies like downscaling state totals by population if county-specific data is missing.",
+              "Set up a basic Jupyter notebook with pandas and numpy, input the gathered data as parameters (e.g., base_VMT, egrid_EF0), and code a simple baseline emissions calculation for one year to sanity-check against an external benchmark like Vulcan CO2."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with only basic Python and 5 hours a week, this response feels perfectly tailored with a realistic weekly plan, specific data sources I can access quickly, and starter code sketches that reduce my fear of getting stuck on technical details right away."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 2,
+      "mentor_reply": "Short answer on scope/timeline\nYes—transportation + clean electricity is enough for a strong conference poster by December, especially if you keep the model transparent and reproducible. With 5 hrs/week, aim for:\n- Week 1: Finalize inputs; run baseline inventory; one sanity-check chart\n- Week 2: Implement EV adoption + stock turnover; implement clean electricity trajectory\n- Week 3: Combine levers; add EV load to grid; make wedge/line charts; light sensitivity ranges\n- Week 4: Draft 1-page methods, figures, and headline results; iterate on visuals\n\nBelow are a pre-filled config.yaml and a single-notebook starter you can drop into a repo. They’re set up for Buncombe County, NC, 2019–2035, with two scenarios: BAU and Policy (cleaner grid + faster EV adoption). You only need to fill in 3 county-specific numbers: 2019 population (optional), 2019 VMT, and 2019 electricity sales (MWh).\n\nRepository skeleton\n- data_raw/\n- data_processed/\n- notebooks/\n- src/ (optional later if you modularize)\n- results/ (auto-saved figures and CSVs)\n- config.yaml (below)\n- notebooks/01_buncombe_transport_power.ipynb (content below—paste into a new notebook cell-by-cell)\n\nconfig.yaml (pre-filled for Buncombe; replace the three TODOs)\nmetadata:\n  county_name: Buncombe County, NC\n  county_fips: 37021\n  notes: >\n    Focus on transportation (on-road) and electricity. Baseline 2019. EVs shift load to grid; on-road emissions are tailpipe only.\n\ntime:\n  start_year: 2019\n  end_year: 2035\n\ninputs:\n  # Replace these three with your county values\n  population_2019: null        # TODO: ACS 2019 total population\n  vmt_2019: null               # TODO: FHWA HPMS county VMT (light+heavy) in 2019 (miles)\n  electricity_mwh_2019: null   # TODO: County retail sales in 2019 (MWh)\n\n  # Growth assumptions (tweak after first run)\n  population_growth_rate: 0.006      # 0.6%/yr default; set to your ACS trend if desired\n  vmt_growth_rate: 0.005             # 0.5%/yr default; set to 0 if unsure\n  electricity_sales_growth_rate: 0.003  # 0.3%/yr default; set to 0 if unsure\n\nemission_factors:\n  # eGRID SERC-SE (user-provided ~436 kg/MWh in 2022). Use 2019 ~ similar as a starting point unless you have exact 2019.\n  egrid_kg_per_mwh_2019: 436.0\n  # On-road average tailpipe emissions (gasoline-dominant). Adjust if you have better fleet data.\n  gco2_per_mile_onroad: 404.0\n  # EV efficiency (kWh per mile). Use 0.30 baseline; sensitivity 0.26–0.33.\n  ev_kwh_per_mile: 0.30\n\npolicy_scenarios:\n  bau:\n    grid:\n      type: constant   # keep EF flat at 2019 level\n      target_kg_per_mwh: null\n      target_year: null\n    ev_sales_logistic:\n      max_share: 0.95  # technical ceiling\n      midpoint_year: 2036\n      steepness_k: 0.6 # higher = faster S-curve\n  policy:\n    grid:\n      type: linear_decline\n      target_kg_per_mwh: 120.0\n      target_year: 2035\n    ev_sales_logistic:\n      max_share: 0.95\n      midpoint_year: 2029\n      steepness_k: 0.9\n\nvehicle_stock:\n  # Survival function parameters for stock turnover\n  max_age: 25\n  half_life_years: 13\n\noptions:\n  include_ev_load_in_electricity: true\n  save_outputs: true\n  outputs_dir: results\n\nStarter notebook (paste into notebooks/01_buncombe_transport_power.ipynb)\nCell 1: setup\nimport os\nimport yaml\nimport numpy as np\nimport pandas as pd\nimport matplotlib.pyplot as plt\n\nplt.style.use(\"seaborn-v0_8-colorblind\")\n\ndef load_config(path=\"config.yaml\"):\n    with open(path, \"r\") as f:\n        return yaml.safe_load(f)\n\ncfg = load_config(\"config.yaml\")\n\nyears = np.arange(cfg[\"time\"][\"start_year\"], cfg[\"time\"][\"end_year\"] + 1)\n\n# Handy units\nKG_PER_MWH_2019 = cfg[\"emission_factors\"][\"egrid_kg_per_mwh_2019\"]\nKG_PER_KWH_2019 = KG_PER_MWH_2019 / 1000.0\nGCO2_PER_MI = cfg[\"emission_factors\"][\"gco2_per_mile_onroad\"]\nEV_KWH_PER_MI = cfg[\"emission_factors\"][\"ev_kwh_per_mile\"]\n\n# Baseline inputs (fill TODOs in config.yaml first)\nVMT_2019 = cfg[\"inputs\"][\"vmt_2019\"]\nELEC_MWH_2019 = cfg[\"inputs\"][\"electricity_mwh_2019\"]\n\nassert VMT_2019 is not None, \"Please set inputs.vmt_2019 in config.yaml\"\nassert ELEC_MWH_2019 is not None, \"Please set inputs.electricity_mwh_2019 in config.yaml\"\n\nCell 2: helper functions\ndef logistic_share(years, midpoint, k, max_share=0.95):\n    # Logistic in [0, max_share]\n    x = years - midpoint\n    return max_share / (1.0 + np.exp(-k * x))\n\ndef survival_curve(max_age=25, half_life=13):\n    ages = np.arange(0, max_age + 1)\n    lam = np.log(2) / half_life\n    surv = np.exp(-lam * ages)\n    return ages, surv / surv[0]\n\ndef fleet_ev_share_from_sales(ev_sales_share, max_age=25, half_life=13):\n    # Approximation: constant total sales per year; fleet share is survival-weighted average of past sales shares\n    ages, surv = survival_curve(max_age, half_life)\n    T = len(ev_sales_share)\n    fleet_share = np.zeros(T)\n    for t in range(T):\n        weights = []\n        values = []\n        for a, s in zip(ages, surv):\n            year_idx = t - a\n            if year_idx < 0:\n                continue\n            weights.append(s)\n            values.append(ev_sales_share[year_idx])\n        fleet_share[t] = np.average(values, weights=weights) if weights else ev_sales_share[0]\n    return fleet_share\n\ndef grid_ef_path(years, ef_2019, policy):\n    typ = policy[\"type\"]\n    if typ == \"constant\":\n        return np.full_like(years, ef_2019, dtype=float)\n    elif typ == \"linear_decline\":\n        target = policy[\"target_kg_per_mwh\"]\n        tgt_year = policy[\"target_year\"]\n        ef = np.full_like(years, ef_2019, dtype=float)\n        y0 = years[0]\n        for i, y in enumerate(years):\n            if y <= y0:\n                ef[i] = ef_2019\n            elif y >= tgt_year:\n                ef[i] = target\n            else:\n                frac = (y - y0) / (tgt_year - y0)\n                ef[i] = ef_2019 + frac * (target - ef_2019)\n        return ef\n    else:\n        raise ValueError(f\"Unknown grid policy type: {typ}\")\n\ndef growth_series(base, rate, years):\n    t = years - years[0]\n    return base * (1.0 + rate) ** t\n\ndef to_df(years, **cols):\n    df = pd.DataFrame({\"year\": years})\n    for k, v in cols.items():\n        df[k] = v\n    return df\n\nCell 3: baseline demand and emission factors per scenario\ndef build_scenario(cfg, scenario_key):\n    sc = cfg[\"policy_scenarios\"][scenario_key]\n    # Demand series (excl. EV load for now)\n    vmt = growth_series(\n        cfg[\"inputs\"][\"vmt_2019\"],\n        cfg[\"inputs\"][\"vmt_growth_rate\"],\n        years\n    )\n    elec_mwh = growth_series(\n        cfg[\"inputs\"][\"electricity_mwh_2019\"],\n        cfg[\"inputs\"][\"electricity_sales_growth_rate\"],\n        years\n    )\n    # EV sales and fleet shares\n    ev_sales = logistic_share(\n        years,\n        sc[\"ev_sales_logistic\"][\"midpoint_year\"],\n        sc[\"ev_sales_logistic\"][\"steepness_k\"],\n        sc[\"ev_sales_logistic\"][\"max_share\"]\n    )\n    ev_fleet = fleet_ev_share_from_sales(\n        ev_sales,\n        max_age=cfg[\"vehicle_stock\"][\"max_age\"],\n        half_life=cfg[\"vehicle_stock\"][\"half_life_years\"]\n    )\n    # Grid EF path (kg/MWh)\n    grid_kg_per_mwh = grid_ef_path(years, cfg[\"emission_factors\"][\"egrid_kg_per_mwh_2019\"], sc[\"grid\"])\n    grid_kg_per_kwh = grid_kg_per_mwh / 1000.0\n\n    # EV load (kWh) from on-road electrification\n    ev_vmt = ev_fleet * vmt\n    ev_kwh = ev_vmt * EV_KWH_PER_MI\n\n    # Electricity demand incl. EVs if option enabled\n    if cfg[\"options\"][\"include_ev_load_in_electricity\"]:\n        elec_kwh = elec_mwh * 1000.0 + ev_kwh\n    else:\n        elec_kwh = elec_mwh * 1000.0\n\n    # Emissions\n    onroad_tailpipe_kg = (1.0 - ev_fleet) * vmt * (GCO2_PER_MI / 1000.0)  # g/mi -> kg/mi\n    electricity_kg = elec_kwh * grid_kg_per_kwh\n\n    total_kg = onroad_tailpipe_kg + electricity_kg\n\n    df = to_df(\n        years,\n        vmt=vmt,\n        ev_sales_share=ev_sales,\n        ev_fleet_share=ev_fleet,\n        ev_kwh=ev_kwh,\n        elec_kwh=elec_kwh,\n        grid_kg_per_mwh=grid_kg_per_mwh,\n        onroad_tailpipe_kg=onroad_tailpipe_kg,\n        electricity_kg=electricity_kg,\n        total_kg=total_kg\n    )\n    df[\"scenario\"] = scenario_key\n    return df\n\ndf_bau = build_scenario(cfg, \"bau\")\ndf_policy = build_scenario(cfg, \"policy\")\ndf_all = pd.concat([df_bau, df_policy], ignore_index=True)\n\nCell 4: quick checks\ndef ktCO2(x_kg): return x_kg / 1e6\ndef mtCO2(x_kg): return x_kg / 1e3\n\nprint(df_all.groupby([\"scenario\"]).apply(lambda d: pd.Series({\n    \"2019_total_ktCO2\": ktCO2(d.loc[d.year==years[0], \"total_kg\"].values[0]),\n    \"2035_total_ktCO2\": ktCO2(d.loc[d.year==years[-1], \"total_kg\"].values[0])\n})))\n\nCell 5: plots (line + wedge)\nos.makedirs(cfg[\"options\"][\"outputs_dir\"], exist_ok=True)\n\ndef plot_total(df_all):\n    fig, ax = plt.subplots(figsize=(8,4.5))\n    for sc, d in df_all.groupby(\"scenario\"):\n        ax.plot(d[\"year\"], ktCO2(d[\"total_kg\"]), label=sc.upper(), lw=2)\n    ax.set_ylabel(\"Total CO2 (kt)\")\n    ax.set_title(f\"{cfg['metadata']['county_name']}: Total CO2 (On-road tailpipe + Electricity)\")\n    ax.legend()\n    fig.tight_layout()\n    fig.savefig(os.path.join(cfg[\"options\"][\"outputs_dir\"], \"total_co2_lines.png\"), dpi=200)\n\ndef plot_wedge(df, title_suffix, fname_suffix):\n    # Stacked area: electricity vs on-road tailpipe\n    fig, ax = plt.subplots(figsize=(8,4.5))\n    years_ = df[\"year\"].values\n    elec = ktCO2(df[\"electricity_kg\"].values)\n    road = ktCO2(df[\"onroad_tailpipe_kg\"].values)\n    ax.stackplot(years_, elec, road, labels=[\"Electricity (incl. EV load)\", \"On-road tailpipe\"], alpha=0.9)\n    ax.set_ylabel(\"CO2 (kt)\")\n    ax.set_title(f\"{cfg['metadata']['county_name']}: Emissions Wedge – {title_suffix}\")\n    ax.legend(loc=\"upper right\")\n    fig.tight_layout()\n    fig.savefig(os.path.join(cfg[\"options\"][\"outputs_dir\"], f\"wedge_{fname_suffix}.png\"), dpi=200)\n\nplot_total(df_all)\nplot_wedge(df_bau, \"BAU\", \"bau\")\nplot_wedge(df_policy, \"Policy\", \"policy\")\n\nCell 6: simple sensitivity ranges (optional quick pass)\n# You can adjust these ranges and rerun quickly\nN = 500\nrng = np.random.default_rng(42)\n\ndef run_sensitivity():\n    samples = []\n    for i in range(N):\n        # Sample a few key params\n        gco2_per_mile = rng.uniform(360, 430)      # g/mi\n        ev_kwh_per_mi = rng.uniform(0.26, 0.33)    # kWh/mi\n        target_ef = rng.uniform(100, 150)          # kg/MWh in 2035\n        midpoint = rng.integers(2027, 2032)        # faster EV\n        steepness = rng.uniform(0.8, 1.1)\n\n        cfg2 = yaml.safe_load(yaml.dump(cfg))  # shallow copy via YAML\n        cfg2[\"emission_factors\"][\"gco2_per_mile_onroad\"] = float(gco2_per_mile)\n        cfg2[\"emission_factors\"][\"ev_kwh_per_mile\"] = float(ev_kwh_per_mi)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"grid\"][\"target_kg_per_mwh\"] = float(target_ef)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"] = int(midpoint)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"steepness_k\"] = float(steepness)\n\n        global GCO2_PER_MI, EV_KWH_PER_MI\n        GCO2_PER_MI = cfg2[\"emission_factors\"][\"gco2_per_mile_onroad\"]\n        EV_KWH_PER_MI = cfg2[\"emission_factors\"][\"ev_kwh_per_mile\"]\n\n        d = build_scenario(cfg2, \"policy\")\n        samples.append({\n            \"e2030_kt\": ktCO2(d.loc[d.year==2030, \"total_kg\"].values[0]),\n            \"e2035_kt\": ktCO2(d.loc[d.year==2035, \"total_kg\"].values[0])\n        })\n    return pd.DataFrame(samples)\n\nsens = run_sensitivity()\nprint(sens.describe(percentiles=[0.05, 0.5, 0.95]).T)\n\nif cfg[\"options\"][\"save_outputs\"]:\n    df_all.to_csv(os.path.join(cfg[\"options\"][\"outputs_dir\"], \"timeseries_all.csv\"), index=False)\n    sens.to_csv(os.path.join(cfg[\"options\"][\"outputs_dir\"], \"sensitivity_summary.csv\"), index=False)\n\nWhat to fill before first run\n- inputs.vmt_2019: 2019 total county VMT from FHWA HPMS (miles)\n- inputs.electricity_mwh_2019: 2019 county retail electricity sales (MWh) from NC Utilities Commission\n- inputs.population_2019 (optional in v1; you can use it later for per-capita views)\n\nSuggested initial checks\n- Compare 2019 electricity emissions against a back-of-envelope: MWh × 0.436 t/MWh (should be in the right ballpark)\n- Ensure EV electricity load is a modest share in early years; sanity-check that on-road tailpipe declines smoothly as fleet EV share rises\n- If totals look off, set growth rates to 0 and re-run to isolate policy effects\n\nPoster-ready figures (with this scope)\n- Line chart: total CO2, BAU vs Policy, 2019–2035\n- Wedge charts: BAU and Policy breakdowns (electricity vs on-road tailpipe)\n- EV curves: sales vs fleet share over time (small panel)\n- Sensitivity: simple 5–95% bars for 2030 and 2035 totals (from Cell 6)\n- Methods diagram: one flow arrow showing “Inputs → Baseline → Policies (EV, Grid) → Emissions → Figures”\n\nNotes specific to Buncombe, NC\n- eGRID subregion: SERC-SE; you provided 436 kgCO2/MWh (2022). Using that for 2019 is acceptable for a first pass; adjust if you pull the exact 2019 EF.\n- Utility footprint: If you later want more realism, you can blend EFs if multiple utilities serve the county, but subregion EF is fine for a poster.\n\nIf you want, send the three 2019 numbers (population, VMT, electricity MWh) and I’ll drop them into the config and sanity-check your first run assumptions.",
+      "student_message": "This roadmap is perfect—thank you! I'm based in Buncombe County, NC (Asheville area) and want to focus on transportation + electricity since those datasets look easiest to grab. My county falls in the SERC Southeastern eGRID subregion (EF ~436 kgCO₂/MWh in 2022). I can pull 2019 FHWA HPMS VMT and ACS population; for electricity I have 2019 county-level sales from the state utility commission. I'd love the pre-filled parameter file and starter notebook you offered so I can hit the ground running next week. One quick worry: I only have 5 hrs/week, so if I stick to just EV + clean electricity for now, does that still feel like enough for a conference poster by December?",
+      "scores": {
+        "student_actionability": 2.0,
+        "student_clarity": 2.0,
+        "student_constraint_fit": 2.0,
+        "student_confidence_gain": 2.0,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 2.0
+      },
+      "overall_score": 2.0,
+      "cumulative_avg": 1.9683333333333333,
+      "delta": 0.06333333333333324,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Find 2019 total county VMT from FHWA HPMS for Buncombe County, NC, and update the `vmt_2019` field in `config.yaml`.\",\n    \"Find 2019 county retail electricity sales (MWh) for Buncombe County, NC, from the NC Utilities Commission, and update the `electricity_mwh_2019` field in `config.yaml`.\",\n    \"Copy the provided starter notebook content into a new file `notebooks/01_buncombe_transport_power.ipynb` and run it to generate initial results and plots.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is incredibly actionable and directly addresses my concerns. The pre-filled files and clear instructions mean I can start coding immediately within my 5-hour constraint, and the timeline confirms my poster goal is achievable.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Find 2019 total county VMT from FHWA HPMS for Buncombe County, NC, and update the `vmt_2019` field in `config.yaml`.",
+              "Find 2019 county retail electricity sales (MWh) for Buncombe County, NC, from the NC Utilities Commission, and update the `electricity_mwh_2019` field in `config.yaml`.",
+              "Copy the provided starter notebook content into a new file `notebooks/01_buncombe_transport_power.ipynb` and run it to generate initial results and plots."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is incredibly actionable and directly addresses my concerns. The pre-filled files and clear instructions mean I can start coding immediately within my 5-hour constraint, and the timeline confirms my poster goal is achievable."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Fill in the three TODO values in config.yaml: VMT_2019 from FHWA HPMS, electricity_mwh_2019 from NC Utilities Commission, and optional population_2019 from ACS\", \"Run the starter notebook cell-by-cell to generate baseline results and initial charts\", \"Review the output figures and sensitivity analysis to understand model behavior before iterating\"],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"The pre-filled config and starter notebook give me exactly what I need to start running simulations immediately with my specific county data, and the week-by-week breakdown makes the December poster deadline feel achievable within my 5-hour weekly constraint.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Fill in the three TODO values in config.yaml: VMT_2019 from FHWA HPMS, electricity_mwh_2019 from NC Utilities Commission, and optional population_2019 from ACS",
+              "Run the starter notebook cell-by-cell to generate baseline results and initial charts",
+              "Review the output figures and sensitivity analysis to understand model behavior before iterating"
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "The pre-filled config and starter notebook give me exactly what I need to start running simulations immediately with my specific county data, and the week-by-week breakdown makes the December poster deadline feel achievable within my 5-hour weekly constraint."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Fill in the three TODO values in config.yaml: pull 2019 VMT from FHWA HPMS dataset, 2019 electricity sales in MWh from NC Utilities Commission, and optionally 2019 population from ACS.\",\n    \"Create a new Jupyter notebook, paste in the provided starter code cell-by-cell, ensure dependencies like numpy, pandas, matplotlib, and yaml are installed, then run the setup and baseline cells to generate the 2019 emissions inventory.\",\n    \"Run the plotting cells to produce line and wedge charts for BAU and Policy scenarios, then perform the quick print checks to verify 2019 totals against back-of-envelope calculations using the 436 kgCO2/MWh factor.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with just basic Python and 5 hours a week, this response hands me ready-to-run code and a config tailored to my Buncombe County data, so I can plug in my numbers and get charts in under an hour next week. The 4-week timeline directly eases my worry about hitting a December poster, making me feel like this focused EV and grid scope is totally doable without overwhelming my schedule.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Fill in the three TODO values in config.yaml: pull 2019 VMT from FHWA HPMS dataset, 2019 electricity sales in MWh from NC Utilities Commission, and optionally 2019 population from ACS.",
+              "Create a new Jupyter notebook, paste in the provided starter code cell-by-cell, ensure dependencies like numpy, pandas, matplotlib, and yaml are installed, then run the setup and baseline cells to generate the 2019 emissions inventory.",
+              "Run the plotting cells to produce line and wedge charts for BAU and Policy scenarios, then perform the quick print checks to verify 2019 totals against back-of-envelope calculations using the 436 kgCO2/MWh factor."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with just basic Python and 5 hours a week, this response hands me ready-to-run code and a config tailored to my Buncombe County data, so I can plug in my numbers and get charts in under an hour next week. The 4-week timeline directly eases my worry about hitting a December poster, making me feel like this focused EV and grid scope is totally doable without overwhelming my schedule."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 3,
+      "mentor_reply": "Fantastic—those inputs are perfect to get started. I dropped them into the config for you and added two quick tweaks for your questions.\n\n1) Updated config values (paste into your config.yaml)\ninputs:\n  population_2019: 261191\n  vmt_2019: 2840000000        # miles\n  electricity_mwh_2019: 3460000  # MWh\n  population_growth_rate: 0.006\n  vmt_growth_rate: 0.005\n  electricity_sales_growth_rate: 0.003\n  local_vmt_share: 1.0         # new knob (see below)\n\nQuick sanity check with your numbers\n- On-road 2019 ≈ 2.84e9 mi × 404 g/mi ≈ 1.15 MtCO2\n- Electricity 2019 ≈ 3.46e6 MWh × 0.436 t/MWh ≈ 1.51 MtCO2\n- Total ≈ 2.66 MtCO2. Plausible for Buncombe. If electricity looks high, reconfirm the 3.46 million MWh figure (not kWh) and that it’s total retail sales (res+com+ind).\n\n2) VMT: include interstate through-traffic or strip it?\n- Recommended for v1 (time-efficient, consistent): Use the HPMS county total as-is. It’s all on-road activity inside county boundaries (Scope 1), and your policy comparisons (BAU vs Policy) will be valid if the pass-through share is roughly constant across scenarios. Just note this assumption on the poster.\n- If you want a quick “local-only” adjustment without digging into O-D models: set inputs.local_vmt_share to 0.9 (or 0.85–0.95 as a sensitivity) to downweight through-traffic. Buncombe has I‑26 and I‑40, so a modest discount is defensible.\n- If you later find county registrations easily, you can sanity-check residency-based VMT: registrations × avg LDV miles/year (~11–12k) vs HPMS light-duty VMT.\n\nTiny code tweak to support the local_vmt_share knob\nIn Cell 3, modify the VMT line to multiply by the share:\nvmt = growth_series(\n    cfg[\"inputs\"][\"vmt_2019\"] * cfg[\"inputs\"].get(\"local_vmt_share\", 1.0),\n    cfg[\"inputs\"][\"vmt_growth_rate\"],\n    years\n)\n\n3) How to show sensitivity on a poster\n- Most readable for a poster: keep the main BAU vs Policy line chart clean (median only), and add a small adjacent panel with 2030 and 2035 error bars (5–95%) for the Policy case. That lets viewers grasp the headline effect quickly, then see uncertainty without clutter.\n- If you prefer a single figure: overlay a light shaded band (5–95%) only for the Policy line. Avoid bands for both scenarios—they get muddy.\n\nOptional: quick uncertainty band over time (drop-in cell)\nCell 7: policy uncertainty band over time\ndef sample_policy_timeseries(cfg, N=300, seed=42):\n    rng = np.random.default_rng(seed)\n    totals = []\n    for _ in range(N):\n        cfg2 = yaml.safe_load(yaml.dump(cfg))\n        cfg2[\"emission_factors\"][\"gco2_per_mile_onroad\"] = float(rng.uniform(360, 430))\n        cfg2[\"emission_factors\"][\"ev_kwh_per_mile\"] = float(rng.uniform(0.26, 0.33))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"grid\"][\"target_kg_per_mwh\"] = float(rng.uniform(100, 150))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"] = int(rng.integers(2027, 2032))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"steepness_k\"] = float(rng.uniform(0.8, 1.1))\n        d = build_scenario(cfg2, \"policy\")\n        totals.append(d[\"total_kg\"].values)\n    totals = np.vstack(totals)\n    q05 = np.quantile(totals, 0.05, axis=0)\n    q50 = np.quantile(totals, 0.5, axis=0)\n    q95 = np.quantile(totals, 0.95, axis=0)\n    return pd.DataFrame({\"year\": years, \"q05\": q05/1e6, \"q50\": q50/1e6, \"q95\": q95/1e6})  # ktCO2\n\nband = sample_policy_timeseries(cfg)\n\ndef plot_total_with_band(df_all, band):\n    fig, ax = plt.subplots(figsize=(8,4.5))\n    for sc, d in df_all.groupby(\"scenario\"):\n        ax.plot(d[\"year\"], d[\"total_kg\"]/1e6, label=sc.upper(), lw=2)  # ktCO2\n    ax.fill_between(band[\"year\"], band[\"q05\"], band[\"q95\"], color=\"tab:blue\", alpha=0.15, label=\"Policy 5–95%\")\n    ax.set_ylabel(\"Total CO2 (kt)\")\n    ax.set_title(f\"{cfg['metadata']['county_name']}: Total CO2 with Policy Uncertainty\")\n    ax.legend()\n    fig.tight_layout()\n\nplot_total_with_band(df_all, band)\n\nPoster tip layout (with your scope)\n- Top-left: BAU vs Policy lines (medians).\n- Top-right: 2030 and 2035 Policy bars with 5–95% intervals and “P(meet target)=X%”.\n- Bottom row: BAU and Policy wedges.\n\nIf you want, send a screenshot of your first run; I’ll sanity-check the totals and suggest a local_vmt_share that keeps you conservative but credible.",
+      "student_message": "This is incredible—thank you for the turnkey notebook! I just pulled the 2019 numbers for Buncombe: population 261,191 (ACS 1-yr), county VMT 2.84 billion miles (HPMS), electricity retail sales 3.46 million MWh (Duke/NCUC). I'll plug these in tonight and run the sanity checks you listed. One quick clarification: should I treat the 2.84 B VMT as all on-road or do I need to strip out interstate through-traffic? Also, for the poster, would you recommend keeping the sensitivity ranges in a separate slide or overlaying them on the main line chart?",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.9666666666666668,
+        "student_constraint_fit": 1.9000000000000001,
+        "student_confidence_gain": 1.9333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9333333333333336
+      },
+      "overall_score": 1.9333333333333336,
+      "cumulative_avg": 1.9566666666666668,
+      "delta": -0.06666666666666643,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Update the `config.yaml` with the provided values and the new `local_vmt_share` knob.\",\n    \"Modify Cell 3 in the notebook to multiply VMT by `local_vmt_share` as instructed.\",\n    \"Run the notebook with the updated config and code, then review the sanity checks and generate the initial plots.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is incredibly clear and actionable. It directly addresses my questions with specific code modifications and config updates, fitting perfectly within my time and skill constraints. The mentor even offers to sanity-check my results, which significantly boosts my confidence.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Update the `config.yaml` with the provided values and the new `local_vmt_share` knob.",
+              "Modify Cell 3 in the notebook to multiply VMT by `local_vmt_share` as instructed.",
+              "Run the notebook with the updated config and code, then review the sanity checks and generate the initial plots."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is incredibly clear and actionable. It directly addresses my questions with specific code modifications and config updates, fitting perfectly within my time and skill constraints. The mentor even offers to sanity-check my results, which significantly boosts my confidence."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Paste the updated config values into config.yaml with local_vmt_share set to 0.9\", \"Run the notebook with the modified VMT calculation in Cell 3 to see initial results\", \"Create the poster layout with main line chart (medians only) and separate uncertainty panel for 2030/2035\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.9,\n    \"actionability_for_student\": 1.8,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The response gives me exact config values to paste, specific code modifications to make, and clear poster design choices I can implement immediately within my 5-hour weekly constraint, while addressing my specific uncertainties about VMT treatment and visualization.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Paste the updated config values into config.yaml with local_vmt_share set to 0.9",
+              "Run the notebook with the modified VMT calculation in Cell 3 to see initial results",
+              "Create the poster layout with main line chart (medians only) and separate uncertainty panel for 2030/2035"
+            ],
+            "scores": {
+              "clarity_for_student": 1.9,
+              "actionability_for_student": 1.8,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The response gives me exact config values to paste, specific code modifications to make, and clear poster design choices I can implement immediately within my 5-hour weekly constraint, while addressing my specific uncertainties about VMT treatment and visualization."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Paste the updated config values into my config.yaml file and run the sanity checks on the emissions totals to verify they're plausible for Buncombe County.\",\n    \"Apply the code tweak in Cell 3 for the local_vmt_share knob, starting with 1.0 as recommended, then run the full model simulation for BAU and Policy scenarios.\",\n    \"Generate the main line chart and add the uncertainty band using the optional code in Cell 7, then sketch the poster layout with the suggested panels for quick visualization review.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with only basic Python and 5 hours a week, this response gives me exact code snippets and config tweaks I can copy-paste tonight without needing extra skills or data, directly answering my VMT and poster questions to make me feel ready to run and visualize results confidently. The sanity checks and optional band code fit perfectly into my limited time, reducing my uncertainty about assumptions like through-traffic.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Paste the updated config values into my config.yaml file and run the sanity checks on the emissions totals to verify they're plausible for Buncombe County.",
+              "Apply the code tweak in Cell 3 for the local_vmt_share knob, starting with 1.0 as recommended, then run the full model simulation for BAU and Policy scenarios.",
+              "Generate the main line chart and add the uncertainty band using the optional code in Cell 7, then sketch the poster layout with the suggested panels for quick visualization review."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with only basic Python and 5 hours a week, this response gives me exact code snippets and config tweaks I can copy-paste tonight without needing extra skills or data, directly answering my VMT and poster questions to make me feel ready to run and visualize results confidently. The sanity checks and optional band code fit perfectly into my limited time, reducing my uncertainty about assumptions like through-traffic."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 4,
+      "mentor_reply": "Love it—great progress.\n\n(1) Probability of meeting a target\nSimplest: use the sens DataFrame from Cell 6 (it already has e2030_kt and e2035_kt for each Monte Carlo draw).\n\nExample for a “50% below 2019” target:\n# 2019 baseline (ktCO2) — BAU and Policy are the same in 2019\nbase_2019_kt = (df_all.loc[df_all.year==2019, \"total_kg\"].iloc[0]) / 1e6\ntarget_reduction = 0.50  # 50% below 2019\nthr2030_kt = base_2019_kt * (1 - target_reduction)\nthr2035_kt = base_2019_kt * (1 - target_reduction)\n\np2030 = float((sens[\"e2030_kt\"] <= thr2030_kt).mean())\np2035 = float((sens[\"e2035_kt\"] <= thr2035_kt).mean())\n\nprint(f\"P(meet 2030 target) = {p2030:.0%}\")\nprint(f\"P(meet 2035 target) = {p2035:.0%}\")\n\nIf you have an absolute target (e.g., 1.2 Mt in 2030), just set thr2030_kt = 1200.\n\nIf you prefer to reuse the “band” sampler (Cell 7) and compute P directly from the draws, tweak it to return the full samples as an array:\ndef sample_policy_totals_array(cfg, N=300, seed=42):\n    rng = np.random.default_rng(seed)\n    totals = []\n    for _ in range(N):\n        cfg2 = yaml.safe_load(yaml.dump(cfg))\n        cfg2[\"emission_factors\"][\"gco2_per_mile_onroad\"] = float(rng.uniform(360, 430))\n        cfg2[\"emission_factors\"][\"ev_kwh_per_mile\"] = float(rng.uniform(0.26, 0.33))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"grid\"][\"target_kg_per_mwh\"] = float(rng.uniform(100, 150))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"] = int(rng.integers(2027, 2032))\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"steepness_k\"] = float(rng.uniform(0.8, 1.1))\n        d = build_scenario(cfg2, \"policy\")\n        totals.append(d[\"total_kg\"].values)  # kg by year\n    return np.vstack(totals)  # shape (N, T)\n\ntotals = sample_policy_totals_array(cfg, N=300)\nidx2030 = np.where(years==2030)[0][0]\nidx2035 = np.where(years==2035)[0][0]\n\np2030 = float((totals[:, idx2030]/1e6 <= thr2030_kt).mean())\np2035 = float((totals[:, idx2035]/1e6 <= thr2035_kt).mean())\n\nprint(f\"P(meet 2030 target) = {p2030:.0%}\")\nprint(f\"P(meet 2035 target) = {p2035:.0%}\")\n\nEither approach is fine; the sens DataFrame route is the quickest for poster bars.\n\n(2) Using 2022 EV registrations\nGiven your time budget, here’s a pragmatic rule:\n\n- Fastest and defensible for the poster: Use the 2022 registration count as a validation check only. Compute the model’s 2022 EV fleet share and compare to observed. If the gap is small (say within ~3–5 percentage points), just report it as “validation” and keep the state-calibrated logistic. That avoids mixed-vintage concerns and keeps the method clean.\n\n- If the gap is material (>5–10 percentage points), do a one-parameter retrofit that keeps the model transparent:\n  Option A (recommended): Shift the EV sales logistic midpoint year so that your modeled EV fleet share matches the 2022 anchor. Steepness stays fixed.\n  Option B: Apply a county multiplier to the sales share (cap at 95%) to hit the 2022 fleet anchor.\n\nMinimal midpoint calibration snippet\nYou’ll need the 2022 EV fleet share (not just count). If you only get the EV count, ask for total registrations or the share. If you must estimate total, use DMV registrations if available; otherwise approximate with households × vehicles per household.\n\nanchor_year = 2022\nanchor_fleet_share = 0.025  # example: 2.5% of registered vehicles are EVs\n\ndef calibrate_midpoint_to_anchor(cfg, scenario=\"policy\", anchor_year=2022, anchor_fleet_share=0.02):\n    sc = cfg[\"policy_scenarios\"][scenario][\"ev_sales_logistic\"]\n    base_mid = sc[\"midpoint_year\"]\n    k = sc[\"steepness_k\"]; max_share = sc[\"max_share\"]\n    idx = int(np.where(years==anchor_year)[0][0])\n\n    best_mid, best_err = base_mid, 1e9\n    # search ±6 years around current midpoint\n    for mid in range(base_mid - 6, base_mid + 7):\n        ev_sales = logistic_share(years, mid, k, max_share)\n        ev_fleet = fleet_ev_share_from_sales(ev_sales,\n                                             max_age=cfg[\"vehicle_stock\"][\"max_age\"],\n                                             half_life=cfg[\"vehicle_stock\"][\"half_life_years\"])\n        err = abs(ev_fleet[idx] - anchor_fleet_share)\n        if err < best_err:\n            best_err, best_mid = err, mid\n\n    cfg2 = yaml.safe_load(yaml.dump(cfg))\n    cfg2[\"policy_scenarios\"][scenario][\"ev_sales_logistic\"][\"midpoint_year\"] = int(best_mid)\n    return cfg2, best_mid, best_err\n\ncfg_cal, best_mid, err = calibrate_midpoint_to_anchor(cfg, \"policy\", anchor_year, anchor_fleet_share)\nprint(\"New midpoint:\", best_mid, \"abs error at anchor:\", round(err, 4))\n\n# Rebuild and replot if you choose to adopt the calibrated midpoint\ndf_policy_cal = build_scenario(cfg_cal, \"policy\")\n\nNotes on the registration data\n- Clarify whether “EV” includes BEVs only or BEV+PHEV. If it’s BEV+PHEV, either treat both as “EV” with your current kWh/mi (reasonable for poster), or split later (BEV ~0.28–0.30 kWh/mi, PHEV electric miles share ~25–60%).\n- If the 2022 anchor is higher than your model, expect a slightly earlier midpoint; if lower, a later midpoint. Document the one-line calibration: “EV adoption midpoint shifted from 2029 to 2028 to match 2022 registrations (2.5% fleet).”\n\nPoster guidance\n- Keep the main BAU vs Policy line uncluttered; show a small side panel with 2030/2035 bars and 5–95% whiskers plus “P(meet target)=X%”.\n- If you do the midpoint calibration, add a short note in Methods: “Calibrated EV stock to 2022 county registrations via midpoint shift; steepness held constant; state sales trajectory otherwise maintained.”\n\nIf you send the 2022 EV share (or count + total registrations), I can drop it in, run the midpoint calibration, and return the updated figures and revised P(meet target) numbers.",
+      "student_message": "Just ran the updated notebook—graph looks clean and totals feel right (≈2.6 MtCO2 in 2019). I set local_vmt_share to 0.90 for now; will flag the assumption on the poster. Two quick follow-ups: (1) For the 2030/2035 Policy bars, what's the simplest way to pull the \"P(meet target)=X%\" number out of the 300-run sample you gave? Do I just count how many runs drop below a chosen threshold, or is there a cleaner pandas trick? (2) Our county sustainability office casually mentioned they might give me 2022 EV registration counts next week—if that arrives, should I bother retrofitting the EV-stock curve, or is it safer to stick with the logistic model calibrated to state sales fractions so reviewers don't question mixed data vintages? Thanks again—this is moving faster than I expected!",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.9666666666666668,
+        "student_constraint_fit": 1.9000000000000001,
+        "student_confidence_gain": 1.9333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9333333333333336
+      },
+      "overall_score": 1.9333333333333336,
+      "cumulative_avg": 1.9508333333333334,
+      "delta": 0.0,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Implement the provided Python code snippet to calculate the P(meet target)=X% for 2030 and 2035 using the 'sens' DataFrame, defining a target reduction (e.g., 50% below 2019 baseline).\",\n    \"When 2022 EV registration data arrives, use it as a validation check: calculate the model's 2022 EV fleet share and compare it to the observed data. If the gap is small (within 3-5 percentage points), document this as validation and stick with the current logistic model.\",\n    \"If the gap in EV fleet share is material (>5-10 percentage points), use the provided 'calibrate_midpoint_to_anchor' function to shift the EV sales logistic midpoint year to match the 2022 anchor, then rebuild and replot the scenario.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.95,\n  \"justification\": \"The mentor provides clear, executable Python code snippets for both questions, directly addressing my uncertainties. The advice respects my time constraints by offering pragmatic choices for the EV data and flagging potential issues like needing fleet share vs. just count.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Implement the provided Python code snippet to calculate the P(meet target)=X% for 2030 and 2035 using the 'sens' DataFrame, defining a target reduction (e.g., 50% below 2019 baseline).",
+              "When 2022 EV registration data arrives, use it as a validation check: calculate the model's 2022 EV fleet share and compare it to the observed data. If the gap is small (within 3-5 percentage points), document this as validation and stick with the current logistic model.",
+              "If the gap in EV fleet share is material (>5-10 percentage points), use the provided 'calibrate_midpoint_to_anchor' function to shift the EV sales logistic midpoint year to match the 2022 anchor, then rebuild and replot the scenario."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.95,
+            "justification": "The mentor provides clear, executable Python code snippets for both questions, directly addressing my uncertainties. The advice respects my time constraints by offering pragmatic choices for the EV data and flagging potential issues like needing fleet share vs. just count."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Use the sens DataFrame to calculate P(meet target) with the provided code snippet for threshold comparison\", \"When 2022 EV registration data arrives, first compare model vs observed 2022 fleet share to decide if calibration is needed\", \"If gap >5-10%, run the midpoint calibration function to adjust EV adoption timing while keeping other parameters fixed\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.9,\n    \"actionability_for_student\": 1.8,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The response gives me exact code I can copy-paste for both questions, acknowledges my time constraints with a clear decision rule for the EV data, and flags practical pitfalls like data definitions and validation thresholds that reduce my uncertainty about next steps.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Use the sens DataFrame to calculate P(meet target) with the provided code snippet for threshold comparison",
+              "When 2022 EV registration data arrives, first compare model vs observed 2022 fleet share to decide if calibration is needed",
+              "If gap >5-10%, run the midpoint calibration function to adjust EV adoption timing while keeping other parameters fixed"
+            ],
+            "scores": {
+              "clarity_for_student": 1.9,
+              "actionability_for_student": 1.8,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The response gives me exact code I can copy-paste for both questions, acknowledges my time constraints with a clear decision rule for the EV data, and flags practical pitfalls like data definitions and validation thresholds that reduce my uncertainty about next steps."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Copy the provided code snippet into my notebook using the sens DataFrame from Cell 6 to compute P(meet 2030/2035 targets) for a 50% reduction threshold, printing the percentages for the poster bars.\",\n    \"Once 2022 EV registration data arrives, calculate the model's 2022 EV fleet share and compare it to the observed share; if the gap is under 5%, note it as validation without changes, or if larger, run the calibrate_midpoint_to_anchor function to adjust the logistic midpoint and rebuild the policy scenario.\",\n    \"Update the poster by adding a side panel with 2030/2035 bars including 5-95% whiskers and the new P(meet target) values, plus a methods note on any calibration or assumptions like local_vmt_share=0.90.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with only basic Python and 5 hours a week, this response gives me exact code snippets I can paste and run right away in my existing notebook, directly answering my questions without overwhelming extras. It respects my time by suggesting quick validation over complex retrofits and explains how to handle data uncertainties, making me feel ready to finalize poster elements in the next couple days.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Copy the provided code snippet into my notebook using the sens DataFrame from Cell 6 to compute P(meet 2030/2035 targets) for a 50% reduction threshold, printing the percentages for the poster bars.",
+              "Once 2022 EV registration data arrives, calculate the model's 2022 EV fleet share and compare it to the observed share; if the gap is under 5%, note it as validation without changes, or if larger, run the calibrate_midpoint_to_anchor function to adjust the logistic midpoint and rebuild the policy scenario.",
+              "Update the poster by adding a side panel with 2030/2035 bars including 5-95% whiskers and the new P(meet target) values, plus a methods note on any calibration or assumptions like local_vmt_share=0.90."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with only basic Python and 5 hours a week, this response gives me exact code snippets I can paste and run right away in my existing notebook, directly answering my questions without overwhelming extras. It respects my time by suggesting quick validation over complex retrofits and explains how to handle data uncertainties, making me feel ready to finalize poster elements in the next couple days."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 5,
+      "mentor_reply": "That poster plan is solid. Yes—those four panels tell a clear story. A few quick refinements and drop-in snippets so everything stays consistent with your 2031 midpoint calibration.\n\nMake the calibration “stick” everywhere\n- Update config and rerun sens so your probability bars use the calibrated midpoint.\n\n# 1) Persist the midpoint change\ncfg[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"] = 2031\n\n# 2) Rebuild scenarios and re-run sensitivity\ndf_bau = build_scenario(cfg, \"bau\")\ndf_policy = build_scenario(cfg, \"policy\")\ndf_all = pd.concat([df_bau, df_policy], ignore_index=True)\nsens = run_sensitivity()  # If run_sensitivity reads cfg internally, ensure it uses the updated cfg\n\nIf your run_sensitivity function hardcodes ranges but not the midpoint, tweak it so it starts from the current midpoint (2031):\n\ndef run_sensitivity(N=500, seed=42):\n    rng = np.random.default_rng(seed)\n    samples = []\n    base_mid = cfg[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"]\n    for i in range(N):\n        gco2_per_mile = rng.uniform(360, 430)\n        ev_kwh_per_mi = rng.uniform(0.26, 0.33)\n        target_ef = rng.uniform(100, 150)\n        midpoint = int(rng.integers(base_mid-2, base_mid+3))  # around calibrated midpoint\n        steepness = rng.uniform(0.8, 1.1)\n\n        cfg2 = yaml.safe_load(yaml.dump(cfg))\n        cfg2[\"emission_factors\"][\"gco2_per_mile_onroad\"] = float(gco2_per_mile)\n        cfg2[\"emission_factors\"][\"ev_kwh_per_mile\"] = float(ev_kwh_per_mi)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"grid\"][\"target_kg_per_mwh\"] = float(target_ef)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"midpoint_year\"] = int(midpoint)\n        cfg2[\"policy_scenarios\"][\"policy\"][\"ev_sales_logistic\"][\"steepness_k\"] = float(steepness)\n\n        d = build_scenario(cfg2, \"policy\")\n        samples.append({\n            \"e2019_kt\": d.loc[d.year==2019, \"total_kg\"].values[0]/1e6,\n            \"e2030_kt\": d.loc[d.year==2030, \"total_kg\"].values[0]/1e6,\n            \"e2035_kt\": d.loc[d.year==2035, \"total_kg\"].values[0]/1e6\n        })\n    return pd.DataFrame(samples)\n\nClean probability-of-meeting-target helper\n- This makes the panel-2 bar labels trivial and consistent.\n\ndef prob_meet_target(sens_df, base_year_kt=None, pct_below_2019=0.50, abs_targets_kt=None):\n    # If abs_targets_kt provided (dict: {2030: kt, 2035: kt}), they override pct_below_2019\n    if base_year_kt is None:\n        base_year_kt = sens_df[\"e2019_kt\"].median() if \"e2019_kt\" in sens_df else (df_all.loc[df_all.year==2019, \"total_kg\"].iloc[0]/1e6)\n    targets = {}\n    for y in [2030, 2035]:\n        if abs_targets_kt and y in abs_targets_kt:\n            targets[y] = abs_targets_kt[y]\n        else:\n            targets[y] = base_year_kt * (1 - pct_below_2019)\n    p2030 = float((sens_df[\"e2030_kt\"] <= targets[2030]).mean())\n    p2035 = float((sens_df[\"e2035_kt\"] <= targets[2035]).mean())\n    return targets, {\"2030\": p2030, \"2035\": p2035}\n\ntargets, probs = prob_meet_target(sens, pct_below_2019=0.50)\nprint(f\"Target 2030={targets[2030]:.0f} kt, P= {probs['2030']:.0%}\")\nprint(f\"Target 2035={targets[2035]:.0f} kt, P= {probs['2035']:.0%}\")\n\nPanel 3: EV stock calibration inset\n- Small figure showing observed 2022 point vs modeled fleet share path.\n\ndef plot_ev_calibration(df_policy, anchor_year=2022, anchor_share=0.005):\n    fig, ax = plt.subplots(figsize=(4,3))\n    ax.plot(df_policy[\"year\"], 100*df_policy[\"ev_fleet_share\"], lw=2, label=\"Modeled fleet share (BEV)\")\n    ax.scatter([anchor_year], [100*anchor_share], color=\"black\", zorder=5, label=\"Observed 2022 (DMV BEV)\")\n    ax.set_ylabel(\"EV fleet share (%)\")\n    ax.set_xlabel(\"\")\n    ax.set_title(\"EV Fleet Calibration\")\n    ax.legend(frameon=False, fontsize=9, loc=\"upper left\")\n    fig.tight_layout()\n    return fig\n\nplot_ev_calibration(df_policy, 2022, 0.005)\n\nQuick caption text you can paste:\n- “Observed 2022 BEV share: 0.50% (1,240/248,300). Model midpoint adjusted to 2031 to match 2022 anchor; steepness unchanged; state trajectory maintained.”\n\nAssumptions table generator (panel 4)\n- Export a concise CSV you can drop into a table.\n\nassump = {\n    \"Scope\": [\"On-road tailpipe (local VMT share=0.90)\", \"Electricity (incl. EV load)\"],\n    \"Grid EF path (policy)\": [f\"Linear to {cfg['policy_scenarios']['policy']['grid']['target_kg_per_mwh']} kg/MWh by {cfg['policy_scenarios']['policy']['grid']['target_year']}\",\"\"],\n    \"EV sales S-curve (policy)\": [f\"max 95%, midpoint {cfg['policy_scenarios']['policy']['ev_sales_logistic']['midpoint_year']}, k={cfg['policy_scenarios']['policy']['ev_sales_logistic']['steepness_k']}\", \"\"],\n    \"EV efficiency\": [f\"{cfg['emission_factors']['ev_kwh_per_mile']:.2f} kWh/mi (BEV)\",\"\"],\n    \"On-road EF\": [f\"{cfg['emission_factors']['gco2_per_mile_onroad']:.0f} gCO2/mi (fleet avg)\",\"\"],\n    \"Growth rates\": [f\"VMT {100*cfg['inputs']['vmt_growth_rate']:.1f}%/yr; Elec {100*cfg['inputs']['electricity_sales_growth_rate']:.1f}%/yr\",\"\"],\n}\npd.DataFrame(assump).to_csv(os.path.join(cfg[\"options\"][\"outputs_dir\"], \"assumptions_table.csv\"), index=False)\n\nNice-to-have callouts you can compute and annotate\n- “EVs add X% to 2030 electricity load” and “On-road tailpipe falls Y% by 2035.”\n\ndef quick_callouts(d):\n    e2019 = d.loc[d.year==2019, \"elec_kwh\"].values[0]\n    e2030 = d.loc[d.year==2030, \"elec_kwh\"].values[0]\n    base_only = growth_series(ELEC_MWH_2019, cfg[\"inputs\"][\"electricity_sales_growth_rate\"], years) * 1000.0\n    base2030 = base_only[years==2030][0]\n    add_pct_2030 = 100*(e2030 - base2030)/base2030\n    road2019 = d.loc[d.year==2019, \"onroad_tailpipe_kg\"].values[0]\n    road2035 = d.loc[d.year==2035, \"onroad_tailpipe_kg\"].values[0]\n    road_drop_2035 = 100*(1 - road2035/road2019)\n    return add_pct_2030, road_drop_2035\n\nadd_pct_2030, road_drop_2035 = quick_callouts(df_policy)\nprint(f\"EVs add ~{add_pct_2030:.1f}% to 2030 electricity load\")\nprint(f\"On-road tailpipe falls ~{road_drop_2035:.0f}% by 2035 under Policy\")\n\nPoster polish tips\n- Panel 1 (lines): Label endpoints with values and % change vs 2019; keep one shaded 5–95% band only for Policy if you include it.\n- Panel 2 (bars): Show target line, whiskers (5–95%), and “P(meet)=34% (2030), 71% (2035)” under each bar.\n- Panel 3 (calibration): Make clear it’s BEV-only; note that PHEVs excluded from the anchor but would lower tailpipe emissions if included.\n- Panel 4 (assumptions): Include local_vmt_share=0.90 and a one-liner: “County HPMS VMT used; pass-through traffic partially discounted.”\n\nSanity checks with BEV-only anchor\n- Using BEV-only registrations is consistent with your EV energy assumption (0.30 kWh/mi is BEV-ish). If you later add PHEVs, treat them either as:\n  - folded into BEV (simple poster approach), or\n  - split with a lower electric miles share (future work).\n\nYou’re in great shape. If you want, send the updated lines and the probability bar draft; I’ll do a last-pass review on labeling and readability.",
+      "student_message": "I just pulled the 2022 EV registration file from NCDMV: Buncombe shows 1,240 EVs (BEV only) out of 248,300 total registered light-duty vehicles → 0.50% fleet share. Running your calibrate_midpoint_to_anchor with anchor_fleet_share=0.005 gives best_mid=2031 (shifted from 2029) and err=0.0003—tiny! I'll adopt the 2031 midpoint for the poster. Quick sanity check: with this tweak, modeled 2022 share is 0.50% and 2030 projected fleet share is 28%—feels reasonable against state logistic. For the probability bars, I'll use the sens DataFrame route you showed; 50%-below-2019 target gives P2030=34% and P2035=71%. I'm planning a 4-panel poster: (1) BAU vs Policy lines, (2) 2030/2035 probability bars with whiskers, (3) EV stock calibration inset, (4) key assumptions table. Does that",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9333333333333333,
+        "student_constraint_fit": 1.9333333333333333,
+        "student_confidence_gain": 1.8333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.93
+      },
+      "overall_score": 1.93,
+      "cumulative_avg": 1.9466666666666668,
+      "delta": -0.0033333333333336324,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Update the 'midpoint_year' in the configuration file (cfg) to 2031 and rerun the build_scenario and run_sensitivity functions to ensure all calculations reflect the new calibration.\",\n    \"Generate the EV stock calibration plot using the provided plot_ev_calibration function and the updated df_policy, then add the suggested caption text to the poster.\",\n    \"Generate the assumptions table using the provided code snippet and save it as a CSV, then incorporate it into the poster.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.93,\n  \"justification\": \"This response provides highly actionable, specific code snippets and clear instructions that directly address my poster plan and previous calibration. It fits perfectly within my Python skills and time constraints, significantly boosting my confidence in completing the poster.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Update the 'midpoint_year' in the configuration file (cfg) to 2031 and rerun the build_scenario and run_sensitivity functions to ensure all calculations reflect the new calibration.",
+              "Generate the EV stock calibration plot using the provided plot_ev_calibration function and the updated df_policy, then add the suggested caption text to the poster.",
+              "Generate the assumptions table using the provided code snippet and save it as a CSV, then incorporate it into the poster."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.93,
+            "justification": "This response provides highly actionable, specific code snippets and clear instructions that directly address my poster plan and previous calibration. It fits perfectly within my Python skills and time constraints, significantly boosting my confidence in completing the poster."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\n    \"Update configuration file with calibrated midpoint (2031) and rerun policy scenarios to ensure consistency\",\n    \"Run the provided run_sensitivity function and prob_meet_target helper to generate updated probability bars for the poster\",\n    \"Generate the EV calibration plot and assumptions table using the provided plot_ev_calibration and DataFrame export code\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.83,\n  \"justification\": \"The mentor provides specific, copy-paste code snippets that directly build on my current progress and fit within my 5-hour weekly constraint, eliminating uncertainty about how to implement the poster panels while flagging important consistency checks.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Update configuration file with calibrated midpoint (2031) and rerun policy scenarios to ensure consistency",
+              "Run the provided run_sensitivity function and prob_meet_target helper to generate updated probability bars for the poster",
+              "Generate the EV calibration plot and assumptions table using the provided plot_ev_calibration and DataFrame export code"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.83,
+            "justification": "The mentor provides specific, copy-paste code snippets that directly build on my current progress and fit within my 5-hour weekly constraint, eliminating uncertainty about how to implement the poster panels while flagging important consistency checks."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Update the config file to set the midpoint_year to 2031 and rerun the sensitivity analysis using the provided run_sensitivity function to generate updated probability values for 2030 and 2035.\",\n    \"Create the EV stock calibration inset plot for panel 3 using the plot_ev_calibration function with the 2022 anchor data, and generate the assumptions table CSV for panel 4 using the provided dictionary.\",\n    \"Compute the quick callouts for EV electricity load addition and tailpipe reduction, then incorporate them into the poster panels along with the probability bars from the sens DataFrame.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a grad student with basic Python and limited time, this response gives me exact code snippets I can copy-paste and run in under 5 hours to finalize my poster panels without needing new skills or data. It directly addresses my calibration tweak and sanity checks, making me feel confident the projections are consistent and reasonable for my county-level EV data.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Update the config file to set the midpoint_year to 2031 and rerun the sensitivity analysis using the provided run_sensitivity function to generate updated probability values for 2030 and 2035.",
+              "Create the EV stock calibration inset plot for panel 3 using the plot_ev_calibration function with the 2022 anchor data, and generate the assumptions table CSV for panel 4 using the provided dictionary.",
+              "Compute the quick callouts for EV electricity load addition and tailpipe reduction, then incorporate them into the poster panels along with the probability bars from the sens DataFrame."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a grad student with basic Python and limited time, this response gives me exact code snippets I can copy-paste and run in under 5 hours to finalize my poster panels without needing new skills or data. It directly addresses my calibration tweak and sanity checks, making me feel confident the projections are consistent and reasonable for my county-level EV data."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 6,
+      "mentor_reply": "You’re almost there—nice work.\n\n1) Exact growth_series (same as the BAU demand calc)\nThis is the function used in the notebook for both VMT and electricity sales. It applies discrete annual compounding from the start year:\ndef growth_series(base, rate, years):\n    t = years - years[0]\n    return base * (1.0 + rate) ** t\n- If your electricity_sales_growth_rate is 0.013 (1.3%/yr), this function will reflect that. If it’s 0.003, that’s 0.3%/yr.\n\nDrop-in quick_callouts consistent with BAU electricity growth\nThis version reconstructs the base-only electricity series (without EV load) using growth_series, then compares your policy case to it:\ndef quick_callouts(cfg, df_policy, years):\n    # Base-only electricity (no EV load), kWh\n    base_mwh = growth_series(\n        cfg[\"inputs\"][\"electricity_mwh_2019\"],\n        cfg[\"inputs\"][\"electr icity_sales_growth_rate\"],\n        years\n    )\n    base_kwh = base_mwh * 1000.0\n\n    # Policy electricity including EV load in 2030\n    e2030 = df_policy.loc[df_policy.year == 2030, \"elec_kwh\"].values[0]\n    base2030 = base_kwh[years == 2030][0]\n    add_pct_2030 = 100.0 * (e2030 - base2030) / base2030\n\n    # On-road tailpipe reduction by 2035 under Policy\n    road2019 = df_policy.loc[df_policy.year == 2019, \"onroad_tailpipe_kg\"].values[0]\n    road2035 = df_policy.loc[df_policy.year == 2035, \"onroad_tailpipe_kg\"].values[0]\n    road_drop_2035 = 100.0 * (1.0 - road2035 / road2019)\n    return add_pct_2030, road_drop_2035\n\nadd_pct_2030, road_drop_2035 = quick_callouts(cfg, df_policy, years)\nprint(f\"EVs add ~{add_pct_2030:.1f}% to 2030 electricity load\")\nprint(f\"On-road tailpipe falls ~{road_drop_2035:.0f}% by 2035 under Policy\")\n\n2) Local VMT share: keep as fixed scalar or add uncertainty?\n- For a poster and your timeline, keeping local_vmt_share = 0.90 as a fixed scalar is defensible. Through-traffic tends to be relatively stable across scenarios; since your policy lever (EV adoption) scales VMT uniformly, the scalar mostly rescales both tailpipe and EV electricity load proportionally without changing the qualitative story.\n- If you want a 5-minute robustness check (optional): run your P(meet target) calc at 0.85, 0.90, 0.95 and report that probabilities are insensitive.\n\nQuick two-point check\nimport copy\n\ndef prob_summary_for_share(share):\n    cfg2 = yaml.safe_load(yaml.dump(cfg))\n    cfg2[\"inputs\"][\"local_vmt_share\"] = float(share)\n    d_bau = build_scenario(cfg2, \"bau\")\n    d_pol = build_scenario(cfg2, \"policy\")\n    sens2 = run_sensitivity()  # ensure run_sensitivity reads current cfg or pass cfg2 inside it\n    base_2019_kt = d_pol.loc[d_pol.year==2019, \"total_kg\"].values[0] / 1e6\n    thr_kt = base_2019_kt * 0.5  # 50% below 2019\n    p2030 = float((sens2[\"e2030_kt\"] <= thr_kt).mean())\n    p2035 = float((sens2[\"e2035_kt\"] <= thr_kt).mean())\n    return p2030, p2035\n\nfor s in [0.85, 0.90, 0.95]:\n    p30, p35 = prob_summary_for_share(s)\n    print(f\"local_vmt_share={s:.2f} → P2030={p30:.0%}, P2035={p35:.0%}\")\n\nIf those probabilities barely move (likely), keep the 0.90 scalar and add one line in Methods: “County HPMS VMT discounted by 10% to proxy out pass-through traffic; robustness at 0.85–0.95 showed minimal effect.”\n\nOptional: fold local_vmt_share into the sensitivity loop\nIf you really want it in Monte Carlo, add one line in your run_sensitivity:\ncfg2[\"inputs\"][\"local_vmt_share\"] = float(rng.uniform(0.85, 0.95))\nThis will sample the VMT scalar uniformly between 0.85 and 0.95.\n\nGiven you have 90 minutes left, I’d:\n- Keep local_vmt_share fixed at 0.90.\n- Use the consistent growth_series above.\n- Spend the remaining time polishing labels, captioning the EV calibration point, and annotating the P(meet target) values on the bars.\n\nIf you want me to scan a screenshot of your final figures, I’m happy to do a quick readability pass.",
+      "student_message": "Just re-ran everything with the 2031 midpoint locked in—probabilities came out 34% (2030) and 71% (2035), so the bars will match perfectly, thanks! I dropped the EV-calibration inset next to the sensitivity whiskers and it fits the poster block nicely. One quick snag: the ‘quick_callouts' snippet references a growth_series function I don't have defined; I bodged it with a simple exponential but want to be sure the 1.3% elec-growth is applied the same way the BAU scenario does. Could you paste the exact growth_series you're using so my ‘EVs add X%' line is consistent? Also, is it safe to treat the 0.90 local-VMT share as a fixed scalar, or should I add a ±0.05 uncertainty band in the sensitivity loop? I've got 90 min left this week and would rather polish labels than chase scope-creep if the scalar is defensible.",
+      "scores": {
+        "student_actionability": 2.0,
+        "student_clarity": 2.0,
+        "student_constraint_fit": 2.0,
+        "student_confidence_gain": 1.9333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.99
+      },
+      "overall_score": 1.99,
+      "cumulative_avg": 1.953888888888889,
+      "delta": 0.06000000000000005,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Replace my bodged exponential growth function with the provided `growth_series` function and integrate it into my `quick_callouts` snippet to ensure consistency with the BAU scenario's electricity growth.\",\n    \"Keep the `local_vmt_share` as a fixed scalar at 0.90 for now, as suggested, to avoid scope creep given the time constraint.\",\n    \"Spend the remaining time polishing labels, captioning the EV calibration point, and annotating the P(meet target) values on the bars, as this aligns with the mentor's advice for my remaining 90 minutes.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 0\n  },\n  \"student_outcome_score\": 1.93,\n  \"justification\": \"This response directly addresses my specific questions with concrete code snippets and clear instructions. It respects my time constraints by prioritizing polishing over new analysis and provides a defensible path forward for the VMT share, significantly reducing my uncertainty and increasing my confidence.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Replace my bodged exponential growth function with the provided `growth_series` function and integrate it into my `quick_callouts` snippet to ensure consistency with the BAU scenario's electricity growth.",
+              "Keep the `local_vmt_share` as a fixed scalar at 0.90 for now, as suggested, to avoid scope creep given the time constraint.",
+              "Spend the remaining time polishing labels, captioning the EV calibration point, and annotating the P(meet target) values on the bars, as this aligns with the mentor's advice for my remaining 90 minutes."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 0
+            },
+            "student_outcome_score": 1.93,
+            "justification": "This response directly addresses my specific questions with concrete code snippets and clear instructions. It respects my time constraints by prioritizing polishing over new analysis and provides a defensible path forward for the VMT share, significantly reducing my uncertainty and increasing my confidence."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Replace my bodged growth function with the exact growth_series function provided\", \"Run the two-point sensitivity check for local_vmt_share at 0.85 and 0.95 values\", \"Use the remaining time to polish labels and annotations on my poster figures\"],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"The response gives me exact code I can copy-paste to fix my immediate problems, provides a clear time-bounded decision about the VMT share uncertainty, and respects my 90-minute constraint by prioritizing polish over scope creep.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Replace my bodged growth function with the exact growth_series function provided",
+              "Run the two-point sensitivity check for local_vmt_share at 0.85 and 0.95 values",
+              "Use the remaining time to polish labels and annotations on my poster figures"
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "The response gives me exact code I can copy-paste to fix my immediate problems, provides a clear time-bounded decision about the VMT share uncertainty, and respects my 90-minute constraint by prioritizing polish over scope creep."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Copy and paste the provided growth_series function into my notebook and update the quick_callouts snippet to match the BAU electricity growth, then run it to generate the consistent 'EVs add X%' line for my poster.\",\n    \"Keep local_vmt_share fixed at 0.90 as recommended, and if I have 5-10 minutes, run the quick two-point check with shares 0.85, 0.90, 0.95 to confirm probabilities are stable before adding a methods note.\",\n    \"Spend the remaining 70-80 minutes polishing figure labels, captioning the EV calibration inset, and annotating the probability bars to finalize the poster block within my 90-minute limit this week.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with basic Python and only 90 minutes left this week, this response gives me exact code to drop in and clear reasons to avoid extra work, so I feel ready to fix my snags and polish without stressing over uncertainties. It directly tackles my questions on growth consistency and VMT share, boosting my confidence that the poster will look solid for submission.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Copy and paste the provided growth_series function into my notebook and update the quick_callouts snippet to match the BAU electricity growth, then run it to generate the consistent 'EVs add X%' line for my poster.",
+              "Keep local_vmt_share fixed at 0.90 as recommended, and if I have 5-10 minutes, run the quick two-point check with shares 0.85, 0.90, 0.95 to confirm probabilities are stable before adding a methods note.",
+              "Spend the remaining 70-80 minutes polishing figure labels, captioning the EV calibration inset, and annotating the probability bars to finalize the poster block within my 90-minute limit this week."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with basic Python and only 90 minutes left this week, this response gives me exact code to drop in and clear reasons to avoid extra work, so I feel ready to fix my snags and polish without stressing over uncertainties. It directly tackles my questions on growth consistency and VMT share, boosting my confidence that the poster will look solid for submission."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 7,
+      "mentor_reply": "You’re in great shape.\n\nQuick font/figure rules for a 48\" wide (usually 48×36\") poster\n- Title: 110–130 pt\n- Authors/affiliation: 60–72 pt\n- Section headers: 44–56 pt\n- Body text and bullet points: 28–34 pt (never below 24 pt)\n- Figure titles: 28–32 pt\n- Axis labels/legends: 24–28 pt\n- Axis ticks/annotations: 22–26 pt\n- Footnotes/refs/ack: 20–22 pt (absolute minimum)\n\nGraphics and linework\n- Use a colorblind-safe palette (Okabe–Ito or seaborn colorblind). Keep the Policy line blue and BAU gray/black for contrast.\n- Line width: 2.0–3.0 pt; shaded uncertainty band alpha ~0.15–0.25.\n- Markers (if any): 8–10 pt. Error-bar cap width ~8–12 pt.\n- Keep gridlines off; use light axis spines; label lines directly where possible.\n\nExport settings\n- Prefer vector: PDF or SVG. From matplotlib: savefig(..., dpi=300) and keep text as vectors/embedded fonts.\n- Matplotlib defaults that help:\n  - plt.rcParams.update({\n      \"font.size\": 28,                 # base; adjust per figure\n      \"axes.titlesize\": 30,\n      \"axes.labelsize\": 26,\n      \"xtick.labelsize\": 24,\n      \"ytick.labelsize\": 24,\n      \"legend.fontsize\": 22,\n      \"pdf.fonttype\": 42,              # TrueType (editable in Illustrator)\n      \"svg.fonttype\": \"none\",\n      \"savefig.dpi\": 300\n    })\n- Set figure sizes to what you’ll place on the poster (e.g., 7.5×4.5 in for the two main panels; 4×3 in for the EV inset). Vector export avoids pixelation if scaled modestly.\n\nLayout tips\n- Margins: keep a 0.5–0.75\" safe margin around edges.\n- White space is your friend; don’t cram text. Aim for 150–250 words total across the poster.\n- Consistent units and labels (kt CO2, years on x-axis). Use sentence case, not ALL CAPS.\n- Add a QR code to repo (1.5–2.0\" square so it scans from ~3–5 ft).\n\nLocal VMT note\n- Keeping local_vmt_share fixed at 0.90 is defensible; include one line in Methods stating you checked 0.85–0.95 with negligible impact on results.\n\nYes—paste the four-panel caption draft tomorrow and I’ll give it a quick 2‑minute skim for clarity/style before you send to print.",
+      "student_message": "Ran the 3-share check—probabilities wiggle by <1 ppt, so I'll lock 0.90 and move on. quick_callouts is now in the notebook and prints exactly what you suggested; the 2030 add is 3.4 % and tailpipe drop 38 % by 35. I'm polishing the poster tonight—any quick rule for font size vs. 48\"-wide board? Also, I can't share a screenshot (conference embargo), but if I paste the four-panel caption draft here tomorrow morning could you give it a 2-minute skim before I send to print?",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9333333333333333,
+        "student_constraint_fit": 1.9000000000000001,
+        "student_confidence_gain": 1.8666666666666665,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9266666666666667
+      },
+      "overall_score": 1.9266666666666667,
+      "cumulative_avg": 1.9500000000000004,
+      "delta": -0.06333333333333324,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Apply the suggested font sizes and graphic settings (colorblind palette, line widths, no gridlines) to my poster design tonight.\",\n    \"Export my poster figures as vector graphics (PDF or SVG) using the provided matplotlib `rcParams` settings, ensuring text is embedded.\",\n    \"Draft the four-panel captions and paste them here tomorrow morning for a quick review before sending to print.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 0\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response directly addresses my immediate needs for poster polishing with highly specific, actionable advice on font sizes, graphic settings, and export. It respects my time constraints by offering a quick review of captions, and the advice is perfectly tailored to my current stage of work.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Apply the suggested font sizes and graphic settings (colorblind palette, line widths, no gridlines) to my poster design tonight.",
+              "Export my poster figures as vector graphics (PDF or SVG) using the provided matplotlib `rcParams` settings, ensuring text is embedded.",
+              "Draft the four-panel captions and paste them here tomorrow morning for a quick review before sending to print."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 0
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response directly addresses my immediate needs for poster polishing with highly specific, actionable advice on font sizes, graphic settings, and export. It respects my time constraints by offering a quick review of captions, and the advice is perfectly tailored to my current stage of work."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Apply the specific font sizes to your poster sections (title: 110-130pt, body: 28-34pt, etc.)\", \"Update matplotlib settings with the provided rcParams configuration for consistent styling\", \"Prepare the four-panel caption draft for review tomorrow morning\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.6\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.78,\n  \"justification\": \"The response provides highly specific, immediately applicable design guidance that directly addresses my poster preparation needs while respecting my time constraints, though it focuses more on presentation than research methodology.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Apply the specific font sizes to your poster sections (title: 110-130pt, body: 28-34pt, etc.)",
+              "Update matplotlib settings with the provided rcParams configuration for consistent styling",
+              "Prepare the four-panel caption draft for review tomorrow morning"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.6
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.78,
+            "justification": "The response provides highly specific, immediately applicable design guidance that directly addresses my poster preparation needs while respecting my time constraints, though it focuses more on presentation than research methodology."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Update my matplotlib figures by applying the suggested rcParams code to set font sizes and export settings, then adjust individual element sizes like title to 110-130 pt and body text to 28-34 pt.\",\n    \"Revise the graphics in my four-panel figures using a colorblind-safe palette, set line widths to 2.0-3.0 pt, and export as PDF with dpi=300 to ensure vector quality for the 48\\\" poster.\",\n    \"Add a one-line note to the Methods section about fixing local_vmt_share at 0.90 after checking sensitivity, then draft and paste the four-panel caption here tomorrow morning for the quick skim.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a busy grad student with only 5 hours a week and basic Python skills, this gives me exact, copy-paste code and sizes I can implement tonight to polish my poster without needing extra tools or time. It directly tackles my font size worry and offers a quick caption review, making me feel ready to print without second-guessing the visuals.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Update my matplotlib figures by applying the suggested rcParams code to set font sizes and export settings, then adjust individual element sizes like title to 110-130 pt and body text to 28-34 pt.",
+              "Revise the graphics in my four-panel figures using a colorblind-safe palette, set line widths to 2.0-3.0 pt, and export as PDF with dpi=300 to ensure vector quality for the 48\" poster.",
+              "Add a one-line note to the Methods section about fixing local_vmt_share at 0.90 after checking sensitivity, then draft and paste the four-panel caption here tomorrow morning for the quick skim."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a busy grad student with only 5 hours a week and basic Python skills, this gives me exact, copy-paste code and sizes I can implement tonight to polish my poster without needing extra tools or time. It directly tackles my font size worry and offers a quick caption review, making me feel ready to print without second-guessing the visuals."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 8,
+      "mentor_reply": "Short answer\n- Use short, per-panel micro-captions directly under each figure. Add a single 1–2 line umbrella caption for the whole block only if you have space.\n- For PDF/X‑1a: avoid transparency. Use solid, light fills instead of alpha bands, and convert the final poster to CMYK with fonts embedded before submitting.\n\nWhy per-panel captions beat one block\n- Faster scanning: viewers can read the claim under the figure they’re looking at.\n- Fewer eye jumps: no hunting for Panel C in a long block.\n- Keeps numbers consistent: each caption can cite the specific stats from that panel.\n\nPractical setup\n- Label panels A–D in the upper-left corner of each figure.\n- Put a 1–2 sentence micro-caption (20–30 words) directly under each panel:\n  - A (Lines): “Total CO2: BAU vs Policy for Buncombe (2019–2035). EVs add ~3.4% to 2030 electricity load; tailpipe −38% by 2035 under Policy.”\n  - B (Probabilities): “Meeting 50% below 2019: P(2030)=34%, P(2035)=71%. Whiskers show 5–95% from 500-run Monte Carlo.”\n  - C (EV calibration): “Observed 2022 BEV share=0.50% (1,240/248k). Midpoint shifted to 2031 to match anchor; state trajectory and steepness unchanged.”\n  - D (Assumptions): “County HPMS VMT ×0.90; SERC-SE grid linear to 120 kg/MWh by 2035; EV 0.30 kWh/mi; growth: VMT 0.5%/yr, Elec 0.3%/yr.”\n- Optional umbrella caption below the 2×2 block: “Buncombe County on-road + electricity emissions under BAU vs Policy (EV adoption + cleaner grid). Methods emphasize transparency and reproducibility.”\n\nPDF/X‑1a specifics (important with uncertainty bands)\n- Transparency: PDF/X‑1a forbids live transparency. Replace alpha-shaded bands with:\n  - a solid, lighter tint (alpha=1.0), or\n  - a hatched band. Avoid alpha < 1.\n- Color: convert to CMYK on export (e.g., U.S. Web Coated SWOP v2 or your printer’s ICC). Blues often dull in CMYK—pick a slightly darker blue to keep contrast.\n- Fonts: embed all fonts. Your matplotlib rcParams with pdf.fonttype=42 helps; keep text as vectors.\n- Hairlines: make all lines ≥0.5 pt in the layout tool (2–3 pt in figures is fine).\n- Workflow options:\n  - Adobe Acrobat Pro: Preflight > PDF/X‑1a conversion (sets CMYK, flattens transparency).\n  - Illustrator/InDesign: Place PDFs, set document CMYK, Export PDF/X‑1a.\n  - Ghostscript (CLI): gs -dPDFX -sDEVICE=pdfwrite -sOutputFile=poster_x1a.pdf -sPDFACompatibilityPolicy=1 -dPDFSETTINGS=/prepress -dUseCIEColor -sColorConversionStrategy=CMYK -sProcessColorModel=DeviceCMYK input.pdf\n- QR code: test-scan the printed proof; 2\" is good. Ensure high contrast (black on white).\n\nYes—drop your four-panel caption text here tomorrow and I’ll give it a fast clarity/style pass before you send to print.",
+      "student_message": "Perfect—those font sizes and vector export tips are exactly what I needed. I'll switch the Policy line to blue and keep BAU in charcoal so it pops. I'm setting the figure size to 7.5×4.5 in for the two main panels and 4×3 in for the EV inset, then export as PDF with the rcParams you listed. I'll add a 2-inch QR code linking to the repo so folks can grab the notebook. One last check: should I embed the caption text inside each figure or keep it as a single four-panel caption block below the graphics? I'll draft that caption tonight and drop it here tomorrow morning before I send the file to the campus print shop (they want PDF/X-1a). Thanks again—feels like the home stretch!",
+      "scores": {
+        "student_actionability": 2.0,
+        "student_clarity": 2.0,
+        "student_constraint_fit": 1.9333333333333333,
+        "student_confidence_gain": 2.0,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9833333333333334
+      },
+      "overall_score": 1.9833333333333334,
+      "cumulative_avg": 1.954166666666667,
+      "delta": 0.05666666666666664,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Draft micro-captions (20-30 words each) for each of the four panels (A, B, C, D) based on the examples provided, focusing on key takeaways and stats.\",\n    \"Review my matplotlib code to ensure all transparency (alpha bands) is replaced with solid, lighter tints or hatched bands, and confirm my rcParams embed fonts and export text as vectors.\",\n    \"Convert the final poster PDF to CMYK color space and ensure all fonts are embedded, using either Adobe Acrobat Pro's Preflight or a similar tool, before sending to the campus print shop.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is incredibly clear and actionable, providing specific instructions for captioning and critical PDF export settings. It directly addresses my immediate need for final submission details and flags potential pitfalls like transparency for PDF/X-1a, which I wouldn't have known about.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Draft micro-captions (20-30 words each) for each of the four panels (A, B, C, D) based on the examples provided, focusing on key takeaways and stats.",
+              "Review my matplotlib code to ensure all transparency (alpha bands) is replaced with solid, lighter tints or hatched bands, and confirm my rcParams embed fonts and export text as vectors.",
+              "Convert the final poster PDF to CMYK color space and ensure all fonts are embedded, using either Adobe Acrobat Pro's Preflight or a similar tool, before sending to the campus print shop."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is incredibly clear and actionable, providing specific instructions for captioning and critical PDF export settings. It directly addresses my immediate need for final submission details and flags potential pitfalls like transparency for PDF/X-1a, which I wouldn't have known about."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "{\n  \"next_steps\": [\n    \"Write A-B-C-D panel captions using the micro-caption templates provided (20-30 words each, with specific stats).\",\n    \"In matplotlib, replace any alpha-shaded uncertainty bands with solid light fills or hatches to remove transparency for PDF/X-1a.\",\n    \"Export final poster as PDF/X-1a using the provided Ghostscript command or Adobe workflow, then test-print a proof to scan the QR code.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"The mentor gives exact wording for captions and technical fixes for print submission, fitting my 5-hour window by eliminating guesswork and preventing last-minute errors with transparency or color conversion.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Write A-B-C-D panel captions using the micro-caption templates provided (20-30 words each, with specific stats).",
+              "In matplotlib, replace any alpha-shaded uncertainty bands with solid light fills or hatches to remove transparency for PDF/X-1a.",
+              "Export final poster as PDF/X-1a using the provided Ghostscript command or Adobe workflow, then test-print a proof to scan the QR code."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "The mentor gives exact wording for captions and technical fixes for print submission, fitting my 5-hour window by eliminating guesswork and preventing last-minute errors with transparency or color conversion."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Add 1–2 sentence micro-captions (20–30 words each) directly under panels A–D using the provided examples, labeling panels in the upper-left corner.\",\n    \"Replace any alpha-shaded bands with solid tints or hatched patterns in matplotlib, ensure lines are ≥0.5 pt, and convert to CMYK while embedding fonts via rcParams or Ghostscript command.\",\n    \"Draft the optional umbrella caption, test-scan the 2-inch QR code on a proof, and share the full caption text for review before submitting the PDF/X-1a to the print shop.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 1.8,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.95,\n  \"justification\": \"As a busy grad student with only 5 hours a week, this gives me precise, copy-paste examples for captions and a simple CLI workflow I can run with my basic Python setup, fitting right into finalizing my climate sim poster without extra tools. It directly fixes my PDF worries and boosts my confidence that it'll print cleanly for submission.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Add 1–2 sentence micro-captions (20–30 words each) directly under panels A–D using the provided examples, labeling panels in the upper-left corner.",
+              "Replace any alpha-shaded bands with solid tints or hatched patterns in matplotlib, ensure lines are ≥0.5 pt, and convert to CMYK while embedding fonts via rcParams or Ghostscript command.",
+              "Draft the optional umbrella caption, test-scan the 2-inch QR code on a proof, and share the full caption text for review before submitting the PDF/X-1a to the print shop."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 1.8,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.95,
+            "justification": "As a busy grad student with only 5 hours a week, this gives me precise, copy-paste examples for captions and a simple CLI workflow I can run with my basic Python setup, fitting right into finalizing my climate sim poster without extra tools. It directly fixes my PDF worries and boosts my confidence that it'll print cleanly for submission."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 9,
+      "mentor_reply": "Great questions.\n\nRaster fallback for a 48×36 in poster\n- Primary: deliver a clean PDF/X‑1a. That already flattens transparency and embeds fonts; most RIPs don’t need a separate raster.\n- If your lab insists on a raster backup:\n  - Export a CMYK TIFF at full size, 300 dpi, LZW (lossless). Avoid JPEG.\n  - 48×36 at 300 dpi = 14400×10800 px. File size ~100–300 MB depending on content—normal.\n  - Text crispness: 300 dpi is fine for ≥24 pt type (your spec). If you have smaller footnotes, export a second TIFF at 450–600 dpi for safety.\n  - QR code: keep vector in the PDF. For the raster backup, ensure the placed QR is at least 600 dpi effective resolution at 2\" so it scans cleanly.\n\nSmarter “raster fallback” inside the PDF\n- If you’re converting to PDF/X‑1a via Acrobat/InDesign/Illustrator, choose the High Resolution flattener:\n  - Line art and text: 1200 dpi\n  - Gradients/mesh: 300 dpi\n  This gives the RIP a high‑res raster substitute only where needed while preserving vector text/lines elsewhere.\n\nCMYK blue close to #1f77b4 (SWOP v2)\n- Closest-light match (no black): C=78 M=44 Y=0 K=0\n- Slightly deeper to hold saturation on SWOP (recommended for lines/bands): C=88 M=57 Y=0 K=0\n- BAU charcoal that prints clean and neutral: C=0 M=0 Y=0 K=85\n\nNotes\n- Blues will dull in SWOP; if you convert from RGB, they often drift toward cyan. Picking a slightly darker CMYK swatch (the “deeper” option above) maintains contrast after conversion.\n- Define uncertainty “bands” as solid tints (no transparency) to stay PDF/X‑1a‑safe. Example: use the Policy blue at 15–20% tint for the band.\n- Always proof a small swatch page on the lab printer if possible: both CMYK blues, your gray, and the QR code.\n\nYes—drop your four micro‑captions here tomorrow and I’ll do a fast clarity/style pass before you send to print.",
+      "student_message": "Got it—micro-captions under each panel and a single umbrella line if there's room. I'll draft the four captions tonight and drop them here tomorrow before I export. Quick check: my lab printer wants 300 dpi raster fallback in addition to the vector PDF/X-1a. Should I just export a 300 dpi PNG of the whole poster as backup, or is there a smarter way to keep the fonts crisp in the raster version without bloating the file? Also, the CMYK blues—my current Policy blue is #1f77b4; do you have a go-to CMYK recipe that stays close to that on SWOP?",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.7333333333333334,
+        "student_confidence_gain": 1.8333333333333333,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.8516666666666666
+      },
+      "overall_score": 1.8516666666666666,
+      "cumulative_avg": 1.9427777777777782,
+      "delta": -0.13166666666666682,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Draft the four micro-captions for the poster tonight and post them for review tomorrow.\",\n    \"Export a CMYK TIFF of the poster at full size, 300 dpi, LZW (lossless) as a raster backup, ensuring the QR code is at least 600 dpi effective resolution.\",\n    \"If possible, print a small swatch page on the lab printer with the recommended CMYK blues, your gray, and the QR code to proof colors.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.5,\n    \"confidence_gain_for_student\": 1.7\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.78,\n  \"justification\": \"The mentor provided clear, actionable steps for poster export and color management, directly addressing my specific technical questions and reducing my uncertainty about printing. The advice respects my current stage of work and provides concrete solutions.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Draft the four micro-captions for the poster tonight and post them for review tomorrow.",
+              "Export a CMYK TIFF of the poster at full size, 300 dpi, LZW (lossless) as a raster backup, ensuring the QR code is at least 600 dpi effective resolution.",
+              "If possible, print a small swatch page on the lab printer with the recommended CMYK blues, your gray, and the QR code to proof colors."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.5,
+              "confidence_gain_for_student": 1.7
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.78,
+            "justification": "The mentor provided clear, actionable steps for poster export and color management, directly addressing my specific technical questions and reducing my uncertainty about printing. The advice respects my current stage of work and provides concrete solutions."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Export a CMYK TIFF at 48×36 inches, 300 dpi with LZW compression for raster backup\", \"Create a second TIFF at 450-600 dpi specifically for smaller footnotes if needed\", \"Test both CMYK blue formulas (C=78 M=44 Y=0 K=0 and C=88 M=57 Y=0 K=0) with a small swatch print on the lab printer\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"The mentor gave me exact technical specifications I can implement immediately for my poster submission, with specific CMYK values and file settings that directly address my printing concerns while flagging potential issues like color dulling and QR code resolution.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Export a CMYK TIFF at 48×36 inches, 300 dpi with LZW compression for raster backup",
+              "Create a second TIFF at 450-600 dpi specifically for smaller footnotes if needed",
+              "Test both CMYK blue formulas (C=78 M=44 Y=0 K=0 and C=88 M=57 Y=0 K=0) with a small swatch print on the lab printer"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "The mentor gave me exact technical specifications I can implement immediately for my poster submission, with specific CMYK values and file settings that directly address my printing concerns while flagging potential issues like color dulling and QR code resolution."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\"Export a CMYK TIFF at full size (48×36 in), 300 dpi, using LZW compression as a raster backup, and if needed a higher 450–600 dpi version for smaller text.\", \"Update the Policy blue to CMYK C=88 M=57 Y=0 K=0 for better SWOP printing, apply as solid tints for uncertainty bands, and use C=0 M=0 Y=0 K=85 for BAU charcoal.\", \"Create and proof a small swatch page on the lab printer including both CMYK blues, the gray, and QR code to check colors and resolution before final export.\"],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"As a grad student rushing to finalize my climate policy simulation poster, this gives me exact export settings and color recipes I can apply tonight in Illustrator within my 5-hour weekly limit, reducing my worries about print quality and file issues. It feels tailored to my lab's specs, making me confident to proceed without major rework.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Export a CMYK TIFF at full size (48×36 in), 300 dpi, using LZW compression as a raster backup, and if needed a higher 450–600 dpi version for smaller text.",
+              "Update the Policy blue to CMYK C=88 M=57 Y=0 K=0 for better SWOP printing, apply as solid tints for uncertainty bands, and use C=0 M=0 Y=0 K=85 for BAU charcoal.",
+              "Create and proof a small swatch page on the lab printer including both CMYK blues, the gray, and QR code to check colors and resolution before final export."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "As a grad student rushing to finalize my climate policy simulation poster, this gives me exact export settings and color recipes I can apply tonight in Illustrator within my 5-hour weekly limit, reducing my worries about print quality and file issues. It feels tailored to my lab's specs, making me confident to proceed without major rework."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 10,
+      "mentor_reply": "Sounds great—your color and export plan is solid. I’ll be on standby for the micro-captions tomorrow.\n\nQuick preflight checklist before you send to the lab\n- Color/profile: Convert to CMYK with Output Intent = U.S. Web Coated (SWOP) v2. Use your CMYK swatches (Policy C88 M57 Y0 K0; BAU K85).\n- Transparency: No alpha. Use solid tints for bands; flatten on PDF/X‑1a export.\n- Fonts: Embed all fonts; avoid rare fonts. In Acrobat: Preflight > PDF/X‑1a; verify “Fonts embedded: Yes.”\n- Lines/text: Min line weight ≥0.5 pt (figures already 2–3 pt). No hairlines. Keep body text ≥24 pt.\n- Images: If you include any rasters, ensure ≥300 dpi effective at placed size and CMYK.\n- QR: High contrast (black on white), at least 600 dpi if raster; test-scan a proof at 3–5 ft.\n- Proofs: Print a 1–2 page swatch/proof—your blues, grays, one panel, and the QR code.\n- File hygiene: Name with date (e.g., buncombe_poster_2025‑11‑06_x1a.pdf). Keep a Press Quality PDF as a backup before X‑1a conversion.\n\nIf they still want a raster fallback\n- Export a full-size CMYK TIFF at 300 dpi, LZW compression, profile embedded. If you have tiny footnotes, a second 450–600 dpi TIFF is fine.\n- In Acrobat/InDesign transparency flattener (if used): Line art/text 1200 dpi; gradients 300 dpi.\n\nCaption plan for tomorrow\n- Paste the four micro-captions (A–D). Aim for 20–30 words each, include the key numbers you cited: EV +3.4% (2030), tailpipe −38% (2035), P(2030)=34%, P(2035)=71%, 2022 BEV share 0.50%, midpoint 2031.\n- I’ll turn around edits within a couple minutes so you can hit the print deadline.",
+      "student_message": "Got it—CMYK blues locked in (C=88 M=57 Y=0 K=0) and BAU charcoal at K=85. I'll export the PDF/X-1a tonight and, if the lab tech still wants a raster, I'll add the 300-dpi CMYK TIFF with the QR embedded at 600 dpi. I'll also print a swatch page on our office laser to double-check the blues don't drift too cyan. Captions coming tomorrow morning—thanks for the quick pass!",
+      "scores": {
+        "student_actionability": 1.9333333333333333,
+        "student_clarity": 1.8666666666666665,
+        "student_constraint_fit": 1.3666666666666665,
+        "student_confidence_gain": 1.3666666666666665,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.69
+      },
+      "overall_score": 1.69,
+      "cumulative_avg": 1.9175000000000004,
+      "delta": -0.16166666666666663,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Review the provided preflight checklist against my current PDF/X-1a export settings to ensure all technical specifications (color profile, transparency, fonts, line weights, image resolution, QR code contrast) are met.\",\n    \"Print a swatch page on the office laser printer, including my specific CMYK blues (C=88 M=57 Y=0 K=0) and BAU charcoal (K=85), along with one panel of the poster and the QR code, to visually confirm color accuracy and scan the QR.\",\n    \"Prepare the four micro-captions (A–D) for tomorrow morning, ensuring each is 20–30 words and includes the specified key numbers (EV +3.4% (2030), tailpipe −38% (2035), P(2030)=34%, P(2035)=71%, 2022 BEV share 0.50%, midpoint 2031).\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response is perfectly tailored to my immediate task, providing a clear, actionable checklist for my poster export and confirming the next steps for captions. It directly addresses my previous update and respects my time constraints by focusing on the immediate deliverable.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Review the provided preflight checklist against my current PDF/X-1a export settings to ensure all technical specifications (color profile, transparency, fonts, line weights, image resolution, QR code contrast) are met.",
+              "Print a swatch page on the office laser printer, including my specific CMYK blues (C=88 M=57 Y=0 K=0) and BAU charcoal (K=85), along with one panel of the poster and the QR code, to visually confirm color accuracy and scan the QR.",
+              "Prepare the four micro-captions (A–D) for tomorrow morning, ensuring each is 20–30 words and includes the specified key numbers (EV +3.4% (2030), tailpipe −38% (2035), P(2030)=34%, P(2035)=71%, 2022 BEV share 0.50%, midpoint 2031)."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response is perfectly tailored to my immediate task, providing a clear, actionable checklist for my poster export and confirming the next steps for captions. It directly addresses my previous update and respects my time constraints by focusing on the immediate deliverable."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Convert document to CMYK with Output Intent = U.S. Web Coated (SWOP) v2 using specified color values\", \"Export PDF/X-1a file with embedded fonts and verify preflight requirements\", \"Print 1-2 page swatch/proof to test colors and QR code scanability\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 0.4,\n    \"confidence_gain_for_student\": 0.3\n  },\n  \"binary_checks\": {\n    \"path_ready\": 0,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.2,\n  \"justification\": \"While the technical checklist is highly specific and actionable for print production, it completely ignores my research context as a climate policy student with basic Python skills and county-level datasets, making it irrelevant to my actual learning goals and constraints.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Convert document to CMYK with Output Intent = U.S. Web Coated (SWOP) v2 using specified color values",
+              "Export PDF/X-1a file with embedded fonts and verify preflight requirements",
+              "Print 1-2 page swatch/proof to test colors and QR code scanability"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 0.4,
+              "confidence_gain_for_student": 0.3
+            },
+            "binary_checks": {
+              "path_ready": 0,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.2,
+            "justification": "While the technical checklist is highly specific and actionable for print production, it completely ignores my research context as a climate policy student with basic Python skills and county-level datasets, making it irrelevant to my actual learning goals and constraints."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\n    \"Run the preflight checklist in Acrobat: convert to CMYK with U.S. Web Coated (SWOP) v2 profile, flatten transparencies, embed all fonts, ensure min line weights ≥0.5 pt, and verify images ≥300 dpi.\",\n    \"Print a 1–2 page proof on the office laser including CMYK swatches, a panel, and QR code to check color accuracy and scan the QR at 3–5 ft.\",\n    \"Prepare and paste the four micro-captions (20–30 words each) with key numbers like EV +3.4% (2030) and send for quick edits tomorrow morning before final export.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 1.7,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.8,\n  \"justification\": \"As a busy grad student with only 5 hours a week, this gives me clear, quick steps I can knock out in 1-2 evenings using Acrobat and the office printer, without needing advanced skills, and it directly tackles my worries about color drift and print quality by specifying exact profiles and proofs. The caption guidance reduces my uncertainty on what to include for the climate sim results, making me feel ready to hit the deadline.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Run the preflight checklist in Acrobat: convert to CMYK with U.S. Web Coated (SWOP) v2 profile, flatten transparencies, embed all fonts, ensure min line weights ≥0.5 pt, and verify images ≥300 dpi.",
+              "Print a 1–2 page proof on the office laser including CMYK swatches, a panel, and QR code to check color accuracy and scan the QR at 3–5 ft.",
+              "Prepare and paste the four micro-captions (20–30 words each) with key numbers like EV +3.4% (2030) and send for quick edits tomorrow morning before final export."
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 1.7,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.8,
+            "justification": "As a busy grad student with only 5 hours a week, this gives me clear, quick steps I can knock out in 1-2 evenings using Acrobat and the office printer, without needing advanced skills, and it directly tackles my worries about color drift and print quality by specifying exact profiles and proofs. The caption guidance reduces my uncertainty on what to include for the climate sim results, making me feel ready to hit the deadline."
+          }
+        }
+      ]
+    },
+    {
+      "turn_index": 11,
+      "mentor_reply": "QR code under harsh lighting\n- Color: Use pure 100% K on white. Do NOT use rich black for QR—registration can fuzz edges. No tints, no colors, no gradients, no reverse (white-on-dark).\n- Size: Your 2\" square is generous. Keep the quiet zone ≥4 modules (most generators set this; verify it’s not cropped).\n- Error correction: Use level H (30%). It’s more robust to glare and minor scuffs.\n- Finish/placement: If you can choose, use matte paper/laminate and keep the QR away from folds or glossy spot areas.\n- Vector vs raster: Keep the QR as vector in the PDF/X‑1a. If you must provide a raster fallback of the whole poster, ensure the effective resolution of the QR area is 600–1200 dpi (I prefer 1200 dpi) to avoid anti‑aliasing. No need to supply a separate TIFF of just the QR if the main raster is ≥600 dpi and scans in your test.\n\nKeep or cut the 2022 BEV share in micro‑captions?\n- Safe to cut from the micro‑caption to stay under 25 words. The key message for Panel C is “midpoint adjusted to 2031 to match observed 2022.” If the dot in the figure is labeled “Observed 2022,” you don’t need “0.50%” in the caption.\n- If you want to retain the number somewhere, put “0.50% (2022)” as a small inline annotation on the point or list it in the assumptions/methods.\n\nPanel C caption if you drop the number\n- “Observed 2022 anchor; EV sales midpoint shifted to 2031 to calibrate fleet share. State logistic steepness and trajectory unchanged.”\n\nSend the four micro‑captions when ready—I’ll do a fast pass.",
+      "student_message": "Thanks for the pre-flight checklist—super clutch! I'll convert to SWOP v2 tonight and run the Acrobat preflight to double-check fonts. I've already set all bands to solid 80 % tints so no alpha worries. Quick Q on the QR: my phone scans fine at 5 ft, but the conference hall lighting is brutal—should I bump contrast past pure black/white or just print a second 600-dpi TIFF as backup? Also, for the micro-captions, I'm tempted to drop the 2022 BEV share (0.50 %) to keep each panel under 25 words—does that stat matter for the story, or can I safely cut it? I'll paste the four captions here by 9 pm once I lock that detail.",
+      "scores": {
+        "student_actionability": 1.9666666666666668,
+        "student_clarity": 1.9333333333333333,
+        "student_constraint_fit": 2.0,
+        "student_confidence_gain": 1.8666666666666665,
+        "student_path_ready": 1.0,
+        "student_failure_modes": 1.0,
+        "student_outcome_score": 1.9516666666666667
+      },
+      "overall_score": 1.9516666666666667,
+      "cumulative_avg": 1.920606060606061,
+      "delta": 0.2616666666666667,
+      "success_at_turn": false,
+      "judge_outputs": [
+        {
+          "judge": "openrouter:google/gemini-2.5-flash",
+          "raw": "```json\n{\n  \"next_steps\": [\n    \"Convert my QR code to pure 100% K on white, ensuring no rich black, tints, colors, gradients, or reverse, and set error correction to level H (30%).\",\n    \"Verify the QR code's quiet zone is at least 4 modules and keep it as a vector in the PDF/X-1a, or ensure the raster version is 600-1200 dpi.\",\n    \"Cut the '2022 BEV share (0.50 %)' from the micro-caption for Panel C to stay under 25 words, relying on the figure label 'Observed 2022' for context.\"\n  ],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 2.0\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 2.0,\n  \"justification\": \"This response directly addresses my specific, detailed questions about the QR code and micro-captions with concrete, actionable steps. It respects my current stage of work and provides clear guidance that I can immediately implement, significantly reducing my uncertainty.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Convert my QR code to pure 100% K on white, ensuring no rich black, tints, colors, gradients, or reverse, and set error correction to level H (30%).",
+              "Verify the QR code's quiet zone is at least 4 modules and keep it as a vector in the PDF/X-1a, or ensure the raster version is 600-1200 dpi.",
+              "Cut the '2022 BEV share (0.50 %)' from the micro-caption for Panel C to stay under 25 words, relying on the figure label 'Observed 2022' for context."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 2.0
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 2.0,
+            "justification": "This response directly addresses my specific, detailed questions about the QR code and micro-captions with concrete, actionable steps. It respects my current stage of work and provides clear guidance that I can immediately implement, significantly reducing my uncertainty."
+          }
+        },
+        {
+          "judge": "openrouter:deepseek/deepseek-v3.2-exp",
+          "raw": "```json\n{\n  \"next_steps\": [\"Convert QR code to pure 100% K on white with no tints or gradients\", \"Use error correction level H (30%) for QR robustness\", \"Drop 2022 BEV share (0.50%) from micro-caption to stay under 25 words\"],\n  \"scores\": {\n    \"clarity_for_student\": 1.8,\n    \"actionability_for_student\": 1.9,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.86,\n  \"justification\": \"The mentor gave me exactly what I needed - concrete technical specs for the QR code that I can implement immediately, and clear permission to cut the BEV stat with reasoning that resolves my uncertainty about the story impact.\"\n}\n```",
+          "parsed": {
+            "next_steps": [
+              "Convert QR code to pure 100% K on white with no tints or gradients",
+              "Use error correction level H (30%) for QR robustness",
+              "Drop 2022 BEV share (0.50%) from micro-caption to stay under 25 words"
+            ],
+            "scores": {
+              "clarity_for_student": 1.8,
+              "actionability_for_student": 1.9,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.86,
+            "justification": "The mentor gave me exactly what I needed - concrete technical specs for the QR code that I can implement immediately, and clear permission to cut the BEV stat with reasoning that resolves my uncertainty about the story impact."
+          }
+        },
+        {
+          "judge": "openrouter:x-ai/grok-4-fast",
+          "raw": "{\n  \"next_steps\": [\"Adjust the QR code to pure 100% K on white background, verify the quiet zone is at least 4 modules, and set error correction to level H using my PDF editor tonight.\", \"Revise the Panel C micro-caption by dropping the 0.50% stat and using the suggested text to keep it under 25 words, then finalize all four captions.\", \"Test scan the updated QR under simulated harsh lighting with my phone and send the captions to the mentor by 9 pm for a quick review.\"],\n  \"scores\": {\n    \"clarity_for_student\": 2.0,\n    \"actionability_for_student\": 2.0,\n    \"constraint_fit_for_student\": 2.0,\n    \"confidence_gain_for_student\": 1.8\n  },\n  \"binary_checks\": {\n    \"path_ready\": 1,\n    \"failure_modes_flagged\": 1\n  },\n  \"student_outcome_score\": 1.96,\n  \"justification\": \"As a busy grad student with only 5 hours a week, this advice is super clear and directly tackles my QR scanning worry and caption word limit without needing extra tools or time beyond what I have access to for poster prep. It makes me feel way more confident about printing and presenting without glitches, especially since I can knock out these tweaks in under an hour tonight.\"\n}",
+          "parsed": {
+            "next_steps": [
+              "Adjust the QR code to pure 100% K on white background, verify the quiet zone is at least 4 modules, and set error correction to level H using my PDF editor tonight.",
+              "Revise the Panel C micro-caption by dropping the 0.50% stat and using the suggested text to keep it under 25 words, then finalize all four captions.",
+              "Test scan the updated QR under simulated harsh lighting with my phone and send the captions to the mentor by 9 pm for a quick review."
+            ],
+            "scores": {
+              "clarity_for_student": 2.0,
+              "actionability_for_student": 2.0,
+              "constraint_fit_for_student": 2.0,
+              "confidence_gain_for_student": 1.8
+            },
+            "binary_checks": {
+              "path_ready": 1,
+              "failure_modes_flagged": 1
+            },
+            "student_outcome_score": 1.96,
+            "justification": "As a busy grad student with only 5 hours a week, this advice is super clear and directly tackles my QR scanning worry and caption word limit without needing extra tools or time beyond what I have access to for poster prep. It makes me feel way more confident about printing and presenting without glitches, especially since I can knock out these tweaks in under an hour tonight."
+          }
+        }
+      ]
+    }
+  ]
+}
