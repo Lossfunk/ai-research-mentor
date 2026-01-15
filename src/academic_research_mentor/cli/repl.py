@@ -17,9 +17,6 @@ from .repl_helpers import (
 """REPL with optional context enrichment from attachments and tools."""
 
 
-## get_langchain_tools is defined in runtime/tools_wrappers.py; no duplication here.
-
-
 def online_repl(agent: Any, loaded_variant: str) -> None:
     session_logger, chat_logger = create_session_stack(
         {"loaded_prompt_variant": loaded_variant}

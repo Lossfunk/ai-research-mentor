@@ -4,15 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
+import random
 import re
 import sys
 import time
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar
 
 from academic_research_mentor.cli.session import load_env_file
 from academic_research_mentor.rich_formatter import print_error, print_info, print_success
@@ -24,6 +27,52 @@ from .multi_turn_orchestrator import (
     _override_env,
     _resolve_openrouter_student_llm,
 )
+
+
+T = TypeVar("T")
+
+
+class LLMTimeoutError(Exception):
+    """Raised when an LLM call exceeds the timeout."""
+
+    pass
+
+
+def retry_with_backoff(
+    max_retries: int = 2,
+    base_delay: float = 2.0,
+    max_delay: float = 15.0,
+    retryable_exceptions: Tuple[type, ...] = (
+        RuntimeError,
+        ConnectionError,
+        TimeoutError,
+        concurrent.futures.TimeoutError,
+        LLMTimeoutError,
+    ),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """Retry decorator with exponential backoff and jitter."""
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            last_exc: Optional[Exception] = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except retryable_exceptions as exc:
+                    last_exc = exc
+                    if attempt == max_retries:
+                        break
+                    delay = min(base_delay * (2**attempt) + random.uniform(0, 1), max_delay)
+                    print_info(f"[retry] Attempt {attempt + 1}/{max_retries + 1} failed: {exc}. Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("retry_with_backoff: unexpected state")
+
+        return wrapper
+
+    return decorator
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -186,25 +235,34 @@ class MentorAdapter:
         if hasattr(agent, "reset_history"):
             try:
                 agent.reset_history()
-            except Exception:
-                pass
+            except Exception as exc:
+                print_info(f"[warn] Failed to reset agent history during init: {exc}")
         return agent
 
     def reset(self) -> None:
         if hasattr(self._agent, "reset_history"):
             try:
                 self._agent.reset_history()
-            except Exception:
-                pass
+            except Exception as exc:
+                print_info(f"[warn] Failed to reset agent history: {exc}")
 
-    def respond(self, user_message: str) -> MentorReply:
+    @retry_with_backoff(max_retries=2, base_delay=2.0, max_delay=15.0)
+    def respond(self, user_message: str, timeout_seconds: int = 120) -> MentorReply:
         store = get_transparency_store()
         try:
             store.clear_runs()
-        except Exception:
-            pass
+        except Exception as exc:
+            print_info(f"[debug] Failed to clear transparency store: {exc}")
 
-        reply_obj = self._agent.run(user_message)
+        # Execute mentor call with timeout protection
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._agent.run, user_message)
+            try:
+                reply_obj = future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                raise LLMTimeoutError(f"mentor_call_timeout_after_{timeout_seconds}s")
+
         reply_text = _extract_text(reply_obj) if not isinstance(reply_obj, str) else reply_obj.strip()
 
         if not reply_text:
@@ -222,8 +280,8 @@ class MentorAdapter:
             )
         try:
             store.clear_runs()
-        except Exception:
-            pass
+        except Exception as exc:
+            print_info(f"[debug] Failed to clear transparency store after respond: {exc}")
 
         return MentorReply(text=reply_text, raw=_json_safe(reply_obj), tool_runs=runs_snapshot)
 
@@ -278,7 +336,10 @@ class UserSimulator:
             mentor_reply=mentor_reply,
         )
 
-    def generate(self, scenario: ScenarioSpec, history: Sequence[Dict[str, str]], mentor_reply: str) -> UserDecision:
+    @retry_with_backoff(max_retries=2, base_delay=1.0, max_delay=10.0)
+    def generate(
+        self, scenario: ScenarioSpec, history: Sequence[Dict[str, str]], mentor_reply: str, timeout_seconds: int = 60
+    ) -> UserDecision:
         prompt = self._build_prompt(scenario, history, mentor_reply)
         messages = [
             {"role": "system", "content": "You must reply with JSON only."},
@@ -286,9 +347,18 @@ class UserSimulator:
         ]
         raw_payload: Optional[str] = None
         try:
-            result = self._client.invoke(messages)
+            # Execute student call with timeout protection
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self._client.invoke, messages)
+                try:
+                    result = future.result(timeout=timeout_seconds)
+                except concurrent.futures.TimeoutError:
+                    future.cancel()
+                    raise LLMTimeoutError(f"student_call_timeout_after_{timeout_seconds}s")
             text = _extract_text(result)
-        except Exception as exc:  # noqa: BLE001
+        except LLMTimeoutError:
+            raise  # Re-raise timeout errors for retry decorator
+        except Exception as exc:
             raw_payload = " ".join(str(arg) for arg in exc.args if isinstance(arg, str)) or str(exc)
             print_info(f"[warn] Student model invoke error: {exc!r}")
             text = raw_payload
@@ -406,12 +476,15 @@ def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
         for candidate in candidates:
             try:
                 data = yaml.safe_load(candidate)
-            except Exception:
+            except yaml.YAMLError as exc:
+                print_info(f"[debug] YAML parse failed for candidate: {exc}")
                 continue
             if isinstance(data, dict):
                 return data
-    except Exception:
-        pass
+    except ImportError:
+        pass  # YAML not installed, skip this fallback
+    except Exception as exc:
+        print_info(f"[debug] Unexpected error in YAML fallback: {exc}")
 
     decision = _heuristic_partial_parse(cleaned)
     if decision is not None:
