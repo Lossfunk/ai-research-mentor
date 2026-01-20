@@ -24,13 +24,91 @@ from .run_student_judge_scores import (
 
 DEFAULT_INPUT_ROOT = Path("reports/multi_turn_eval_all5")
 DEFAULT_TEMPLATE = Path("evaluation/judges/student_outcome_judge.md")
-DEFAULT_THRESHOLD = 1.6
+# Threshold anchored to rubric: 1.5 = "Good" (clear, specific, actionable guidance)
+# Scores above 1.5 indicate the mentor consistently provides guidance that students
+# can execute with their available resources. See evaluation/judges/student_outcome_judge.md
+DEFAULT_THRESHOLD = 1.5
 DEFAULT_STAGE = "C"
 DEFAULT_JUDGES: Tuple[str, ...] = (
-    "openrouter:google/gemini-2.5-pro",
-    "openrouter:deepseek/deepseek-v3.2-exp",
-    "openrouter:x-ai/grok-4-fast",
+    "openrouter:qwen/qwen3-max",  # Alibaba - independent from evaluated systems
+    "openrouter:deepseek/deepseek-v3.2-exp",  # DeepSeek - independent
+    "openrouter:x-ai/grok-4-fast",  # xAI - independent
+    # Note: Deliberately excluding Google/Anthropic/OpenAI judges to avoid
+    # family bias when evaluating Gemini/Claude/GPT systems
 )
+
+# Stop reason classification for success determination
+# Based on empirical analysis of multi-turn conversation outcomes
+POSITIVE_STOP_REASONS = frozenset({
+    "goal_reached",      # Student explicitly got what they needed
+    "mentored_enough",   # Student satisfied, has concrete plan to proceed
+})
+
+NEGATIVE_STOP_REASONS = frozenset({
+    "blocked",           # Student gave up due to mentor failures or inability to help
+    "not_helpful",       # Mentor responses weren't useful
+    "error",             # Technical error during conversation
+    "invalid_student_json",  # Student model failed to produce valid output
+    "empty_mentor_reply",    # Mentor returned nothing
+})
+
+AMBIGUOUS_STOP_REASONS = frozenset({
+    "student_terminated",    # Fallback - no explicit reason given
+    "max_turns_reached",     # Conversation hit limit, may or may not have succeeded
+    "time_constraint",       # Student had to leave, not necessarily satisfied
+})
+
+
+def classify_stop_reason(stop_reason: str) -> str:
+    """Classify a stop_reason into positive/negative/ambiguous."""
+    reason = stop_reason.lower().strip() if stop_reason else ""
+    if reason in POSITIVE_STOP_REASONS or reason in {r.lower() for r in POSITIVE_STOP_REASONS}:
+        return "positive"
+    if reason in NEGATIVE_STOP_REASONS or reason in {r.lower() for r in NEGATIVE_STOP_REASONS}:
+        return "negative"
+    return "ambiguous"
+
+
+def compute_success_with_stop_reason(
+    final_score: Optional[float],
+    stop_reason: str,
+    threshold: float,
+    ambiguous_threshold_bump: float = 0.1,
+) -> Tuple[bool, str]:
+    """
+    Determine success incorporating both score and stop_reason semantics.
+
+    Returns (is_success, success_type) where success_type is one of:
+    - "score_and_positive_stop": High score + positive stop reason
+    - "score_only": High score but ambiguous/missing stop reason
+    - "positive_stop_only": Positive stop reason but score below threshold
+    - "failed_negative_stop": Negative stop reason (automatic failure)
+    - "failed_low_score": Score below threshold with ambiguous stop
+    - "failed_no_data": Missing score data
+    """
+    classification = classify_stop_reason(stop_reason)
+
+    # Negative stops are automatic failures regardless of score
+    if classification == "negative":
+        return False, "failed_negative_stop"
+
+    if final_score is None:
+        return False, "failed_no_data"
+
+    # Positive stops: use standard threshold
+    if classification == "positive":
+        if final_score >= threshold:
+            return True, "score_and_positive_stop"
+        # Positive stop but low score - still count as success but flag it
+        # Student said they were satisfied, trust them
+        return True, "positive_stop_only"
+
+    # Ambiguous stops: require higher threshold since we're less certain
+    adjusted_threshold = threshold + ambiguous_threshold_bump
+    if final_score >= adjusted_threshold:
+        return True, "score_only"
+
+    return False, "failed_low_score"
 
 
 @dataclass
@@ -63,6 +141,10 @@ class ConversationSummary:
     positive_delta_share: Optional[float]
     stop_reason: str
     stopped_by_student: bool
+    # New fields for stop_reason-aware success
+    stop_reason_class: str = ""  # "positive", "negative", "ambiguous"
+    is_success: bool = False
+    success_type: str = ""  # detailed success/failure classification
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -110,6 +192,31 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def iter_transcript_files(root: Path) -> Iterable[Tuple[str, Path]]:
+    """
+    Iterate over transcript files in either of two directory structures:
+
+    Structure A (nested runs):
+        root/run_name/transcripts/system_id/*.json
+        -> yields (run_name, path)
+
+    Structure B (flat, single run):
+        root/transcripts/system_id/*.json
+        -> yields (root.name, path)
+    """
+    # Check for Structure B: flat transcripts dir directly under root
+    flat_transcripts = root / "transcripts"
+    if flat_transcripts.exists() and flat_transcripts.is_dir():
+        # Check if it contains system directories (not JSON files directly)
+        subdirs = [p for p in flat_transcripts.iterdir() if p.is_dir()]
+        if subdirs:
+            # Structure B: flat layout
+            run_label = root.name
+            for system_dir in sorted(subdirs):
+                for json_file in sorted(system_dir.glob("*.json")):
+                    yield run_label, json_file
+            return  # Don't also check for Structure A
+
+    # Structure A: nested runs
     for run_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         transcripts_dir = run_dir / "transcripts"
         if not transcripts_dir.exists():
@@ -228,7 +335,9 @@ def process_conversation(
     deltas: List[float] = []
     success_turn: Optional[int] = None
 
+    total_turns = len(convo_pairs)
     for idx, (turn, student_message) in enumerate(convo_pairs, start=1):
+        print_info(f"  Turn {idx}/{total_turns} - calling {len(judge_clients)} judges...")
         mentor_reply = str(turn.get("content") or "").strip()
         task_card = build_task_card(initial_message, student_message, scenario)
         scores, judge_outputs = score_turn(
@@ -240,6 +349,7 @@ def process_conversation(
             judge_clients,
         )
         overall = scores.get("student_outcome_score")
+        print_info(f"  Turn {idx}/{total_turns} - score: {overall}")
         if overall is not None:
             overall_scores.append(float(overall))
             cumulative_avg.append(sum(overall_scores) / len(overall_scores))
@@ -286,6 +396,12 @@ def process_conversation(
     if success_turn is not None and total_turns > 0 and elapsed_seconds:
         success_elapsed = elapsed_seconds * (success_turn / total_turns)
 
+    # Compute stop_reason-aware success
+    stop_reason_class = classify_stop_reason(stop_reason)
+    is_success, success_type = compute_success_with_stop_reason(
+        final_score, stop_reason, threshold
+    )
+
     summary = ConversationSummary(
         agent_label=run_label,
         system_id=system_id,
@@ -299,6 +415,9 @@ def process_conversation(
         positive_delta_share=positive_delta_share,
         stop_reason=stop_reason,
         stopped_by_student=stopped_by_student,
+        stop_reason_class=stop_reason_class,
+        is_success=is_success,
+        success_type=success_type,
     )
 
     return turn_records, summary
@@ -344,7 +463,10 @@ def write_summary_csv(path: Path, summaries: List[ConversationSummary]) -> None:
         "success_elapsed_seconds",
         "positive_delta_share",
         "stop_reason",
+        "stop_reason_class",
         "stopped_by_student",
+        "is_success",
+        "success_type",
     ]
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -362,7 +484,10 @@ def write_summary_csv(path: Path, summaries: List[ConversationSummary]) -> None:
                 "success_elapsed_seconds": row.success_elapsed_seconds,
                 "positive_delta_share": row.positive_delta_share,
                 "stop_reason": row.stop_reason,
+                "stop_reason_class": row.stop_reason_class,
                 "stopped_by_student": row.stopped_by_student,
+                "is_success": row.is_success,
+                "success_type": row.success_type,
             })
 
 
@@ -375,16 +500,25 @@ def write_agent_summary(path: Path, summaries: List[ConversationSummary]) -> Non
             "net_gains": [],
             "turns": [],
             "success_flags": [],
+            "success_flags_new": [],  # Using is_success (stop_reason-aware)
             "success_turns": [],
+            "positive_stops": [],
+            "negative_stops": [],
         })
         if summary.final_score is not None:
             bucket["final_scores"].append(summary.final_score)
         if summary.net_gain is not None:
             bucket["net_gains"].append(summary.net_gain)
         bucket["turns"].append(float(summary.total_turns))
+        # Old success metric (score threshold only)
         bucket["success_flags"].append(1.0 if summary.success_turn is not None else 0.0)
+        # New success metric (stop_reason-aware)
+        bucket["success_flags_new"].append(1.0 if summary.is_success else 0.0)
         if summary.success_turn is not None:
             bucket["success_turns"].append(float(summary.success_turn))
+        # Track stop reason distribution
+        bucket["positive_stops"].append(1.0 if summary.stop_reason_class == "positive" else 0.0)
+        bucket["negative_stops"].append(1.0 if summary.stop_reason_class == "negative" else 0.0)
 
     fieldnames = [
         "agent_label",
@@ -392,7 +526,10 @@ def write_agent_summary(path: Path, summaries: List[ConversationSummary]) -> Non
         "avg_final_score",
         "avg_net_gain",
         "avg_turns",
-        "success_rate",
+        "success_rate_score_only",
+        "success_rate_with_stop_reason",
+        "positive_stop_rate",
+        "negative_stop_rate",
         "avg_success_turn",
     ]
     with path.open("w", encoding="utf-8", newline="") as fh:
@@ -406,7 +543,10 @@ def write_agent_summary(path: Path, summaries: List[ConversationSummary]) -> Non
                 "avg_final_score": mean(stats["final_scores"]) if stats["final_scores"] else None,
                 "avg_net_gain": mean(stats["net_gains"]) if stats["net_gains"] else None,
                 "avg_turns": mean(stats["turns"]) if stats["turns"] else None,
-                "success_rate": (sum(stats["success_flags"]) / conversations) if conversations else None,
+                "success_rate_score_only": (sum(stats["success_flags"]) / conversations) if conversations else None,
+                "success_rate_with_stop_reason": (sum(stats["success_flags_new"]) / conversations) if conversations else None,
+                "positive_stop_rate": (sum(stats["positive_stops"]) / conversations) if conversations else None,
+                "negative_stop_rate": (sum(stats["negative_stops"]) / conversations) if conversations else None,
                 "avg_success_turn": mean(stats["success_turns"]) if stats["success_turns"] else None,
             })
 

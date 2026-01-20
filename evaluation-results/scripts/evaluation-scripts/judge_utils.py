@@ -31,10 +31,44 @@ except Exception:  # pragma: no cover
 from academic_research_mentor.rich_formatter import print_error
 
 from .judge_metrics import METRIC_SPECS, MetricSpec, metric_instruction
-from .run_manual_stage import ANNOTATION_COLUMNS
 from .config_loader import (
     citation_domains_digest,
     load_citation_domains,
+)
+
+
+# Annotation columns for CSV output (moved here to avoid circular import with run_manual_stage)
+ANNOTATION_COLUMNS: Sequence[str] = (
+    "prompt_id",
+    "stage",
+    "annotator",
+    "system_id",
+    "run_timestamp",
+    "response_path",
+    "tool_trace_path",
+    "tool_routing",
+    # Meta capability metrics (binary)
+    "citation_validity",
+    "fallback_robustness",
+    "evidence_integrity",
+    # Meta capability metrics (scaled)
+    "rag_fidelity_score",
+    "citation_relevance_score",
+    "source_fit_score",
+    "actionability_score",
+    "clarification_quality_score",
+    "citation_quality_score",
+    # Mentorship capability metrics
+    "persona_compliance_score",
+    "stage_awareness_score",
+    "tone_constructive_score",
+    "timeline_guidance",
+    "expectation_management",
+    "novelty_assessment",
+    "evidence_gap_detection",
+    "hypothesis_generation",
+    "distractor_rejection",
+    "experiment_design",
 )
 
 

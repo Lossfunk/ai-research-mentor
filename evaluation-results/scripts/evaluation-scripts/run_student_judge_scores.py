@@ -21,7 +21,7 @@ from .judge_utils import (
     truncate_text,
     upsert_annotation,
 )
-from .run_manual_stage import ensure_stage_directories, normalize_stage
+from .stage_utils import ensure_stage_directories, normalize_stage
 
 
 STUDENT_PROMPT_PATH = Path("evaluation/judges/student_outcome_judge.md")

@@ -130,6 +130,9 @@ class TransparencyStore:
         # Most-recent first
         return sorted(self._runs.values(), key=lambda r: r.started_ms, reverse=True)
 
+    def clear_runs(self) -> None:
+        self._runs.clear()
+
     # --- Convenience helpers for export ---
     def _serialize_run(self, run: ToolRun) -> Dict[str, Any]:
         return {

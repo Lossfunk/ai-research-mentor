@@ -22,11 +22,21 @@ from academic_research_mentor.rich_formatter import print_error, print_info, pri
 from academic_research_mentor.runtime.context import prepare_agent
 from academic_research_mentor.core.transparency import get_transparency_store
 
-from .multi_turn_orchestrator import (
-    _json_safe,  # re-use helpers to avoid duplication
-    _override_env,
-    _resolve_openrouter_student_llm,
-)
+try:
+    from .multi_turn_orchestrator import (
+        _json_safe,  # re-use helpers to avoid duplication
+        _override_env,
+        _resolve_openrouter_student_llm,
+    )
+except ImportError:  # pragma: no cover - script execution fallback
+    current_dir = Path(__file__).resolve().parent
+    if str(current_dir) not in sys.path:
+        sys.path.append(str(current_dir))
+    from multi_turn_orchestrator import (  # type: ignore  # noqa: WPS433
+        _json_safe,
+        _override_env,
+        _resolve_openrouter_student_llm,
+    )
 
 
 T = TypeVar("T")
@@ -438,6 +448,41 @@ def _escape_newlines_in_strings(payload: str) -> str:
     return "".join(out)
 
 
+def _escape_invalid_backslashes_in_strings(payload: str) -> str:
+    out: List[str] = []
+    in_string = False
+    escape = False
+    idx = 0
+    while idx < len(payload):
+        char = payload[idx]
+        if escape:
+            out.append(char)
+            escape = False
+            idx += 1
+            continue
+        if char == "\\":
+            if in_string:
+                next_char = payload[idx + 1] if idx + 1 < len(payload) else ""
+                if next_char in {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}:
+                    out.append(char)
+                    escape = True
+                else:
+                    out.append("\\\\")
+                idx += 1
+                continue
+            out.append(char)
+            idx += 1
+            continue
+        if char == '"':
+            in_string = not in_string
+            out.append(char)
+            idx += 1
+            continue
+        out.append(char)
+        idx += 1
+    return "".join(out)
+
+
 def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
     if not text:
         return None
@@ -455,12 +500,24 @@ def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
 
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
 
-    candidates: List[str] = [cleaned, _escape_newlines_in_strings(cleaned)]
+    candidates: List[str] = [
+        cleaned,
+        _escape_newlines_in_strings(cleaned),
+        _escape_invalid_backslashes_in_strings(cleaned),
+        _escape_invalid_backslashes_in_strings(_escape_newlines_in_strings(cleaned)),
+    ]
     start = cleaned.find("{")
     end = cleaned.rfind("}")
     if start != -1 and end != -1 and end > start:
         fragment = cleaned[start : end + 1]
-        candidates.extend([fragment, _escape_newlines_in_strings(fragment)])
+        candidates.extend(
+            [
+                fragment,
+                _escape_newlines_in_strings(fragment),
+                _escape_invalid_backslashes_in_strings(fragment),
+                _escape_invalid_backslashes_in_strings(_escape_newlines_in_strings(fragment)),
+            ]
+        )
 
     # Try parsing each candidate as JSON, falling back to YAML for lenient syntax.
     last_error: Optional[Exception] = None
@@ -476,15 +533,14 @@ def _parse_user_json(text: str) -> Optional[Dict[str, Any]]:
         for candidate in candidates:
             try:
                 data = yaml.safe_load(candidate)
-            except yaml.YAMLError as exc:
-                print_info(f"[debug] YAML parse failed for candidate: {exc}")
+            except yaml.YAMLError:
                 continue
             if isinstance(data, dict):
                 return data
     except ImportError:
         pass  # YAML not installed, skip this fallback
-    except Exception as exc:
-        print_info(f"[debug] Unexpected error in YAML fallback: {exc}")
+    except Exception:
+        pass
 
     decision = _heuristic_partial_parse(cleaned)
     if decision is not None:
