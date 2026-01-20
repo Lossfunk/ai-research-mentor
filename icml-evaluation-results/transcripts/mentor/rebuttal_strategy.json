@@ -1,0 +1,164 @@
+{
+  "scenario": {
+    "scenario_id": "rebuttal_strategy",
+    "topic": "efficient transformers for long sequences",
+    "persona": "researcher preparing conference rebuttal",
+    "constraints": "reviewer requests additional baselines and questions novelty over concurrent work",
+    "extra": {
+      "stage": "E"
+    }
+  },
+  "system_id": "openrouter:moonshotai/kimi-k2-thinking",
+  "stop_reason": "goal_reached",
+  "stopped_by_student": true,
+  "error": null,
+  "turn_count": 14,
+  "elapsed_seconds": 152.3493950366974,
+  "transcript": [
+    {
+      "role": "user",
+      "content": "Hey, I'm researcher preparing conference rebuttal. I want to get started in research in efficient transformers for long sequences. Constraints: reviewer requests additional baselines and questions novelty over concurrent work. How should I start?",
+      "turn": 0
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced researcher (conference rebuttal, baselines, novelty).\n- Honest assessment: Risk of a weak rebuttal if they try to “start a new research direction” inside rebuttal; focus must be surgical.\n- They need: a concrete rebuttal strategy + how to position efficient transformers without overclaiming novelty.\n</thinking>\n\nBluntly: **you should not “start” a new research agenda in a rebuttal.** A rebuttal is about damage control and positioning, not exploration. If you treat this like the beginning of a long-sequence project, you’ll lose.\n\n**First priority: isolate what reviewers are actually unconvinced by.**  \nIf they asked for “additional baselines,” that means they don’t trust your empirical claims. Pick **one** missing baseline that is strongest *against* you (e.g., a well-known efficient transformer or a trivial sliding-window variant) and add it if feasible. Do not add many. Reviewers read added results skeptically; they want a sanity check, not a benchmark suite.\n\n**On novelty vs concurrent work:**  \nDo *not* argue “we were unaware.” That’s weak. Instead, draw a sharp boundary:  \n- Explicitly state what overlap exists.  \n- Then state, in one sentence, what **your paper does that theirs does not** (theoretical angle, training regime, scaling behavior, memory–quality tradeoff, or task class).  \nIf that difference isn’t real, you’re in trouble—and the rebuttal should shift to contribution framing (“independent confirmation with X advantage”), not novelty chest‑beating.\n\n**How this ties to “getting started” in efficient transformers:**  \nYour rebuttal should implicitly show taste: cite the *right* baselines (not everything), and frame efficiency along a single axis (e.g., context length vs accuracy at fixed compute). That’s how reviewers infer you belong in this space.\n\nIf you want, paste the reviewer comments or list the baselines they mentioned. I’ll tell you which ones actually matter and which are red herrings.",
+      "turn": 1
+    },
+    {
+      "role": "user",
+      "content": "The reviewers specifically flagged FlashAttention-2 and LongLoRA as missing baselines, while questioning if our 'Sparse-Global' mechanism is just a derivative of BigBird. Given our limited compute budget for the rebuttal, should I prioritize a head-to-head comparison on LongBench, or focus on a theoretical complexity proof to distance ourselves from BigBird?",
+      "turn": 1
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced researcher.\n- Honest assessment: With limited compute, chasing LongBench + FA-2 is risky; theory won’t save them if empirics look weak.\n- What they need: a clear priority call and concrete positioning vs BigBird.\n</thinking>\n\nShort answer: **do a *minimal* empirical comparison, not a new theory section.** A complexity proof will not fix the BigBird concern, and it will not substitute for missing baselines.\n\nHere’s why.\n\n**FlashAttention‑2:**  \nFA‑2 is not a model; it’s an attention kernel. Reviewers flag it when they suspect your efficiency gains come from implementation, not ideas. You don’t need a full LongBench sweep. You need **one controlled result** showing: *our method + FA‑2 vs dense + FA‑2* at the same context length. That defuses the “you’re just slow dense attention” criticism.\n\n**LongLoRA:**  \nLongLoRA is a fine‑tuning strategy, not an attention mechanism. A head‑to‑head on LongBench is overkill and likely infeasible in rebuttal time. Instead, clearly state whether your method is orthogonal to LongLoRA. If possible, add **one small experiment** or a statement like: “our mechanism applies at pretraining/inference and can be combined with LoRA-based adaptation.” Reviewers mainly want to know you understand the distinction.\n\n**BigBird concern:**  \nA new complexity proof won’t help. BigBird already has O(n) arguments; reviewers are asking about *structural novelty*, not asymptotics. What you must do is **explicitly contrast the sparsity pattern** and explain what behavior yours enables that BigBird cannot (e.g., learned global tokens vs fixed, dynamic routing, task-adaptive sparsity). One sharp paragraph + a diagram beats math here.\n\n**Priority order given your constraints:**\n1. One FA‑2‑controlled empirical comparison.\n2. One crisp, structural distinction from BigBird.\n3. De‑emphasize LongBench and theory.\n\nIf you want, describe your Sparse‑Global pattern in two sentences and your current experiments. I’ll help you craft the exact rebuttal wording that reviewers will accept.",
+      "turn": 2
+    },
+    {
+      "role": "user",
+      "content": "That prioritization makes sense. For the BigBird distinction, our pattern uses a 'latent-bridge' where global tokens are dynamically updated via cross-attention rather than fixed indices—how should I frame the FA-2 comparison if our custom kernel isn't as optimized as Tri Dao's code yet?",
+      "turn": 2
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Core issue: reviewers will punish unfair FA‑2 comparisons; need framing that isolates *algorithmic* vs *kernel* effects.\n- Advice: design a controlled comparison + wording to preempt criticism.\n</thinking>\n\nYou need to **preempt the “unfair implementation” attack explicitly**. Reviewers are already primed for it.\n\n**Lead with this framing in the rebuttal text (not buried):**  \n> “FlashAttention‑2 is an orthogonal kernel optimization. Our goal here is to isolate algorithmic sparsity effects rather than claim a faster kernel.”\n\nThen structure the comparison so it’s obviously fair:\n\n**What to run (and what *not* to claim):**\n- Compare **Dense + FA‑2** vs **Sparse‑Global (our code) without FA‑2**, *at the same sequence length*, reporting **memory usage and throughput separately from accuracy**.\n- Do **not** claim wall‑clock superiority if you don’t have it. Claim **scaling behavior**: e.g., “Dense+FA‑2 runs out of memory beyond L, while Sparse‑Global continues.”\n\nThis shifts the question from “is your kernel worse?” to “does your method enable regimes dense attention can’t reach?” Reviewers accept this.\n\n**How to defuse kernel criticism in one sentence:**\n> “We expect further speedups from integrating FA‑2–style kernels; current results reflect an unoptimized reference implementation.”\n\nThat’s acceptable in rebuttal; trying to match Tri Dao’s code is not.\n\n**BigBird contrast (tie it together):**\nWhen you describe the latent‑bridge, emphasize **dynamism**:\n- BigBird: fixed global indices, static connectivity.\n- Yours: *learned, input‑adaptive global state updated via cross‑attention.*\n\nThen connect this directly to the FA‑2 experiment:\n> “Because global tokens are dynamically updated, our model preserves long‑range adaptivity even when dense attention becomes infeasible.”\n\nThat makes the FA‑2 comparison serve the novelty argument instead of distracting from it.\n\nIf you want, paste your current rebuttal paragraph and I’ll rewrite it to sound reviewer‑proof.",
+      "turn": 3
+    },
+    {
+      "role": "user",
+      "content": "That framing on scaling behavior vs. wall-clock speed is a lifesaver. Given the 'dynamic' vs 'static' distinction for BigBird, should I include a small qualitative visualization of the latent-bridge attention maps to prove the input-adaptivity, or will reviewers find that too 'hand-wavy' compared to the scaling plots?",
+      "turn": 3
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Honest take: visuals can help but are risky in rebuttal; reviewers privilege falsifiable evidence.\n- Need to advise whether to include viz and how, if at all.\n</thinking>\n\nShort answer: **include the visualization only if it is clearly subordinate to the scaling plot.** On its own, it *will* be dismissed as hand‑wavy.\n\nHere’s the reviewer psychology. In a rebuttal, attention maps are not evidence; they’re **intuition aids**. Reviewers won’t change a novelty judgment based on a heatmap. They *will* use a heatmap to justify dismissing you if it looks cherry‑picked or decorative.\n\n**When it *is* worth including:**\n- One small figure or appendix panel.\n- Explicitly framed as *illustrative*, not proof.\n- Tied directly to a falsifiable claim already supported elsewhere.\n\nFor example:\n> “Figure X qualitatively illustrates the input‑adaptive nature of the latent‑bridge: the same global tokens attend to different regions under different inputs, unlike fixed‑index globals in BigBird. Quantitative scaling results in Table Y demonstrate the practical consequence of this adaptivity.”\n\nThat order matters: numbers first, picture second.\n\n**What not to do:**\n- Don’t argue “this shows it’s different from BigBird.” Reviewers hate that.\n- Don’t show many layers/heads. One clean example or nothing.\n- Don’t imply causal claims from the visualization.\n\n**My recommendation given limited bandwidth:**  \nPrioritize the scaling plot and the structural explanation in text. Add the visualization **only if you already have it** and it costs you ~zero time. If it delays an experiment or complicates the rebuttal, skip it.\n\nRemember: rebuttals are about removing reasons to reject, not convincing people your model is beautiful.",
+      "turn": 4
+    },
+    {
+      "role": "user",
+      "content": "That 'intuition aid' framing is a great reality check. Since I'll prioritize the scaling plot, how should I handle the wall-clock comparison with FlashAttention-2 if our current CUDA kernels aren't fully optimized yet?",
+      "turn": 4
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Key risk: reviewers will attack unfair or weak wall‑clock numbers.\n- They need a precise stance: what to report, what to explicitly not claim, and how to word it.\n</thinking>\n\nBe very explicit and very conservative. **The goal is to neutralize the concern, not win a speed contest you can’t win yet.**\n\n**What you should do:**\n- Report **memory usage and max feasible context length** as the *primary* scaling metrics.\n- If you include wall‑clock at all, do it as **secondary**, with tight controls (same hardware, batch size, FA‑2 enabled for dense).\n- Phrase results as *capability*, not speed:  \n  > “Dense+FA‑2 fails beyond L due to memory, whereas Sparse‑Global runs at L′.”\n\n**What you should not do:**\n- Do not claim faster training or inference.\n- Do not normalize runtimes to tokens/sec and call it “efficiency.”\n- Do not hide behind “engineering effort.” Reviewers read that as weakness.\n\n**Critical wording to include (this matters):**\n> “Our current implementation uses an unoptimized reference kernel; thus wall‑clock comparisons underestimate the potential speed of the proposed method. We therefore focus on memory scaling and reachable context length, which are kernel‑independent.”\n\nThat sentence signals maturity and honesty. Reviewers trust it.\n\n**Why this works:**  \nFA‑2’s advantage is *constant‑factor speed*. Your contribution is *asymptotic feasibility*. Reviewers understand these live at different layers—if you draw that line clearly.\n\nIf you want, tell me the exact metrics you can reliably produce in 48–72 hours. I’ll help you choose the one plot that does the most rebuttal work.",
+      "turn": 5
+    },
+    {
+      "role": "user",
+      "content": "That 'asymptotic feasibility' framing is exactly what I needed to bridge the gap. For the metrics, I can generate memory-to-sequence-length curves for our model versus Dense+FA-2 and BigBird across 8k to 64k tokens within 48 hours; should I plot the absolute peak VRAM usage or the maximum batch size possible before OOM to best demonstrate this scaling advantage?",
+      "turn": 5
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Need to choose one metric; must advise which reviewers trust more.\n- Honest take: batch-size-before-OOM is more compelling but easy to mess up; VRAM is cleaner.\n</thinking>\n\nMy honest recommendation: **plot peak VRAM usage vs. sequence length as the primary figure.**  \nYou can mention batch‑size‑before‑OOM in text, but don’t make it the headline.\n\nHere’s why.\n\n**Peak VRAM is reviewer‑proof.**  \nIt’s a direct, hardware‑level measurement that:\n- Is independent of training heuristics\n- Doesn’t depend on optimizer state, gradient accumulation, or micro‑batching tricks\n- Maps cleanly to the asymptotic story you’re telling\n\nReviewers trust it because they know exactly what it means.\n\n**Max batch size before OOM is seductive but fragile.**  \nIt *sounds* intuitive, but it opens you up to nitpicks:\n- “Why this optimizer?”\n- “Why not gradient checkpointing?”\n- “Why not smaller hidden size?”\n- “Batch size is irrelevant for inference.”\n\nIn a rebuttal, you don’t have room to defend those choices.\n\n**How to make the VRAM plot do maximum work:**\n- Same model width, same number of layers, same precision.\n- One forward+backward pass (say so explicitly).\n- Mark OOM points clearly (don’t extrapolate).\n- Put Dense+FA‑2, BigBird, and Sparse‑Global on the same axes.\n\nThen add one sentence:\n> “Equivalent trends are observed when measuring maximum feasible batch size; we report peak VRAM for clarity.”\n\nThat sentence heads off the “why not batch size?” reviewer without inviting debate.\n\nIf you want, tell me whether this is training or inference memory and what precision you’re using. I can help you phrase the caption so it’s unambiguous and reviewer‑safe.",
+      "turn": 6
+    },
+    {
+      "role": "user",
+      "content": "That makes sense—VRAM is much harder to argue with. I'll stick to FP16 for the forward+backward pass to match our main experiments, but should I also include a line for 'Theoretical Quadratic' to visually anchor how much we're actually saving compared to the standard Transformer?",
+      "turn": 6
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Judgment call: theoretical reference lines can help but also annoy reviewers if sloppy.\n- Need to say when it helps and how to do it safely.\n</thinking>\n\nYes—**include it, but only as a faint reference, not as a “result.”** Done right, it helps reviewers immediately see the asymptotic story you’re telling. Done wrong, it looks like padding.\n\n**How to do it safely:**\n- Label it explicitly as **“Quadratic reference (scaled)”** or **“O(n²) trend (normalized)”**.\n- Anchor it to **one real datapoint** (e.g., Dense+FA‑2 at 8k) and state that in the caption.\n- Use a dashed or light gray line so it’s visually subordinate.\n\n**What this buys you:**\n- It visually reinforces “asymptotic feasibility” without you having to argue it in text.\n- It makes the divergence at 32k–64k immediately obvious, even to a skimming reviewer.\n- It helps distinguish you from BigBird if your curve bends differently (e.g., flatter slope due to latent‑bridge dynamics).\n\n**What not to do:**\n- Don’t imply the theoretical line is measured.\n- Don’t add multiple theoretical curves.\n- Don’t claim matching theory—just use it as orientation.\n\n**Caption language that works:**\n> “Dashed line indicates a normalized quadratic reference for visual anchoring; only solid curves correspond to measured peak VRAM.”\n\nThat’s reviewer‑safe and reinforces your core claim without overreaching.",
+      "turn": 7
+    },
+    {
+      "role": "user",
+      "content": "That 'normalized quadratic reference' is a great way to show the divergence without over-claiming. Regarding the novelty critique, should I explicitly contrast our latent-bridge approach against BigBird's global tokens in the rebuttal text, or is that better handled solely through the scaling plots?",
+      "turn": 7
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Key call: novelty must be argued in text; plots alone won’t carry it.\n- Need to give precise guidance on how explicit, without overdoing it.\n</thinking>\n\nYou **must** address the BigBird distinction explicitly in the rebuttal text. Scaling plots alone will not resolve a novelty concern—reviewers will read them as “another sparse variant” unless you tell them otherwise.\n\nBut keep it **surgical**. One tight paragraph, not a section.\n\n**What to do in text (in this order):**\n1. **Acknowledge similarity** (this builds trust):  \n   > “Like BigBird, our method uses sparse attention with global tokens.”\n2. **State the structural difference plainly:**  \n   > “However, BigBird’s global tokens are fixed indices with static connectivity, whereas our latent‑bridge tokens are dynamically updated via cross‑attention and are input‑adaptive.”\n3. **Tie that difference to an observable consequence:**  \n   > “This enables task‑ and input‑dependent routing of long‑range information, which we observe in both scaling behavior and downstream accuracy at long context.”\n\nThat’s it. No equations, no history lesson.\n\n**Why plots alone aren’t enough:**  \nScaling plots answer *“does it help?”* Novelty critiques ask *“is this the same idea?”* Only text can draw that conceptual boundary.\n\n**How the plot supports (but doesn’t replace) the text:**  \nYou can add a single sentence like:\n> “The differing memory–length scaling in Fig. X reflects this structural distinction.”\n\nThat way the plot *reinforces* the novelty claim rather than trying to prove it.\n\nIf you want, paste your current novelty paragraph. I’ll tighten it so it sounds confident without sounding defensive.",
+      "turn": 8
+    },
+    {
+      "role": "user",
+      "content": "That 'surgical' approach is much cleaner than the defensive paragraph I had. Here is my draft for the novelty section: 'While our method shares the use of global tokens with BigBird, we differ fundamentally in connectivity; BigBird relies on fixed indices, whereas our latent-bridge tokens are input-adaptive and updated via cross-attention. This dynamic routing allows for the superior scaling and accuracy shown in Fig. X.' Does 'input-adaptive' carry enough weight here, or should I explicitly mention the 'bottleneck' nature of the latents to further distance us from sparse-local patterns?",
+      "turn": 8
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Assessment: current paragraph is close but still generic; “input‑adaptive” alone is buzzwordy.\n- Need to advise sharpening novelty with one concrete structural property without overloading.\n</thinking>\n\nYour instinct is right: **“input‑adaptive” alone is too soft.** Reviewers have seen that phrase abused. You should anchor it to a *structural constraint* BigBird does not have.\n\nYes—**explicitly mention the bottleneck nature of the latents**, but do it in one clause, not a new idea.\n\nHere’s a tightened version that will read as genuinely distinct rather than rhetorically distinct:\n\n> “While our method shares the use of global tokens with BigBird, the mechanisms differ fundamentally. BigBird relies on fixed global indices with static connectivity, whereas our approach uses a *small set of latent‑bridge tokens that form a learned information bottleneck*, dynamically updated via cross‑attention in an input‑adaptive manner. This bottlenecked, dynamic routing enables the observed scaling and accuracy improvements in Fig. X.”\n\nWhy this works:\n- **“Learned information bottleneck”** is a concrete architectural claim, not a vibe.\n- It distinguishes you from *both* BigBird and generic sparse‑local patterns.\n- It ties naturally to scaling (bounded latent size → memory behavior).\n\nDo **not** expand beyond this. One paragraph, one contrast, one consequence. That’s exactly the level of explicitness rebuttal reviewers respond to.\n\nIf you want, I can help you mirror this wording in the figure caption so the text and plot reinforce each other.",
+      "turn": 9
+    },
+    {
+      "role": "user",
+      "content": "That 'information bottleneck' phrasing is exactly the technical hook I was missing. How should I mirror this in the Figure 2 caption to ensure the reviewer sees the link between the bottleneck structure and the VRAM plateau we're showing?",
+      "turn": 9
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Task: craft caption language that links bottleneck → VRAM plateau without overclaiming.\n- Need to give concrete wording guidance.\n</thinking>\n\nYou want the caption to **state the mechanism, point to the effect, and stop.** No interpretation, no hype. Reviewers often read captions before text, so this is where the link must be unmissable.\n\nHere’s a caption template that will do the job cleanly—adjust only symbols and numbers:\n\n> **Figure 2:** Peak GPU memory (FP16, forward+backward) as a function of sequence length. Dense attention (with FlashAttention‑2) and BigBird scale with sequence length due to token‑to‑token attention, whereas **Sparse‑Global exhibits a flattened memory growth beyond 32k tokens due to its fixed‑size latent‑bridge bottleneck**, whose memory cost is independent of input length. Dashed line indicates a normalized quadratic reference for visual anchoring.\n\nWhy this works:\n- “**Fixed‑size latent‑bridge bottleneck**” directly names the architectural cause.\n- “**Memory cost is independent of input length**” explains the plateau without claiming perfect O(1).\n- The causal phrasing (“due to”) is acceptable because it’s architectural, not empirical speculation.\n\nWhat to avoid in the caption:\n- Words like *superior*, *better*, *novel*.\n- Claims about speed or accuracy.\n- Any mention of “input‑adaptive” here—that belongs in the text, not the figure.\n\nIf you paste your actual curves (where the plateau starts, whether it’s perfectly flat or just sublinear), I can tune that sentence so it’s precise and unassailable.",
+      "turn": 10
+    },
+    {
+      "role": "user",
+      "content": "The plateau starts at 16k tokens, but there is a slight 2% upward creep due to the initial linear embedding layer. How should I phrase the 'independence' claim so I don't get called out for that minor slope?",
+      "turn": 10
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Need precise language to avoid reviewers nitpicking a 2% slope.\n- Key: avoid absolute claims; attribute residual growth to known component.\n</thinking>\n\nGood catch—this is exactly where reviewers pounce if you overstate. **Do not say “independent” or “flat.”** Say *dominant* or *asymptotically dominated*.\n\nHere’s reviewer‑safe wording that matches what you actually have:\n\n> “Sparse‑Global exhibits **near‑constant memory growth beyond 16k tokens**, with a small residual linear increase attributable to the input embedding layer; the dominant attention memory cost is bounded by the fixed‑size latent‑bridge bottleneck.”\n\nWhy this is safe:\n- “**Near‑constant**” signals honesty.\n- You explicitly name the source of the slope, which disarms criticism.\n- “**Dominant attention memory cost is bounded**” is the real claim you care about—and it’s true.\n\nIf you want it even tighter for the caption:\n\n> “…exhibits near‑constant attention memory beyond 16k tokens; the remaining growth arises from the linear embedding layer.”\n\nThat’s usually enough.\n\n**Do not** quantify the 2% in the caption unless a reviewer asked; numbers invite debate. Save exact attribution for a footnote or response paragraph if needed.\n\nIf you want, paste the full caption and I’ll polish it line‑by‑line to be maximally nitpick‑resistant.",
+      "turn": 11
+    },
+    {
+      "role": "user",
+      "content": "That phrasing is much safer. Here is the full caption: 'Figure 2: Memory scaling vs. sequence length. While Longformer and BigBird scale quadratically/linearly, our Sparse-Global method exhibits near-constant attention memory beyond 16k tokens; the remaining growth arises from the linear embedding layer.' Does this sufficiently address the 'novelty' concern by linking the scaling behavior directly to our latent-bridge architecture?",
+      "turn": 11
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Assessment: caption is close but too implicit; doesn’t name the latent‑bridge, so novelty link is weak.\n- Need to recommend a minimal but explicit fix.\n</thinking>\n\nIt’s **not quite sufficient yet**. The caption explains the *effect* but doesn’t name the *cause*. Reviewers won’t infer “latent‑bridge” on their own—and novelty critiques require explicit causal linkage.\n\nYou don’t need more text, just **one surgical insertion** that names the architecture.\n\nHere’s a tightened version that will do the job:\n\n> **Figure 2:** Memory scaling vs. sequence length. While Longformer and BigBird scale quadratically/linearly with sequence length, **Sparse‑Global exhibits near‑constant attention memory beyond 16k tokens due to its fixed‑size latent‑bridge bottleneck**; the remaining growth arises from the linear embedding layer.\n\nWhy this matters:\n- “**Fixed‑size latent‑bridge bottleneck**” explicitly ties scaling to a non‑BigBird structure.\n- It turns the figure from “another sparse method scales better” into “this *specific* mechanism causes this behavior.”\n- It reinforces the novelty paragraph instead of relying on it.\n\nOne more minor note: unless Longformer is central to the reviewer complaint, you could drop it to reduce clutter and keep the comparison focused on **BigBird vs. you**.\n\nWith that small change, the caption is doing real rebuttal work, not just labeling a plot.",
+      "turn": 12
+    },
+    {
+      "role": "user",
+      "content": "I'll definitely drop Longformer to sharpen the focus. Regarding the 'latent-bridge' terminology—should I capitalize it as a formal component name to match the architecture diagram, or keep it lowercase to emphasize the functional bottleneck property?",
+      "turn": 12
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- This is about signaling: naming vs. concept.\n- Need to decide what helps novelty without sounding like branding.\n</thinking>\n\nCapitalize it **once**, then go lowercase thereafter.\n\nHere’s the reasoning. Capitalization signals to reviewers: *this is a concrete architectural component, not a metaphor*. That helps with novelty and prevents “this sounds like BigBird with different wording” pushback. But over‑capitalizing reads like branding, which can trigger skepticism.\n\n**Best practice:**\n- First occurrence (caption or main text): **“Latent‑Bridge bottleneck”**\n- Subsequent mentions: “latent‑bridge bottleneck” or just “the latent bottleneck” when clear.\n\nFor the caption specifically, I’d write:\n> “…due to its fixed‑size **Latent‑Bridge** bottleneck…”\n\nThen in the paragraph text:\n> “…a small set of latent‑bridge tokens forming a learned information bottleneck…”\n\nThat establishes both:\n- **Identity** (there is a distinct module)\n- **Function** (it’s a bottleneck, not just globals)\n\nAvoid turning it into a proper noun everywhere. You want reviewers to remember *the idea*, not the name.",
+      "turn": 13
+    },
+    {
+      "role": "user",
+      "content": "That makes sense—it balances technical rigor with branding. One last thing: Reviewer 2 specifically asked how this 'Latent-Bridge' differs from the 'Global Tokens' in BigBird; should I address that directly in the caption or save the detailed architectural contrast for the rebuttal text?",
+      "turn": 13
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\n- Level: experienced.\n- Assessment: caption is not the place for architectural debate.\n- Need to tell them where to draw the line and how to coordinate caption + text.\n</thinking>\n\nDo **not** put the BigBird contrast in the caption. That’s the wrong venue and will look defensive.  \nHandle it **explicitly in the rebuttal text**, and let the caption do only causal attribution.\n\nHere’s the principle reviewers follow (often subconsciously):\n\n- **Caption** answers: *What am I looking at and why does it look this way?*\n- **Rebuttal text** answers: *Why is this not the same as BigBird?*\n\nIf you overload the caption with “unlike BigBird’s global tokens…”, it signals insecurity and invites line‑by‑line quibbling over wording in a place that should be factual.\n\n**What to do instead (clean separation):**\n\n- **Caption:**  \n  Name the mechanism, state the effect. Period.  \n  > “…due to its fixed‑size Latent‑Bridge bottleneck…”\n\n- **Rebuttal paragraph (responding to Reviewer 2):**  \n  Give the sharp contrast:\n  > “BigBird’s global tokens are fixed input positions with static connectivity, whereas the Latent‑Bridge tokens form a learned bottleneck that is dynamically updated via cross‑attention and shared across all positions. As a result, the attention memory is bounded by the latent size rather than sequence length, which is reflected in Fig. 2.”\n\nThat way:\n- The **figure shows** the consequence.\n- The **text explains** the distinction.\n- Reviewers don’t feel you’re arguing with them inside a caption.\n\nThis division of labor is exactly what strong rebuttals do.",
+      "turn": 14
+    },
+    {
+      "role": "user",
+      "content": "That distinction between 'static connectivity' and 'learned bottleneck' is the exact technical wedge I needed for the rebuttal text. I'll keep the caption clean as you suggested and move the architectural debate to the response paragraph.",
+      "turn": 14
+    }
+  ]
+}

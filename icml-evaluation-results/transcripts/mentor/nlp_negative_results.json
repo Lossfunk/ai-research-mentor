@@ -1,0 +1,84 @@
+{
+  "scenario": {
+    "scenario_id": "nlp_negative_results",
+    "topic": "cross-lingual transfer learning",
+    "persona": "NLP researcher with unexpected negative results",
+    "constraints": "transfer to low-resource languages failed; deciding whether to pivot or investigate further",
+    "extra": {
+      "stage": "D"
+    }
+  },
+  "system_id": "openrouter:moonshotai/kimi-k2-thinking",
+  "stop_reason": "goal_reached",
+  "stopped_by_student": true,
+  "error": null,
+  "turn_count": 6,
+  "elapsed_seconds": 57.82833480834961,
+  "transcript": [
+    {
+      "role": "user",
+      "content": "Hey, I'm NLP researcher with unexpected negative results. I want to get started in research in cross-lingual transfer learning. Constraints: transfer to low-resource languages failed; deciding whether to pivot or investigate further. How should I start?",
+      "turn": 0
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced NLP researcher. Situation: negative results in cross-lingual transfer to low-resource languages. They’re at a fork: pivot vs dig deeper. I need to assess whether “unexpected negative results” are likely uninteresting failure modes or potentially valuable, and give a concrete way to decide quickly. Lead with judgment, then a path to decide in weeks not months.\n</thinking>\n\nBlunt take: most negative results in cross‑lingual transfer are **not** worth digging into—*unless* you can show the failure contradicts a widely held assumption or a strong baseline. “It didn’t work on low‑resource languages” by itself is already the default expectation in 2026.\n\nThe key question is **why it failed**. If the answer is “data scarcity, domain mismatch, or tokenization issues,” reviewers will shrug. That’s known. If the answer is “this method should have worked given X, Y, Z—and it didn’t,” *that* can be publishable.\n\nHere’s how I’d decide, fast:\n\nFirst, sanity-check novelty brutally. If your setup is standard (mBERT/XLM‑R + fine‑tuning + small LRL corpora), don’t investigate further unless you have a genuinely surprising contrast—e.g., *adding* supervision hurts transfer, or a typologically closer language performs worse than a distant one in a controlled way.\n\nSecond, ask whether you can isolate **one sharp failure mode** in ~2 weeks. For example: a controlled ablation showing that alignment collapses specifically at the representation level, not optimization or data size. If you can’t narrow it to a clean mechanism, stop.\n\nIf neither condition holds, pivot—but pivot *within* cross‑lingual transfer. Good pivots right now are: questioning evaluation protocols, probing assumptions about “low‑resource” (script, morphology, noise), or reframing transfer as *selective* rather than universal.\n\nBottom line: don’t chase vague failure. Either extract a precise, assumption-breaking story quickly—or move on with sharper taste.",
+      "turn": 1
+    },
+    {
+      "role": "user",
+      "content": "That's a fair reality check. I'm seeing a weird case where increasing source-language similarity actually degrades performance on my target LRL—could this be a 'negative interference' story worth isolating, or is that still too common to be a contribution?",
+      "turn": 1
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced NLP researcher. They have a concrete phenomenon: higher source–target similarity worsens LRL performance. Need to judge if this is real novelty or a known artifact, and tell them exactly what would make it publishable vs noise. Lead with assessment, then criteria, then next step. No tools needed.\n</thinking>\n\nShort answer: **it’s only worth isolating if you can show it’s *systematic and mechanism-driven***. Otherwise, reviewers will dismiss it as sampling noise, domain mismatch, or a bad similarity metric.\n\n“Negative interference from similar languages” *sounds* interesting, but in 2026 it’s dangerously close to things people already believe: overfitting to source quirks, false friends, script/morphology collisions, tokenizer bias. If your similarity notion is shallow (lexical overlap, family labels), this is probably not a contribution.\n\nWhat *would* make it worth a paper is one of these—pick one, don’t scatter:\n\n- You can show that **controlling for data size, domain, and script**, increasing *structural* similarity (e.g., morphology or syntax) still hurts—and you can localize where (representations drift, alignment collapses, gradients conflict).\n- You can show the effect **reverses** under a minimal intervention (e.g., representation freezing, source mixing, or alignment regularization), pointing to a clear mechanism like gradient interference.\n- You can demonstrate that common practices (language-family-based source selection) are **actively harmful** under realistic LRL regimes.\n\nIf you can’t cleanly rule out confounds in a small, surgical experiment, stop. Don’t build a taxonomy of failures—that’s death by reviewer skepticism.\n\nMy advice: spend **two weeks** trying to kill the effect with controls. If it survives and you can tell a single, sharp story about *why similarity hurts*, it’s worth isolating. If not, pivot and don’t look back.",
+      "turn": 2
+    },
+    {
+      "role": "user",
+      "content": "That's a sharp critique. If I want to rule out 'tokenizer bias' specifically, should I focus on switching to a character-level model or is there a more robust way to normalize for subword fragmentation across different language families?",
+      "turn": 2
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced NLP researcher, specific methodological question. Need to give a clear judgment: char-level is usually a bad control; suggest a stronger, cleaner normalization that reviewers respect. Be direct, propose one best approach, not a list.\n</thinking>\n\nBluntly: **don’t jump to character-level models**. Reviewers will see that as changing the problem, not controlling a confound. Char models introduce their own inductive biases and usually underperform; any effect you see will be ambiguous.\n\nA more robust—and defensible—control is to **fix the tokenizer and vary only the segmentation pressure**. Concretely: train a *single shared tokenizer* on a balanced multilingual corpus, then **explicitly control the effective fragmentation rate** per language (e.g., by adjusting dropout or merge constraints) so that average subwords-per-word is matched across sources and the LRL.\n\nWhy this works: you’re not changing the architecture or supervision, just equalizing representational granularity. Reviewers accept this as a clean normalization rather than a new modeling choice.\n\nIf your “similar languages hurt” effect survives **when fragmentation statistics are matched**, tokenizer bias is no longer a plausible explanation—and you’ve strengthened the negative-interference story substantially. If it disappears, that’s still useful internally, but not paper-worthy by itself.\n\nMy advice: do *one* tight experiment—shared tokenizer, matched fragmentation, everything else frozen. If the effect holds, you’ve earned the right to talk about interference. If not, move on.",
+      "turn": 3
+    },
+    {
+      "role": "user",
+      "content": "That's a much cleaner control than what I had in mind. If I implement this matched fragmentation and the negative interference persists, should I look into gradient conflict (PCGrad) as the next diagnostic, or is that too much of a 'black box' for a negative results paper?",
+      "turn": 3
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced researcher. They’re deciding next diagnostic step if tokenizer bias ruled out. Need to judge PCGrad: is it a good diagnostic or too hand-wavy? Give clear stance and a sharper alternative framing. Lead with verdict, then reasoning, then concrete next move.\n</thinking>\n\nPCGrad **as a mitigation** is too black‑box. PCGrad **as a diagnostic** is acceptable—but only if you’re disciplined about what claim you make.\n\nReviewers will not buy “we applied PCGrad and it helped, therefore gradient conflict exists.” That’s circular. Many things “help” without explaining anything. Used that way, it weakens a negative‑interference paper.\n\nWhat *does* work is treating gradient conflict as a **measurable hypothesis**, not a trick:\nif increasing source similarity increases *systematic gradient disagreement* between source and LRL objectives, and that disagreement predicts the performance drop, you have a mechanism.\n\nSo the right move is:\n- Measure gradient alignment (cosine similarity or projection loss) between source and target batches as similarity increases.\n- Show that the regime where similar languages hurt is exactly where gradient disagreement spikes.\n- *Optionally* show that PCGrad reduces that disagreement and partially recovers performance—but that’s secondary evidence.\n\nFramed this way, PCGrad isn’t a black box; it’s a probe.\n\nIf you’re not willing to commit to measuring and correlating gradient behavior, don’t touch PCGrad. In that case, stop after tokenizer control and pivot—the story won’t be sharp enough.\n\nBottom line: **diagnose first, mitigate second**. If gradient conflict lines up cleanly with similarity, you have a real interference story.",
+      "turn": 4
+    },
+    {
+      "role": "user",
+      "content": "That makes sense—measuring the cosine similarity of the gradients as a function of linguistic similarity is much more rigorous. If I find that the gradient conflict is actually concentrated in specific layers, like the embeddings versus the upper transformer blocks, does that usually point toward a specific architectural fix or is that just more noise?",
+      "turn": 4
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced NLP researcher. They’re asking how to interpret layer-localized gradient conflict and whether it implies an architectural fix or is just noise. Need to give a clear interpretation and warn against overengineering. Lead with judgment, then how to act on it.\n</thinking>\n\nThis is **not noise** if it’s stable—but it only points to an architectural fix if the localization is *clean and interpretable*. Otherwise it becomes post‑hoc storytelling.\n\nHere’s the honest mapping reviewers will accept:\n\n- **Conflict concentrated in embeddings / early layers** usually means *representation incompatibility* (lexicalization, morphology, script, or false friends), not optimization failure. The correct response is **representation isolation**, not fancy gradient surgery—e.g., freezing, partial sharing, or language‑conditioned embeddings. If PCGrad “fixes” this, that’s suspicious; you’re masking a modeling mismatch.\n\n- **Conflict concentrated in upper layers** points more plausibly to **task‑level or semantic interference**. In that case, selective decoupling (adapter routing, layer‑wise source weighting) is a defensible architectural follow‑up, and gradient-based diagnostics make sense.\n\nWhat you should *not* do: propose a new architecture just because you saw layerwise effects. A negative‑interference paper lives or dies on restraint. Your contribution is identifying *where and why* transfer breaks, not “here’s yet another fix.”\n\nMy advice: if the layerwise pattern is sharp, consistent across seeds and language pairs, and lines up with linguistic intuition, you can justify a minimal intervention as evidence—not as the main claim. If it’s diffuse or unstable, stop at diagnosis. That’s still a solid story.\n\nInterpretation beats intervention here.",
+      "turn": 5
+    },
+    {
+      "role": "user",
+      "content": "That distinction between representation incompatibility and semantic interference is vital for my framing. If the conflict is indeed localized in the early layers, would you recommend testing a modular approach like Language Adapters as a 'minimal intervention' to prove the point, or is that already moving too far into 'new architecture' territory?",
+      "turn": 5
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced NLP researcher, close to paper framing. Need to judge whether language adapters are acceptable as minimal intervention. Answer: yes, but only in a very constrained, hypothesis-testing role. Emphasize limits and how to frame to avoid “new architecture” trap.\n</thinking>\n\nUsed carefully, **language adapters are acceptable**—but only if you treat them as a *diagnostic control*, not a contribution.\n\nIf early-layer conflict really reflects representation incompatibility, then inserting **small, frozen‑backbone adapters only in the embedding / lower blocks** is a *minimal intervention*. You’re not redesigning the model; you’re locally relaxing forced sharing. Reviewers generally accept this *if* the adapters are standard and the backbone is unchanged.\n\nThe framing matters more than the method:\n\n- You’re not proposing adapters as “the solution.”\n- You’re testing a falsifiable claim: *early representational sharing causes negative transfer; relaxing it selectively reduces interference*.\n- You should show that placing adapters **only in early layers** helps, while placing them higher does not (or helps less). That alignment is what makes it convincing.\n\nWhat would cross the line:\n- Stacking multiple adapter variants and tuning them.\n- Comparing against a zoo of adapter methods.\n- Claiming general performance improvements beyond your failure regime.\n\nOne clean experiment is enough. If adapters remove the interference *exactly where gradients conflicted*, you’ve closed the causal loop. At that point, the architectural change is evidence, not the paper.\n\nIf adapters don’t help, don’t escalate. That’s your signal to stop intervening and keep the paper diagnostic.",
+      "turn": 6
+    },
+    {
+      "role": "user",
+      "content": "That framing—using adapters to close the causal loop between gradient conflict and performance—is exactly the narrative hook I needed to move from a 'failed' experiment to a rigorous diagnostic paper. I have a clear plan for the layer-wise intervention now, so I'll head to the cluster and start the implementation.",
+      "turn": 6
+    }
+  ]
+}

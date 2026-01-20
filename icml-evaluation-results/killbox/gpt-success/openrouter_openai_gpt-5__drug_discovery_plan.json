@@ -1,0 +1,27 @@
+{
+  "scenario_id": "drug_discovery_plan",
+  "system_id": "openrouter:openai/gpt-5",
+  "stop_reason": "goal_reached",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "Short answer: keep a single global r unless public diagnostics show a strong, stable A/B scale mismatch between modalities. If they do, fix modality-specific r’s from public data but still use one global DP controller.\n\nGuidance\n- Default (recommended): one global r, one global joint clip\n  - Compute joint per-sample norms over all LoRA params (sqrt(||gA||^2 + ||gB||^2) aggregated across both the graph encoder and the protein transformer).\n  - Set a single C0 from public q90_joint × cushion, and run one global DP clip‑rate controller.\n  - In this pure joint‑clip setup you don’t actually need r at all; the joint norm preserves direction and scale without A/B splitting.\n\n- When to introduce modality-specific r (privacy-free, complexity ↑)\n  - Only if public checks show a consistent mismatch, e.g., median r_protein / r_graph > 1.5 across the last few public checkpoints.\n  - Measure on public data right before transfer (optionally median over 2–3 nearby checkpoints), clamp each r_m to [0.5, 2], then freeze for the entire DP run.\n\n- How to implement r_m without extra DP budget\n  - Keep one global DP controller. Do not run per‑modality DP calibrations.\n  - Derive per‑modality A/B clips from a single global joint target via fixed public weights:\n    - Compute public q90 of the joint norm per modality: q90_graph, q90_protein.\n    - Set weights w_m ∝ q90_m and normalize so sum_m w_m^2 = 1.\n    - For each modality m with ratio r_m:\n      - s_m = sqrt(1 + r_m^2)\n      - C_A0,m = (w_m / s_m) · C0_joint\n      - C_B0,m = r_m · C_A0,m\n    - During private training, apply a single multiplicative factor f_t from your global DP clip‑rate controller to all C_*,m: C_A,m ← f_t·C_A0,m, C_B,m ← f_t·C_B0,m.\n  - Clipping rule (elliptical, single coefficient):\n    - For each sample, compute z_i = sqrt(Σ_m [(||g_A,m||/C_A,m)^2 + (||g_B,m||/C_B,m)^2]).\n    - Clip all LoRA grads by factor 1/max(1, z_i). This preserves the public-set proportions while keeping one DP statistic and one controller.\n\n- Simple thresholds to decide\n  - Use a single global r if |log r_graph − log r_protein| < ln(1.5).\n  - If above that, use modality‑specific r_m with the elliptical scheme above.\n  - In both cases, keep one global C0_joint, one global deadband controller, and fixed [C_min, C_max] on the joint scale.\n\nBottom line\n- For stability and simplicity, a single global r (or no r with pure joint clipping) is usually best.\n- If public evidence shows a real, persistent A/B ratio split across modalities, fix r_graph and r_protein from public data and implement them via a single global “elliptical” clip with one DP controller. This captures heterogeneity without complicating DP accounting.",
+      "turn": 30
+    },
+    {
+      "role": "user",
+      "content": "The elliptical clipping scheme for modality-specific ratios is elegant, but if I stick to the simpler global joint-clip setup, how should I handle the potential gradient magnitude imbalance between the GNN and the protein transformer to ensure the DP noise doesn't disproportionately wash out the smaller signal?",
+      "turn": 30
+    },
+    {
+      "role": "assistant",
+      "content": "You can keep the single global joint clip and still protect the smaller modality’s signal by fixing the scale balance up front on public data and by using a predetermined “focus” cadence. These do not change your DP accounting or add extra DP stats.\n\nWhat to do (in order)\n- Public scale balancing via LoRA alpha\n  - Measure per-modality joint LoRA gradient scale on public data: e.g., q90_graph and q90_protein of the per-sample joint LoRA norm for each modality (sum of A and B squared norms).\n  - Set fixed modality multipliers to equalize scales at transfer:\n    - w_m = target / q90_m, with target = geometric mean of the two q90’s; clamp w_m to a reasonable range, e.g., [0.5, 2].\n    - Set alpha_m = base_alpha × w_m for each modality, and freeze these for the entire private run.\n  - Recompute C0 once on public data after applying these alphas, then use your global deadband controller as planned.",
+      "turn": 31
+    },
+    {
+      "role": "user",
+      "content": "That's a very practical way to handle the modality imbalance without leaking more privacy budget. I'll implement the public scale balancing via LoRA alpha and then proceed with the global joint-clip and deadband controller for the private phase. I have a solid plan now, thanks!",
+      "turn": 31
+    }
+  ]
+}

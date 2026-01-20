@@ -1,0 +1,27 @@
+{
+  "scenario_id": "causal_ablation_help",
+  "system_id": "openrouter:openai/gpt-5",
+  "stop_reason": "goal_reached",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "Prioritize an anchor if the drift is localized at η_max; increase rank if the drift looks like a general “missing energy” issue.\n\nA simple decision rule\n- Drift only at η_max (iterations at η=0 are fine, and within η_max the count is fairly flat across λ): add a second anchor.\n  - Reason: this is a metric-rotation problem. S_ηmax−1 rotates/reweights the same data directions; a targeted anchor captures that efficiently without inflating r much.\n- Drift across all η (or already noticeable at η=0), or grows steadily with ritz/residuals indicating unresolved data modes: increase r.\n  - Reason: this is a rank-coverage problem. You’re not capturing enough of X^T X’s dominant spectrum; more columns help everywhere.\n\nPractical thresholds and steps\n- Ignore small changes: if iters(η_max)/iters(η=0) ≤ 1.3, you’re fine.\n- If 1.3–1.6 at η_max:\n  1) Anchor enrichment: form Y0 = S̄^−1 Z, Ymax = S_ηmax^−1 Z; concatenate; compress/whiten once under S̄ (drop eigenmodes <1e−3–1e−2 relative). Expect r_eff to grow by ~20–40%, with little extra cost and no new X multiplies.\n  2) Recheck iterations. If improvement <20–30%, then bump r moderately (e.g., 64→96/128).\n- If >1.6 or drift appears at all η: increase r first. If residual drift persists only at η_max after the bump, add the anchor and re-compress.\n\nCost/benefit notes\n- Anchor is “surgical”: no extra X multiplies, just solves with S_η and a 2r×2r compression; best when the issue is S-driven rotation.\n- Rank bump is “global”: more X^T Ω columns; best when the issue is data-spectrum coverage.\n- You can also retune S̄ (move η_ref closer to η_max) and re-whiten; sometimes that alone removes η_max drift.\n\nChecks\n- Compare spectra of G_η across η; large change in a few leading eigenvalues at η_max suggests anchor; uniformly slow decay suggests rank.\n- Keep the boundary-deflation subspace active; it’s complementary to both choices.\n\nBottom line\n- Try an η_max anchor first if the problem is localized; otherwise increase r. If in doubt, do a small anchor plus a modest rank bump—this usually flattens iteration variance with minimal overhead.",
+      "turn": 35
+    },
+    {
+      "role": "user",
+      "content": "That decision rule is perfect—I'll check the iters(η_max)/iters(η=0) ratio first. If I go with the η_max anchor, should I perform the 2r×2r compression using the same reference S̄, or is it safer to use a more conservative S_η_mid to avoid biasing the compressed subspace too far from the η=0 regime?",
+      "turn": 35
+    },
+    {
+      "role": "assistant",
+      "content": "Use the same reference S̄ and pick η_ref in the middle of your range. You don’t need to switch to S_η_mid explicitly—S̄ with η_ref ≈ 0.4–0.6·η_max gives a balanced compression that won’t bias toward either endpoint.\n\nWhy this is fine\n- Compression under S̄ just decides which directions to keep/drop; at runtime you still form G_η = Z̃^T S_η^{-1} Z̃, so the metric is correct for each η.\n- A mid reference keeps you from pruning modes that are small at η=0 but important at η_max (or vice versa). Using S̄ very close to either endpoint is what risks bias.\n\nPractical recipe\n- Choose S̄ = S_τ + η_ref S_flat_scaled with η_ref ≈ 0.4–0.6·η_max.\n- Do 2r×2r compression/whitening under S̄ with a relative cutoff 1e−3–1e−2.\n- Runtime: for each η, use G_η = Z̃^T S_η^{-1} Z̃ in the Woodbury update.\n\nIf you want extra insurance\n- Union safeguard: after compressing under S̄, check the dropped columns’ energies at the endpoints. For each dropped column z_j, compute e0 = z_j^T S_0^{-1} z_j and emax = z_j^T S_ηmax^{-1} z_j. If max(e0, emax) exceeds your S̄ cutoff level, keep it. This adds a few solves with S_0 and S_ηmax, no X multiplies.\n- Adaptive η_ref (optional): try η_ref ∈ {0.3, 0.5, 0.7}·η_max and pick the one that minimizes the iteration spread between η=0 and η=η_max on a small pilot (one λ).\n\nDefaults\n- η_ref = 0.5·η_max, cutoff 1e−3–1e−2, r = 64–128.\n- If iters(η_max)/iters(η=0) > 1.3 after compression, add the η_max anchor (as you planned) and re‑compress under the same S̄; only bump r if drift persists.",
+      "turn": 36
+    },
+    {
+      "role": "user",
+      "content": "The union safeguard is a clever way to handle the tail energy without full η-dependence; I'll implement the 0.5·η_max reference with that check and proceed to the pilot runs. Thanks for the rigorous roadmap on the compression logic.",
+      "turn": 36
+    }
+  ]
+}

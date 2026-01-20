@@ -1,0 +1,27 @@
+{
+  "scenario_id": "vision_baseline_analysis",
+  "system_id": "openrouter:moonshotai/kimi-k2-thinking",
+  "stop_reason": "goal_reached",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced. Need clear choice: baseline raw accuracy, not oracle gate. Explain oracle leakage. 120–180 words.\n</thinking>\n\nUse **the baseline’s raw prediction accuracy**, not an oracle gate.\n\nAn “oracle gate” is exactly the wrong reference here—it leaks policy into measurement. If you define usefulness relative to an oracle decision rule, you’ve already assumed what the gate *should* do, which collapses the counterfactual into a tautology.\n\nWhat you want Δ to answer is:\n> “If I *force alignment*, does the model’s end task performance improve or degrade relative to doing nothing special?”\n\nThat “do nothing special” condition is the **baseline backbone prediction**. It’s policy‑free, stable, and reviewer‑proof.\n\nSo define:\n\\[\n\\Delta = \\text{metric(forced alignment)} - \\text{metric(baseline backbone)}\n\\]\n\nThen the gate is evaluated *against* this Δ:\n- Correct deferral: Δ < 0 and gate suppresses.\n- Missed opportunity: Δ > 0 and gate suppresses.\n- Gate failure: Δ < 0 and gate allows.\n\nThis keeps the causal graph clean:\n- Baseline = reference world.\n- Forced alignment = counterfactual intervention.\n- Gate = decision mechanism being evaluated, not defining the target.\n\nIf you instead use an oracle gate, reviewers will (rightly) say you evaluated the gate against a criterion derived from itself.\n\nBaseline accuracy may be blunt—but that bluntness is exactly what makes the analysis credible.",
+      "turn": 29
+    },
+    {
+      "role": "user",
+      "content": "That framing makes total sense—it treats the gate as a diagnostic tool rather than a performance target. Since I'm using the baseline as the 'do nothing' reference, should I calculate the Δ across the entire validation set, or is it more informative to restrict this counterfactual analysis specifically to the tail-class samples where the gate is most active?",
+      "turn": 29
+    },
+    {
+      "role": "assistant",
+      "content": "<thinking>\nExperienced. Need firm guidance: don’t restrict definition; restrict analysis views. Emphasize selection bias. 120–180 words.\n</thinking>\n\nCompute Δ **over the entire validation set**. Then *analyze* it where it matters.\n\nIf you restrict the counterfactual itself to tail-class samples, you introduce **selection bias** into the definition of “usefulness.” Reviewers will (correctly) say you only measured Δ where you expected alignment to matter, which weakens the causal claim.\n\nThe clean separation is:\n\n- **Definition**:  \n  Δ is always computed against the full, unconditional validation distribution using the baseline as reference.\n\n- **Analysis slices** (post hoc, clearly labeled):  \n  – tail vs common classes  \n  – high vs low cosine similarity  \n  – gate‑active vs gate‑inactive regions\n\nThis way, the counterfactual remains policy‑free and globally meaningful, while your *interpretation* focuses on the regimes where the gate is most engaged.\n\nPractically, this also helps your story:\n- You can show that Δ is near zero or noisy on common classes (alignment mostly benign).\n- And sharply negative on tail classes (where alignment hurts and the gate activates).\n\nThat contrast is far more convincing than only ever showing tail behavior.\n\nSo: **global Δ, localized insight**.  \nAnything else looks like redefining the question to fit the answer.",
+      "turn": 30
+    },
+    {
+      "role": "user",
+      "content": "That distinction between global definition and local analysis is the missing piece for my methodology section; it provides the rigorous causal framework I need to justify the gate's behavior without appearing to 'cook' the metrics. I'll implement the global Δ calculation and slice the results by the frequency bins we discussed to visualize that contrast. Thanks for the guidance—I have a clear path forward for the next set of experiments.",
+      "turn": 30
+    }
+  ]
+}

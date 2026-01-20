@@ -1,0 +1,27 @@
+{
+  "scenario_id": "quantum_curious",
+  "system_id": "openrouter:openai/gpt-5",
+  "stop_reason": "goal_reached",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "Do the layout in a dedicated pass, then transpile/run with no coupling constraints. That applies the permutation but guarantees no SWAPs are inserted.\n\nStep-by-step\n\n- Find and apply a line-optimized layout (only):\n  - Use SabreLayout with a line CouplingMap, then ApplyLayout to relabel qubits. Do not include any routing passes.\n\n- Transpile/run without a coupling_map (or Target with connectivity):\n  - Omit coupling_map and set routing_method=None so the transpiler won’t try to insert SWAPs.\n  - You can transpile only for basis translation, or run the circuit as-is on Aer.\n\nCode sketch\n\nfrom qiskit import transpile\nfrom qiskit.transpiler import PassManager, CouplingMap\nfrom qiskit.transpiler.passes import ApplyLayout\nfrom qiskit.transpiler.passes.layout import SabreLayout\nfrom qiskit_aer import AerSimulator\n\n# 1) Layout-only on a line\nn = qc.num_qubits\nline = CouplingMap.from_line(n)\npm = PassManager([SabreLayout(coupling_map=line, seed=42), ApplyLayout()])\nqc_layout = pm.run(qc)  # relabeled wires; no SWAPs added\n\n# 2a) Run as-is on Aer MPS\nsim = AerSimulator(method=\"matrix_product_state\")\nresult = sim.run(qc_layout, shots=shots).result()\n\n# 2b) Or transpile for basis only (still no routing)\nqc_run = transpile(\n    qc_layout,\n    backend=sim,              # ok; Aer has full connectivity\n    coupling_map=None,        # critical: no connectivity → no routing\n    routing_method=None,      # belt-and-suspenders\n    layout_method=None,\n    optimization_level=0\n)\nassert 'swap' not in qc_run.count_ops()\n\nAlternative (using an initial_layout you extracted)\n# layout = pm.property_set[\"layout\"]\n# qc_layout = transpile(qc, initial_layout=layout, coupling_map=None,\n#                       routing_method=None, optimization_level=0)\n\nPitfalls to avoid\n- Don’t pass a hardware backend/Target or a coupling_map in the final transpile; that triggers routing and SWAP insertion.\n- Don’t set routing_method='sabre' (or any router) in the final transpile.\n- If you see any 'swap' in count_ops(), you accidentally introduced connectivity; re-run with coupling_map=None and routing_method=None.",
+      "turn": 43
+    },
+    {
+      "role": "user",
+      "content": "This code sketch is exactly what I needed to bridge the gap between theory and implementation. One quick check: if I'm using `optimization_level=3` in that final transpile step to clean up single-qubit gates, will it respect my `routing_method=None` and keep the SWAPs out?",
+      "turn": 43
+    },
+    {
+      "role": "assistant",
+      "content": "Yes—so long as you don’t give the transpiler any connectivity constraint, level=3 won’t insert SWAPs. optimization_level controls how aggressively it simplifies/synthesizes, not whether routing is required. Routing only triggers if there’s a coupling_map/Target with restricted connectivity.\n\nDo this and you’re safe:\n- Apply your layout first (SabreLayout + ApplyLayout).\n- Final transpile with:\n  - backend=AerSimulator(method=\"matrix_product_state\")\n  - coupling_map=None\n  - routing_method=None\n  - layout_method=None\n  - optimization_level=3\n\nSanity check:\nqc_run = transpile(qc_layout, backend=sim,\n                   coupling_map=None, routing_method=None, layout_method=None,\n                   optimization_level=3)\nassert 'swap' not in qc_run.count_ops()\n\nNotes\n- If you accidentally pass a hardware backend (or a Target with limited connectivity), level=3 will route and add SWAPs. Use AerSimulator (full connectivity) or omit backend entirely.\n- If you want 100% control, skip the preset and run a minimal pass manager (e.g., RemoveBarriers + Optimize1qGatesDecomposition) after ApplyLayout; it never includes routing.",
+      "turn": 44
+    },
+    {
+      "role": "user",
+      "content": "That `assert` check is the perfect safety net for my script. I have a clear plan now to implement the layout scoring and run the MPS simulations without worrying about SWAP overhead—thanks for the help!",
+      "turn": 44
+    }
+  ]
+}

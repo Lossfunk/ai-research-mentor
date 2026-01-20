@@ -1,0 +1,27 @@
+{
+  "scenario_id": "vision_baseline_analysis",
+  "system_id": "openrouter:openai/gpt-5",
+  "stop_reason": "goal_reached",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "Filter the occupancy ratio, not the final product. Keep φ_c as the purity readout unchanged, and smooth only the post-trim occupancy term. Then multiply.\n\nWhy\n- Separates concerns: φ_c already has its own EMA from purity; re-filtering φ_c·ratio double-couples purity with occupancy and can add lag.\n- Predictable cap: r_occ ∈ [0,1] ensures φ_c_eff ≤ φ_c by construction.\n- Faster recovery: when occupancy restores, φ_c can reflect purity immediately; only the occupancy ramp is smoothed.\n\nRecommended recipe\n- Compute post-trim occupancy ratio:\n  - r_occ_raw = min(1, |A_ctx_active_trimmed| / k_min)\n- Low-pass only the ratio:\n  - r_occ ← EMA(r_occ_raw; γ_occ ≈ 0.2–0.3) or a rate limiter Δr_occ_max ≈ 0.1 per cycle.\n- Form the effective weight:\n  - φ_c_eff_raw = φ_c · r_occ\n  - Optional tiny smoothing or rate limit on φ_c_eff to absorb simultaneous purity+occupancy changes:\n    - φ_c_eff ← clamp(EMA(φ_c_eff_raw; γ_eff ≈ 0.1–0.15), 0, φ_c)\n    - or φ_c_eff ← prev + clip(φ_c_eff_raw − prev, −0.1, +0.1)\n- Always enforce φ_c_eff ≤ φ_c.\n\nNotes\n- r_occ is computed after masking/frozen/probation and trimming.\n- Purity evaluation (q_c, φ_c) is independent of trimming; don’t feed r_occ into purity.\n- If occupancy toggles around k_min, prefer a rate limiter on r_occ over heavier EMA to avoid sluggishness.",
+      "turn": 35
+    },
+    {
+      "role": "user",
+      "content": "That separation of concerns makes total sense to avoid lag. If I use the rate limiter on $r_{occ}$ instead of the EMA, should I still apply that optional secondary smoothing on $\\phi_{c\\_eff}$, or would that be redundant given the bounded $\\Delta r_{occ}$?",
+      "turn": 35
+    },
+    {
+      "role": "assistant",
+      "content": "Short answer\n- If you rate-limit r_occ, you usually don’t need extra smoothing on φc_eff. Add a light, asymmetric final rate limit on φc_eff only if you want a strict cap on per-cycle increases (e.g., right after reopen).\n\nGuidance\n- Default: limit only r_occ\n  - r_occ_raw = min(1, |A_ctx_active_trimmed|/k_min)\n  - r_occ ← prev + clip(r_occ_raw − prev, −Δr_down, +Δr_up)\n  - φc_eff = φc · r_occ\n  - With φc already EMA-smoothed, this is sufficient for most setups.\n\n- When to add a final limiter on φc_eff\n  - Reopen bursts: φc ramps up from φc_min while r_occ rises; their product can rise faster than either alone.\n  - If you need a hard bound on per-cycle growth of φc_eff, apply a small increase-only limit:\n    - φc_eff_raw = φc · r_occ\n    - φc_eff = prev + min(φc_eff_raw − prev, Δφ_up_max); allow full or larger decreases.\n\nRecommended defaults\n- r_occ limiter: Δr_up = 0.10, Δr_down = 0.30 (faster drops for safety).\n- Optional φc_eff limiter: Δφ_up_max = 0.10; no cap (or 0.30) on decreases.\n- Keep φc_eff ≤ φc always.\n\nDo not stack EMA and rate limiters on the same signal\n- Use either EMA or rate limiting for r_occ, not both. If you add the optional product limiter, keep it very light (increase-only) to avoid sluggishness.\n\nPseudocode\n- r_occ = prev_r + clip(r_occ_raw − prev_r, −0.30, +0.10)\n- φc_eff_raw = φc · r_occ\n- φc_eff = prev_φ + clip(φc_eff_raw − prev_φ, −inf, +0.10)\n\nNotes\n- Compute r_occ after masking/probation/trim.\n- Purity EMA for φc remains independent of occupancy control.\n- Re-normalize weights over the post-trim active set; if count=0, set φc_eff=0 and route all mass to A_t/S.",
+      "turn": 36
+    },
+    {
+      "role": "user",
+      "content": "The asymmetric rate limiting on $r_{occ}$ combined with the product-level cap for reopen bursts is exactly what I needed to stabilize the COCO-to-LVIS transfer. I have a clear implementation plan now and will start the ablation runs on the two outlier datasets.",
+      "turn": 36
+    }
+  ]
+}

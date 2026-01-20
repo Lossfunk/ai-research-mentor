@@ -1,0 +1,27 @@
+{
+  "scenario_id": "icml_revision_feedback",
+  "system_id": "openrouter:openai/gpt-5",
+  "stop_reason": "mentored_enough",
+  "transcript_tail": [
+    {
+      "role": "assistant",
+      "content": "Yes—treat the certified anytime curve as a step function that only moves when a fully trained model is verified.\n\nHow to plot it\n- Certified (primary): best fully trained accuracy vs wall-clock.\n  - Flat during search and warm-up.\n  - When you launch top-3 retrains at the end, the curve stays flat until the first retrain finishes; then it “jumps” to that model’s accuracy if it exceeds the prior best.\n  - If retrains finish at different times (sequential or parallel), you may see multiple jumps as better models complete; if all finish together, a single jump to the best-of-3 at that timestamp.\n- Proxy/progress (secondary, dashed): best proxy or predicted accuracy vs time to show algorithmic progress before certification. Clearly label as proxy/uncertified.\n\nAccounting details\n- Include all retrain wall-clock before the jump(s). No credit for uncertified estimates.\n- If retrains run in parallel on multiple GPUs:\n  - Report both wall-clock (benefits from parallelism) and total GPU-hours (increases with parallelism).\n  - State hardware and concurrency; keep baselines under the same resource policy or provide both single-GPU and parallel variants.\n- If you keep searching while retraining, define a resource model (e.g., 1 GPU total vs 4 GPUs total) and apply it consistently across methods.\n\nOptional clarity aids\n- Mark retrain start/finish with vertical ticks; shade “certification lag” between the end of search and first verified result.\n- Add time-to-target as a horizontal line; the crossing time is when the first retrained model ≥ target completes.\n\nThis keeps the curve honest (deployable accuracy only when verified) while still showing search progress via a secondary proxy curve.",
+      "turn": 7
+    },
+    {
+      "role": "user",
+      "content": "The step-function approach for the certified curve is a great way to handle the reviewers' skepticism about 'estimated' performance. If I use a resource model with 4 GPUs, should I report the wall-clock time based on the slowest parallel retrain finishing, or is it better to show the staggered jumps as each individual GPU completes its specific model evaluation?",
+      "turn": 7
+    },
+    {
+      "role": "assistant",
+      "content": "Use staggered jumps. With a 4‑GPU resource model, update the certified anytime curve at the actual wall‑clock times when each retrained model finishes and is verified. You don’t need to wait for the slowest retrain to finish; the curve should:\n- Jump at the first completed retrain that beats the current best.\n- Potentially jump again when later completions (on other GPUs) produce an even better model.\n- Stay flat if a completed retrain underperforms.\n\nTime-to-target under parallelism\n- Define time-to-target as the earliest wall‑clock time at which any retrained model (among those running in parallel) achieves the target.\n- If none hits the target before the budget, report “>B” and a lower bound.\n\nReport both wall‑clock and compute\n- Primary: wall‑clock certified anytime curve with staggered jumps (reflects deployability under a 4‑GPU cap).\n- Also report total GPU‑hours and, optionally, a second curve with GPU‑hours on the x‑axis to normalize for parallelism.\n- Clearly state the concurrency policy (max 4 GPUs, tasks scheduled as soon as GPUs free, same policy for all methods).\n\nFairness and clarity tips\n- Give baselines the same 4‑GPU scheduling; their curves will also show staggered improvements as trials finish.\n- If you keep searching while retraining, include those jobs in the same 4‑GPU pool and let the schedule dictate when jumps occur.\n- Add an appendix single‑GPU curve to show the qualitative story doesn’t hinge on parallelism.\n- Provide an event trace (timestamped starts/finishes) to make accounting auditable.\n\nSuggested phrasing\n- “Anytime curves report certified accuracy vs wall‑clock under a 4‑GPU cap. We update the curve when a fully trained model completes; parallel retrains yield staggered jumps at their respective completion times. Time‑to‑target is the first completion time achieving the threshold. We also report total GPU‑hours and a GPU‑hours–normalized curve.”",
+      "turn": 8
+    },
+    {
+      "role": "user",
+      "content": "This staggered jump approach and the event trace for auditability directly address the reviewers' concerns about fairness and transparency. I have a clear plan now to restructure the results section and the appendix for the revision.",
+      "turn": 8
+    }
+  ]
+}
