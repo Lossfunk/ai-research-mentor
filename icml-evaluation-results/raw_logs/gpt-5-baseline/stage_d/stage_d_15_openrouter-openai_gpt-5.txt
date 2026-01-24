@@ -1,0 +1,126 @@
+Below is a focused plan to swap the paper’s hand‑designed hierarchy (fixed segments and global ordering) with automatically learned structure and to evaluate stability and coverage against the original approach.
+
+A) Structure-learning variants (drop-in replacements)
+Keep identical for comparability: tokenizer/vocab, text normalization, max token budget per document, training loop, optimizer/LR schedule, precision, inference stride/windowing, heads, and evaluation scripts. Only the intra‑document structure is learned.
+
+Primary (contiguity-preserving; best apples-to-apples)
+- DP-kSeg (embedding cohesion segmentation)
+  - Units: sentences or paragraphs (same units used to define “segments” in the paper).
+  - Compute unit embeddings with the frozen local encoder (mean-pooled token states).
+  - Cost: within‑segment variance or mean pairwise cosine distance; penalize many cuts with λ.
+  - Find K cuts by dynamic programming to minimize total cost, with K chosen to match the paper’s expected number of segments or to fit the same token budget.
+  - Output: contiguous variable‑length segments that preserve original order.
+
+Secondary (non-contiguous grouping; tests learned “hierarchy”, not just boundaries)
+- HAC-Group (hierarchical clustering)
+  - Units: sentence/paragraph embeddings.
+  - Ward or average-linkage clustering to a target K groups. Option A: enforce contiguity (constrained HAC). Option B: allow non-contiguous groups (true “topic groups”).
+  - Represent each group by the masked mean of member unit embeddings; order groups by the earliest member’s position for compatibility with the global encoder.
+- Topic/lexical baselines (for ablations)
+  - TextTiling-like boundaries from tf-idf cohesion dips.
+  - LDA/NMF topic groups (non-contiguous), K selected to match token budget.
+
+Integration with the Hierarchical Transformer
+- Replace fixed segments with learned segments/groups.
+- Segment embedding: same pooling as baseline (e.g., [CLS]/mean).
+- Global encoder: unchanged. For non-contiguous groups, order by first-occurrence index; keep the same max “segments” cap and attention masks.
+- Token budget parity: enforce that the total tokens fed to the model per document is within ±1% of baseline. If learned groups exceed the cap, truncate/slide using the same stride rules.
+
+B) Evaluation steps (stability, coverage, and end-task impact)
+1) Segmentation/structure diagnostics (no labels required)
+- Boundary count and length distribution: report mean and variance; ensure token budget parity.
+- Boundary alignment (vs paper’s fixed segmentation)
+  - Metrics: Pk and WindowDiff (lower is better); Boundary F1 with ±1 unit tolerance at B boundaries (B = min(#cuts_baseline, #cuts_learned)).
+- Structure similarity (for group variants)
+  - NMI/ARI between learned groups and baseline contiguous “sections” (treat each contiguous block as a group).
+  - Variation of Information (VI) and Average Overlap; report means with 95% CIs.
+
+2) Stability (across seeds, perturbations, and sampling)
+- Across random seeds (and any stochastic components):
+  - For each document, compute ARI/NMI/VI across all seed pairs of the learned structures (intrinsic stability).
+  - Report mean ARI and its 95% CI; compare to baseline’s trivial “stability” (identical structure every time).
+- Under small input perturbations (sidecar, label-preserving)
+  - Apply light edits: sentence paraphrase, header/no-header toggles, distractor injection, or paragraph order swaps within sections (bounded).
+  - Re-run structure learning; compute per-doc stability deltas: ΔARI, ΔVI, and Boundary F1 vs original (pre‑perturb).
+  - Mixed-effects model: stability_metric ~ perturbation_type + log(tokens) + (1|doc).
+- Bootstrap stability
+  - Subsample 80% of units (without reordering), relearn structure; compute ARI/NMI vs full. Repeat 50× per doc; summarize mean±SD.
+
+3) Coverage (evidence/label-bearing content under equal budget)
+- QA with evidence (e.g., HotpotQA, Qasper):
+  - Evidence recall@budget: fraction of gold evidence sentences/tokens included in the final model window(s).
+  - Earliest coverage position: first segment index where all gold evidence is inside context.
+  - Supporting facts F1 after inference; Joint EM (answer+support).
+- Claim verification (FEVER/FEVEROUS/SciFact):
+  - Evidence recall@k pages/sentences and FEVER score (correct label + at least one gold evidence set).
+- Summarization (PubMed/arXiv):
+  - Pre-decode coverage: recall of reference unigrams/bigrams in the selected source (proxy).
+  - Post-decode: ROUGE recall (R‑1/2/L), factuality (QAFactEval/SummaC) as coverage/attribution proxies.
+- Classification (Hyperpartisan/LEDGAR):
+  - Salient-span coverage: fraction of top‑X% gradient/attention saliency tokens (computed w.r.t. the frozen baseline model) that fall inside the learned segments included under budget.
+
+4) End-task performance and efficiency (contextualize coverage)
+- Use identical training/inference. Report:
+  - Primary metrics (macro‑F1, EM/F1, ROUGE).
+  - Latency p50/p90 at batch=1; tokens/sec; peak memory (ensures learned structure doesn’t trade coverage for compute spikes).
+
+C) Statistical tests and decision criteria
+Paired design throughout: same documents, seeds, and token budgets.
+
+- Boundary alignment (Pk/WindowDiff/F1) and structure similarity (ARI/NMI/VI)
+  - Tests: paired Wilcoxon signed-rank on per-document metrics (learned vs baseline); 95% BCa bootstrap CIs for means.
+- Stability across seeds
+  - Compare mean per-document ARI_seedpair between variants via paired Wilcoxon; report bootstrap CIs.
+  - ICC(1,k) on cluster assignments across seeds as an alternative stability summary; compare ICC via bootstrap.
+- Perturbation robustness
+  - For each perturbation: per-doc Δ(stability metric) with paired Wilcoxon vs baseline; mixed-effects model coefficient for perturbation should be closer to 0 (less degradation).
+- Coverage metrics
+  - Evidence recall@budget, earliest coverage: paired bootstrap (10k resamples) for Δ with 95% CIs.
+  - Supporting facts/FEVER/Joint EM: paired bootstrap; McNemar’s test (correctness flips) where applicable.
+  - Summarization coverage proxies: paired bootstrap on ROUGE recall/factuality deltas.
+- End-task metrics
+  - Paired bootstrap for metric deltas; McNemar (classification/QA).
+  - Non-inferiority: predefine ε (e.g., ε=0.5 macro‑F1; 1.0 F1 for QA; 0.5 ROUGE‑L). Declare non-inferior if the lower bound of Δ ≥ −ε.
+- Multiple comparisons
+  - Control family-wise error within each dataset using Holm–Bonferroni across metric families (alignment/stability/coverage/task).
+
+Power and sample size (guidance; refine via pilot)
+- Expect per-document SDs:
+  - ARI/VI stability deltas ≈ 0.10–0.20, evidence recall deltas ≈ 5–10 points.
+- To detect a 3‑point recall gain with SD=8 at 80% power, α=0.05 (paired): n ≈ 56 docs (N ≈ ((1.96+0.84)*8/3)^2).
+- Use full test sets where available (Qasper ~1k Qs, HotpotQA dev ~7.4k); for summarization, ≥100 docs is typically sufficient to detect ≥0.5 ROUGE changes.
+
+D) Ablations and controls
+- Contiguity constraint ablation: compare DP‑kSeg (contiguous) vs HAC‑Group (non‑contiguous) to isolate “order” sensitivity.
+- K and λ sensitivity: vary target #segments (±20%) and regularization; report coverage/stability curves vs K.
+- Capacity control: keep all model weights frozen except the structure learner; optionally add a “random cuts” control matched on #segments to contextualize gains.
+- Oracle upper bound: include an oracle that selects segments containing gold evidence (QA/FEVER) to contextualize achievable coverage.
+
+E) Error analysis (where learned structure helps/hurts)
+- By length quartile, domain, header presence, and table/figure density.
+- Failure subtypes:
+  - Over‑segmentation (too many short segments cause truncation).
+  - Topic drift (non‑contiguous grouping breaks local dependencies → QA span errors).
+  - Boundary misplacement near boilerplate (references/acknowledgments).
+  - Instability to formatting/ASR noise (headers missing; punctuation variants).
+- Diagnostics to log:
+  - Token/segment coverage heatmaps vs gold evidence.
+  - Boundary confusion matrices (±1 tolerance).
+  - Examples of large negative flips with rationale (missing evidence; split across groups).
+
+F) Minimal implementation sketch
+- Unit embedding cache: sentence/paragraph embeddings from frozen local encoder.
+- DP‑kSeg: O(NK) dynamic programming with backpointers; K chosen so total tokens ≤ baseline budget; λ tunes smoothness.
+- HAC‑Group: scikit‑learn linkage; optional contiguity constraint (use optimal leaf ordering or specialized constrained HAC).
+- Segment builder: map unit indices → variable segments/groups; enforce token cap; preserve order by first occurrence.
+- Evaluation harness: computes all alignment, stability, coverage, and task metrics; paired bootstrap/Wilcoxon; Holm–Bonferroni correction.
+
+G) Reporting
+- Tables per dataset:
+  - Segmentation metrics (Pk/WindowDiff/F1), stability (ARI/VI across seeds), coverage (evidence recall, earliest coverage), task metrics, and efficiency, each with 95% CIs and paired deltas vs baseline.
+- Plots:
+  - Coverage vs target K, stability under perturbations, and Pareto front: coverage gain vs stability loss.
+- Decision rule:
+  - Prefer learned structure if it improves evidence recall@budget or earliest coverage without violating non‑inferiority on end‑task metrics and with stability within a pre‑registered margin (e.g., ARI drop ≤ 0.10 vs baseline across seeds and small perturbations).
+
+This plan isolates the effect of replacing hand‑designed hierarchy with learned structure, quantifies how stable that structure is, and measures whether it improves or harms evidence coverage and downstream metrics under strict comparability constraints.

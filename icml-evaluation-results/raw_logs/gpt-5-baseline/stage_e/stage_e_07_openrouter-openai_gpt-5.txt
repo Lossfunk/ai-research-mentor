@@ -1,0 +1,45 @@
+We agree this is an important omission. Our original goal was to benchmark reproducible, text-only baselines under strict leakage controls; however, reviewers are right that contemporary LLMs are relevant. We will add a focused LLM comparison and document a principled protocol to ensure fairness, contamination control, and interpretability.
+
+What we will do
+- Tasks and inputs
+  - Evaluate both acceptance classification and aspect score prediction.
+  - Inputs: title+abstract and hierarchical full-text (section-wise summaries merged), always using arXiv v1 posted pre-notification with venue/status strings stripped.
+
+- Model families
+  - Closed-weight APIs (e.g., GPT-4-class, Claude-class) in zero-/few-shot modes.
+  - Open-weight instruction-tuned models (e.g., Llama/Mistral 7–70B) via prompting and lightweight fine-tuning on training splits only.
+
+- Prompting and outputs
+  - Rubric-conditioned prompts for each aspect with explicit, venue-agnostic definitions; require scalar outputs on the native scale plus optional rationale (rationales not used for scoring).
+  - Deterministic decoding (temperature=0) and variance estimation via repeated runs; report mean±CI.
+
+- Fairness and budget control
+  - Fixed token budgets per paper and per task; no external tools or browsing.
+  - Compare against strong non-LLM baselines (bag-of-words, transformer encoders) and our best combined models.
+  - Cost–performance curves: accuracy vs tokens/$ to contextualize practicality.
+
+- Contamination and leakage checks
+  - Use post-cutoff venues/years where feasible; deduplicate test items against known LLM pretraining corpora proxies and run nearest-neighbor checks in embedding space.
+  - Paraphrase-based robustness: evaluate on lightly paraphrased abstracts to detect memorization.
+  - Maintain our existing leakage controls (v1-only, citation-time censoring).
+
+- Evaluation and calibration
+  - Aspect scores: Kendall’s τ/Spearman’s ρ, MAE, and calibration (ECE), expressed as a fraction of venue-specific reliability ceilings.
+  - Acceptance: AUC/F1 and calibration; report cross-venue/year OOD performance.
+  - Slice analyses by topic, length, and parse quality; high-confidence error audits.
+
+- Targeted ablations
+  - Abstract-only vs hierarchical full-text; with/without format features in prompts.
+  - Chain-of-thought on vs off (scores computed from final numeric answer only).
+  - Few-shot k∈{10, 50, 100} on target venue to quantify adaptation cost.
+
+- Transparency
+  - Release prompts, inference settings, code to reproduce parsing/hygiene, and raw LLM outputs; include compute/cost accounting.
+
+Interpretation and success criteria
+- We will judge LLMs by reliability-adjusted performance and calibration, not just raw accuracy. If LLMs outperform or offer superior calibration/transfer at reasonable cost, we will integrate them as primary baselines. If gains are modest, we will position LLMs as complementary (e.g., providing rationales, high-precision extreme-case flags) and document the few-shot label budget needed to close the gap.
+
+Timeline
+- We can execute this evaluation in 4–6 weeks and include results (or preregistered protocols with committed release dates) in the camera-ready or an updated supplementary.
+
+This plan acknowledges the gap, adds controlled and reproducible LLM baselines, and frames results in terms that matter for PeerRead’s goals: reliability-adjusted accuracy, calibration, transferability, and practical cost.

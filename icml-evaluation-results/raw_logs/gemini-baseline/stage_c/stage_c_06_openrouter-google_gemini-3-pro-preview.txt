@@ -1,0 +1,102 @@
+This research plan targets **"Frugal Federated Learning"**: optimizing FL algorithms specifically for environments with high data costs, intermittent connectivity (2G/3G), and low-end hardware, typical of the Global South.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Standard Federated Learning (FL) algorithms like `FedAvg` assume reliable high-speed connections and relatively homogeneous devices. In low-resource settings (e.g., rural healthcare in Sub-Saharan Africa or agriculture in Southeast Asia), these assumptions fail.
+1.  **Communication Cost:** Data plans are expensive relative to income; uploading 100MB model updates is prohibitive.
+2.  **System Heterogeneity:** Devices are often older Androids with limited battery/compute, leading to high dropout rates ("stragglers").
+3.  **Statistical Heterogeneity:** Data is non-IID (Independent and Identically Distributed) due to local variations in disease prevalence or crop types.
+
+**Research Goal:**
+Develop a **Communication-Efficient, Straggler-Resilient FL Framework** that achieves 95% of state-of-the-art accuracy while reducing uplink data transmission by 10x and tolerating 50% client dropout rates.
+
+**Core Objectives:**
+1.  **Extreme Compression:** Implement quantization and layer-freezing to minimize payload size.
+2.  **Robust Aggregation:** Replace synchronous aggregation with asynchronous or proximal term-based methods (FedProx) to handle dropped clients.
+3.  **Real-World Simulation:** Validate on datasets relevant to developing nations (e.g., Cassava Leaf Disease) rather than standard MNIST/CIFAR.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "Data Cap" Constraint (Compression)
+**Hypothesis:** Applying **ternary quantization** (weights $\in \{-1, 0, 1\}$) combined with **Top-k sparsification** (only sending the largest gradients) will reduce communication costs by >90% with less than 2% accuracy loss compared to full FP32 updates.
+*   **Setup:**
+    *   **Task:** Image Classification (ResNet-18 or MobileNetV3).
+    *   **Dataset:** **Cassava Leaf Disease Classification** (Kaggle). This is a realistic agricultural dataset relevant to Africa.
+    *   **Method:** Implement a custom `ClientUpdate` function in the simulation that quantizes gradients before transmission.
+*   **Baselines:** Standard `FedAvg` (Full precision), `FedAvg` with random sparsification.
+*   **Evaluation Metrics:** Test Accuracy vs. Total Bytes Transmitted (Uplink/Downlink).
+*   **Expected Outcome:** The proposed method reaches convergence slightly slower in *rounds*, but significantly faster in *wall-clock time* and *data volume*.
+
+#### Experiment 2: The "Power Outage" Constraint (Stragglers)
+**Hypothesis:** Introducing a proximal term (regularization) in the local loss function prevents the global model from diverging when 50%+ of clients drop out or return stale updates due to connectivity loss.
+*   **Setup:**
+    *   **Simulation:** Simulate a network where 50% of selected clients fail to return an update within the time window.
+    *   **Method:** Compare **FedProx** (adds $\frac{\mu}{2} ||w - w^t||^2$ to loss) against **FedAsync**.
+    *   **Hyperparameters:** Tune $\mu$ (proximal term) for stability.
+*   **Baselines:** `FedAvg` (which usually ignores stragglers or waits indefinitely).
+*   **Evaluation Metrics:** Convergence stability (variance in accuracy over rounds), Final Accuracy under high dropout regimes.
+*   **Expected Outcome:** `FedAvg` performance collapses or oscillates wildly under high dropout; FedProx maintains smooth convergence.
+
+#### Experiment 3: Determining the "Frugal Frontier" (Pareto Analysis)
+**Hypothesis:** There is a quantifiable trade-off threshold where local computation (on-device training) becomes more expensive (battery-wise) than communication.
+*   **Setup:**
+    *   **Method:** Vary the number of local epochs ($E$) from 1 to 20.
+    *   **Measurement:** Model the energy consumption: $E_{total} = E_{comm} + E_{comp}$.
+    *   **Scenario:** 3G Network (Slow/High Energy per bit) vs. WiFi.
+*   **Baselines:** Fixed $E=1$ (standard FL).
+*   **Evaluation Metrics:** Accuracy per Joule of energy consumed.
+*   **Expected Outcome:** In low-bandwidth (3G) settings, higher local computation ($E=5$ to $10$) is preferable to frequent communication, defining a clear policy for deployment.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Pipeline Construction** | Set up `Flower` (FL framework) simulation. Preprocess Cassava Leaf dataset. Implement baseline `FedAvg`. |
+| **Month 2** | **Exp 1 (Compression)** | Implement Quantization and Top-k sparsification modules. Run benchmarks on bandwidth reduction. |
+| **Month 3** | **Exp 2 (Stragglers)** | Implement FedProx. Build the "System Failure" simulator (randomly dropping client connections). |
+| **Month 4** | **Exp 3 (Energy Model)** | Integrate energy estimation models. Run sweeps on Local Epochs ($E$) vs. Batch Size ($B$). |
+| **Month 5** | **Analysis & Visualization** | Generate Pareto curves (Accuracy vs. Data Cost). Ablation studies (does quantization hurt FedProx?). |
+| **Month 6** | **Paper Writing** | Draft paper. Target venues: *ICLR Workshop on AI for Social Good* or *COMPASS*. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 1x NVIDIA A100 or V100 (for the server-side simulation).
+*   **Note:** You do not need physical mobile phones. You will use **GPU-accelerated simulation** where one GPU simulates 100+ clients sequentially.
+
+**Tools & Libraries:**
+*   **Framework:** **Flower (`flwr`)** (Industry standard for FL simulation, highly flexible).
+*   **ML Library:** PyTorch.
+*   **Datasets:** **Cassava Leaf Disease** (Kaggle) or **iNaturalist** (subset).
+
+**References/Evidence:**
+*   **FedProx:** Li, T., et al. "Federated Optimization in Heterogeneous Networks." (MLSys 2020).
+*   **Quantization:** Konečný, J., et al. "Randomized Encodings for Communication-Efficient Federated Learning." (arXiv).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Simulation Artifacts** | Simulation assumes perfect synchronization within rounds, unlike real 3G networks. | Use `Flower`'s **Virtual Client Engine** to explicitly model variable latency and timeouts (sleep times). |
+| **Non-Convergence** | Aggressive quantization (ternary) combined with non-IID data may prevent the model from learning. | **Warm-up Strategy:** Use full precision for the first 5% of rounds, then switch to quantization once the trajectory stabilizes. |
+| **Model Size** | ResNet-18 might be too heavy for "low-end" simulation logic. | Switch to **MobileNetV3-Small** or **SqueezeNet** which are designed for edge devices. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Federated Unlearning:** In regions with political instability, how can a user quickly "delete" their contribution from the global model if their device is seized?
+*   **Personalization (FedRep):** Instead of one global model, learn a shared feature extractor but keep the classification head local to the device. This helps if "Cassava disease in Kenya" looks different from "Cassava disease in Nigeria."
+*   **SMS-based FL:** Theoretical exploration of performing FL updates via SMS (text message) payloads for regions with *zero* data coverage (extremely constrained, <140 bytes per packet).
+
+**Optional next step:**
+Install the `flwr` library (`pip install flwr`) and clone their "PyTorch Quickstart" example to verify you can simulate a basic Federated loop on your local machine before adding the Cassava dataset.

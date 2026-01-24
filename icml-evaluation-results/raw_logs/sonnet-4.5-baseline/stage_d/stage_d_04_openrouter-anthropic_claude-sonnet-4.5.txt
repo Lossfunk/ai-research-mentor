@@ -1,0 +1,431 @@
+I'll provide a comprehensive ablation study framework for local attention window sizes in Hierarchical Transformers. This is adaptable to your specific paper once you share it.
+
+---
+
+# **Local Attention Window Size Ablation Study**
+
+## **1. ABLATION DESIGN**
+
+### **A. Window Size Configurations**
+
+#### **Primary Ablation Set:**
+```python
+WINDOW_SIZES = {
+    # Baseline from paper
+    'original': {'level_1': 128, 'level_2': 256, 'level_3': 512},
+    
+    # Small windows (local focus)
+    'xs': {'level_1': 32, 'level_2': 64, 'level_3': 128},
+    'small': {'level_1': 64, 'level_2': 128, 'level_3': 256},
+    
+    # Large windows (global focus)
+    'large': {'level_1': 256, 'level_2': 512, 'level_3': 1024},
+    'xl': {'level_1': 512, 'level_2': 1024, 'level_3': 2048},
+    
+    # Uniform windows
+    'uniform_64': {'level_1': 64, 'level_2': 64, 'level_3': 64},
+    'uniform_128': {'level_1': 128, 'level_2': 128, 'level_3': 128},
+    'uniform_256': {'level_1': 256, 'level_2': 256, 'level_3': 256},
+    
+    # Inverted hierarchy (test assumption)
+    'inverted': {'level_1': 512, 'level_2': 256, 'level_3': 128},
+    
+    # Single-level ablations (vary one level at a time)
+    'vary_l1_32': {'level_1': 32, 'level_2': 256, 'level_3': 512},
+    'vary_l1_64': {'level_1': 64, 'level_2': 256, 'level_3': 512},
+    'vary_l1_256': {'level_1': 256, 'level_2': 256, 'level_3': 512},
+    'vary_l1_512': {'level_1': 512, 'level_2': 256, 'level_3': 512},
+    
+    # Extreme cases
+    'minimal': {'level_1': 16, 'level_2': 32, 'level_3': 64},
+    'full_attention': {'level_1': float('inf'), 'level_2': float('inf'), 
+                       'level_3': float('inf')},  # No windowing
+}
+```
+
+#### **Systematic Grid Search (Optional):**
+```python
+# Fine-grained search around optimal
+def generate_window_grid(center_sizes, deltas):
+    """
+    Generate configurations around a center point
+    
+    Args:
+        center_sizes: dict with baseline window sizes
+        deltas: list of multiplicative factors [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+    """
+    configs = []
+    for delta in deltas:
+        config = {
+            level: int(size * delta) 
+            for level, size in center_sizes.items()
+        }
+        configs.append(config)
+    return configs
+
+# Example: Search around original config
+GRID_CONFIGS = generate_window_grid(
+    center_sizes={'level_1': 128, 'level_2': 256, 'level_3': 512},
+    deltas=[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0]
+)
+```
+
+---
+
+### **B. Ablation Dimensions**
+
+#### **1. Per-Level Ablation:**
+```python
+def ablate_single_level(base_config, level_to_vary, window_values):
+    """
+    Vary one level while keeping others fixed
+    """
+    configs = []
+    for window_size in window_values:
+        config = base_config.copy()
+        config[level_to_vary] = window_size
+        configs.append({
+            'name': f'{level_to_vary}_w{window_size}',
+            'config': config,
+            'ablation_type': 'single_level',
+            'varied_level': level_to_vary,
+        })
+    return configs
+
+# Generate single-level ablations
+SINGLE_LEVEL_ABLATIONS = []
+for level in ['level_1', 'level_2', 'level_3']:
+    SINGLE_LEVEL_ABLATIONS.extend(
+        ablate_single_level(
+            base_config={'level_1': 128, 'level_2': 256, 'level_3': 512},
+            level_to_vary=level,
+            window_values=[32, 64, 128, 256, 512, 1024]
+        )
+    )
+```
+
+#### **2. Hierarchical Ratio Ablation:**
+```python
+def ablate_window_ratios(base_window, ratios):
+    """
+    Test different ratios between hierarchical levels
+    
+    Args:
+        base_window: window size for level 1
+        ratios: list of (r1, r2, r3) tuples where r_i is multiplier for level i
+    """
+    configs = []
+    for r1, r2, r3 in ratios:
+        configs.append({
+            'name': f'ratio_{r1}_{r2}_{r3}',
+            'config': {
+                'level_1': base_window * r1,
+                'level_2': base_window * r2,
+                'level_3': base_window * r3,
+            },
+            'ratio': (r1, r2, r3),
+        })
+    return configs
+
+# Test different hierarchical ratios
+RATIO_ABLATIONS = ablate_window_ratios(
+    base_window=64,
+    ratios=[
+        (1, 1, 1),    # Uniform
+        (1, 2, 4),    # Standard doubling
+        (1, 2, 8),    # Aggressive expansion
+        (1, 4, 16),   # Very aggressive
+        (4, 2, 1),    # Inverted
+        (1, 3, 9),    # Tripling
+        (2, 2, 2),    # Uniform but larger
+    ]
+)
+```
+
+#### **3. Adaptive Window Ablation:**
+```python
+def ablate_adaptive_windows(strategy):
+    """
+    Test adaptive window sizing strategies
+    """
+    configs = {
+        'content_based': {
+            'strategy': 'adaptive',
+            'method': 'content_similarity',  # Expand window for dissimilar content
+            'min_window': 64,
+            'max_window': 512,
+        },
+        'length_based': {
+            'strategy': 'adaptive',
+            'method': 'document_length',  # Scale with document length
+            'short_doc_window': 128,
+            'long_doc_window': 512,
+            'threshold': 1024,
+        },
+        'learned': {
+            'strategy': 'adaptive',
+            'method': 'learned_gating',  # Learn window size per head
+            'init_window': 256,
+        },
+    }
+    return configs
+```
+
+---
+
+## **2. BENCHMARK SUITE**
+
+### **A. Core Benchmarks (Must-Have)**
+
+#### **1. Long Document Understanding:**
+```python
+CORE_BENCHMARKS = {
+    # Document Classification
+    'hyperpartisan': {
+        'task': 'binary_classification',
+        'avg_length': 750,
+        'max_length': 5000,
+        'metric': 'f1',
+        'why': 'Tests long article understanding',
+    },
+    
+    'imdb': {
+        'task': 'sentiment_classification',
+        'avg_length': 300,
+        'max_length': 2500,
+        'metric': 'accuracy',
+        'why': 'Standard long-form sentiment',
+    },
+    
+    # Long-Context QA
+    'narrativeqa': {
+        'task': 'extractive_qa',
+        'avg_length': 50000,  # Full stories
+        'max_length': 150000,
+        'metric': 'rouge_l',
+        'why': 'Extreme long context',
+    },
+    
+    'quoref': {
+        'task': 'coreference_qa',
+        'avg_length': 400,
+        'max_length': 1500,
+        'metric': 'f1',
+        'why': 'Tests coreference across windows',
+    },
+    
+    # Document Retrieval
+    'msmarco_doc': {
+        'task': 'document_ranking',
+        'avg_length': 800,
+        'max_length': 10000,
+        'metric': 'mrr@10',
+        'why': 'Tests relevance across long docs',
+    },
+}
+```
+
+#### **2. Hierarchical Structure Tasks:**
+```python
+HIERARCHICAL_BENCHMARKS = {
+    # Discourse Understanding
+    'rst_discourse': {
+        'task': 'discourse_parsing',
+        'metric': 'f1',
+        'why': 'Tests hierarchical structure understanding',
+    },
+    
+    # Multi-paragraph Reasoning
+    'hotpotqa': {
+        'task': 'multi_hop_qa',
+        'avg_length': 500,
+        'requires': 'cross_paragraph_reasoning',
+        'metric': 'em/f1',
+        'why': 'Tests information integration across windows',
+    },
+    
+    # Summarization
+    'arxiv': {
+        'task': 'long_summarization',
+        'avg_length': 6000,
+        'max_length': 15000,
+        'metric': 'rouge',
+        'why': 'Tests global understanding for generation',
+    },
+    
+    'govreport': {
+        'task': 'extreme_summarization',
+        'avg_length': 9000,
+        'max_length': 60000,
+        'metric': 'rouge',
+        'why': 'Extreme length stress test',
+    },
+}
+```
+
+#### **3. Length-Stratified Benchmarks:**
+```python
+LENGTH_STRATIFIED = {
+    # Create length bins for each dataset
+    'imdb_stratified': {
+        'short': {'range': (0, 256), 'n_samples': 1000},
+        'medium': {'range': (256, 512), 'n_samples': 1000},
+        'long': {'range': (512, 1024), 'n_samples': 1000},
+        'very_long': {'range': (1024, 2048), 'n_samples': 1000},
+        'extreme': {'range': (2048, float('inf')), 'n_samples': 500},
+    },
+    
+    # Synthetic length probe
+    'synthetic_length_probe': {
+        'task': 'needle_in_haystack',
+        'description': 'Find specific fact in varying length contexts',
+        'lengths': [128, 256, 512, 1024, 2048, 4096, 8192],
+        'metric': 'exact_match',
+        'why': 'Isolate window size effect',
+    },
+}
+```
+
+---
+
+### **B. Diagnostic Benchmarks**
+
+#### **1. Window-Specific Probes:**
+```python
+DIAGNOSTIC_PROBES = {
+    # Local coherence
+    'sentence_ordering': {
+        'task': 'order_shuffled_sentences',
+        'window_dependency': 'local',
+        'metric': 'accuracy',
+        'why': 'Tests local attention quality',
+    },
+    
+    # Global coherence
+    'discourse_coherence': {
+        'task': 'detect_coherent_document',
+        'window_dependency': 'global',
+        'metric': 'accuracy',
+        'why': 'Tests cross-window information flow',
+    },
+    
+    # Distance-based probing
+    'coreference_distance': {
+        'task': 'resolve_coreference',
+        'stratify_by': 'mention_distance',
+        'distances': [0-50, 50-100, 100-200, 200-500, 500+],
+        'metric': 'f1',
+        'why': 'Tests window size impact on long-distance dependencies',
+    },
+    
+    # Attention pattern analysis
+    'attention_coverage': {
+        'task': 'measure_attention_span',
+        'metrics': ['effective_window', 'attention_entropy', 'coverage'],
+        'why': 'Analyze actual vs. configured window usage',
+    },
+}
+```
+
+#### **2. Failure Mode Probes:**
+```python
+FAILURE_MODE_PROBES = {
+    # Long-range dependency failure
+    'long_range_dependency': {
+        'setup': 'Place key information at document start, question at end',
+        'lengths': [512, 1024, 2048, 4096],
+        'window_sizes': [64, 128, 256, 512],
+        'expected_failure': 'Small windows on long documents',
+    },
+    
+    # Context fragmentation
+    'entity_tracking': {
+        'setup': 'Track entity mentions across document',
+        'measure': 'mention_resolution_accuracy_vs_distance',
+        'expected_failure': 'Windows that split entity contexts',
+    },
+    
+    # Information bottleneck
+    'information_flow': {
+        'setup': 'Measure information propagation across levels',
+        'method': 'mutual_information_between_levels',
+        'expected_failure': 'Very small windows at lower levels',
+    },
+}
+```
+
+---
+
+### **C. Recommended Benchmark Suite**
+
+#### **Minimal Suite (Budget-Constrained):**
+```python
+MINIMAL_SUITE = [
+    'imdb',              # Standard benchmark
+    'hyperpartisan',     # Long documents
+    'hotpotqa',          # Multi-hop reasoning
+    'narrativeqa',       # Extreme length
+    'synthetic_length_probe',  # Controlled diagnostic
+]
+# Estimated compute: ~50 GPU hours for full ablation
+```
+
+#### **Standard Suite (Recommended):**
+```python
+STANDARD_SUITE = [
+    # Classification
+    'imdb', 'hyperpartisan', 'yelp',
+    
+    # QA
+    'hotpotqa', 'quoref', 'narrativeqa',
+    
+    # Summarization
+    'arxiv', 'cnn_dailymail',
+    
+    # Diagnostics
+    'synthetic_length_probe', 'coreference_distance',
+]
+# Estimated compute: ~200 GPU hours for full ablation
+```
+
+#### **Comprehensive Suite (Publication-Ready):**
+```python
+COMPREHENSIVE_SUITE = STANDARD_SUITE + [
+    # Additional tasks
+    'govreport', 'msmarco_doc', 'rst_discourse',
+    
+    # All diagnostic probes
+    'sentence_ordering', 'discourse_coherence', 
+    'long_range_dependency', 'entity_tracking',
+    
+    # Cross-domain generalization
+    'legal_documents', 'scientific_papers', 'books',
+]
+# Estimated compute: ~500 GPU hours for full ablation
+```
+
+---
+
+## **3. MINIMAL CODE CHANGES**
+
+### **A. Configuration-Based Implementation**
+
+#### **Step 1: Parameterize Window Sizes**
+```python
+# Original (hardcoded)
+class HierarchicalTransformer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.level1_attention = LocalAttention(window_size=128)
+        self.level2_attention = LocalAttention(window_size=256)
+        self.level3_attention = LocalAttention(window_size=512)
+
+# Modified (parameterized)
+class HierarchicalTransformer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        # Extract window sizes from config
+        window_sizes = config.get('window_sizes', {
+            'level_1': 128,
+            'level_2': 256,
+            'level_3': 512

@@ -1,0 +1,102 @@
+1. Problem framing and goals
+
+Context
+- Objective: Build, deploy, and validate low-power computer vision tools that volunteer divers can use to monitor coral reef health with standardized data capture and immediate on-device feedback, plus periodic server-side analysis for higher-fidelity metrics.
+- Constraints: Variable underwater visibility and lighting, limited diver training time, intermittent connectivity, battery limits, affordable hardware (smartphones/action cameras, small edge devices), and domain shift across sites and seasons.
+- Target indicators and outputs:
+  - Photo-quadrat benthic cover estimates: live hard coral, bleached coral, soft coral, macroalgae, turf, sand/rubble.
+  - Alerts for crown-of-thorns starfish (COTS) and other key threats.
+  - Simple 3D structure proxies (e.g., complexity/“rugosity” indices) from standard capture patterns.
+  - Field QA: exposure/blur checks, white-balance prompts, and geo/time metadata integrity.
+
+High-level approach
+- Two-tier pipeline:
+  1) On-device low-power inference and QA: mobile-friendly models (int8, small backbones) for triage, bleaching/coarse cover classification, and COTS detection.
+  2) Server/offline processing: batch semantic segmentation, photogrammetry (SfM) for 3D mosaics, and quality-controlled cover calculations; model updates and active learning loop.
+- Protocol alignment: Photo-quadrat and belt-transect capture aligned to established citizen-science methods; leverage CoralNet-style point annotation conventions for training/evaluation [3–4][limitation: add field protocol references via search “Reef Check survey methods pdf,” “GCRMN photo-quadrat protocol”].
+
+Measurable 6-month goals
+- Field-ready Android app and/or GoPro companion that:
+  - Runs on-device inference at ≥10 fps on mid-range phones with ≤1.5 W average incremental power draw; provides capture QA.
+  - Achieves benthic cover RMSE ≤10 percentage points on dominant classes vs expert/CoralNet-style point labels.
+  - Detects COTS with AP50 ≥0.6 on curated test dives; flag rate ≤1 per 5 minutes video at benign sites.
+  - Correctly flags bleaching (binary) with AUROC ≥0.85 on held-out sites.
+- Pilot with ≥30 volunteer dives across ≥3 regions; produce a public report with methods, data schema, and calibration guidance.
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment 1: On-device underwater image QA and color normalization
+- Hypothesis: Lightweight, on-device QA (blur, exposure, color cast) and simple color normalization increase downstream classification accuracy by ≥5 points.
+- Setup:
+  - Implement no-reference blur metric (variance of Laplacian) and exposure histogram checks; prompt diver to reframe if thresholds fail.
+  - Color normalization: gray-world/learned white balance with a simple underwater color chart (optional) captured once per dive.
+- Baselines: No QA; raw images.
+- Metrics: Downstream benthic cover accuracy/IoU; QA trigger rate; user compliance; latency and energy (Android Battery Historian).
+- Expected outcomes: +5–8 points macro F1 on benthic classes after QA+normalization; ≤100 ms per frame on-device.
+
+Experiment 2: Lightweight benthic cover classification from photo quadrats
+- Hypothesis: MobileNetV3/EfficientNet-Lite with int8 quantization (TFLite/ONNX Mobile) can achieve competitive cover estimates using CoralNet-style point annotations as supervision.
+- Setup:
+  - Data: CoralNet sources and public project subsets for canonical benthic labels; leverage automated annotation engines where available [3–4]. Use point-sampling to train a classifier; aggregate to cover estimates.
+  - Models: MobileNetV3-small and EfficientNet-Lite0, int8; optional distillation from a larger segmentation model.
+- Baselines: Centralized, non-quantized ResNet-50 classifier; naive color histogram rule-based classifier.
+- Metrics: Mean absolute error (MAE) and RMSE of percent cover (per class and overall); macro F1 for coarse categories; on-device fps and energy/frame; memory footprint.
+- Expected outcomes: Overall cover RMSE ≤10 pp; on-device ≥10 fps on mid-range Android; model size ≤8 MB.
+
+Evidence: CoralNet provides large-scale annotated imagery and automated annotation workflows suitable for training/validation [3–4]. Note limitation: We did not retrieve a single “standard” benthic cover benchmark; consolidate across CoralNet projects and document label mappings.
+
+Experiment 3: Bleaching detection (binary and graded)
+- Hypothesis: Training on public bleaching datasets with coastal region diversity yields robust binary bleaching detection that generalizes across sites.
+- Setup:
+  - Data: NOAA-PIFSC ESD Coral Bleaching image dataset (healthy vs bleached) as initial source [2]; augment with site-holdout splits to assess generalization.
+  - Models: MobileNetV3/EfficientNet-Lite, int8; optional shallow segmentation (Fast-SCNN-mobile) for spatial sensitivity.
+- Baselines: Color-threshold heuristic on the a* channel (CIELAB); non-quantized CNN.
+- Metrics: AUROC, AUPRC, balanced accuracy; calibration (ECE); site-holdout performance gap; latency/energy.
+- Expected outcomes: AUROC ≥0.85; ≤2% absolute drop from float to int8; good calibration with temperature scaling.
+- Limitation: Single-source bias. Plan data search/collection via “coral bleaching image dataset NOAA PIFSC,” “AIMS bleaching survey images,” and request partner contributions.
+
+Experiment 4: Crown-of-thorns starfish (COTS) detection
+- Hypothesis: A nano-scale object detector (YOLOv5n/YOLOv8n) will detect COTS with acceptable precision/recall under varied visibility when trained on dedicated datasets and augmented with underwater enhancements.
+- Setup:
+  - Data: CSIRO Crown-of-Thorns Starfish dataset [2]; additional curated clips from local surveys.
+  - Models: YOLOv8n/NCNN or TFLite int8; optional lightweight enhancements (CLAHE dehazing).
+- Baselines: Larger YOLOv5s/YOLOv8s float; simple template matching (negative control).
+- Metrics: AP50/AP50-95, recall at fixed precision 0.9, false alert rate per hour; on-device fps and thermals.
+- Expected outcomes: AP50 ≥0.6 on site-holdout; ≥15 fps on recent Android; stability over 20-min recording sessions.
+- Evidence: Dedicated COTS datasets exist and underwater lightweight YOLO variants show strong performance on small, blurred underwater targets [underwater small-object: 1–3].
+
+Experiment 5: 3D structural complexity proxy
+- Hypothesis: A simple capture pattern (short sweep with 60–80% overlap) enables reliable offline photogrammetry (SfM/MVS) mosaics, and on-device single-image proxies correlate with SfM-derived complexity (r ≥ 0.6).
+- Setup:
+  - Protocol: 30–60 s video sweep per quadrat/patch; mark scale with a ruler/marker.
+  - Offline: SfM/MVS (COLMAP/Metashape) to derive 2.5D surfaces; compute complexity indices (e.g., fractal dimension, surface area ratio).
+  - On-device proxy: CNN regressor (MobileNet) trained to predict complexity index from single frames.
+  - Data: Sites with periodic revisits; TagLab-annotated mosaics for validation when available [3].
+- Baselines: Line-intercept rugosity estimate; naive texture metrics (local variance).
+- Metrics: Pearson/Spearman correlation between proxy and SfM complexity; repeatability across dives; added capture time burden.
+- Expected outcomes: r ≥ 0.6; acceptable variance across visibility conditions with color normalization.
+- Limitation: We could not retrieve a canonical rugosity+SfM reef paper here. Plan to source via “reef photogrammetry rugosity TagLab SfM,” “MCR LTER photomosaic coral complexity.”
+
+Experiment 6: Field pilot with volunteer divers (3 regions)
+- Hypothesis: With minimal training and in-app guidance, volunteers can collect standardized data that achieve target accuracy while maintaining battery and session stability.
+- Setup:
+  - Sites: ≥3 regions (clear-water vs turbid); 10+ dives/site.
+  - Hardware: Mid-range Android phones with housings, GoPro-like cameras; optional Edge TPU USB for embedded kits.
+  - Procedure: Training briefing, in-app tutorial, 5–10 photo quadrats per transect, COTS scan segments, short 3D sweep; nightly upload when connectivity available.
+- Baselines: Expert-led surveys using existing workflows; app-off (capture-only) condition.
+- Metrics: Task completion rate, per-dive battery consumption, latency/fps, user-reported usability (SUS), data completeness; accuracy metrics from Exps 2–4 vs expert labels.
+- Expected outcomes: ≥80% task completion; <25% battery drain per 60-min session; meeting accuracy targets; actionable UX feedback to iterate.
+
+Experiment 7: Robustness and domain shift
+- Hypothesis: Simple per-dive normalization + test-time augmentation and small site-specific adapters reduce site gap by ≥30%.
+- Setup:
+  - Methods: Per-dive color histogram matching; test-time augmentation (TTA); low-rank adapters or last-layer retraining with ≤200 labeled points/site.
+- Baselines: No adaptation.
+- Metrics: Site-holdout accuracy deltas; calibration drift; computational overhead on-device.
+- Expected outcomes: Significant reduction in generalization gap with ≤5% latency overhead.
+
+Selected evidence
+- CoralNet automated annotation platform and deep learning engine; large-scale annotated reef imagery [3–4].
+- Crown-of-thorns datasets and detection literature; lightweight YOLO variants for underwater small-object detection [COTS: 2; lightweight underwater: 1–3].
+- Public bleaching dataset candidate (NOAA-PIFSC

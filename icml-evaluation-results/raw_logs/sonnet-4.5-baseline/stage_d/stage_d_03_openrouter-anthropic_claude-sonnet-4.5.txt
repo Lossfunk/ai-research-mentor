@@ -1,0 +1,458 @@
+I'll provide a comprehensive framework for extending Hierarchical Transformer evaluation with efficiency metrics. This is designed to be adaptable to your specific paper once you share it.
+
+---
+
+# **Efficiency-Extended Evaluation Framework for Hierarchical Transformers**
+
+## **1. EFFICIENCY METRICS SPECIFICATION**
+
+### **A. Latency Metrics**
+
+#### **Inference Latency:**
+```python
+# Measurement protocol
+import time
+import torch
+
+def measure_latency(model, input_batch, warmup=10, iterations=100):
+    """
+    Measure inference latency with proper warmup
+    """
+    model.eval()
+    device = next(model.parameters()).device
+    
+    # Warmup (GPU kernel initialization)
+    with torch.no_grad():
+        for _ in range(warmup):
+            _ = model(input_batch)
+    
+    # Synchronize GPU
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+    
+    # Actual measurement
+    latencies = []
+    with torch.no_grad():
+        for _ in range(iterations):
+            start = time.perf_counter()
+            _ = model(input_batch)
+            if device.type == 'cuda':
+                torch.cuda.synchronize()
+            end = time.perf_counter()
+            latencies.append((end - start) * 1000)  # ms
+    
+    return {
+        'mean_latency_ms': np.mean(latencies),
+        'std_latency_ms': np.std(latencies),
+        'median_latency_ms': np.median(latencies),
+        'p95_latency_ms': np.percentile(latencies, 95),
+        'p99_latency_ms': np.percentile(latencies, 99),
+    }
+```
+
+#### **Metrics to Report:**
+1. **Per-sample latency** (ms/sample)
+   - Mean, median, std, p95, p99
+2. **Per-token latency** (ms/token)
+   - Normalize by sequence length
+3. **Batch latency** (ms/batch)
+   - For different batch sizes: 1, 8, 16, 32, 64
+4. **Component-wise latency**:
+   - Embedding layer
+   - Each hierarchical level
+   - Pooling operations
+   - Classification head
+
+#### **Stratification:**
+- By document length: <256, 256-512, 512-1024, 1024-2048, >2048 tokens
+- By hierarchical depth: 2-level, 3-level, 4-level structures
+- By batch size: Single vs. batched inference
+
+---
+
+### **B. Memory Metrics**
+
+#### **GPU Memory:**
+```python
+def measure_memory(model, input_batch, track_gradients=False):
+    """
+    Measure GPU memory consumption
+    """
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    
+    # Baseline memory
+    baseline = torch.cuda.memory_allocated()
+    
+    # Forward pass
+    if track_gradients:
+        output = model(input_batch)
+        loss = output.loss if hasattr(output, 'loss') else output.mean()
+    else:
+        with torch.no_grad():
+            output = model(input_batch)
+    
+    forward_mem = torch.cuda.memory_allocated()
+    peak_mem = torch.cuda.max_memory_allocated()
+    
+    # Backward pass (if training)
+    if track_gradients:
+        loss.backward()
+        backward_mem = torch.cuda.max_memory_allocated()
+    else:
+        backward_mem = None
+    
+    return {
+        'baseline_mb': baseline / 1024**2,
+        'forward_mb': forward_mem / 1024**2,
+        'peak_mb': peak_mem / 1024**2,
+        'backward_mb': backward_mem / 1024**2 if backward_mem else None,
+        'model_params_mb': sum(p.numel() * p.element_size() 
+                               for p in model.parameters()) / 1024**2,
+    }
+```
+
+#### **Metrics to Report:**
+1. **Model memory**:
+   - Parameter count (millions)
+   - Model size (MB)
+   - Optimizer state size (MB)
+2. **Activation memory**:
+   - Peak activation memory
+   - Per-layer activation size
+   - Gradient memory (training)
+3. **Total memory**:
+   - Inference: Model + activations
+   - Training: Model + activations + gradients + optimizer
+4. **Memory scaling**:
+   - vs. sequence length
+   - vs. batch size
+   - vs. hierarchical levels
+
+---
+
+### **C. Throughput Metrics**
+
+```python
+def measure_throughput(model, dataloader, duration_seconds=60):
+    """
+    Measure sustained throughput
+    """
+    model.eval()
+    device = next(model.parameters()).device
+    
+    total_samples = 0
+    total_tokens = 0
+    start_time = time.time()
+    
+    with torch.no_grad():
+        for batch in dataloader:
+            if time.time() - start_time > duration_seconds:
+                break
+            
+            batch = {k: v.to(device) for k, v in batch.items()}
+            _ = model(**batch)
+            
+            total_samples += batch['input_ids'].size(0)
+            total_tokens += batch['input_ids'].numel()
+    
+    elapsed = time.time() - start_time
+    
+    return {
+        'samples_per_second': total_samples / elapsed,
+        'tokens_per_second': total_tokens / elapsed,
+        'batches_per_second': total_samples / (elapsed * batch_size),
+    }
+```
+
+#### **Metrics to Report:**
+1. **Training throughput**:
+   - Samples/second
+   - Tokens/second
+   - Steps/second
+2. **Inference throughput**:
+   - Queries/second (QPS)
+   - Tokens/second
+3. **GPU utilization**:
+   - % GPU compute utilization
+   - % Memory bandwidth utilization
+4. **Scaling efficiency**:
+   - Multi-GPU speedup
+   - Batch size scaling
+
+---
+
+### **D. Computational Cost Metrics**
+
+```python
+from fvcore.nn import FlopCountAnalysis, parameter_count
+
+def measure_flops(model, input_sample):
+    """
+    Measure FLOPs and parameter count
+    """
+    flops = FlopCountAnalysis(model, input_sample)
+    
+    return {
+        'total_flops': flops.total(),
+        'flops_by_module': flops.by_module(),
+        'total_params': parameter_count(model)[''],
+        'trainable_params': sum(p.numel() for p in model.parameters() 
+                               if p.requires_grad),
+    }
+```
+
+#### **Metrics to Report:**
+1. **FLOPs**:
+   - Total FLOPs per forward pass
+   - FLOPs per token
+   - FLOPs breakdown by component
+2. **Parameter efficiency**:
+   - Total parameters
+   - Trainable parameters
+   - Parameter sharing ratio
+3. **Arithmetic intensity**:
+   - FLOPs / memory access ratio
+4. **Energy consumption** (if available):
+   - Joules per inference
+   - Watts during training
+
+---
+
+## **2. PRESERVING COMPARABILITY**
+
+### **A. Hardware Standardization**
+
+#### **Reference Configuration:**
+```yaml
+hardware_spec:
+  gpu: "NVIDIA A100 40GB" or "V100 32GB"  # Specify exact model
+  cpu: "Intel Xeon"  # Specify model
+  ram: "128GB"
+  cuda_version: "11.8"
+  pytorch_version: "2.0.1"
+  gpu_driver: "525.85.12"
+  
+measurement_settings:
+  gpu_frequency: "locked"  # Prevent dynamic clocking
+  power_mode: "maximum_performance"
+  cpu_governor: "performance"
+  precision: "fp32"  # or fp16, bf16
+```
+
+#### **Comparability Requirements:**
+1. **Same hardware** for all measurements
+2. **Locked GPU clocks** (prevent thermal throttling)
+3. **Single GPU** (avoid multi-GPU variability)
+4. **Isolated runs** (no concurrent processes)
+5. **Same CUDA/cuDNN versions**
+6. **Same precision** (FP32 vs FP16/BF16)
+
+---
+
+### **B. Measurement Protocol**
+
+#### **Standardized Procedure:**
+```python
+class EfficiencyBenchmark:
+    def __init__(self, model, test_data, device='cuda'):
+        self.model = model.to(device)
+        self.test_data = test_data
+        self.device = device
+        
+    def run_benchmark(self, num_runs=5):
+        """
+        Run complete efficiency benchmark with multiple runs
+        """
+        results = []
+        
+        for run_id in range(num_runs):
+            # Set deterministic seed
+            torch.manual_seed(42 + run_id)
+            
+            # Clear cache
+            torch.cuda.empty_cache()
+            
+            # Measure each metric
+            run_results = {
+                'run_id': run_id,
+                'latency': self.measure_latency(),
+                'memory': self.measure_memory(),
+                'throughput': self.measure_throughput(),
+                'flops': self.measure_flops(),
+            }
+            results.append(run_results)
+            
+            # Cool-down period
+            time.sleep(5)
+        
+        return self.aggregate_results(results)
+```
+
+#### **Key Controls:**
+1. **Warmup runs**: 10-50 iterations before measurement
+2. **Multiple runs**: 3-5 independent measurements
+3. **Cool-down**: 5-10 seconds between runs
+4. **Cache clearing**: Between measurements
+5. **Deterministic operations**: Fix random seeds
+6. **Synchronization**: Proper CUDA synchronization
+
+---
+
+### **C. Baseline Preservation**
+
+#### **Original Results Replication:**
+```python
+# Step 1: Reproduce original accuracy results
+original_config = load_original_config()
+model = load_pretrained_model(original_config)
+
+# Use exact same:
+# - Data splits
+# - Preprocessing
+# - Evaluation protocol
+# - Random seeds
+
+accuracy_results = evaluate_accuracy(model, test_data)
+assert abs(accuracy_results - REPORTED_ACCURACY) < 0.5  # Within 0.5%
+
+# Step 2: Add efficiency measurements
+efficiency_results = evaluate_efficiency(model, test_data)
+
+# Step 3: Report both together
+combined_results = {
+    'accuracy': accuracy_results,
+    'efficiency': efficiency_results,
+}
+```
+
+#### **Validation Checks:**
+1. **Accuracy reproduction**: Match original ±0.5%
+2. **Same test set**: Exact same samples, order
+3. **Same preprocessing**: Tokenization, padding, etc.
+4. **Same model weights**: Load from original checkpoint
+5. **Same inference mode**: eval(), no_grad()
+
+---
+
+## **3. ANALYSIS PLAN: ACCURACY-EFFICIENCY TRADE-OFFS**
+
+### **A. Pareto Frontier Analysis**
+
+#### **Multi-Objective Optimization:**
+```python
+import numpy as np
+from scipy.spatial import ConvexHull
+
+def compute_pareto_frontier(models_results):
+    """
+    Identify Pareto-optimal models
+    
+    Args:
+        models_results: List of dicts with 'accuracy' and 'latency'
+    """
+    # Extract objectives (maximize accuracy, minimize latency)
+    accuracy = np.array([r['accuracy'] for r in models_results])
+    latency = np.array([r['latency'] for r in models_results])
+    
+    # Pareto dominance: A dominates B if A is better in all objectives
+    is_pareto = np.ones(len(accuracy), dtype=bool)
+    
+    for i in range(len(accuracy)):
+        for j in range(len(accuracy)):
+            if i != j:
+                # j dominates i if j has higher accuracy AND lower latency
+                if accuracy[j] >= accuracy[i] and latency[j] <= latency[i]:
+                    if accuracy[j] > accuracy[i] or latency[j] < latency[i]:
+                        is_pareto[i] = False
+                        break
+    
+    return {
+        'pareto_models': [models_results[i] for i in range(len(accuracy)) 
+                         if is_pareto[i]],
+        'pareto_indices': np.where(is_pareto)[0],
+        'dominated_models': [models_results[i] for i in range(len(accuracy)) 
+                            if not is_pareto[i]],
+    }
+```
+
+#### **Visualization:**
+```python
+import matplotlib.pyplot as plt
+
+def plot_pareto_frontier(results, x_metric='latency_ms', y_metric='accuracy'):
+    """
+    Plot accuracy vs efficiency with Pareto frontier
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x = [r[x_metric] for r in results]
+    y = [r[y_metric] for r in results]
+    labels = [r['model_name'] for r in results]
+    
+    # Plot all models
+    ax.scatter(x, y, s=100, alpha=0.6)
+    
+    # Highlight Pareto-optimal models
+    pareto_results = compute_pareto_frontier(results)
+    pareto_x = [r[x_metric] for r in pareto_results['pareto_models']]
+    pareto_y = [r[y_metric] for r in pareto_results['pareto_models']]
+    
+    ax.scatter(pareto_x, pareto_y, s=150, c='red', marker='*', 
+               label='Pareto Optimal', zorder=5)
+    
+    # Draw Pareto frontier
+    sorted_pareto = sorted(zip(pareto_x, pareto_y))
+    ax.plot([p[0] for p in sorted_pareto], [p[1] for p in sorted_pareto], 
+            'r--', alpha=0.5, linewidth=2)
+    
+    # Annotate models
+    for i, label in enumerate(labels):
+        ax.annotate(label, (x[i], y[i]), fontsize=8)
+    
+    ax.set_xlabel(f'{x_metric} (lower is better)')
+    ax.set_ylabel(f'{y_metric} (higher is better)')
+    ax.set_title('Accuracy-Efficiency Trade-off')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    return fig
+```
+
+---
+
+### **B. Statistical Separation Tests**
+
+#### **1. Multivariate Analysis:**
+
+```python
+from scipy.stats import mannwhitneyu, wilcoxon
+from sklearn.preprocessing import StandardScaler
+
+def test_statistical_separation(model_a_runs, model_b_runs):
+    """
+    Test if two models are statistically different in accuracy-efficiency space
+    
+    Args:
+        model_a_runs: List of dicts with accuracy and efficiency metrics
+        model_b_runs: List of dicts with accuracy and efficiency metrics
+    """
+    # Extract metrics
+    a_accuracy = [r['accuracy'] for r in model_a_runs]
+    a_latency = [r['latency'] for r in model_a_runs]
+    b_accuracy = [r['accuracy'] for r in model_b_runs]
+    b_latency = [r['latency'] for r in model_b_runs]
+    
+    # Test 1: Univariate tests
+    acc_test = mannwhitneyu(a_accuracy, b_accuracy, alternative='two-sided')
+    lat_test = mannwhitneyu(a_latency, b_latency, alternative='two-sided')
+    
+    # Test 2: Hotelling's T² (multivariate t-test)
+    from scipy.stats import f as f_dist
+    
+    # Combine into multivariate samples
+    X_a = np.column_stack([a_accuracy, a_latency])
+    X_b = np.column_stack([b_accuracy, b_latency])
+    
+    n_a, n_b = len(a_accuracy), len(b_accuracy)
+    p = 2  #

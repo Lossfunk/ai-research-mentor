@@ -1,0 +1,72 @@
+This user study is designed to measure **Interpretability Alignment**: the degree to which the Hierarchical Transformer’s internal attention mechanism (specifically the Level 2 Chunk Aggregator) corresponds to human intuition about document structure and salience.
+
+### 1. Study Objective
+To reject the null hypothesis ($H_0$) that **"The model's distribution of attention over document chunks is statistically unrelated to human-annotated evidence regions."**
+
+### 2. Experimental Design
+We will use a **Within-Subjects Design** where participants annotate documents for salience, and these annotations are compared against the model's attention weights.
+
+*   **Dataset:** A subset of 50 documents from the Test Set (e.g., IMDb or Legal decisions).
+    *   *Constraint:* Documents must be between 1,000 and 2,000 words (approx. 5-10 chunks) to be manageable for reading in a single sitting.
+*   **Participants:** $N=30$ participants.
+    *   *Qualification:* Native English speakers. If the domain is specialized (e.g., Legal), participants must be law students or professionals (Expert Review).
+    *   *Workload:* Each participant annotates 5 documents. Each document is annotated by 3 distinct participants to ensure Inter-Rater Reliability (IRR).
+
+### 3. Instruments & Task
+
+**The Interface: "The Highlighter Game"**
+We present the user with the document pre-segmented into the same chunks used by the model (e.g., paragraphs or 200-token windows).
+
+**Task 1: Evidence Selection (Binary Alignment)**
+> *"You are classifying this document as [Positive/Negative]. Please click on the 3 chunks that provided the strongest evidence for this decision."*
+*   *Output:* A binary vector $H_{user} \in \{0, 1\}^K$ (where $K$ is the number of chunks).
+
+**Task 2: Structural Labeling (Hierarchical Alignment)**
+> *"Label the role of the chunks you selected."*
+*   *Options:* [Introduction, Key Argument/Evidence, Counter-Argument, Conclusion/Summary].
+*   *Purpose:* To test if the model creates distinct attention patterns for different discourse roles (e.g., does it learn to attend to the "Conclusion" automatically?).
+
+**Task 3: Model Evaluation (Subjective Trust)**
+> *Show the user the Model's Attention Heatmap over the text.*
+> *"On a scale of 1-5, how well does this heatmap represent the important parts of the text?"*
+
+### 4. Metrics
+
+To quantify the alignment, we compare the Model's Attention Vector $A_{model}$ (continuous, sums to 1) against the Human Selection Vector $H_{user}$ (binary).
+
+**A. Attention Mass on Evidence ($M_{ev}$)**
+The total probability mass the model assigns to chunks selected by humans.
+$$M_{ev} = \sum_{i=1}^{K} (A_{model}^{(i)} \times H_{user}^{(i)})$$
+*   *Baseline:* Random attention would yield $M_{ev} \approx \frac{3}{K}$. We expect the model to be significantly higher.
+
+**B. Rank-Biserial Correlation ($r_{rb}$)**
+Measures the correlation between the binary variable (Human Selection) and the continuous variable (Model Attention).
+*   *Range:* -1 to +1. High positive values indicate the model assigns higher weights to human-selected chunks.
+
+**C. Discourse Role Attention**
+Average attention weight per structural label.
+*   *Hypothesis:* In legal docs, $Mean(A_{Conclusion}) > Mean(A_{Intro})$.
+
+### 5. Analysis Plan
+
+**Step 1: Inter-Rater Reliability Check**
+Before analyzing the model, validate the humans. Calculate **Fleiss’ Kappa** on the chunk selections.
+*   *Threshold:* If $\kappa < 0.4$, the document is too ambiguous, and human ground truth is unreliable. Exclude these documents.
+
+**Step 2: Statistical Significance (The Alignment Test)**
+*   **Test:** **Permutation Test**.
+*   **Procedure:**
+    1.  Calculate the actual Rank-Biserial Correlation ($r_{actual}$) between Model Attention and Human selections.
+    2.  Shuffle the Model Attention vector randomly 10,000 times.
+    3.  Calculate the correlation ($r_{random}$) for each shuffle.
+*   **Result:** If $r_{actual}$ falls outside the 95th percentile of the $r_{random}$ distribution ($p < 0.05$), the model has learned a statistically significant human-aligned structure.
+
+**Step 3: The "Hierarchical Value" Analysis**
+Compare the alignment of the **Hierarchical Model** against a **Flat Baseline** (e.g., Longformer or TF-IDF).
+*   **Test:** Paired t-test on the $M_{ev}$ (Attention Mass) scores.
+*   **Hypothesis:** The Hierarchical model concentrates more mass on human-selected evidence than the Flat model, proving that the hierarchy creates better interpretability.
+
+### 6. Failure Modes & Limitations
+*   **The "Attention $\neq$ Explanation" Fallacy:** Explicitly state in the analysis that alignment shows *correlation*, not necessarily causal reasoning.
+*   **Length Bias:** Humans tend to select the first and last chunks (Primacy/Recency effect). If the model also attends to the start/end (common in BERT), alignment might be coincidental.
+    *   *Control:* Normalize attention scores by position before calculating correlation to control for positional bias.

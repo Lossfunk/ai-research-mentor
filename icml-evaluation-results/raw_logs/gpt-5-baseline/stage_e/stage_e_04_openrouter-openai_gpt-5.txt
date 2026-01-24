@@ -1,0 +1,89 @@
+Below are targeted ablations and error analyses that reviewers will likely expect for the acceptance classification task, with emphasis on hand-engineered features. Each item states what to remove/compare, what it probes, and what to report.
+
+Feature-group ablations (to quantify spurious vs substantive signal)
+- Group-wise drop tests
+  - Remove one group at a time: length/page/word counts, reference counts, readability indices, section/header features, math/figure/table counts, lexical n-grams (title/abstract vs full), citation-derived signals, and any style/template cues.
+  - Report ΔAUC/ΔF1 with 95% CIs; rank groups by marginal contribution.
+- Additive value over text encoders
+  - Compare: (i) hand-engineered only, (ii) text-only (bag-of-words or transformer on title+abstract/full), (iii) combined.
+  - Report whether hand features add complementary signal and if gains persist under cross-year/venue tests.
+- Abstract-only vs full-text features
+  - Train/evaluate using only title+abstract features vs full-text features.
+  - Shows reliance on easy abstract cues vs deeper content/structure.
+
+Leakage and temporal controls (to rule out post-acceptance hints)
+- Version freeze
+  - Use arXiv v1 posted before notification; re-run after stripping later versions.
+  - Report performance delta; large drops indicate leakage.
+- Strip venue-status strings and template artifacts
+  - Remove lines like “to appear in X,” proceedings boilerplate, and template footers.
+  - Show ΔAUC/ΔF1; confirm negligible reliance on such cues.
+- Citation-time censoring
+  - Remove citation-based features or censor citations to pre-notification windows.
+  - Report impact; strong dependence suggests leakage.
+
+Spurious proxy and confounding checks
+- Negative-control models
+  - Train using only trivial proxies (page length, #references, #authors, figure/table/equation counts).
+  - Your full model should clearly beat this; report the margin.
+- Venue/year fixed effects and page-limit normalization
+  - Z-score length-like features within venue-year; or include fixed effects and re-evaluate.
+  - Demonstrates that gains aren’t due to venue-specific page limits or formatting.
+- Topic-controlled evaluation
+  - Match accepted/rejected papers on topic distributions (topic bins or nearest-neighbor on embeddings) and re-evaluate.
+  - Attenuation in performance quantifies topic confounding.
+
+Parsing-quality sensitivity (to avoid measurement artifacts)
+- Parse quality stratification
+  - Compute parse coverage (percent text recovered, section detection). Compare performance on high- vs low-quality parses.
+  - Re-run after excluding low-quality parses; report stability.
+
+Deduplication and dependence
+- Near-duplicate audit
+  - Use MinHash/embedding similarity to cluster near-duplicates across versions/venues/years; keep one per cluster.
+  - Re-run models; report any performance drop to rule out memorization.
+
+Counterfactual stress tests (feature dependence under controlled edits)
+- Length/refs counterfactuals
+  - Create counterfactual inputs by truncating body text or normalizing reference lists while keeping content constant; measure score shifts.
+- Section/header perturbations
+  - Shuffle or mask section headers; ablate introduction-only vs body-only to locate where signal resides.
+- Content shuffling baseline
+  - Shuffle sentences within sections (preserve length); if performance stays high, model relies on non-semantic cues.
+
+Feature attribution and stability
+- Global importance and stability
+  - Report permutation importance or SHAP for hand features; show stability across folds/years/venues.
+- Partial dependence and monotonicity
+  - Plot acceptance probability vs feature (e.g., length, #refs) with CIs; check for implausible or non-monotonic effects.
+- Correlation with confounders
+  - Show correlations among hand features and with topic/venue to flag proxies.
+
+Error slicing and calibration
+- High-confidence error audit
+  - Manually inspect a stratified sample of top-confidence false positives/negatives; categorize error modes (topic shift, novelty cues missing, formatting proxies).
+- Performance by slices
+  - Report metrics by year, venue, topic, document length quintiles, and parse quality; include confidence intervals.
+- Calibration curves
+  - Reliability diagrams and ECE; recalibrate if needed (Platt/temperature scaling) and report before/after.
+
+Cross-domain generalization
+- Train-test across time/venue
+  - Train on venue-year A, test on B; compare text-only vs hand-feature-only vs combined.
+  - Robust features should degrade less out of domain.
+
+Sanity checks
+- Label randomization
+  - Train on randomly permuted labels; verify near-chance performance.
+- Feature randomization
+  - Randomize values within each feature distribution while preserving marginals; confirm collapse to chance.
+
+What to report succinctly
+- A bar chart of ΔAUC (with CIs) for each drop-one feature group.
+- Negative-control baseline performance and the margin to the full model.
+- Cross-year/venue generalization table showing which feature sets transfer.
+- Calibration plots and ECE before/after calibration.
+- An error taxonomy from high-confidence mistakes with example counts.
+- A brief leakage audit (v1-only, string stripping, citation censoring) with effect sizes.
+
+These ablations and analyses directly address the most common reviewer concerns: reliance on superficial or leaking features, lack of robustness across domains, confounding by venue/topic/format, and opaque contributions of hand-engineered features. Implementing them will make the acceptance classification results more credible and interpretable.

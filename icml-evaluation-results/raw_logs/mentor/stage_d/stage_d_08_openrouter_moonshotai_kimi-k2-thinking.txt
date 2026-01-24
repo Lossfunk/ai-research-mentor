@@ -1,0 +1,45 @@
+<thinking>
+Experienced user. Need architectural/training redesign, zero-shot, comparability argument. Key risk: removing hierarchy-specific pretraining likely kills gains; need honest framing. Provide one clear variant, not many. 
+</thinking>
+
+**Blunt assessment:** A truly zero‑shot hierarchical model—no hierarchy‑specific pretraining—will almost certainly lose absolute performance. The only defensible goal is to test whether *hierarchical inference alone* (not learned hierarchy) buys you anything. Frame it that way, or reviewers will say this is a strawman.
+
+Here’s a variant that’s clean and comparable.
+
+---
+
+## Zero‑shot variant: inference‑only hierarchy
+**Core idea:** train a *flat* transformer exactly as in the original baseline, then impose hierarchy **only at inference time**.
+
+**Training configuration**
+- Train a standard flat transformer with the *same tokenizer, sequence length, loss, optimizer, and steps* as the original.
+- No hierarchical blocks, no token sparsification, no multi‑level objectives.
+- Match parameter count to the hierarchical model’s *effective* capacity (pad or shrink as needed).
+
+**Inference-time hierarchy**
+- At evaluation, partition tokens into fixed groups (same temporal spans as the original hierarchy).
+- Construct higher-level “summary tokens” via deterministic pooling (mean or attention-free linear projection).
+- Feed both base tokens and summary tokens into a modified forward pass with masked attention enforcing hierarchy.
+- No parameters are learned for this hierarchy; it is purely structural.
+
+This guarantees **zero hierarchy-specific pretraining**.
+
+---
+
+## Why metrics remain comparable
+- Same trained weights, same dataset, same rollout horizon.
+- Only difference is the *evaluation graph*, not the learned function.
+- Report results at **matched FLOPs and context length**; this is critical.
+
+Accuracy differences now isolate whether hierarchical *structure* helps at inference, independent of representation learning.
+
+---
+
+## What to expect (and how to justify it)
+- Absolute performance will drop relative to the original hierarchical model.
+- If efficiency improves with modest accuracy loss, that’s a meaningful trade-off.
+- If accuracy collapses, that’s evidence hierarchy must be *learned*, not imposed.
+
+Be explicit: this is a **diagnostic control**, not a competitor. That honesty is what will make the result publishable rather than dismissible.
+
+If you want, I can help you write the exact “Motivation” paragraph so reviewers don’t misinterpret the intent.

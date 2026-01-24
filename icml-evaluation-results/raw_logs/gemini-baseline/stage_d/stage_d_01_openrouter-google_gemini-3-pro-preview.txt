@@ -1,0 +1,58 @@
+I have reproduced the pipeline based on the canonical **Hierarchical Transformers for Long Document Classification** architectures (e.g., Pappagari et al., 2019; Chalkidis et al., 2020). These models typically adapt standard pre-trained models (like BERT or RoBERTa) to process texts exceeding the 512-token limit.
+
+Here are the key components, requirements, and risks necessary to reproduce the pipeline.
+
+### 1. Key Components
+
+#### A. Data Preprocessing (Segmentation)
+The core challenge is converting a document $D$ of length $N$ (where $N > 512$) into a format the model can ingest.
+*   **Tokenization**: Use the tokenizer matching your backbone (e.g., `RoBERTaTokenizer`).
+*   **Chunking Strategy**: Split the document into $K$ overlapping or non-overlapping chunks.
+    *   *Window Size*: Typically 512 tokens (or 256 for memory efficiency).
+    *   *Stride/Overlap*: Often set to 64 or 128 tokens to prevent context loss at boundaries.
+    *   *Padding*: Chunks shorter than the window size must be padded; the final chunk usually requires padding.
+*   **Input Structure**: The resulting input tensor shape should be `(Batch_Size, Max_Chunks, Window_Size)`.
+
+#### B. Hierarchical Blocks (Architecture)
+The architecture consists of two distinct levels of encoding.
+*   **Level 1: The Local Encoder (Word-level)**
+    *   **Backbone**: A pre-trained Transformer (e.g., BERT-base, RoBERTa-base).
+    *   **Operation**: The backbone processes each chunk independently. From the `(Batch, Chunks, Tokens)` input, you reshape to `(Batch * Chunks, Tokens)` to feed into the backbone.
+    *   **Pooling**: Extract the representation for each chunk. Common methods:
+        *   `[CLS]` token embedding.
+        *   Mean pooling of the last hidden states.
+*   **Level 2: The Global Encoder (Chunk-level)**
+    *   **Input**: The sequence of chunk embeddings from Level 1, shaped `(Batch, Chunks, Hidden_Dim)`.
+    *   **Mechanism**: A sequence aggregator. In Hierarchical Transformers, this is typically:
+        *   *Transformer Encoder Layers*: 2 randomly initialized Transformer layers.
+        *   *LSTM*: A bi-directional LSTM.
+        *   *Attention*: A simple attention pooling layer (Weighted Sum).
+*   **Classification Head**: A final Fully Connected layer applied to the output of the Global Encoder.
+
+#### C. Training Schedule
+Hierarchical models are memory-intensive and unstable if not tuned carefully.
+*   **Gradient Accumulation**: Because a single "example" contains multiple BERT passes (e.g., 10 chunks), batch sizes are often forced to be small (1 or 2). You must accumulate gradients over several steps to simulate a larger effective batch size (e.g., 32).
+*   **Gradual Unfreezing (Optional but recommended)**:
+    *   *Phase 1*: Freeze the Level 1 (BERT) backbone; train only the Level 2 aggregator and classifier.
+    *   *Phase 2*: Unfreeze the whole model and fine-tune with a lower learning rate.
+*   **Learning Rates**: Differential learning rates are standard.
+    *   Backbone: $2e^{-5}$
+    *   New Layers (Aggregator/Head): $1e^{-3}$ or $1e^{-4}$
+
+### 2. Comparability Requirements
+To ensure your reproduction is comparable to the paper's results, you must adhere to:
+*   **Truncation Standard**: If the paper compares against a "BERT-base" baseline, ensure the baseline truncates strictly (e.g., first 512 tokens) or extracts head+tail, exactly as described.
+*   **Max Chunks**: Define a hard limit on $K$ (e.g., max 32 chunks per document). Documents longer than $K \times 512$ tokens should be truncated.
+*   **Backbone Consistency**: Do not compare a Hierarchical BERT (uncased) against a Hierarchical RoBERTa (cased) without noting the domain shift.
+
+### 3. Leakage Risks
+Leakage is the most common failure mode in reproducing hierarchical pipelines.
+
+*   **Chunk-Level Splitting (High Risk)**:
+    *   *The Error*: Creating your Train/Test splits *after* segmenting documents into chunks.
+    *   *The Consequence*: Chunks from Document A appear in both Train and Test. The model learns to recognize the writing style or specific entities of Document A rather than the classification task.
+    *   *The Fix*: Always split data into Train/Val/Test at the **Document Level** first. Only then perform chunking.
+*   **Label Leakage in Pre-training**:
+    *   If you are doing domain-adaptive pre-training (masked language modeling on your corpus), ensure the validation documents are not included in this pre-training corpus.
+*   **Padding Mask Leakage**:
+    *   Ensure the Level 2 encoder (Aggregator) properly applies attention masks to empty chunks (padding chunks). If not masked, the model will process zero-vectors as valid signal, degrading performance.

@@ -313,11 +313,23 @@ def score_citation_validity_v2(citations: Sequence[Citation]) -> Dict[str, Any]:
     total_count = len(citations)
     valid_links = total_count - malformed_count
     has_scholarly = counts["scholarly"] > 0
+    has_guideline = counts["guideline"] > 0
+    has_portal = counts["portal"] > 0
+
+    # Stricter scoring: prioritize scholarly sources
     score = 0.0
     if has_scholarly:
+        # Perfect score for scholarly citations
         score = 1.0
-    elif valid_links >= 2 and malformed_count == 0:
-        score = 1.0
+    elif (has_guideline or has_portal) and valid_links >= 2 and malformed_count == 0:
+        # Good score for authoritative guideline/portal sources
+        score = 0.8
+    elif valid_links >= 2 and malformed_count == 0 and counts["other"] > 0:
+        # Lower score for generic valid links (blogs, news, etc.)
+        score = 0.5
+    elif valid_links >= 1 and malformed_count == 0:
+        # Minimal score for at least one valid link
+        score = 0.3
 
     return {
         "score": score,
@@ -391,9 +403,16 @@ def heuristic_asks_questions(answer_text: str) -> float:
     return 0.0
 
 
-def apply_evidence_integrity(metric_scores: Dict[str, Optional[float]], metric_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def apply_evidence_integrity(metric_scores: Dict[str, Optional[float]], metric_results: Dict[str, Dict[str, Any]]) -> tuple[Dict[str, Any], Dict[str, float]]:
+    """Apply evidence integrity check and return (integrity_result, score_updates).
+
+    When citations are invalid (validity_score == 0), returns score_updates dict
+    with keys to zero out (citation_relevance, citation_quality).
+    """
     validity_score = metric_scores.get("citation_validity")
     rag_score = metric_scores.get("rag_fidelity")
+
+    score_updates: Dict[str, float] = {}
 
     if validity_score is None:
         return {
@@ -401,19 +420,20 @@ def apply_evidence_integrity(metric_scores: Dict[str, Optional[float]], metric_r
             "details": {
                 "reason": "no_citation_validity_metric",
             },
-        }
+        }, score_updates
 
     if validity_score == 0:
+        # When citations are invalid, zero out citation-related scores
         for key in ("citation_relevance", "citation_quality"):
             if key in metric_results:
-                metric_results[key]["score"] = 0.0
-            metric_scores[key] = 0.0
+                score_updates[key] = 0.0
         return {
             "score": 0.0,
             "details": {
                 "reason": "invalid_citations",
+                "zeroed_metrics": list(score_updates.keys()),
             },
-        }
+        }, score_updates
 
     evidence_score = float(validity_score)
     if rag_score is not None:
@@ -425,7 +445,7 @@ def apply_evidence_integrity(metric_scores: Dict[str, Optional[float]], metric_r
             "validity": validity_score,
             "rag_fidelity": rag_score,
         },
-    }
+    }, score_updates
 
 def aggregate_tool_routing(expected: Sequence[str], runs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     expected_set = [t.strip() for t in (expected or []) if t]
@@ -495,10 +515,68 @@ def build_judge_clients(specs: Sequence[str]) -> List[Tuple[str, Any]]:
 
 
 def call_judge(client: Any, spec: MetricSpec, context: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-    system_prompt = (
-        "You are an evaluation assistant scoring AI mentor responses according to a rubric. "
-        "Be strict, cite rubric criteria, and output only JSON."
-    )
+    # Load the judge template from the markdown file
+    from pathlib import Path
+
+    # Use holistic prompt for holistic_score metric, otherwise use per-metric prompt
+    if spec.key == "holistic_score":
+        template_path = Path("evaluation/judges/single_turn_holistic_prompt.md")
+    else:
+        template_path = Path("evaluation/judges/single_turn_absolute_prompt.md")
+
+    if template_path.exists():
+        system_prompt = template_path.read_text(encoding="utf-8")
+
+        # Populate template variables
+        metadata = context.get("metadata", {})
+        stage = metadata.get("stage", "Unknown")
+        persona = metadata.get("persona", "unknown background")
+        focus = metadata.get("focus", "")
+        domain = metadata.get("domain", "")
+
+        # Build persona card
+        persona_parts = [f"Researcher with {persona} level experience"]
+        if focus:
+            persona_parts.append(f"focusing on {focus}")
+        persona_card = ", ".join(persona_parts)
+
+        # Build task card
+        task_parts = []
+        if domain:
+            task_parts.append(f"Domain: {domain}")
+        if focus:
+            task_parts.append(f"Focus: {focus}")
+        task_card = ", ".join(task_parts) if task_parts else "General research mentorship"
+
+        # Stage description mapping
+        stage_desc = {
+            "A": "A: Orientation — helping users understand research landscape and getting started",
+            "B": "B: Novelty/Hypothesis — assessing novelty and formulating testable hypotheses",
+            "C": "C: Research Planning — designing experiments and creating research plans",
+            "D": "D: Experiment Design — detailed methodology and evaluation planning",
+            "E": "E: Paper Analysis — reviewing and critiquing research papers",
+            "F": "F: Advanced Topics — specialized research guidance"
+        }.get(stage, f"{stage}: Research mentorship")
+
+        # Replace placeholders in template
+        system_prompt = system_prompt.replace("{persona_card}", persona_card)
+        system_prompt = system_prompt.replace("{task_card}", task_card)
+        system_prompt = system_prompt.replace("{stage}", stage_desc)
+
+        # Replace metric-specific placeholders (for per-metric prompt)
+        system_prompt = system_prompt.replace("{metric_name}", spec.key)
+        system_prompt = system_prompt.replace("{metric_description}", spec.description)
+
+        # Replace holistic prompt placeholders
+        system_prompt = system_prompt.replace("{user_query}", context.get("user_prompt", ""))
+        system_prompt = system_prompt.replace("{system_response}", context.get("agent_response", ""))
+    else:
+        # Fallback if template file is missing
+        system_prompt = (
+            "You are an evaluation assistant scoring AI mentor responses according to a rubric. "
+            "Be strict, cite rubric criteria, and output only JSON."
+        )
+
     sections: List[str] = [
         f"Metric: {spec.key}",
         f"Rubric: {spec.description}",
@@ -579,7 +657,12 @@ def parse_score(raw: str) -> Optional[Dict[str, Any]]:
     # Try strict JSON first
     try:
         parsed = json.loads(candidate)
-        return parsed if isinstance(parsed, dict) else None
+        if not isinstance(parsed, dict):
+            return None
+        # Fallback: map holistic_score → score if score is missing
+        if "score" not in parsed and "holistic_score" in parsed:
+            parsed["score"] = parsed["holistic_score"]
+        return parsed
     except Exception:
         # Fallback: extract minimal fields via regex (handles truncated JSON)
         import re
@@ -592,6 +675,15 @@ def parse_score(raw: str) -> Optional[Dict[str, Any]]:
                 out["score"] = float(sval)
             except Exception:
                 pass
+        # Fallback: try holistic_score if score not found
+        if "score" not in out:
+            m = re.search(r'"holistic_score"\s*:\s*("(?P<qs>[0-9]+(?:\.[0-9]+)?)"|(?P<ns>[0-9]+(?:\.[0-9]+)?))', candidate)
+            if m:
+                sval = m.group("qs") or m.group("ns")
+                try:
+                    out["score"] = float(sval)
+                except Exception:
+                    pass
         # rationale (best-effort, short capture up to next quote)
         m = re.search(r'"rationale"\s*:\s*"(?P<rt>[^"\\]{0,800})', candidate)
         if m:
@@ -604,16 +696,40 @@ def parse_score(raw: str) -> Optional[Dict[str, Any]]:
 
 
 def aggregate_scores(spec: MetricSpec, judge_results: Sequence[Dict[str, Any]]) -> Optional[float]:
-    values: List[float] = []
+    # Confidence weights: high confidence judges get more weight
+    confidence_weights = {
+        "high": 1.0,
+        "medium": 0.7,
+        "low": 0.4,
+    }
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+
     for record in judge_results:
         score = record.get("score")
-        if isinstance(score, (int, float)):
-            values.append(float(score))
-    if not values:
+        if not isinstance(score, (int, float)):
+            continue
+
+        # Get confidence level and corresponding weight
+        confidence = record.get("confidence", "medium")
+        if isinstance(confidence, str):
+            confidence = confidence.lower().strip()
+        weight = confidence_weights.get(confidence, 0.7)  # Default to medium
+
+        weighted_sum += float(score) * weight
+        total_weight += weight
+
+    if total_weight == 0:
         return None
-    avg = sum(values) / len(values)
+
+    avg = weighted_sum / total_weight
+
+    # For binary metrics, use majority voting with confidence weights
     if spec.kind == "binary":
         return 1.0 if avg >= 0.5 else 0.0
+
+    # Clamp to valid range
     return max(spec.min_score, min(spec.max_score, avg))
 
 

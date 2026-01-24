@@ -1,0 +1,53 @@
+Short answer: The area isn’t crowded. There’s a growing trickle of “quantum for biomolecular design” papers, but few credible, end‑to‑end hybrid pipelines that beat strong classical baselines. You can make a novel, publishable contribution if you (a) target the right subproblem, (b) integrate with today’s best classical tools, and (c) evaluate rigorously without overclaiming “quantum advantage.”
+
+What exists (to anchor novelty)
+- Formulations: Protein side‑chain packing and small fixed‑backbone sequence design have been mapped to QUBO/Ising and run on quantum annealers; very small peptide/lattice models have been tried with VQE/QAOA. A handful of works explore quantum kernels/BMs for protein classification/generation.
+- Reality: Current hardware limits keep problem sizes tiny; most papers stop at toy scales and don’t compare to modern classical design (ProteinMPNN, RFdiffusion, Rosetta FastDesign). Little evidence of end‑to‑end benefit.
+
+Where novelty likely remains
+- Problem choice and mapping
+  - Fixed‑backbone interface design: encode residue choices at 8–20 interface positions with pairwise interaction terms (node/edge potentials) and “one‑hot per position” constraints → QUBO. This is tractable for annealers/hybrid solvers.
+  - Constrained design: multi‑objective QUBOs that jointly optimize stability, binding, charge, and motif preservation; hard constraints (e.g., epitope residues fixed).
+  - Docking/task allocation: formulate discrete docking placements or contact pattern selection as QUBO and couple to classical continuous refinement.
+- Hybrid orchestration
+  - Use quantum (annealer or QAOA/hybrid) for the discrete combinatorial search over sequences/rotamers; use classical models for scoring and filtering (Rosetta/FastRelax, ProteinMPNN, ESM‑IF1, AlphaFold/ESMFold, RFdiffusion for scaffold checks).
+  - Warm starts from ProteinMPNN to seed the quantum solver; use quantum sampling for diversity around promising basins; then classically re‑rank.
+- Hardware‑aware techniques
+  - Embedding‑aware graph pruning (limit pairwise terms to a contact map), penalty tuning, chain‑break repair, and error mitigation; batched sampling to exploit QPU parallelism.
+- What to claim
+  - Better diversity at fixed quality, faster time‑to‑top‑k under hard constraints, or improved success on highly combinatorial niches—rather than blanket speedups.
+
+Feasibility and a minimal viable plan (2–3 months, sim‑only)
+- Scope
+  - Fixed‑backbone binder interface: choose a small target with known backbone (mini‑proteins or 1–2 helix interfaces). Limit alphabet (e.g., 5–8 residue types) and 8–16 positions.
+- Build the QUBO
+  - Precompute per‑position self energies and pairwise interaction energies (Rosetta or a fast physics proxy) on the fixed backbone and allowed residue set.
+  - Variables represent residue choice; add “exactly one choice per position” penalties. Prune edges to the residue‑level contact map to keep it sparse.
+- Solve
+  - Run on a quantum annealer (e.g., D‑Wave hybrid solver) and a gate‑based simulator (QAOA, if you prefer) for small instances. Also run quantum‑inspired solvers (simulated bifurcation/digital annealer) as strong baselines.
+- Classical refinement and filtering
+  - Locally repack/relax sequences (Rosetta FastRelax). Score stability (∆G/∆∆G) and interface ∆∆G. Predict structures (ESMFold/AlphaFold2‑multimer) and keep designs with high pLDDT and good interface metrics.
+  - Optionally, rescore with a learned model (ProteinMPNN likelihood) to check plausibility.
+- Compare against baselines
+  - Classical combinatorial: Rosetta FastDesign (with same backbone, positions, alphabet), simulated annealing/ILP/genetic search on the same QUBO.
+  - Generative: ProteinMPNN conditioned on the backbone (sample N sequences), re‑rank with the same refinement pipeline.
+- Evaluate
+  - Quality: Rosetta ∆G/∆∆G, AlphaFold confidence (pLDDT/pTM, interface pLDDT), clash/packing metrics, sequence recovery on native benchmarks (if applicable).
+  - Diversity: unique high‑quality sequences, effective sequence diversity (Hamming/Levenshtein, PSSM entropy).
+  - Efficiency: time‑to‑top‑k sequences that pass quality thresholds; QPU calls, qubit count/chain length, success probability.
+  - Robustness: sensitivity to penalty weights, contact‑map pruning, warm‑start vs cold‑start.
+
+Pitfalls to avoid
+- Overclaiming advantage: current QPUs won’t beat well‑tuned classical methods on open‑ended design. Target narrow, discrete subproblems and report honest Pareto trade‑offs (quality/diversity/latency).
+- Poor baselines: You must include ProteinMPNN (+ refinement) and Rosetta FastDesign; also include a classical solver on your own QUBO.
+- Energy decomposition errors: Approximating higher‑order interactions with pairwise terms can mislead; validate on small systems where exact enumeration is possible.
+- Scaling and embedding: Dense interaction graphs blow up on hardware. Keep problems small and sparse; report embedding stats.
+- Reproducibility and access: QPU access quotas/costs can block others. Provide quantum‑inspired baselines and open code/QUBOs so results are checkable without a QPU.
+
+Ways to increase originality
+- Show that quantum sampling yields more diverse near‑optimal sequences under strict constraints than classical sampling at equal time.
+- Integrate modern classical checks (RFdiffusion for scaffoldability, AlphaFold‑Multimer for interfaces) into the loop and demonstrate end‑to‑end yield improvements.
+- Explore multi‑objective formulations with explicit constraint satisfaction (e.g., exact motif preservation) that are hard for generative models to enforce.
+
+Bottom line
+- Not crowded: Hybrid quantum‑classical pipelines for practical protein design are early. If you frame a well‑scoped combinatorial subproblem, integrate with state‑of‑the‑art classical tools, and evaluate against strong baselines with honest metrics, it can be a fresh and valuable contribution—even without demonstrating quantum advantage.

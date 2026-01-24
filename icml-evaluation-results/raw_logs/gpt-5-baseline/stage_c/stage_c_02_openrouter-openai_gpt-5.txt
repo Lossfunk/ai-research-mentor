@@ -1,0 +1,49 @@
+1. Problem framing and goals
+
+Goal: Advance the Pareto frontier of accuracy, latency/throughput, memory, and energy for large language models (LLMs) via compression, with rigorous, hardware-aware evaluation and principled ablations. Focus on post-training quantization (PTQ), KV-cache compression, sparsity/pruning, and efficient fine-tuning on quantized bases.
+
+Key questions
+- What mixed-precision and per-layer policies minimize loss at W3–W4 while preserving high-throughput inference on common accelerators?
+- How far can we compress KV caches (2–4 bits, low-rank, or predictive schemes) without degrading long-context accuracy and retrieval?
+- How to co-design sparsity with quantization (e.g., SparseGPT + W4) for real speedups under actual kernel support?
+- Can we retain finetuning performance with 4-bit backbones (QLoRA) while using more aggressive base quantization/activation scaling?
+- What failure modes emerge under compression (hallucination, safety regressions, calibration drift), and how to detect/mitigate them?
+
+Target, 6 months
+- Memory: 4–6× reduction vs FP16 end-to-end (weights+KV), with ≤1.0 perplexity increase on standard corpora and ≤2–3 point average drop on LM-eval tasks.
+- Latency/throughput: 1.7–2.3× single-stream latency improvement and 2–3× tokens/s at batch≥8 on A100/L4; 1.5× on CPU.
+- Long context: ≥2× context length at fixed VRAM via KV compression with ≤2 point drop on LongBench/RULER-like evaluations.
+- Robustness: Maintain safety metrics and calibration (ECE) within 10% of FP16.
+
+Representative prior art
+- PTQ and activation handling: SmoothQuant [1], GPTQ [2], ZeroQuant/ZeroQuant-V2 [3,4], SqueezeLLM [5], OmniQuant [6].
+- Sparsity: SparseGPT [7].
+- Efficient finetuning on quantized backbones: QLoRA [8].
+- KV-cache quantization: WKVQuant [9], AQUA-KV [10].
+Limitations: We could not retrieve AWQ (Activation-aware Weight Quantization), LLM.int8, KIVI, or Wanda pruning via the tool. To add authoritative references, search “AWQ activation-aware weight quantization arXiv 2023,” “LLM.int8 Dettmers 2022 arXiv,” “KIVI KV-cache quantization arXiv,” and “Wanda pruning LLM arXiv,” then include arXiv IDs and official repos.
+
+
+2. Experiments (hypothesis, setup, baselines, metrics, expected outcomes)
+
+Experiment 1: PTQ baseline suite and mixed-precision search
+- Hypothesis: Combining second-order weight PTQ (GPTQ) with activation smoothing/clipping (SmoothQuant/OmniQuant) and per-layer mixed precision yields near-FP16 quality at W4 with real hardware gains.
+- Setup:
+  - Models: Llama-2/3 7B–70B, Mistral 7B, Phi-3 small; decode-only inference.
+  - Compression: W8A8 (SmoothQuant [1]); W4 weight-only (GPTQ [2], ZeroQuant-V2 [4], SqueezeLLM [5], OmniQuant [6]); per-layer mixed-precision search guided by sensitivity/Hessian proxies.
+  - Hardware: A100-80G, L4/L40S, consumer GPUs (e.g., 4090), and a dual-socket recent Xeon/EPYC.
+  - Software: TensorRT-LLM or vLLM backends; bitsandbytes/AutoGPTQ; custom CUDA/Triton kernels where available.
+- Baselines: FP16, RTN W8, RTN W4; SmoothQuant W8A8; GPTQ W4; SqueezeLLM W3–W4; OmniQuant W4A16.
+- Metrics: Perplexity (WikiText-103, C4 val), LM-Eval-Harness battery (MMLU, ARC, HellaSwag, PIQA, Winogrande), reasoning (GSM8K few-shot), calibration (ECE), latency and tokens/s at batch 1/8/32, VRAM footprint, energy/token.
+- Expected outcomes: W4 weight-only within ΔPPL ≤1.0 and ≤2–3 average point drop on LM-Eval vs FP16; 1.7–2.3× speedup over FP16 on A100; robust W8A8 parity with SmoothQuant [1], improved low-bit with OmniQuant [6] and GPTQ [2].
+
+Experiment 2: Activation handling ablations
+- Hypothesis: Layerwise activation scaling/clipping and per-token quantization reduce activation outlier harm for aggressive low-bit settings.
+- Setup: Compare SmoothQuant scaling [1], OmniQuant’s learnable clipping [6], per-token activation quant (ZeroQuant-V2 [4]) on W4A8/W4A16.
+- Baselines: No activation scaling; per-tensor static quant.
+- Metrics: Same as Exp 1, plus activation range statistics and saturation rate.
+- Expected outcomes: OmniQuant-style differentiable calibration improves W4A8 over naive by ≥1–2 points on LM-Eval.
+
+Experiment 3: KV-cache compression for long-context
+- Hypothesis: Structured KV quantization (e.g., past-only/2D schemes) and predictive KV adapters (AQUA-KV [10]) enable 2–4× KV compression with minimal long-context degradation.
+- Setup:
+  - Methods: WKVQuant [9] (past-only/2D schemes), AQUA-KV [10] (adaptive predictors

@@ -1,0 +1,65 @@
+For a paper like PeerRead that combines deep learning (e.g., CNNs/RNNs on text) with **hand-engineered features** (e.g., readability scores, length, number of equations), reviewers will be skeptical about *where* the performance gain comes from. They will suspect that the model is relying on "cheap" surface-level signals rather than semantic understanding.
+
+Here are the specific ablations and error analyses you need to include to satisfy these concerns.
+
+---
+
+### Part 1: Targeted Ablations (The "What Matters?" Analysis)
+
+Reviewers want to know if the hand-engineered features are providing **orthogonal information** or if they are simply acting as a crutch for a weak neural model.
+
+#### 1. The "Neural vs. Symbolic" Decomposition
+**The Test:** Report performance for three distinct configurations:
+*   **Model A:** Neural Text Encoder *only* (e.g., GloVe + CNN/BERT).
+*   **Model B:** Hand-Engineered Features *only* (Logistic Regression or SVM on the feature vector).
+*   **Model C:** The Combined Model.
+
+**The Anticipated Critique:** "If Model B performs similarly to Model A, your neural model isn't learning semantics; it's just learning that 'more equations = accept'."
+**The Mitigation:** Show that while Model B has a decent baseline, Model C provides a statistically significant boost, proving that the text encoder captures nuance that surface features miss.
+
+#### 2. The "Surface vs. Structure" Feature Groups
+**The Test:** Break down the hand-engineered features into logical groups and ablate them one by one (or add them cumulatively):
+*   **Group 1 (Complexity):** Readability scores (Flesch-Kincaid), vocabulary richness, average sentence length.
+*   **Group 2 ("Scienciness"):** Number of equations, number of theorems, number of tables/figures.
+*   **Group 3 (Metadata/Length):** Paper length (page count), number of references.
+
+**The Anticipated Critique:** "The model is just accepting longer papers." (This is the most common critique in NLP peer review analysis).
+**The Mitigation:** Explicitly isolate **Paper Length** and **Reference Count**. If the model relies heavily on these, you must acknowledge it. If removing them causes a minimal performance drop, you have a strong defense that the model looks at content.
+
+#### 3. The "Masking" Ablation (Robustness Check)
+**The Test:** Train the model with specific "giveaway" features masked in the text.
+*   Mask numbers/equations in the raw text input (e.g., replace with `<EQ>`).
+*   **The Goal:** Check if the neural model's performance drops to the level of the hand-engineered model. This tests if the neural model is just implicitly counting equations.
+
+---
+
+### Part 2: Error Analysis (The "Why did it fail?" Analysis)
+
+Reviewers will want to see *which* papers confuse the model. This is where you prove you understand the data.
+
+#### 1. The "Polished Turd" Analysis (False Positives)
+**Definition:** Papers that were **Rejected** but the model predicted **Accepted**.
+**Analysis:** Look at the hand-engineered feature values for these specific errors.
+*   *Question:* Do these false positives have high "surface quality" (good readability, perfect formatting, many equations) but poor semantic content?
+*   *Narrative:* "Our error analysis reveals that the model struggles with 'well-formatted rejections'—papers that adhere to the stylistic norms of the conference (high feature scores) but lack the novelty required for acceptance. This confirms the model relies partially on stylistic proxies."
+
+#### 2. The "Rough Diamond" Analysis (False Negatives)
+**Definition:** Papers that were **Accepted** but the model predicted **Rejected**.
+**Analysis:**
+*   *Question:* Are these papers outliers in terms of features? (e.g., very short papers, papers with zero equations, or papers with complex/dense prose that scores poorly on readability).
+*   *Narrative:* "The model tends to reject accepted papers that deviate from the standard template (e.g., theoretical papers with few experiments, or short empirical papers). This suggests the hand-engineered features impose a 'normative' bias on the predictions."
+
+#### 3. Feature Correlation & Weight Inspection
+**The Test:** If you use a linear layer to combine features, or a tree-based model, extract the **Feature Importance**.
+*   **The Chart:** A bar chart showing the relative weight of "Number of Equations" vs. "Readability" vs. "Deep Text Embedding."
+*   **The Insight:** If "Number of References" is the #1 feature, you must discuss this. It implies the "Rich get Richer" phenomenon (papers citing more prior work get accepted).
+
+---
+
+### Summary Checklist for the Paper
+To bulletproof the paper, ensure you have:
+
+1.  [ ] A table comparing **Text-Only** vs. **Features-Only** vs. **Combined**.
+2.  [ ] A specific sentence stating whether **Paper Length** correlates with acceptance and if the model learned this.
+3.  [ ] A qualitative look at 3-5 "False Positive" examples to see if they look "professionally written."
+4.  [ ] A breakdown of which feature group (Readability vs. Structure) contributes the most gain.

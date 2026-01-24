@@ -1,0 +1,54 @@
+<thinking>
+Experienced researcher. Need stress-test plan outside domain. Key is honesty: many hierarchies break on long-doc/code due to token semantics mismatch. Propose perturbations, metrics, stats. 150–300 words.
+</thinking>
+
+**Blunt assessment:** This stress test is likely to *hurt* the Hierarchical Transformer, and that’s fine—but only if you design tasks where hierarchy can’t hide behind short-horizon structure. Long documents and collaborative code are exactly where token persistence assumptions get exposed.
+
+Here’s a clean way to do it.
+
+---
+
+## Target tasks (out-of-domain, but controlled)
+Pick **one** of these, not both:
+- **Long-document understanding:** synthetic multi-section documents with cross-section dependencies (e.g., definitions in section 1 used in section N).
+- **Collaborative code:** multi-file repositories where a change in one file affects behavior elsewhere.
+
+Do not fine-tune the model on these domains; this is zero-shot or frozen-adapter evaluation only.
+
+---
+
+## Synthetic perturbations (stressors)
+Apply perturbations *after* tokenization/encoding to probe robustness:
+- **Context shuffling:** permute non-local chunks while preserving local order.
+- **Delayed dependency injection:** move key definitions or variables far beyond typical attention windows.
+- **Redundant noise blocks:** insert irrelevant but well-formed text/code to stress token pruning.
+
+These specifically target hierarchical sparsification and local attention.
+
+---
+
+## Evaluation metrics
+**Primary**
+- Task success (exact match, functional correctness, or pass@k).
+- Degradation slope as context length increases (not just endpoint).
+
+**Secondary**
+- Attention mass on dependency-relevant tokens.
+- Effective token survival rate across hierarchy levels.
+
+Absolute performance matters less than *rate of failure under stress*.
+
+---
+
+## Statistical analysis plan
+- Use **paired evaluation**: same prompts/repos, same seeds, with and without perturbation.
+- Estimate robustness gap as Δ(performance) per perturbation strength.
+- Bootstrap over documents/repos to get CIs; these tasks are high-variance.
+- Test whether degradation slopes differ significantly between hierarchical and flat baselines (interaction test, not separate t-tests).
+
+---
+
+## What failure will look like (and how to interpret it)
+If performance collapses only when dependencies exceed the hierarchy’s persistence span, that’s not a bug—it’s a **design limitation**. Say that plainly. Claiming general robustness here would be misleading.
+
+If you want, tell me which variant you expect to win; I can help you design a perturbation that genuinely discriminates rather than just punishes everyone equally.

@@ -1,0 +1,445 @@
+# **Committee-Based Hierarchical Transformer: Evaluation Framework**
+
+## **PART 1: COMMITTEE ARCHITECTURE DESIGN**
+
+### **1.1 Committee Configuration**
+
+#### **A. Committee Composition**
+```python
+class CommitteeHierarchicalTransformer:
+    """
+    Replace single base model with committee of smaller open-weight models
+    
+    Design Philosophy:
+    - Ensemble of diverse, smaller models
+    - Each model contributes different perspective
+    - Aggregation at hierarchical levels
+    - Total parameters similar to original
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.committee = self.design_committee()
+        self.aggregation = self.design_aggregation()
+    
+    def design_committee(self):
+        """
+        Design committee of smaller open-weight models
+        
+        Original: Single large model (e.g., 110M parameters)
+        Committee: 4-6 smaller models (20-30M each)
+        """
+        committee_configs = {
+            # Configuration 1: Homogeneous Committee
+            'homogeneous': {
+                'description': 'Multiple instances of same architecture',
+                'members': [
+                    {'model': 'distilbert-base-uncased', 'params': '66M', 'init': 'seed_1'},
+                    {'model': 'distilbert-base-uncased', 'params': '66M', 'init': 'seed_2'},
+                    {'model': 'distilbert-base-uncased', 'params': '66M', 'init': 'seed_3'},
+                ],
+                'total_params': '198M',
+                'diversity_source': 'Different random initializations',
+                'rationale': 'Reduce variance through bootstrap-like ensemble',
+            },
+            
+            # Configuration 2: Heterogeneous Committee (RECOMMENDED)
+            'heterogeneous': {
+                'description': 'Diverse architectures and training objectives',
+                'members': [
+                    {
+                        'model': 'distilbert-base-uncased',
+                        'params': '66M',
+                        'strength': 'General language understanding',
+                        'pretraining': 'Distillation from BERT',
+                    },
+                    {
+                        'model': 'microsoft/MiniLM-L12-H384-uncased',
+                        'params': '33M',
+                        'strength': 'Efficient sentence embeddings',
+                        'pretraining': 'Knowledge distillation',
+                    },
+                    {
+                        'model': 'sentence-transformers/all-MiniLM-L6-v2',
+                        'params': '22M',
+                        'strength': 'Semantic similarity',
+                        'pretraining': 'Contrastive learning',
+                    },
+                    {
+                        'model': 'albert-base-v2',
+                        'params': '12M',
+                        'strength': 'Parameter sharing, factorization',
+                        'pretraining': 'MLM + SOP',
+                    },
+                ],
+                'total_params': '133M',
+                'diversity_source': 'Architecture + training objective + model family',
+                'rationale': 'Complementary strengths, better coverage',
+            },
+            
+            # Configuration 3: Specialized Committee
+            'specialized': {
+                'description': 'Models specialized for different aspects',
+                'members': [
+                    {
+                        'model': 'distilbert-base-uncased',
+                        'role': 'Token-level encoding',
+                        'params': '66M',
+                    },
+                    {
+                        'model': 'sentence-transformers/all-MiniLM-L6-v2',
+                        'role': 'Sentence-level encoding',
+                        'params': '22M',
+                    },
+                    {
+                        'model': 'allenai/longformer-base-4096',
+                        'role': 'Long-range dependencies',
+                        'params': '149M',
+                        'note': 'Use sparse attention subset',
+                    },
+                    {
+                        'model': 'google/electra-small-discriminator',
+                        'role': 'Discriminative features',
+                        'params': '14M',
+                    },
+                ],
+                'total_params': '251M',
+                'diversity_source': 'Task specialization',
+                'rationale': 'Each model handles different hierarchical level',
+            },
+            
+            # Configuration 4: Budget-Constrained
+            'budget_constrained': {
+                'description': 'Minimize total parameters',
+                'members': [
+                    {'model': 'prajjwal1/bert-tiny', 'params': '4M'},
+                    {'model': 'prajjwal1/bert-mini', 'params': '11M'},
+                    {'model': 'prajjwal1/bert-small', 'params': '29M'},
+                    {'model': 'google/electra-small-discriminator', 'params': '14M'},
+                ],
+                'total_params': '58M',
+                'diversity_source': 'Model size + architecture',
+                'rationale': 'Edge deployment, resource constraints',
+            },
+        }
+        
+        # Select configuration
+        selected = committee_configs['heterogeneous']
+        
+        # Load committee members
+        committee_members = []
+        for member_config in selected['members']:
+            member = self.load_committee_member(member_config)
+            committee_members.append(member)
+        
+        return {
+            'config': selected,
+            'members': committee_members,
+            'num_members': len(committee_members),
+        }
+    
+    def load_committee_member(self, member_config):
+        """
+        Load individual committee member
+        """
+        from transformers import AutoModel, AutoTokenizer
+        
+        model = AutoModel.from_pretrained(member_config['model'])
+        tokenizer = AutoTokenizer.from_pretrained(member_config['model'])
+        
+        member = {
+            'name': member_config['model'],
+            'model': model,
+            'tokenizer': tokenizer,
+            'params': member_config['params'],
+            'config': member_config,
+        }
+        
+        return member
+    
+    def design_aggregation(self):
+        """
+        Design aggregation strategies for committee outputs
+        """
+        strategies = {
+            # Strategy 1: Simple Averaging
+            'mean_pooling': {
+                'description': 'Average embeddings from all models',
+                'formula': 'h_combined = (1/K) Σ h_k',
+                'pros': 'Simple, no additional parameters',
+                'cons': 'Treats all models equally',
+                'implementation': self.mean_pooling_aggregation,
+            },
+            
+            # Strategy 2: Learned Weighting
+            'learned_weights': {
+                'description': 'Learn attention weights over committee',
+                'formula': 'h_combined = Σ α_k * h_k, where α = softmax(W * [h_1, ..., h_K])',
+                'pros': 'Adaptive, can emphasize better models',
+                'cons': 'Additional parameters to train',
+                'implementation': self.learned_weight_aggregation,
+            },
+            
+            # Strategy 3: Hierarchical Aggregation
+            'hierarchical_aggregation': {
+                'description': 'Different aggregation at each hierarchical level',
+                'levels': {
+                    'token_level': 'Concatenate all models',
+                    'sentence_level': 'Learned attention',
+                    'paragraph_level': 'Mean pooling',
+                    'document_level': 'Max pooling',
+                },
+                'pros': 'Tailored to each level',
+                'cons': 'More complex',
+                'implementation': self.hierarchical_aggregation,
+            },
+            
+            # Strategy 4: Mixture of Experts
+            'mixture_of_experts': {
+                'description': 'Gating network selects experts per input',
+                'formula': 'h_combined = Σ g_k(x) * h_k, where g = softmax(W_gate * x)',
+                'pros': 'Input-adaptive selection',
+                'cons': 'Requires gating network training',
+                'implementation': self.moe_aggregation,
+            },
+            
+            # Strategy 5: Stacking
+            'stacking': {
+                'description': 'Meta-learner on top of committee outputs',
+                'architecture': 'Small transformer layer over committee outputs',
+                'pros': 'Can learn complex interactions',
+                'cons': 'Most additional parameters',
+                'implementation': self.stacking_aggregation,
+            },
+        }
+        
+        return strategies
+    
+    def forward(self, input_ids, attention_mask, hierarchical_structure):
+        """
+        Forward pass through committee
+        """
+        # 1. Get embeddings from each committee member
+        committee_outputs = []
+        for member in self.committee['members']:
+            # Handle different tokenizers
+            member_inputs = self.prepare_member_inputs(
+                input_ids, 
+                attention_mask,
+                member['tokenizer']
+            )
+            
+            # Forward pass
+            output = member['model'](
+                input_ids=member_inputs['input_ids'],
+                attention_mask=member_inputs['attention_mask'],
+            )
+            
+            committee_outputs.append(output.last_hidden_state)
+        
+        # 2. Aggregate committee outputs
+        aggregated = self.aggregate_committee_outputs(
+            committee_outputs,
+            strategy='learned_weights'
+        )
+        
+        # 3. Hierarchical processing
+        hierarchical_repr = self.hierarchical_processing(
+            aggregated,
+            hierarchical_structure
+        )
+        
+        return hierarchical_repr
+    
+    def mean_pooling_aggregation(self, committee_outputs):
+        """
+        Simple mean pooling over committee
+        """
+        # Stack outputs: [num_models, batch, seq_len, hidden]
+        stacked = torch.stack(committee_outputs, dim=0)
+        
+        # Mean over models
+        aggregated = stacked.mean(dim=0)  # [batch, seq_len, hidden]
+        
+        return aggregated
+    
+    def learned_weight_aggregation(self, committee_outputs):
+        """
+        Learn attention weights over committee members
+        """
+        # Stack outputs
+        stacked = torch.stack(committee_outputs, dim=0)  # [K, B, L, H]
+        K, B, L, H = stacked.shape
+        
+        # Compute attention scores
+        # Reshape for attention
+        stacked_flat = stacked.permute(1, 2, 0, 3)  # [B, L, K, H]
+        
+        # Attention weights (learnable)
+        if not hasattr(self, 'committee_attention'):
+            self.committee_attention = nn.Linear(H, K)
+        
+        # Compute attention scores per position
+        attn_scores = self.committee_attention(stacked_flat.mean(dim=2))  # [B, L, K]
+        attn_weights = F.softmax(attn_scores, dim=-1)  # [B, L, K]
+        
+        # Weighted sum
+        attn_weights = attn_weights.unsqueeze(-1)  # [B, L, K, 1]
+        aggregated = (stacked_flat * attn_weights).sum(dim=2)  # [B, L, H]
+        
+        return aggregated
+```
+
+---
+
+### **1.2 Architecture Comparison**
+
+#### **A. Original vs. Committee**
+```python
+class ArchitectureComparison:
+    """
+    Compare original and committee architectures
+    """
+    
+    def __init__(self):
+        self.comparison = self.create_comparison()
+    
+    def create_comparison(self):
+        """
+        Detailed comparison table
+        """
+        comparison = {
+            'architecture': {
+                'original': {
+                    'base_model': 'Single transformer (e.g., RoBERTa-base)',
+                    'parameters': '110M',
+                    'hierarchical_layers': 'Specialized hierarchy layers',
+                    'total_parameters': '~125M',
+                },
+                'committee': {
+                    'base_models': '4 diverse models (DistilBERT, MiniLM, etc.)',
+                    'parameters': '66M + 33M + 22M + 12M = 133M',
+                    'hierarchical_layers': 'Shared hierarchy layers',
+                    'aggregation': '+5M (learned aggregation)',
+                    'total_parameters': '~138M',
+                },
+            },
+            
+            'inference': {
+                'original': {
+                    'forward_passes': '1',
+                    'latency': 'Baseline',
+                    'memory': 'Baseline',
+                },
+                'committee': {
+                    'forward_passes': '4 (parallelizable)',
+                    'latency': '~2-3x (if parallel) or 4x (if sequential)',
+                    'memory': '~1.2x (shared components)',
+                },
+            },
+            
+            'training': {
+                'original': {
+                    'strategy': 'End-to-end fine-tuning',
+                    'complexity': 'Standard',
+                },
+                'committee': {
+                    'strategy': 'Fine-tune members + aggregation',
+                    'complexity': 'Higher (multiple models)',
+                    'options': [
+                        'Freeze members, train aggregation only',
+                        'Fine-tune all jointly',
+                        'Sequential fine-tuning',
+                    ],
+                },
+            },
+            
+            'advantages_committee': [
+                'Diversity: Multiple perspectives',
+                'Robustness: Ensemble reduces variance',
+                'Modularity: Can swap committee members',
+                'Coverage: Different models excel at different aspects',
+                'Interpretability: Can analyze per-model contributions',
+            ],
+            
+            'disadvantages_committee': [
+                'Complexity: More components to manage',
+                'Latency: Multiple forward passes',
+                'Memory: Multiple models loaded',
+                'Training: More complex optimization',
+            ],
+        }
+        
+        return comparison
+```
+
+---
+
+## **PART 2: EVALUATION FRAMEWORK**
+
+### **2.1 Agreement Metrics**
+
+#### **A. Inter-Model Agreement**
+```python
+class AgreementEvaluation:
+    """
+    Measure agreement between committee members and with original
+    """
+    
+    def __init__(self, original_model, committee_model):
+        self.original = original_model
+        self.committee = committee_model
+        self.metrics = self.define_agreement_metrics()
+    
+    def define_agreement_metrics(self):
+        """
+        Comprehensive agreement metrics
+        """
+        metrics = {
+            # 1. Prediction Agreement
+            'prediction_agreement': {
+                'description': 'Agreement on final predictions',
+                'metrics': [
+                    'Exact match rate',
+                    'Label agreement (Cohen\'s Kappa)',
+                    'Rank correlation (Spearman\'s ρ)',
+                ],
+                'levels': [
+                    'Committee vs. Original',
+                    'Pairwise between committee members',
+                    'Majority vote vs. Original',
+                ],
+            },
+            
+            # 2. Representation Similarity
+            'representation_similarity': {
+                'description': 'Similarity of learned representations',
+                'metrics': [
+                    'Cosine similarity',
+                    'CKA (Centered Kernel Alignment)',
+                    'SVCCA (Singular Vector CCA)',
+                    'RSA (Representational Similarity Analysis)',
+                ],
+                'levels': [
+                    'Token-level embeddings',
+                    'Sentence-level representations',
+                    'Document-level representations',
+                ],
+            },
+            
+            # 3. Attention Pattern Agreement
+            'attention_agreement': {
+                'description': 'Similarity of attention patterns',
+                'metrics': [
+                    'Attention weight correlation',
+                    'Attention entropy comparison',
+                    'Effective attention window',
+                ],
+                'analysis': 'Hierarchical level-wise comparison',
+            },
+            
+            # 4. Confidence Calibration
+            'confidence_agreement': {
+                'description': 'Agreement on confidence/uncertainty',
+                'metrics': [
+                    'Calibration error (ECE)',

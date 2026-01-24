@@ -1,0 +1,180 @@
+<thinking>
+Experienced researcher. Topic is viable but reviewer-sensitive: interpretability must be tied to safety-relevant failures and governance, not just pretty saliency maps. Need a concrete evaluation protocol, ablations, and decision checkpoints. One-year timeline requested (not six months). No web search needed; datasets/tools are standard. </thinking>
+
+**Blunt assessment:**  
+This will only land if you **evaluate interpretability tools against safety-relevant failure modes** and **treat governance as a first-class artifact** (not an appendix). A generic comparison of saliency methods on mAP will be dismissed. The plan below anchors interpretability to *decision-critical perception errors* and includes go/no‑go checkpoints.
+
+---
+
+## 1. Problem framing and goals
+
+**Problem.**  
+Autonomous driving (AD) perception models are safety-critical, yet interpretability tools are rarely evaluated for **faithfulness, stability, or usefulness in real incident analysis**. As a result, organizations lack evidence-based guidance for which tools to trust in audits and post-mortems.
+
+**Goal.**  
+Create a **rigorous, reproducible evaluation framework** for interpretability methods applied to AD perception (detection/segmentation), demonstrating:
+- which tools are **faithful** to model behavior,
+- which are **stable under perturbations**,
+- which **meaningfully support governance decisions** (debugging, risk assessment).
+
+**Scope.**  
+Camera-centric perception (object detection, semantic segmentation). Planning/control is out of scope.
+
+---
+
+## 2. Experiments
+
+### Experiment 1: Faithfulness under causal ablations
+
+**Hypothesis.**  
+Many popular interpretability tools are not faithful to AD perception models’ true decision logic.
+
+**Setup.**  
+- Models: standard CNN/Transformer-based detectors and segmenters.  
+- Interpretability tools: saliency, Grad-CAM variants, feature attribution, concept-based methods.  
+- Perform *causal feature ablations* guided by explanations (mask “important” vs “unimportant” regions).
+
+**Baselines.**  
+- Random masking  
+- Oracle masks from ground-truth object regions
+
+**Evaluation metrics.**  
+Performance drop (ΔmAP, ΔIoU), insertion/deletion curves.
+
+**Expected outcomes.**  
+Only a subset of tools show strong correlation between attributed importance and causal impact.
+
+---
+
+### Experiment 2: Stability and robustness analysis
+
+**Hypothesis.**  
+Unstable explanations undermine governance and audit use, even if accuracy is high.
+
+**Setup.**  
+- Apply benign perturbations: lighting shifts, weather simulation, sensor noise.  
+- Measure explanation consistency across perturbations with fixed predictions.
+
+**Baselines.**  
+- Model output stability  
+- Random explanation jitter
+
+**Evaluation metrics.**  
+Explanation similarity (e.g., rank correlation), sensitivity indices.
+
+**Expected outcomes.**  
+Identification of tools that are too brittle for operational use.
+
+---
+
+### Experiment 3: Failure-mode coverage in safety scenarios
+
+**Hypothesis.**  
+Interpretability tools differ in their ability to highlight **known AD failure modes** (e.g., occlusion, long-tail objects).
+
+**Setup.**  
+- Curate scenario slices: night driving, occlusions, rare objects.  
+- Evaluate whether explanations surface the true cause of failure.
+
+**Baselines.**  
+- Error logs without explanations  
+- Human intuition alone
+
+**Evaluation metrics.**  
+Failure localization accuracy, expert usefulness ratings.
+
+**Expected outcomes.**  
+Evidence that some tools systematically miss safety-critical cues.
+
+---
+
+### Experiment 4: Governance utility study
+
+**Hypothesis.**  
+Only a subset of interpretability tools meaningfully improve human decision-making in audits.
+
+**Setup.**  
+- Simulated audit tasks with engineers/safety analysts.  
+- Compare decisions made with different interpretability aids.
+
+**Baselines.**  
+- No-interpretability condition  
+- Raw model outputs
+
+**Evaluation metrics.**  
+Decision accuracy, time-to-resolution, confidence calibration.
+
+**Expected outcomes.**  
+Clear ranking of tools by *governance utility*, not aesthetics.
+
+---
+
+## 3. Timeline (12 months)
+
+**Months 1–2:**  
+Model and dataset selection; define safety-relevant failure taxonomy.
+
+**Months 3–4:**  
+Implement interpretability tools; baseline reproduction.
+
+**Months 5–6:**  
+Faithfulness experiments (Exp. 1) + ablations.
+
+**Months 7–8:**  
+Stability and robustness analysis (Exp. 2).
+
+**Months 9–10:**  
+Failure-mode and governance utility studies (Exp. 3–4).
+
+**Months 11–12:**  
+Synthesis, governance guidelines, paper writing, artifact release.
+
+**Governance checkpoints (hard gates):**  
+- Month 2: Scope and claims approval  
+- Month 6: Tool faithfulness minimum bar  
+- Month 10: Human utility evidence required to proceed
+
+---
+
+## 4. Resources
+
+**Compute.**  
+- 2–4 GPUs for perception models; CPU-heavy for analysis.
+
+**Tools.**  
+- PyTorch, Captum / similar interpretability libraries  
+- Simulation/augmentation tools  
+- Annotation and study platforms
+
+**Datasets.**  
+- nuScenes, Waymo Open Dataset, or equivalent (camera-focused subsets)
+
+**Evidence note.**  
+There is **no agreed-upon standard** for interpretability evaluation in AD. This is a feature, not a bug—explicitly position the framework as filling this gap.
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Too subjective | Weak credibility | Emphasize causal tests |
+| Overgeneralization | Reviewer pushback | Limit claims to perception |
+| Tool authorship bias | Conflict | Pre-register metrics |
+| Human study noise | Inconclusive | Pilot + power analysis |
+
+---
+
+## 6. Stretch ideas / follow-up directions
+
+- Extend to multimodal (camera + lidar) perception  
+- Regulatory-facing interpretability checklists  
+- Continuous monitoring tools for deployed fleets
+
+---
+
+**Bottom line:**  
+This succeeds if you **kill bad interpretability tools**, not if you celebrate them.
+
+**Optional next step:**  
+Write a one-page **safety failure taxonomy** for AD perception—every experiment should map to it.

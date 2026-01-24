@@ -1,0 +1,257 @@
+The search yielded several directly relevant papers on FL in low-resource settings [1,2,3,4]. I'll construct a rigorous research plan addressing the unique constraints of developing countries: limited connectivity, heterogeneous devices, data scarcity, and infrastructure challenges.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Federated Learning (FL) promises privacy-preserving collaborative model training without centralizing data—critical for sensitive applications (healthcare, finance) in low-resource countries. However, standard FL frameworks assume reliable infrastructure (stable internet, modern devices, consistent power) that doesn't exist in many developing regions. Key barriers include:
+
+1. **Connectivity constraints:** Intermittent internet (2G/3G), high latency (500ms-2s), expensive data plans ($5-20/GB in Sub-Saharan Africa vs. $0.10-1/GB in developed countries)
+2. **Device heterogeneity:** Wide range from feature phones to smartphones; 30-50% of devices have <2GB RAM, limited battery life
+3. **Data scarcity & quality:** Small local datasets (10-100 samples per client), label noise, class imbalance
+4. **Infrastructure gaps:** Unreliable power (4-12 hour daily outages in some regions), limited cloud access, lack of local compute
+5. **Sociotechnical challenges:** Low digital literacy, regulatory uncertainty, lack of local expertise
+
+Existing FL work [1,2,4] highlights these gaps but lacks comprehensive solutions validated in real-world low-resource deployments.
+
+**Core Hypothesis:**  
+FL systems tailored to low-resource constraints—through communication-efficient algorithms, asynchronous protocols, on-device compression, and hybrid edge-cloud architectures—can enable collaborative AI in developing countries with <10% performance degradation vs. ideal settings while reducing communication costs by 50-100×.
+
+**Primary Goals (6-month horizon):**
+- Deploy FL systems in 2-3 low-resource settings (healthcare, agriculture) across Africa/South Asia
+- Achieve model accuracy within 5% of centralized training with 50-100× communication reduction
+- Demonstrate feasibility: <$1/client/month data costs, <2-hour training on entry-level smartphones
+- Publish deployment study documenting lessons learned, failure modes, and design principles
+
+**Secondary Goals:**
+- Open-source FL toolkit optimized for low-resource settings
+- Establish partnerships with 3-5 local institutions (hospitals, NGOs, universities)
+- Train 20-30 local practitioners in FL deployment and maintenance
+- Influence policy: Provide evidence for data governance frameworks in partner countries
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Communication-Efficient FL for Intermittent Connectivity**
+
+**Hypothesis:** Gradient compression (quantization, sparsification) combined with asynchronous aggregation can reduce communication by 50-100× while maintaining accuracy within 2-3% of standard FL, enabling deployment over 2G/3G networks.
+
+**Setup:**
+- **Algorithms:**
+  1. **Gradient compression:** Top-k sparsification (send top 1-10% gradients), 4-bit/8-bit quantization, SignSGD
+  2. **Asynchronous FL:** Clients upload whenever connectivity available; server aggregates with staleness weighting
+  3. **Federated Averaging variants:** FedProx (handle heterogeneity), FedNova (normalize updates)
+  4. **Hybrid:** Combine compression + async + adaptive learning rates
+- **Simulated environment:** Replay real network traces from low-resource regions
+  - Network traces: Kenya (Safaricom 3G), India (rural Airtel), Nigeria (MTN)
+  - Simulate: packet loss (5-20%), latency (500-2000ms), intermittent disconnections (30-60% uptime)
+- **Tasks & datasets:**
+  - **Healthcare:** Tuberculosis detection on chest X-rays (TB-CXR dataset from [1], 5k images across 10 simulated hospitals)
+  - **Agriculture:** Crop disease classification (PlantVillage, 20k images across 50 farmers)
+  - **Language:** Swahili text classification (MASAKHANEWS, 10k samples across 100 users)
+- **Client simulation:** 50-100 clients, each with 50-500 samples, non-IID data distribution
+
+**Baselines:**
+1. Centralized training (upper bound, assumes data can be pooled)
+2. Local training only (no collaboration)
+3. Standard FedAvg with full gradient transmission
+4. Periodic model averaging (send full model every N rounds)
+
+**Evaluation Metrics:**
+1. **Accuracy:** Test accuracy, F1 score (task-dependent)
+2. **Communication cost:** Total bytes transmitted (upload + download), rounds to convergence
+3. **Robustness:** Performance under packet loss (10%, 20%), client dropout (30%, 50%)
+4. **Convergence speed:** Rounds to reach 95% of final accuracy
+5. **Fairness:** Accuracy variance across clients (std dev of per-client accuracy)
+6. **Energy consumption:** Estimated battery drain (mAh) on representative devices
+
+**Expected Outcomes:**
+- Top-10% sparsification + 8-bit quantization: 50-80× communication reduction, <2% accuracy drop
+- Asynchronous aggregation: Tolerates 50% client dropout with <3% accuracy degradation
+- Combined approach: 100× communication reduction, 3-5% accuracy drop vs. centralized
+- Identifies sweet spot: 5% sparsity + 8-bit quantization for best accuracy-communication trade-off
+
+**Ablations:**
+- Compression ratio: Top-k for k ∈ {1%, 5%, 10%, 20%}
+- Quantization bits: {1, 4, 8, 16}
+- Staleness handling: Immediate aggregation vs. weighted by age vs. discard old updates
+- Client selection: Random vs. prioritize high-quality data vs. prioritize stable connections
+
+---
+
+### **Experiment 2: On-Device Learning for Resource-Constrained Devices**
+
+**Hypothesis:** Lightweight model architectures (<10MB) with on-device training optimizations (mixed-precision, gradient checkpointing, model pruning) enable FL on entry-level smartphones (<2GB RAM) with <10% accuracy loss vs. full models.
+
+**Setup:**
+- **Target devices:** 
+  - Entry-level: Samsung Galaxy A03 (2GB RAM, Snapdragon 429), Tecno Spark 7 (2GB RAM)
+  - Feature phones with KaiOS (512MB RAM, limited compute)
+- **Model architectures:**
+  1. **Vision:** MobileNetV3-Small (2.5M params, 5MB), EfficientNet-Lite0 (4.6M params)
+  2. **NLP:** DistilBERT-tiny (4.4M params, 16MB), MobileBERT (25M params, 100MB)
+  3. **Custom:** Neural architecture search for <5MB models
+- **On-device optimizations:**
+  - Mixed-precision training (FP16/INT8)
+  - Gradient checkpointing (trade compute for memory)
+  - Model pruning (structured, unstructured)
+  - Quantization-aware training
+- **Benchmarking:** Measure on physical devices
+  - Training time per round (target: <5 min)
+  - Peak memory usage (target: <1GB)
+  - Battery consumption (target: <10% per round)
+  - Temperature (avoid overheating)
+- **Tasks:** Same as Experiment 1 (TB detection, crop disease, Swahili NLP)
+
+**Baselines:**
+1. Full-size models (ResNet-50, BERT-base) - likely infeasible on target devices
+2. Server-only training (no on-device learning)
+3. Transfer learning (freeze backbone, train only classifier)
+4. Federated distillation (train large model on server, distill to small on-device model)
+
+**Evaluation Metrics:**
+1. **Accuracy:** Test performance vs. full-size models
+2. **On-device feasibility:** Can model train on target device without crashing?
+3. **Training time:** Minutes per local epoch
+4. **Memory footprint:** Peak RAM usage during training
+5. **Energy efficiency:** Battery % consumed per round
+6. **Model size:** Storage requirements (MB)
+7. **Inference latency:** Milliseconds per prediction
+
+**Expected Outcomes:**
+- MobileNetV3-Small + mixed-precision: Trains on 2GB devices in 3-5 min/round, 5-8% accuracy drop vs. ResNet-50
+- DistilBERT-tiny: Fits on 2GB devices, 10-12% accuracy drop vs. BERT-base
+- Pruning + quantization: Further 30-50% memory reduction, additional 2-3% accuracy loss
+- Identifies minimum viable device specs: 1.5GB RAM, Snapdragon 400-series or equivalent
+
+**Ablations:**
+- Architecture search: Vary width/depth to find optimal size-accuracy trade-off
+- Quantization schemes: Post-training vs. quantization-aware training
+- Pruning strategies: Magnitude vs. gradient-based vs. lottery ticket
+- Batch size: Impact of batch size {1, 4, 8, 16} on convergence and memory
+
+---
+
+### **Experiment 3: Real-World Deployment in Healthcare (Tuberculosis Screening)**
+
+**Hypothesis:** FL can enable multi-site TB screening model training across African hospitals without sharing patient data, achieving radiologist-level performance (AUC >0.90) while complying with local data protection regulations.
+
+**Setup:**
+- **Partner institutions:** 5-7 hospitals across 2-3 countries
+  - Candidate regions: Kenya (Nairobi, Mombasa), Nigeria (Lagos, Abuja), South Africa (Cape Town)
+  - Selection criteria: Existing X-ray infrastructure, digitization capacity, research ethics approval
+- **Data:** Chest X-rays (CXR) from routine TB screening
+  - Target: 500-2,000 CXRs per site, labels from radiologists
+  - Local storage: On-premise servers or encrypted cloud (AWS/Azure local regions)
+- **FL deployment architecture:**
+  1. **Client devices:** Hospital workstations or edge servers (Raspberry Pi 4 with 8GB RAM)
+  2. **Server:** Cloud instance in regional data center (AWS Cape Town, Azure South Africa)
+  3. **Communication:** HTTPS over hospital internet (3G/4G backup)
+  4. **Privacy:** Differential privacy (ε=1-5), secure aggregation (optional, if bandwidth allows)
+- **Model:** MobileNetV3 or EfficientNet-B0 pretrained on ImageNet, fine-tuned for TB detection
+- **Training protocol:**
+  - Asynchronous FL: Hospitals upload when bandwidth available (daily or weekly)
+  - Local epochs: 5-10 per round
+  - Aggregation: FedAvg with client weighting by dataset size
+  - Total rounds: 50-100 (estimated 2-4 months)
+- **Regulatory compliance:** IRB approval at each site, data protection impact assessments
+
+**Baselines:**
+1. Single-site models (each hospital trains independently)
+2. Centralized model (if ethically/legally feasible for comparison)
+3. Pretrained model (ImageNet-pretrained, no fine-tuning)
+4. Radiologist performance (inter-rater agreement as upper bound)
+
+**Evaluation Metrics:**
+1. **Clinical accuracy:** AUC, sensitivity at 90% specificity, F1 score
+2. **Fairness:** Performance stratified by site, patient demographics (age, sex, HIV status)
+3. **Privacy:** Membership inference attack success rate (should be ~50%, random guessing)
+4. **Deployment feasibility:** 
+   - Uptime (% successful uploads)
+   - Communication cost ($/site/month)
+   - Training time (wall-clock days to convergence)
+5. **Stakeholder feedback:** Surveys with radiologists, hospital IT staff, patients (qualitative)
+6. **Generalization:** Test on held-out site (simulate new hospital joining)
+
+**Expected Outcomes:**
+- FL model achieves AUC 0.88-0.92 (within 5% of centralized, if available)
+- Outperforms single-site models by 8-15% (benefit of collaboration)
+- Communication cost: $20-50/site/month (feasible for hospitals)
+- Training completes in 8-12 weeks (acceptable timeline)
+- Identifies deployment challenges: IT infrastructure gaps, staff training needs, regulatory hurdles
+- Publishes deployment case study [similar to 1] with open-source code
+
+**Risks & Mitigations:**
+- **Risk:** Hospital dropout due to connectivity/resource issues
+  - **Mitigation:** Asynchronous protocol tolerates dropout; provide backup internet dongles
+- **Risk:** Insufficient local data (some hospitals have <200 CXRs)
+  - **Mitigation:** Use transfer learning; combine with public datasets (TBCXR, NIH ChestX-ray14)
+- **Risk:** Regulatory delays (IRB approvals take 3-6 months)
+  - **Mitigation:** Start IRB process in Month 1; run simulations in parallel
+
+---
+
+### **Experiment 4: Federated Learning for Agricultural Extension Services**
+
+**Hypothesis:** FL can enable smallholder farmers to collaboratively train crop disease detection models using smartphone photos, improving detection accuracy by 20-30% over individual models while preserving farm-level privacy.
+
+**Setup:**
+- **Partner organizations:** Agricultural extension services, NGOs (e.g., One Acre Fund, TechnoServe)
+  - Target: 100-200 farmers across 2-3 countries (Kenya, Uganda, India)
+- **Data collection:** Farmers photograph crops using smartphones
+  - Diseases: Maize leaf blight, cassava mosaic virus, tomato bacterial wilt
+  - Labels: Provided by agronomists via mobile app
+  - Target: 50-200 images per farmer (10k-20k total)
+- **FL system:**
+  - **Client:** Android app with on-device training (TensorFlow Lite)
+  - **Server:** Cloud instance (Google Cloud Nairobi, AWS Mumbai)
+  - **Communication:** Upload over WiFi or cellular (compressed updates)
+  - **Training:** Weekly rounds (farmers upload on market days when in town with WiFi)
+- **Model:** MobileNetV2 (14MB) for image classification
+- **User experience:** App provides real-time disease detection + treatment recommendations
+- **Incentives:** Farmers receive free app access + agronomic advice; data contributors get priority support
+
+**Baselines:**
+1. Cloud-based model (farmers upload images, train centrally) - privacy concerns
+2. Local-only model (each farmer's model trained only on their data)
+3. Pretrained model (PlantVillage dataset, no local adaptation)
+4. Expert diagnosis (agronomist accuracy as upper bound)
+
+**Evaluation Metrics:**
+1. **Accuracy:** Disease classification accuracy, F1 per disease class
+2. **Adoption:** % farmers who complete ≥5 training rounds
+3. **Data contribution:** Images uploaded per farmer per month
+4. **User satisfaction:** App ratings, qualitative interviews
+5. **Communication cost:** Data usage per farmer per month (target: <100MB)
+6. **Impact:** Change in crop yield, disease management practices (requires long-term follow-up)
+7. **Fairness:** Performance across crop types, regions, farmer demographics
+
+**Expected Outcomes:**
+- FL model achieves 75-85% accuracy (vs. 50-60% for local-only models)
+- 60-70% farmer retention over 6 months (acceptable for pilot)
+- Communication: 50-80MB/farmer/month (affordable with data bundles)
+- Identifies barriers: Smartphone access (30-40% of farmers lack devices), digital literacy, trust in AI
+- Publishes deployment study + open-source app for agricultural FL
+
+**Sociotechnical Considerations:**
+- **Digital literacy:** Provide in-person training sessions (2-hour workshops)
+- **Language:** App in local languages (Swahili, Luganda, Hindi)
+- **Trust:** Transparent communication about data use, local ownership of models
+- **Sustainability:** Partner with governments/NGOs for long-term maintenance
+
+---
+
+### **Experiment 5: Hybrid Edge-Cloud FL for Multi-Tier Infrastructure**
+
+**Hypothesis:** Hierarchical FL with edge aggregation (village/clinic level) before cloud aggregation reduces long-haul communication by 80-90% and improves robustness to cloud disconnections.
+
+**Setup:**
+- **Architecture:**
+  - **Tier 1:** End devices (smartphones, tablets) - local training
+  - **Tier 2:** Edge servers (Raspberry Pi, low-cost servers) at villages/clinics - local aggregation
+  - **Tier 3:** Regional cloud server - global aggregation
+- **Workflow:**
+  1. Devices train locally, upload to edge server (local WiFi/Bluetooth)
+  2. Edge server aggregates 10-50 devices, uploads aggregate to clou

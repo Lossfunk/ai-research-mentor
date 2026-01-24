@@ -1,0 +1,108 @@
+This experimental design extends the evaluation framework to quantify the "cost" of the Hierarchical Transformer’s performance. To show statistical separation, we must move beyond single-point metrics and analyze the **Pareto Frontier** between accuracy and computational cost.
+
+### 1. Efficiency Metrics Specification
+To ensure comparability, these metrics must be recorded on the exact same hardware (e.g., a single NVIDIA A100 or V100) and the same Test Split used for the accuracy results.
+
+#### A. Latency (User-Centric)
+*   **Definition:** Time elapsed from input ingestion to class probability output for a single document.
+*   **Protocol:**
+    *   Batch Size = 1.
+    *   Run over the entire Test Set.
+    *   **Requirement:** Must use `torch.cuda.synchronize()` before and after the forward pass to capture accurate GPU timings.
+    *   **Reporting:** Mean Latency ($\mu$) $\pm$ Standard Deviation ($\sigma$) in milliseconds (ms).
+
+#### B. Throughput (System-Centric)
+*   **Definition:** Maximum number of documents processed per second (samples/sec).
+*   **Protocol:**
+    *   Find the maximum Batch Size ($B_{max}$) that fits in GPU memory.
+    *   Run for 100 steps (excluding data loading time).
+    *   **Formula:** $\frac{B_{max} \times \text{Steps}}{\text{Total Time}}$.
+
+#### C. Memory Footprint
+*   **Definition:** Peak VRAM allocated during the forward pass.
+*   **Protocol:** Use `torch.cuda.max_memory_allocated()` reset before the inference loop.
+*   **Granularity:** Differentiate between *Model Weights* (static) and *Activation Memory* (dynamic, scales with chunk count $K$).
+
+---
+
+### 2. Experimental Setup for Trade-off Analysis
+To visualize the trade-off, you cannot evaluate just one model configuration. You must generate a curve. We will vary **Max Chunks ($K$)** as the independent variable, as this linearly controls the computational cost of the Local Encoder ($O(K)$).
+
+**Configurations to Run:**
+1.  **$K=Max$ (Baseline):** The setting from the original paper (e.g., 32 chunks).
+2.  **$K=Medium$:** (e.g., 16 chunks).
+3.  **$K=Low$:** (e.g., 8 chunks).
+4.  **$K=Head+Tail$:** (e.g., first 2 + last 2 chunks).
+
+---
+
+### 3. Analysis Plan: Statistical Separation
+
+The goal is to prove that **Configuration B** is "better" than **Configuration A** if it offers significant efficiency gains with negligible accuracy loss.
+
+#### Step 1: The Pareto Plot
+Create a scatter plot where:
+*   **X-Axis:** Average Latency (lower is better) or Throughput (higher is better).
+*   **Y-Axis:** Macro-F1 Score.
+*   **Result:** The "Pareto Frontier" consists of points where no other configuration has both higher accuracy and lower latency. Points *below* this curve are suboptimal.
+
+#### Step 2: Statistical Significance of Efficiency (T-Test)
+For any two configurations (e.g., Hierarchical-Full vs. Hierarchical-MeanPool), compare the distribution of latencies.
+*   **Test:** Paired T-test on the per-document latency vectors.
+*   **Hypothesis:** $H_0: \mu_{lat_A} = \mu_{lat_B}$.
+*   **Threshold:** $p < 0.001$ (Efficiency gains are usually extremely distinct, so look for high significance).
+
+#### Step 3: Statistical Equivalence of Accuracy (TOST or McNemar's)
+This is the critical step. We want to show that a faster model is *statistically indistinguishable* in accuracy from the slower model.
+
+*   **Approach A (Conservative): McNemar’s Test**
+    *   Compare the error matrices of Model A and Model B.
+    *   If $p > 0.05$, we fail to reject the null hypothesis.
+    *   **Interpretation:** "The efficiency intervention provided a 40% speedup ($p < 0.001$) with no statistically significant loss in accuracy ($p=0.12$)."
+
+*   **Approach B (Rigorous): TOST (Two One-Sided Tests)**
+    *   Instead of looking for "no difference" (which is weak statistical proof), define an **Equivalence Margin** ($\delta$), e.g., 1% F1 score.
+    *   Test if the accuracy drop is strictly less than $\delta$.
+    *   **Interpretation:** "We are 95% confident that the accuracy drop is less than 1%."
+
+### 4. Implementation Snippet (PyTorch)
+
+```python
+import torch
+import time
+import numpy as np
+
+def measure_efficiency(model, dataloader, device):
+    model.eval()
+    latencies = []
+    
+    # Warm up GPU
+    dummy_input = torch.randint(0, 1000, (1, 10, 512)).to(device) # Batch, Chunks, Tokens
+    _ = model(dummy_input)
+    torch.cuda.synchronize()
+    
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    
+    with torch.no_grad():
+        for batch in dataloader:
+            inputs = batch['input_ids'].to(device)
+            
+            # Reset Peak Memory Tracker
+            torch.cuda.reset_peak_memory_stats()
+            
+            start_event.record()
+            _ = model(inputs)
+            end_event.record()
+            
+            torch.cuda.synchronize() # WAIT for GPU
+            
+            # Latency in ms
+            latencies.append(start_event.elapsed_time(end_event))
+            
+    avg_latency = np.mean(latencies)
+    std_latency = np.std(latencies)
+    peak_mem = torch.cuda.max_memory_allocated() / 1024**2 # MB
+    
+    return avg_latency, std_latency, peak_mem
+```

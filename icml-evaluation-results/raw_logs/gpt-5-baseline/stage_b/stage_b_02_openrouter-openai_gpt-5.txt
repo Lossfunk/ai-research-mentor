@@ -1,0 +1,60 @@
+Short take: “Compressible LLMs” is a good idea, but the novelty hinges on what you mean by compressible and how broadly you make it hold. Post‑training quantization, pruning, low‑rank, and LoRA are well‑trodden. What’s novel is training the base model so that many compression knobs can be applied post‑hoc with minimal or no retraining, across tasks and hardware.
+
+What could be novel
+- Once-for-all compressibility: A single set of weights that maintains accuracy across a range of weight/activation bit‑widths (e.g., W8→W3, A16→A8), group sizes, and even sparsity levels, without per‑setting retraining.
+- Rate–distortion/MDL objective at pretraining: Optimize task loss plus an explicit proxy for codelength under a real codec (quantization + codebook + entropy coding), not just L2 or ℓ1 regularization.
+- Unified compressibility: Jointly target weights, activations, and KV cache so long‑context inference is memory/latency efficient at multiple precisions.
+- Dynamic precision allocation: A lightweight controller that chooses per‑layer or per‑token precision given a bit budget, trained end‑to‑end to maximize utility under constraints.
+- Codebook/clustered weights at scale: Train with vector quantization or weight clustering priors so checkpoints are entropy‑codable to very low bits/parameter without accuracy loss.
+- Structured sparsity and low‑rank friendliness: Explicitly train for N:M sparsity and low‑rank decomposability while preserving dense‑model accuracy; enable hardware‑friendly speedups.
+- Robustness to lossy storage and bit flips: Demonstrate resilience to checkpoint quantization, entropy coding, and random bit flips (ECC‑like scenarios).
+- Compressible adapters: Show that LoRA/DoRA adapters remain compressible and that full models stay compressible after fine‑tuning.
+- Precision elasticity guarantees: Provide empirical or theoretical bounds linking model flatness/Hessian spectrum to post‑hoc quantization error.
+
+A concrete approach
+- Training recipe
+  - Randomized precision training: At each step, sample a mixed set of bit‑widths per block (e.g., some layers W8, some W6/4/3) and apply STE quantization noise; include activation clipping/scaling (SmoothQuant‑style) but learn scales during training.
+  - Multi‑axis compression: Mix in N:M sparsity masks, low‑rank reparameterization (W = UV + R) with rank‑dropout, and weight‑clustering penalties; randomly enable one or more per batch.
+  - Distillation: Online distill from a higher‑precision teacher to stabilize learning under noise.
+  - Rate proxy: Add a codelength term that sums expected bits for weight codebooks, per‑channel scales, sparsity indices, and KV compression; tune λ to trace a good accuracy–bits frontier.
+  - KV/cache: Train with long contexts and quantized/projected KV caches (e.g., per‑head projection to lower dim + int8/int4) to make memory savings real at inference.
+- Output: One checkpoint plus calibration metadata (per‑layer scales, codebooks, sparsity masks) that can be compiled to multiple deployment targets.
+
+What tests to run
+- Accuracy vs compression frontier
+  - Perplexity on held‑out text (e.g., C4/RefinedWeb slice, WikiText‑103, PG‑19).
+  - Zero‑shot/5‑shot evals: MMLU, ARC‑C/E, HellaSwag, PIQA, TruthfulQA, GSM8K, BBH; for code: HumanEval/MBPP; for chat: MT‑Bench.
+  - Plot score vs bits/parameter for W16/A16 (baseline), W8/A8, W6/A8, W4/A8, W3/A8; include combined settings (e.g., W4A8 + 2:4 sparsity).
+  - Baselines: strong PTQ methods (e.g., GPTQ/AWQ/SpQR/SmoothQuant), QAT where feasible, SparseGPT/Wanda for sparsity, and low‑rank baselines. Show your curve dominates or matches at lower bits.
+- Runtime, memory, and energy
+  - Hardware: at least one server GPU (A100/L40), one consumer GPU, and CPU‑only (AVX512). If applicable, an edge GPU (Jetson) or mobile NPU.
+  - Metrics: tokens/sec, latency/token, peak/steady VRAM, KV‑cache memory vs context length (2k→128k), and energy/token (nvidia‑smi or on‑device power).
+  - Kernels: use production quant kernels (int8/int4 GEMMs, N:M sparse GEMMs); report both theoretical MAC reduction and realized speedups.
+- Long‑context and KV cache
+  - Evaluate LongBench/RULER or synthetic retrieval tasks at 8k→128k. Compare quality and memory with FP16 KV vs compressed KV (quantized and/or projected).
+  - Throughput vs context scaling, with and without paging; measure OOM thresholds.
+- Robustness and stability
+  - Bit‑flip tests: randomly flip 1e‑6 to 1e‑4 of weight bits; report delta in perplexity and downstream scores.
+  - Recompression cycles: quantize→dequantize→requantize; measure drift.
+  - Distribution shift: evaluate on out‑of‑domain corpora; check calibration (ECE/Brier) before/after compression.
+  - Safety consistency: toxicity/harmfulness classifiers pre/post compression to show no adverse drift.
+- Fine‑tuning compatibility
+  - QLoRA/LoRA fine‑tunes on small tasks; then re‑quantize weights and adapters. Measure performance retention vs standard models.
+  - PEFT swap test: can you change adapters without re‑exporting scales/codebooks?
+- Ablations
+  - Remove each component (noise injection, clustering loss, sparsity, rate term, distillation) to quantify its contribution to compressibility.
+  - Sensitivity to group size, per‑channel vs per‑tensor scaling, clipping strategies.
+  - Hessian/flatness diagnostics: trace, spectral norm, or SAM measure; correlate with compressibility.
+- Checkpoint compression
+  - Apply codebook sharing + entropy coding; report true on‑disk size and load times.
+  - Bits/parameter and total model size vs perplexity, not just runtime quantization.
+- Reporting
+  - Provide Pareto fronts: accuracy vs bits/param; accuracy vs latency; latency vs memory.
+  - Offer a “precision elasticity” table showing the same checkpoint deployed at multiple budgets with monotonic quality.
+
+Minimal viable path (fast iteration)
+- Start from a 1–3B open model. Do continued pretraining (1–5B tokens) with:
+  - Randomized per‑layer W{8,6,4} STE quantization, learned activation clipping, and online distillation.
+  - Optional light clustering prior on weights.
+- Compare against strong PTQ baselines at W8 and W4 on perplexity and a small eval suite (ARC‑E, HellaSwag, MMLU‑subset).
+- Add a KV‑cache quantization/projection head and evaluate

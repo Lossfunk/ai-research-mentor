@@ -1,0 +1,372 @@
+# **SIMULATED REVIEWER SUMMARY: Federated Learning Benchmark Paper**
+## **Rebuttal-Style Review with Strengths, Concerns, and Missing Artifacts**
+
+---
+
+## **📋 META-REVIEWER SUMMARY**
+
+**Paper Title**: [Federated Learning Benchmark Paper]  
+**Recommendation**: **Borderline Accept (5.5/10)** - Conditional on addressing artifact and experimental concerns  
+**Confidence**: High (4/5)
+
+**Summary**: This paper presents a benchmark for federated learning systems with comprehensive evaluation across multiple datasets and FL algorithms. While the empirical work is extensive and the benchmark could be valuable to the community, reviewers raised significant concerns about missing baselines, incomplete artifact documentation, and lack of statistical rigor. The paper is on the borderline; acceptance depends on addressing artifact requirements and experimental gaps in the rebuttal.
+
+**Consensus Issues Requiring Response**:
+1. Missing comparisons to recent FL benchmarks (FedML, Flower)
+2. Incomplete code/data release plan
+3. Statistical significance testing absent
+4. Privacy analysis superficial
+5. Heterogeneity simulation methodology unclear
+
+---
+
+## **👤 REVIEWER #1: WEAK REJECT (5/10)**
+
+**Expertise**: Federated Learning, Distributed Systems  
+**Confidence**: Very High (5/5)
+
+### **Summary**
+This paper introduces a federated learning benchmark evaluating X algorithms across Y datasets. While the scope is ambitious and the evaluation is comprehensive, I have concerns about the experimental methodology, missing baselines, and artifact completeness. The paper could be valuable but needs significant revisions.
+
+---
+
+### **✅ STRENGTHS**
+
+**S1: Comprehensive Evaluation Scope**
+- Evaluates 8 FL algorithms (FedAvg, FedProx, SCAFFOLD, FedOpt, etc.) across 6 datasets
+- Covers both vision (CIFAR-10/100, FEMNIST) and NLP (Shakespeare, StackOverflow) tasks
+- Systematic evaluation of different heterogeneity levels (IID, non-IID with α=0.1, 0.5, 1.0)
+- Clear presentation of results with consistent metrics (accuracy, communication cost, convergence rounds)
+
+**S2: Novel Heterogeneity Modeling**
+- The proposed data heterogeneity simulation framework (Section 3.2) is more realistic than standard Dirichlet sampling
+- Good analysis of how different types of heterogeneity (label, feature, quantity) affect FL performance
+- Visualization of data distributions across clients is helpful (Figure 3)
+
+**S3: Practical Systems Considerations**
+- Includes systems metrics (wall-clock time, network bandwidth, memory usage) beyond just accuracy
+- Evaluation on different hardware configurations (edge devices, mobile phones, servers)
+- Discussion of deployment challenges is valuable for practitioners
+
+**S4: Clear Writing and Presentation**
+- Paper is well-organized and easy to follow
+- Figures and tables are clear and informative
+- Good use of appendix for additional results
+
+---
+
+### **❌ WEAKNESSES**
+
+**W1: Missing Critical Baselines [MAJOR]**
+The paper does not compare against recent FL benchmarks:
+- **FedML** (He et al., 2020): Widely-used FL benchmark with similar scope
+- **Flower** (Beutel et al., 2020): Popular FL framework with benchmarking capabilities
+- **LEAF** (Caldas et al., 2018): Standard benchmark for federated datasets
+- **TFF** (TensorFlow Federated): Industry-standard FL framework
+
+**Without these comparisons, it's unclear what novel insights this benchmark provides beyond existing work.**
+
+**Question for authors**: How does your benchmark differ from/improve upon FedML and Flower? What unique value does it provide?
+
+**W2: Incomplete Artifact Documentation [MAJOR]**
+The code availability statement (Section 7) is vague:
+- "Code will be released upon acceptance" - no anonymous repository for review
+- No documentation of:
+  - Installation instructions
+  - Reproduction steps
+  - Expected runtime
+  - Hardware requirements
+  - API documentation
+- No evidence that code is production-ready or well-documented
+
+**This violates the conference's artifact expectations.** Reviewers cannot verify reproducibility.
+
+**Required for acceptance**:
+- [ ] Anonymous code repository (GitHub/Anonymous4OpenScience)
+- [ ] Complete README with setup instructions
+- [ ] Scripts to reproduce all experiments
+- [ ] Expected outputs and checksums
+- [ ] Docker container for environment isolation
+
+**W3: Statistical Significance Testing Absent [MAJOR]**
+All results reported as single numbers without:
+- Standard deviations across multiple runs
+- Confidence intervals
+- Statistical significance tests (t-tests, ANOVA)
+- Number of random seeds used
+
+**Example**: Table 2 shows FedAvg achieves 73.2% accuracy vs. FedProx 74.1%. Is this difference statistically significant? How many runs? What's the variance?
+
+**This is a critical flaw for a benchmark paper.** Without statistical rigor, we cannot trust the conclusions.
+
+**Required for acceptance**:
+- [ ] Report mean ± std for all results (minimum 3 runs, preferably 5)
+- [ ] Statistical significance tests for claimed improvements
+- [ ] Discussion of variance sources (data splits, initialization, client sampling)
+
+**W4: Privacy Analysis Superficial [MODERATE]**
+Section 5.3 discusses privacy but lacks depth:
+- No formal privacy guarantees (differential privacy, secure aggregation)
+- No evaluation of privacy attacks (membership inference, model inversion, gradient leakage)
+- No privacy-utility tradeoff analysis
+- Claims about "privacy-preserving" without formal definitions
+
+**For a benchmark paper, privacy evaluation should be systematic:**
+- Implement standard privacy attacks (Zhu et al., 2019 gradient leakage)
+- Evaluate defense mechanisms (gradient clipping, noise addition)
+- Measure privacy-utility tradeoffs
+
+**Question**: Do you plan to add privacy attack evaluation? This would significantly strengthen the paper.
+
+**W5: Heterogeneity Simulation Methodology Unclear [MODERATE]**
+Section 3.2 describes heterogeneity simulation but lacks critical details:
+- How exactly is "feature heterogeneity" simulated? (Line 234-236 too vague)
+- What is the mathematical formulation of the proposed sampling method?
+- How do you ensure consistency across different datasets?
+- How does your method compare to standard Dirichlet sampling?
+
+**The paper claims this is a novel contribution, but without clear methodology, it's not reproducible.**
+
+**Required**: 
+- [ ] Mathematical formulation (equations, not just prose)
+- [ ] Pseudocode for sampling algorithm
+- [ ] Ablation comparing to standard methods
+- [ ] Validation that simulated heterogeneity matches real-world distributions
+
+**W6: Limited Analysis of Convergence Behavior [MINOR]**
+- Convergence plots (Figure 4) only show 100 rounds - what happens longer term?
+- No analysis of oscillation/divergence patterns
+- No discussion of early stopping criteria
+- Missing analysis of communication efficiency vs. final accuracy tradeoffs
+
+**W7: Dataset Selection Rationale Weak [MINOR]**
+- Why these 6 datasets specifically?
+- Missing common FL benchmarks (EMNIST, CelebA, Reddit)
+- No cross-silo scenarios (only cross-device)
+- No evaluation on large-scale datasets (>1M samples)
+
+---
+
+### **🔧 MISSING ARTIFACTS & REQUIREMENTS**
+
+**Code Repository (CRITICAL - Currently Missing)**
+```
+Expected structure:
+
+federated-learning-benchmark/
+├── README.md                    # ❌ MISSING
+│   ├── Installation instructions
+│   ├── Quick start guide
+│   ├── Reproduction instructions
+│   └── Expected runtimes
+├── LICENSE                      # ❌ MISSING
+├── requirements.txt             # ❌ MISSING
+├── environment.yml              # ❌ MISSING
+├── setup.py                     # ❌ MISSING
+│
+├── src/
+│   ├── algorithms/              # ❓ Existence unclear
+│   │   ├── fedavg.py
+│   │   ├── fedprox.py
+│   │   └── ...
+│   ├── datasets/                # ❓ Existence unclear
+│   ├── models/                  # ❓ Existence unclear
+│   └── utils/                   # ❓ Existence unclear
+│
+├── scripts/
+│   ├── reproduce_table2.sh      # ❌ MISSING
+│   ├── reproduce_figure4.sh     # ❌ MISSING
+│   └── run_all_experiments.sh   # ❌ MISSING
+│
+├── configs/
+│   ├── fedavg_cifar10.yaml      # ❌ MISSING
+│   └── ...
+│
+├── data/
+│   ├── download_datasets.sh     # ❌ MISSING
+│   └── README.md                # ❌ MISSING
+│
+├── results/
+│   ├── raw_results/             # ❌ MISSING
+│   ├── processed_results/       # ❌ MISSING
+│   └── reproduce.md             # ❌ MISSING
+│
+├── docker/
+│   ├── Dockerfile               # ❌ MISSING
+│   └── docker-compose.yml       # ❌ MISSING
+│
+└── tests/
+    └── test_algorithms.py       # ❌ MISSING
+```
+
+**Data Artifacts (CRITICAL)**
+- [ ] ❌ Preprocessed datasets (or scripts to generate)
+- [ ] ❌ Data splits (train/val/test for each client)
+- [ ] ❌ Heterogeneity configurations (JSON/YAML files)
+- [ ] ❌ Client sampling strategies
+- [ ] ❌ Expected checksums for reproducibility
+
+**Model Artifacts (RECOMMENDED)**
+- [ ] ❌ Pre-trained models (for transfer learning baselines)
+- [ ] ❌ Model architectures (clear specifications)
+- [ ] ❌ Checkpoint files (for intermediate results)
+
+**Experimental Artifacts (CRITICAL)**
+- [ ] ❌ Raw experimental logs
+- [ ] ❌ Hyperparameter configurations
+- [ ] ❌ Random seeds used
+- [ ] ❌ Compute resource specifications (GPU type, memory, etc.)
+- [ ] ❌ Estimated runtime for each experiment
+- [ ] ❌ Scripts to generate all figures/tables
+
+**Documentation Artifacts (CRITICAL)**
+- [ ] ❌ API documentation
+- [ ] ❌ Tutorial notebooks
+- [ ] ❌ Troubleshooting guide
+- [ ] ❌ FAQ
+- [ ] ❌ Contribution guidelines (if accepting community contributions)
+
+---
+
+### **❓ QUESTIONS FOR AUTHORS (Rebuttal Must Address)**
+
+**Q1**: Can you provide an anonymous code repository for review? Without this, I cannot verify reproducibility and may maintain my rejection.
+
+**Q2**: How does your benchmark compare quantitatively to FedML and Flower? Please add comparison in rebuttal.
+
+**Q3**: Can you add statistical significance testing (mean ± std over 3-5 runs) for all main results?
+
+**Q4**: What is the formal definition of your heterogeneity simulation method? Please provide equations.
+
+**Q5**: Can you clarify the computational cost? How long does reproducing Table 2 take? What hardware is required?
+
+**Q6**: Will you commit to maintaining the benchmark long-term? What is the sustainability plan?
+
+---
+
+### **📊 DETAILED COMMENTS BY SECTION**
+
+**Section 3.2 (Heterogeneity Modeling)**
+- Line 234: "We simulate feature heterogeneity by..." - too vague, needs mathematical formulation
+- Line 241: "realistic distribution" - compared to what? Need validation
+- Algorithm 1 missing: Should provide pseudocode for sampling
+
+**Section 4.2 (Experimental Setup)**
+- Table 1: Missing critical details (optimizer, learning rate schedule, batch size per client)
+- Line 312: "We run for 100 rounds" - why 100? Convergence analysis needed
+- Line 318: "10 clients per round" - ablation on this parameter?
+
+**Section 5 (Results)**
+- Table 2: Add standard deviations
+- Figure 4: Extend to 500+ rounds to show long-term behavior
+- Missing: Communication efficiency analysis (accuracy vs. bytes transmitted)
+- Missing: Fairness analysis (per-client accuracy distribution)
+
+**Section 6 (Related Work)**
+- Missing comparison to recent benchmarks: FedML, Flower, PySyft
+- Missing discussion of federated learning frameworks vs. benchmarks
+
+---
+
+### **🎯 RECOMMENDATIONS FOR ACCEPTANCE**
+
+**Must Address (Deal-breakers)**:
+1. **Provide anonymous code repository** with complete documentation
+2. **Add statistical significance testing** (mean ± std, significance tests)
+3. **Compare to FedML/Flower** (at minimum, discuss differences)
+4. **Formalize heterogeneity simulation** (equations, pseudocode)
+
+**Should Address (Strengthen paper)**:
+5. Add privacy attack evaluation
+6. Extend convergence analysis (longer training)
+7. Include more datasets (cross-silo scenarios)
+8. Add fairness analysis
+
+**Nice to Have**:
+9. Docker container for reproducibility
+10. Interactive demo/website
+11. Community contribution guidelines
+
+---
+
+### **📈 SCORING BREAKDOWN**
+
+| Criterion | Score | Weight | Comments |
+|-----------|-------|--------|----------|
+| **Originality** | 6/10 | 25% | Incremental over existing benchmarks |
+| **Quality** | 4/10 | 30% | Missing statistical rigor, incomplete artifacts |
+| **Clarity** | 7/10 | 20% | Well-written but methodology unclear |
+| **Significance** | 6/10 | 25% | Could be valuable if artifacts complete |
+| **Overall** | **5.0/10** | | **WEAK REJECT** |
+
+---
+
+## **👤 REVIEWER #2: BORDERLINE ACCEPT (6/10)**
+
+**Expertise**: Machine Learning, Distributed Systems  
+**Confidence**: High (4/5)
+
+### **Summary**
+This benchmark paper provides a useful evaluation of federated learning algorithms. The scope is comprehensive and the systems perspective (including wall-clock time, memory usage) is valuable. However, I share Reviewer #1's concerns about missing artifacts and statistical testing. I'm slightly more positive about the contribution but agree that artifact requirements must be met for acceptance.
+
+---
+
+### **✅ STRENGTHS**
+
+**S1: Systems-Oriented Evaluation (Novel)**
+Unlike prior FL benchmarks that focus only on accuracy, this paper evaluates:
+- Wall-clock training time (Table 3)
+- Memory consumption (Figure 6)
+- Network bandwidth usage (Figure 7)
+- Energy consumption on mobile devices (Section 5.4)
+
+**This is a valuable contribution** that helps practitioners understand real-world deployment tradeoffs.
+
+**S2: Heterogeneous Hardware Evaluation**
+Section 5.4 evaluates FL on diverse hardware:
+- Raspberry Pi (edge devices)
+- Android phones (mobile)
+- Cloud GPUs (servers)
+
+This is more realistic than prior work that assumes homogeneous infrastructure.
+
+**S3: Thorough Ablation Studies**
+- Ablation on client sampling strategies (Section 5.5)
+- Ablation on aggregation frequency (Section 5.6)
+- Ablation on local epochs (Section 5.7)
+
+These provide actionable insights for FL system designers.
+
+**S4: Open Science Commitment**
+Authors commit to releasing code, data, and models. If followed through, this could be a valuable community resource.
+
+---
+
+### **❌ WEAKNESSES**
+
+**W1: Artifact Release Plan Too Vague [MAJOR]**
+Section 7 states: "We will release all code and data upon acceptance."
+
+**This is insufficient for a benchmark paper.** Reviewers need to verify:
+- Code quality and documentation
+- Reproducibility of results
+- Ease of use for community
+
+**Required**:
+- [ ] Anonymous repository NOW (not after acceptance)
+- [ ] Detailed README with reproduction instructions
+- [ ] Estimated compute requirements (GPU hours, cost)
+- [ ] License specification (MIT/Apache recommended)
+- [ ] Maintenance plan (will you accept PRs? Fix bugs?)
+
+**Suggested approach**: Use Anonymous GitHub (https://anonymous.4open.science/) to share code during review without deanonymizing.
+
+**W2: Statistical Rigor Lacking [MAJOR]**
+I agree with Reviewer #1 - no error bars, confidence intervals, or significance tests.
+
+**Specific issues**:
+- Table 2: FedAvg (73.2%) vs. FedProx (74.1%) - is 0.9% significant?
+- Figure 4: Convergence curves show single runs - what about variance?
+- Section 5.3: Claims about "faster convergence" without statistical backing
+
+**Minimum requirement**: Report mean ± std over 3 runs with different

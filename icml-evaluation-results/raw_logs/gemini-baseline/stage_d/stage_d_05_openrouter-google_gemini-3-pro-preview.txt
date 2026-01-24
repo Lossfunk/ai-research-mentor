@@ -1,0 +1,91 @@
+This plan outlines the replication of a standard Hierarchical Transformer (Phase 1) and the design of a parameter-efficient "Grouped Pooling" intervention (Phase 2), ensuring statistical rigor and isolation of variables.
+
+### Phase 1: Baseline Replication (Fidelity)
+
+**Objective:** Reproduce the results of the standard Hierarchical Transformer (BERT-base + Transformer/LSTM Aggregator) within $\pm 0.5\%$ F1 of reported scores.
+
+**1. Architecture Specification (The "Control")**
+*   **Level 1 (Local):** `bert-base-uncased` (frozen for first 1 epoch, then unfrozen).
+*   **Level 2 (Global):** 2-layer Transformer Encoder (Randomly Initialized).
+*   **Pooling:** `[CLS]` token from Level 2.
+*   **Hyperparameters:**
+    *   Chunk Size: 200 tokens (50 overlap).
+    *   Max Chunks: 50.
+    *   Optimizer: AdamW.
+    *   LR: $2e^{-5}$ (Local), $1e^{-4}$ (Global).
+
+**2. Validation Protocol**
+*   **Dataset:** IMDb (Long) or Hyperpartisan News.
+*   **Success Criteria:** If the paper reports 94.5% Accuracy, the replication is valid if the mean of 3 seeds falls between 94.0% and 95.0%.
+
+---
+
+### Phase 2: Low-Parameter Intervention (Grouped Pooling)
+
+**Objective:** Replace the heavy Level 2 Transformer (approx. 3M-10M parameters) with a parameter-free or low-parameter mechanism that preserves coarse-grained narrative structure (e.g., Beginning vs. Middle vs. End).
+
+**1. The Intervention: Adaptive Grouped Pooling**
+Instead of a learned sequence model, we force the variable sequence of chunks into fixed "narrative bins."
+
+*   **Logic:**
+    1.  Input: Sequence of chunk embeddings $H = \{h_1, ..., h_K\}$.
+    2.  Operation: Divide $H$ into $G$ equal-sized bins (e.g., $G=4$: Intro, Rising Action, Climax, Resolution).
+    3.  Pooling: Apply Mean Pooling within each bin.
+    4.  Output: Concatenate the 4 bin vectors into a single vector $V_{doc}$.
+*   **Parameter Count:** 0 (vs. millions in Baseline).
+*   **Hypothesis:** Long-document classification relies on detecting *where* information appears (e.g., sentiment at the end vs. beginning) but does not require complex token-to-token attention between chunks.
+
+**2. Implementation Detail**
+If $K$ (chunks) is not divisible by $G$ (groups), use `adaptive_avg_pool1d` from PyTorch, which handles interpolation automatically.
+
+---
+
+### Phase 3: Power Analysis & Sample Size
+
+To claim the Grouped Pooling model is "comparable" to the Baseline, we must define the statistical power required to reject the null hypothesis.
+
+**Assumptions:**
+*   **Metric:** Macro F1.
+*   **Expected Standard Deviation ($\sigma$):** 0.8% (typical for BERT fine-tuning).
+*   **Minimum Detectable Effect ($\delta$):** 1.0% (we only care if the drop is larger than 1%).
+*   **Significance Level ($\alpha$):** 0.05.
+*   **Power ($1-\beta$):** 0.80.
+
+**Calculation:**
+Using the formula for two-sample t-tests: $n \approx 16 \frac{\sigma^2}{\delta^2}$
+$$n \approx 16 \frac{0.8^2}{1.0^2} = 16 \times 0.64 = 10.24$$
+
+**Recommendation:**
+You need **10 random seeds** per model configuration.
+*   Running only 3 seeds creates a high risk of Type II errors (failing to detect a real degradation in accuracy).
+
+---
+
+### Phase 4: Avoiding Double-Counting (Confounder Control)
+
+A common error in "efficient architecture" papers is optimizing the efficient model more aggressively than the baseline. To avoid this **"Stroop Effect" of improvements**, you must adhere to the **Ceteris Paribus Protocol**:
+
+**1. Locked Backbone**
+*   Both Phase 1 and Phase 2 models must initialize the Local Encoder (BERT) from the *exact same* checkpoint file.
+*   Do not use `bert-base` for Phase 1 and `distilbert` for Phase 2.
+
+**2. Locked Preprocessing**
+*   **Risk:** The Grouped Pooling model might benefit from smaller chunks.
+*   **Control:** Both models must use the exact same `(Window_Size, Stride, Max_Chunks)` settings. If you change chunking for Phase 2, you must re-run Phase 1 with those settings.
+
+**3. The "Optimizer Wall"**
+*   You are not allowed to change the Learning Rate or Batch Size for the Phase 2 model *unless* you treat those changes as separate ablation studies.
+*   **Valid Comparison:**
+    *   Model A (Hierarchical) @ LR $2e^{-5}$
+    *   Model B (Grouped Pool) @ LR $2e^{-5}$
+*   **Invalid Comparison (Double Counting):**
+    *   Model A (Hierarchical) @ LR $2e^{-5}$
+    *   Model B (Grouped Pool) @ LR $5e^{-5}$ + Gradient Clipping (claiming the architecture is better when the tuning did the work).
+
+**4. Separation of Metrics**
+*   Report **Accuracy** and **Efficiency** in separate columns. Do not combine them into a composite score (e.g., "Accuracy per Parameter") as the primary metric, as this obscures whether the model actually works.
+
+### Summary of Deliverables
+1.  **Table 1:** Replication results (Phase 1) vs. Paper Reported Scores (Validates Code).
+2.  **Table 2:** Baseline vs. Grouped Pooling (N=10 seeds). Columns: F1, Latency (ms), VRAM (GB).
+3.  **Plot:** Box plot of F1 scores (10 points each) to visually demonstrate overlap or separation.

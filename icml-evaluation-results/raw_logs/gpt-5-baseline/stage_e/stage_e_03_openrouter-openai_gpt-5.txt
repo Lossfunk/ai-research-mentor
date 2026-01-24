@@ -1,0 +1,53 @@
+Below are the most critical threats to validity in PeerRead’s data collection, plus concrete analyses you can add to preempt reviewer critiques.
+
+Critical threats to validity
+- Non-matched arXiv ≠ rejected: “Probably-rejected” arXiv papers conflate never-submitted, withdrawn, desk-rejected, and later-accepted cases; matching errors (title/author changes) further pollute labels.
+- Temporal leakage: Using arXiv versions, metadata, or citations timestamped after venue notification leaks outcomes (e.g., “to appear in X,” updated titles/abstracts, post-acceptance citation spikes).
+- Incomplete and nonrandom coverage: ArXiv and open-review uptake varies by subfield, venue, geography, seniority, and year, creating selection bias; some venues/years lack reviews or aspect scores entirely.
+- Rater/venue heterogeneity: Aspect scores and rubrics differ across venues/years; many papers have single-rater scores with uncertain reliability, creating label noise and shifting scales.
+- Parsing and feature noise: PDF-to-text extraction errors (missing sections, broken references) and variable TeX styles introduce measurement error in features like length, readability, or section cues.
+- Duplicate and near-duplicate records: Resubmissions across years/venues, arXiv versioning, and minor title changes can create duplicates or label contradictions across instances.
+- Outcome ambiguity over time: “Negative” arXiv papers may be accepted later at different venues/years; fixed labels at crawl time become stale.
+- Split leakage and dependence: Train/test splits may share near-duplicate texts, same authors, or same arXiv paper across versions, inflating performance.
+- Confounding by topic and non-textual cues: Topic mix, author/institution count, and easy proxies (page limits, template artifacts) can drive predictions rather than substantive content.
+- Provenance gaps: Lack of transparent, reproducible matching pipelines (sources, thresholds, timestamps) makes it hard to assess error modes and replicate labels.
+
+Analyses to preempt critiques
+- Recast “negatives” as unlabeled and quantify noise
+  - Treat non-matched arXiv as unlabeled (PU learning). Estimate class prior and label noise via a stratified manual audit (by venue, year, topic); report false-negative/false-positive rates with CIs.
+  - Sensitivity analyses that perturb labels according to estimated noise; report noise-adjusted performance bounds.
+- Strengthen and document matching
+  - Multi-source linkage (DBLP/Crossref/Semantic Scholar/OpenAlex) with fuzzy title/author match, DOIs, multi-year windows, and per-paper confidence scores.
+  - Threshold sweep: show stability of results as you exclude low-confidence matches; release evidence trails for matched pairs.
+- Eliminate temporal leakage
+  - Freeze each arXiv record to v1 posted before notification; exclude later versions from features.
+  - Strip venue-status strings from titles/abstracts; censor post-notification metadata (citations, acceptance notes). Report performance delta with/without these controls.
+- Address coverage/selection bias
+  - Compare included vs excluded populations on observable covariates (topic, year, region, author count); quantify standardized mean differences.
+  - Stratify and reweight: report results by venue/year/subfield and with inverse-probability or entropy balancing on observables.
+- Calibrate and harmonize aspect scores
+  - Report inter-rater reliability per aspect (where multi-rater exists) and convert to reliability ceilings; express model performance as a fraction of these ceilings.
+  - Standardize scores within venue-year or align scales via ordinal anchoring/IRT; show robustness of findings before/after harmonization.
+- Quantify parsing/feature error
+  - Measure PDF-to-text quality (e.g., section coverage, missing tokens) and correlate with features and outcomes; rerun analyses excluding low-quality parses.
+  - Ablate fragile features (readability indices, reference counts) to show they are not driving results.
+- Deduplicate and control dependence
+  - Near-duplicate detection via MinHash/embedding similarity; remove or cluster duplicates across years/venues/versions and redo key results.
+  - Author-linked leakage check: ensure that arXiv versions or same-paper variants are not split across train/test; report leakage audits.
+- Robustness and negative controls
+  - Cross-time and cross-venue generalization: train on year A/venue X, test on year B/venue Y; report stability.
+  - Negative-control features: evaluate a model using only trivial cues (page length, author count) to bound spurious signal; your full model should beat this by a clear margin.
+  - Placebo labels: random label tests to verify no spurious pipeline leakage.
+- Longitudinal outcome reconciliation
+  - Track later acceptances over 12/18/24 months; reclassify or exclude “later-accepted” cases and report effect sizes across censoring windows.
+- Reproducibility and transparency
+  - Release deterministic pipelines with versioned data sources, timestamps, and configuration; provide a datasheet documenting label definitions, known failure modes, and recommended use.
+
+What to add to the paper now
+- A data quality and leakage audit (v1-only, string stripping, citation censoring) with quantitative impact on results.
+- A matching confidence analysis with threshold sweeps and a manual validation error rate.
+- Reliability ceilings for aspect scores and performance reported as a proportion of those ceilings.
+- Stratified, reweighted, and deduplicated robustness checks, plus negative-control baselines.
+- A longitudinal re-labeling analysis with 12/18/24-month censoring.
+
+These steps both acknowledge the principal data-collection threats and empirically demonstrate that your findings are robust to realistic sources of noise, leakage, and selection bias.

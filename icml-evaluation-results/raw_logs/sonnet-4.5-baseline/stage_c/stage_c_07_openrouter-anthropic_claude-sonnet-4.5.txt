@@ -1,0 +1,252 @@
+The search yielded several relevant references on edge AI for marine/wildlife monitoring [1,2,3,4,5,6]. I'll construct a rigorous 6-month plan for low-power coral reef monitoring systems using volunteer diver-collected imagery.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Coral reefs face unprecedented threats (bleaching, disease, overfishing, ocean acidification), with 50% of global reefs degraded since 1980. Effective conservation requires continuous monitoring at scale, but traditional methods (expert diver surveys, manual image analysis) are expensive, slow, and don't scale. Volunteer divers generate massive imagery (millions of photos annually via platforms like iNaturalist, Reef Check), but lack automated analysis tools. Existing deep learning coral classification models require cloud infrastructure, making them impractical for:
+
+1. **Remote/developing regions:** Limited internet connectivity in dive sites (Pacific islands, Southeast Asia, Caribbean)
+2. **Real-time feedback:** Divers need immediate species ID and health assessments underwater or boat-side
+3. **Cost constraints:** Cloud processing ($0.01-0.10/image) is prohibitive for large-scale volunteer programs
+4. **Data sovereignty:** Some marine protected areas restrict data upload to external servers
+
+Recent work demonstrates feasibility of edge AI for marine monitoring [1,3,5], but lacks comprehensive volunteer-centric deployment frameworks.
+
+**Core Hypothesis:**  
+Low-power computer vision models (<10W power, <500MB memory) deployed on edge devices (smartphones, Raspberry Pi, Google Coral) can achieve expert-level coral classification accuracy (>85% top-5) and real-time health assessment (<2s/image), enabling scalable volunteer-driven reef monitoring with 100× cost reduction vs. cloud-based systems.
+
+**Primary Goals (6-month horizon):**
+- Develop lightweight coral classification models (MobileNet/EfficientNet-Lite) achieving >85% accuracy on 50+ coral species
+- Deploy on 3 edge platforms: Android smartphones, Raspberry Pi 4, Google Coral Dev Board
+- Field test with 20-50 volunteer divers across 3 reef sites (Caribbean, Pacific, Southeast Asia)
+- Process 5,000-10,000 images on-device with <$5/device hardware cost
+- Open-source toolkit + mobile app for community adoption
+
+**Secondary Goals:**
+- Integrate bleaching detection (pixel-level segmentation of healthy vs. bleached tissue)
+- Multi-task learning: Species ID + health assessment + biodiversity metrics (cover %, species richness)
+- Offline capability: Full pipeline runs without internet for 7+ days
+- Data quality assurance: Flag low-quality images (blur, poor lighting, wrong subject)
+- Community engagement: Gamified app with species leaderboards, contribution tracking
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Lightweight Coral Species Classification**
+
+**Hypothesis:** Knowledge distillation from large pretrained models (ResNet-101, EfficientNet-B4) to mobile-optimized architectures (MobileNetV3, EfficientNet-Lite) can achieve >85% top-5 accuracy on 50+ coral species while reducing model size by 10-20× (to <20MB) and inference time to <200ms on edge devices.
+
+**Setup:**
+- **Datasets:**
+  - **Primary:** CoralNet (100k+ annotated coral images, 200+ species) - request academic access
+  - **Supplementary:** EILAT (Red Sea corals, 1,200 images), UCSD Moorea (5k images, 9 species)
+  - **Volunteer data:** Partner with Reef Check, PADI AWARE for 5k-10k volunteer-collected images
+  - **Train/val/test split:** 70/15/15, stratified by species and geographic region
+- **Architectures:**
+  1. **Teacher models:** EfficientNet-B4 (19M params), ResNet-101 (44M params) pretrained on ImageNet
+  2. **Student models:** MobileNetV3-Small (2.5M params, 5MB), EfficientNet-Lite0 (4.6M params, 18MB), MobileNetV2 (3.5M params)
+  3. **Distillation:** Soft targets (temperature=3-5), feature matching, attention transfer
+- **Training:**
+  - Pretrain teacher on CoralNet (200 epochs, AdamW, cosine schedule)
+  - Distill to student (100 epochs, KL divergence loss + hard label CE, α=0.7)
+  - Data augmentation: Random crop, flip, color jitter, underwater-specific (haze, blue shift)
+  - Hardware: 4× NVIDIA A100 GPUs for teacher, 1× V100 for student
+- **Deployment targets:**
+  - Android (TensorFlow Lite, Samsung Galaxy A-series, Snapdragon 600+)
+  - Raspberry Pi 4 (8GB RAM, TFLite or ONNX Runtime)
+  - Google Coral Dev Board (Edge TPU, INT8 quantization)
+
+**Baselines:**
+1. Full-size EfficientNet-B4 (cloud deployment, upper bound)
+2. MobileNetV3 trained from scratch (no distillation)
+3. Transfer learning only (ImageNet → coral, no distillation)
+4. Expert diver identification (inter-rater agreement from literature: 75-85%)
+
+**Evaluation Metrics:**
+1. **Accuracy:** Top-1, top-5 accuracy on test set; per-species F1 scores
+2. **Model size:** Parameters (M), storage (MB), quantized size (INT8)
+3. **Inference speed:** Latency (ms) on each target device, FPS for video
+4. **Energy consumption:** mAh per 100 images on smartphone, Watts on RPi/Coral
+5. **Robustness:** Accuracy under underwater distortions (blur, haze, color cast)
+6. **Generalization:** Performance on held-out geographic regions (test Caribbean model on Pacific data)
+7. **Fairness:** Accuracy across species abundance (common vs. rare species)
+
+**Expected Outcomes:**
+- Distilled MobileNetV3: 82-87% top-5 accuracy (vs. 90-92% for teacher), 5MB model, 150-200ms latency on smartphone
+- EfficientNet-Lite0: 85-89% top-5 accuracy, 18MB, 250-300ms latency
+- Coral Edge TPU: 83-86% accuracy with INT8 quantization, 50-80ms latency, <2W power
+- Identifies challenging species pairs (e.g., Acropora cervicornis vs. A. palmata) requiring expert review
+- Geographic generalization: 5-10% accuracy drop on out-of-region data (addressable via domain adaptation)
+
+**Ablations:**
+- Distillation temperature: {2, 3, 5, 10}
+- Loss weighting: α ∈ {0.5, 0.7, 0.9} for soft vs. hard targets
+- Input resolution: {224×224, 320×320, 384×384} (trade accuracy vs. speed)
+- Quantization: FP32 vs. FP16 vs. INT8 (PTQ vs. QAT)
+- Pretraining datasets: ImageNet vs. iNaturalist (more biodiversity-relevant)
+
+---
+
+### **Experiment 2: Coral Bleaching Detection via Semantic Segmentation**
+
+**Hypothesis:** Lightweight semantic segmentation models (DeepLabV3-MobileNet, U-Net-MobileNet) can detect and quantify coral bleaching at pixel level with >80% mIoU, enabling automated health assessment and early warning systems.
+
+**Setup:**
+- **Task:** Pixel-wise classification into {healthy coral, bleached coral, dead coral, algae, sand, other}
+- **Datasets:**
+  - **CoralSeg:** 1,000 manually annotated images with pixel-level masks (to be created via crowdsourcing or partnerships)
+  - **Existing:** XL-Catlin Seaview Survey (global reef imagery), NOAA Coral Reef Watch thermal stress data
+  - **Synthetic augmentation:** Apply color transformations to simulate bleaching stages (mild, moderate, severe)
+- **Architectures:**
+  1. DeepLabV3+ with MobileNetV3 backbone (5-8M params)
+  2. U-Net with MobileNetV2 encoder (4-6M params)
+  3. BiSeNet-Mobile (real-time segmentation, 3-5M params)
+- **Training:**
+  - Pretrain on COCO or ADE20K for segmentation task understanding
+  - Fine-tune on coral bleaching data (100 epochs, focal loss for class imbalance)
+  - Multi-task: Joint training with species classification (shared encoder)
+- **Bleaching quantification:** 
+  - Compute % bleached pixels per image
+  - Spatial distribution analysis (localized vs. widespread bleaching)
+  - Temporal tracking (compare images from same site over time)
+
+**Baselines:**
+1. Full DeepLabV3+ with ResNet-101 backbone (cloud-only)
+2. Color thresholding (heuristic: white/pale pixels = bleached)
+3. Unsupervised clustering (k-means on color features)
+4. Expert annotation (ground truth for validation)
+
+**Evaluation Metrics:**
+1. **Segmentation quality:** mIoU, per-class IoU, pixel accuracy
+2. **Bleaching quantification:** MAE/RMSE vs. expert-assessed bleaching %
+3. **Inference speed:** ms per image, FPS for video
+4. **Model size:** MB, parameters
+5. **Clinical utility:** Sensitivity/specificity for "bleaching present" (>5% bleached pixels)
+6. **Temporal consistency:** Agreement between consecutive frames in video
+
+**Expected Outcomes:**
+- DeepLabV3-MobileNet: 75-82% mIoU, 6MB model, 400-600ms latency on smartphone
+- Bleaching quantification: RMSE <8% vs. expert assessment
+- Identifies early-stage bleaching (pale coloration) with 70-80% sensitivity
+- Real-time video processing: 2-4 FPS on Raspberry Pi 4
+- Multi-task learning improves both species ID and segmentation by 2-4%
+
+**Ablations:**
+- Encoder: MobileNetV2 vs. V3, EfficientNet-Lite variants
+- Decoder: ASPP vs. FPN vs. simple upsampling
+- Loss functions: Cross-entropy vs. focal loss vs. Dice loss
+- Input resolution: {256×256, 384×384, 512×512}
+- Multi-task weighting: Species classification vs. segmentation
+
+---
+
+### **Experiment 3: On-Device Deployment and Field Testing**
+
+**Hypothesis:** Edge-deployed models can process 500+ images per dive trip (2-3 dives/day, 7-day expedition) on a single battery charge (<50Wh total energy), providing real-time feedback to divers and enabling offline data collection in remote locations.
+
+**Setup:**
+- **Hardware platforms:**
+  1. **Smartphone app (Android):**
+     - Target devices: Samsung Galaxy A52/A53, Pixel 6a (mid-range, $250-400)
+     - Framework: TensorFlow Lite, MediaPipe for preprocessing
+     - Features: Real-time camera feed classification, gallery batch processing, offline storage
+  2. **Raspberry Pi 4 (8GB) field station:**
+     - Waterproof enclosure (Pelican case), 20,000mAh battery
+     - Touchscreen display for diver interaction
+     - USB storage for 10k+ images
+  3. **Google Coral Dev Board:**
+     - Edge TPU acceleration, 4GB RAM
+     - Lowest latency option for real-time video
+- **Field deployment sites (3 locations):**
+  1. **Caribbean:** Bonaire or Curaçao (Reef Check partnership)
+  2. **Pacific:** Fiji or Palau (local dive operator collaboration)
+  3. **Southeast Asia:** Indonesia or Philippines (Coral Triangle Initiative)
+- **Volunteer recruitment:** 20-50 divers per site (mix of recreational, scientific divers)
+- **Data collection protocol:**
+  - Pre-dive: Upload existing photos to device
+  - During dive: Capture 50-200 images per dive (GoPro, underwater housing smartphones)
+  - Post-dive: Batch process on device, review results
+  - Weekly sync: Upload to cloud for model refinement (optional, if connectivity available)
+- **User experience:**
+  - Species ID with confidence scores
+  - Bleaching alerts for detected corals
+  - Contribution dashboard (species discovered, bleaching hotspots)
+  - Gamification: Badges for rare species, most contributions
+
+**Baselines:**
+1. Cloud-based processing (upload to server, wait for results)
+2. Manual expert identification (post-dive analysis)
+3. No automated tools (current volunteer workflow)
+
+**Evaluation Metrics:**
+1. **System performance:**
+   - Images processed per day, per battery charge
+   - Latency: Time from photo capture to result display
+   - Uptime: % of time system operational during 7-day expedition
+2. **User adoption:**
+   - % divers who complete ≥3 dives with system
+   - Images contributed per diver per dive
+   - User satisfaction (5-point Likert scale survey)
+3. **Data quality:**
+   - % images successfully processed (vs. rejected for poor quality)
+   - Agreement with expert labels (on 500-image validation subset)
+   - False positive rate for bleaching alerts
+4. **Energy efficiency:**
+   - Battery consumption per 100 images
+   - Days of operation per charge
+5. **Deployment feasibility:**
+   - Setup time (minutes to configure device)
+   - Failure modes (crashes, errors, user mistakes)
+   - Network independence (% operations completed offline)
+
+**Expected Outcomes:**
+- Smartphone app: 300-500 images per charge (8-10 hours active use), 85-90% user satisfaction
+- Raspberry Pi: 1,000+ images per charge, 3-5 days operation, preferred for group expeditions
+- Coral Dev Board: Fastest processing (50-80ms/image), but higher power (1-2 days per charge)
+- User adoption: 60-75% of divers complete ≥3 dives (acceptable for pilot)
+- Data quality: 80-85% agreement with experts, 10-15% image rejection rate (blur, poor framing)
+- Identifies deployment challenges: Waterproofing, sunlight glare on screens, user training needs
+- Publishes deployment case study with lessons learned
+
+**Field Testing Protocol:**
+- **Month 4:** Pilot with 5-10 divers at 1 site (iterate based on feedback)
+- **Month 5:** Full deployment at 3 sites (20-50 divers total)
+- **Month 6:** Data analysis, user interviews, system refinement
+
+---
+
+### **Experiment 4: Underwater Image Enhancement Preprocessing**
+
+**Hypothesis:** Lightweight underwater image enhancement (color correction, dehazing, contrast adjustment) as a preprocessing step improves classification accuracy by 5-10% and reduces domain shift between training (curated datasets) and deployment (variable water conditions).
+
+**Setup:**
+- **Underwater degradation factors:**
+  - Blue-green color cast (red light absorption)
+  - Haze/turbidity (scattering)
+  - Low contrast
+  - Non-uniform illumination
+- **Enhancement methods:**
+  1. **Classical:** White balance (gray world, histogram equalization), CLAHE (contrast-limited adaptive histogram equalization)
+  2. **Learning-based:** Lightweight U-Net for image-to-image translation (degraded → enhanced)
+  3. **Hybrid:** Classical preprocessing + learned refinement
+  4. **Real-time:** Fast bilateral filter, guided filter (10-30ms overhead)
+- **Training data:**
+  - Paired data: UIEB (underwater image enhancement benchmark, 950 pairs), EUVP (12k pairs)
+  - Synthetic: Apply underwater degradation model to clear coral images, train to reverse
+- **Integration:** Preprocessing module before classification/segmentation
+- **Model size constraint:** <5MB for enhancement model, <50ms latency
+
+**Baselines:**
+1. No enhancement (raw images)
+2. Classical methods only (white balance + CLAHE)
+3. Full-size enhancement models (not deployable on edge)
+
+**Evaluation Metrics:**
+1. **Image quality:** PSNR, SSIM, UIQM (underwater image quality measure)
+2. **Downstream task improvement:** Classification accuracy, segmentation mIoU (with vs. without enhancement)
+3. **Computational cost:** Latency (ms), memory (MB), energy (mAh per 100 images)
+4. **Generalization:** Performance across water conditions (clear, turbid, deep, shallow)
+5. **Robustness:** Avoid over-enhancement artifacts (color dist

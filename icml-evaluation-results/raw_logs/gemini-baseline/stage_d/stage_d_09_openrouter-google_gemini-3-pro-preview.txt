@@ -1,0 +1,71 @@
+This adaptation plan modifies the standard Hierarchical Transformer pipeline to handle the structural and ethical nuances of **Healthcare Dialogue** (e.g., Doctor-Patient conversations, Telehealth transcripts).
+
+### 1. Data Preprocessing & Input Representation
+
+Standard hierarchical models slice text arbitrarily at 512 tokens. In dialogue, this breaks the **Adjacency Pair** (e.g., Q: "Does it hurt?" A: "Yes"). Breaking this link destroys the clinical signal.
+
+**A. Turn-Aware Chunking Strategy**
+Instead of hard truncation, implement a "greedy packing" strategy that respects turn boundaries.
+*   **Speaker Injection:** Prepend special tokens to every turn before chunking.
+    *   *Format:* `[DOC] How long has this hurt? [PAT] About three days.`
+*   **Boundary Logic:**
+    *   Fill the 512-token window with complete turns.
+    *   If the next turn fits, add it.
+    *   If it does not fit, close the current chunk and start a new one.
+    *   *Exception:* If a single turn > 512 tokens (rare in dialogue), split it but repeat the Speaker Token in the new chunk.
+
+**B. Context Overlap (The "Anaphora" Fix)**
+Patients often answer with pronouns ("It hurts"). If the question is in the previous chunk, the model loses context.
+*   **Constraint:** Increase **Stride/Overlap** to 128 or 256 tokens (higher than the standard 64) to ensure the Question and Answer appear together in at least one chunk.
+
+### 2. Architectural Changes
+
+**A. Domain-Specific Backbone (Level 1)**
+The standard `bert-base` heavily underperforms on medical terminology.
+*   **Change:** Replace the Level 1 Local Encoder with **ClinicalBERT** (Alsentzer et al.) or **PubMedBERT**.
+*   **Comparability Check:** To maintain comparability with the original paper, use the exact same Level 2 (Aggregator) architecture. Only swap the Level 1 weights and tokenizer.
+
+**B. Speaker Embeddings (Optional but Recommended)**
+If the dataset relies heavily on who said what (e.g., distinguishing a Doctor's advice from a Patient's history):
+*   **Modification:** Add a binary `Speaker Embedding` (0 for Doc, 1 for Patient) to the input embeddings of the Level 1 encoder, similar to BERT's Segment Embeddings.
+
+### 3. Evaluation Metrics
+
+Accuracy is insufficient for clinical tasks due to the high cost of False Negatives (missed diagnoses).
+
+**A. Primary Metric: Recall@K and F2-Score**
+*   **F2-Score:** Weights recall higher than precision. $\frac{5 \cdot P \cdot R}{4 \cdot P + R}$.
+*   **Recall@K:** (For diagnosis coding) Is the correct code in the top $K$ predictions?
+
+**B. Ontology-Aware Metrics (Hierarchical)**
+Healthcare labels (like ICD-10 codes) are hierarchical (e.g., `J12` is Viral Pneumonia, `J12.9` is Viral Pneumonia, unspecified).
+*   **Metric:** **Hierarchical F1**.
+    *   If the Ground Truth is `J12.9` and the model predicts `J12` (parent), it receives partial credit rather than 0. This is crucial for fair evaluation in this domain.
+
+### 4. IRB & Ethics Considerations
+
+Reproducibility in healthcare is difficult because data cannot be shared freely.
+
+**A. Data Access & De-identification**
+*   **Requirement:** If using a dataset like MIMIC-III or localized hospital data, you must cite the specific **IRB Protocol Number** under which access was granted.
+*   **Preprocessing Audit:** Before tokenization, run a **PII Scrubber** (e.g., Microsoft Presidio or Philter) to remove names, dates, and locations. Even if the raw data is de-identified, leakage can occur in the "Speaker" fields.
+
+**B. The "Comparability" Dilemma**
+How do you prove your model works if others can't see your data?
+*   **Solution:** **Standardized Splits on Public Benchmarks.**
+    *   Validate the pipeline on a public biomedical dataset first (e.g., **DNSP** - Dialogue for Note Generation, or **MIMIC-III** clinical notes) using standard splits.
+    *   Report results on your private dataset as a secondary "Real-world Validation."
+
+**C. Failure Mode Reporting (Safety)**
+You must report **Hallucination Rates** for generative tasks (summarization) or **Demographic Bias** for classification.
+*   *Audit:* Does the model predict "Substance Abuse" more frequently for specific demographic dialects in the dialogue? (See the Fairness Audit plan above).
+
+### 5. Summary of Changes
+
+| Component | Standard Hierarchical Transformer | Healthcare Dialogue Adaptation |
+| :--- | :--- | :--- |
+| **Input** | Raw text, hard 512 cuts | `[DOC]/[PAT]` tags, Turn-aware packing |
+| **Backbone** | `bert-base-uncased` | `emilyalsentzer/Bio_ClinicalBERT` |
+| **Overlap** | 50-64 tokens | 128-256 tokens (Context preservation) |
+| **Metrics** | F1, Accuracy | F2-Score, Hierarchical F1 |
+| **Ethics** | Standard Citation | IRB Protocol, PII Scrubbing, Bias Audit |

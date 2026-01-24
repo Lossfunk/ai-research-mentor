@@ -1,0 +1,126 @@
+Below is a concise plan to replace the Hierarchical Transformer’s base encoder with a committee of smaller open‑weight models and to evaluate agreement, coverage, and regressions against the original model while preserving comparability.
+
+Objective
+- Replace the single large base encoder used at the token→segment level with an ensemble (committee) of smaller open‑weight encoders.
+- Measure: (a) agreement within the committee and vs the original model, (b) coverage/quality under selective prediction (abstain when uncertain), and (c) regressions (negative flips) relative to the original.
+
+Architectural swap (two drop‑in designs)
+Keep: tokenizer, segmenting policy (length/stride/max segments), masks, global encoder, pooling, training schedule, evaluation scripts.
+
+A) Logit‑level committee (minimal code, strongest comparability)
+- Run K smaller hierarchical models in parallel, each with its own base encoder but identical segmentation/global encoder shape.
+- Combine at the document level by probability/logit averaging:
+  - Classification: average logits across models before softmax.
+  - Extractive QA: average start/end logits at the same token indices.
+  - Generative heads: average encoder outputs into the same decoder or average token‑level decoder logits at each step (if architectures align).
+- Pros: no change to global encoder interface; simplest to implement.
+- Cons: multiplies compute by K at inference.
+
+B) Embedding‑level fusion (shared global encoder; compute‑aware)
+- Each small encoder produces a segment embedding s_i^(m) (m=1..K). Project to a common d using a per‑model 1×1 projection W_m (initialized to identity if dimensions match, else linear map to d).
+- Fuse per segment: s_i = Σ_m α_m s_i^(m), with α_m either uniform, learned scalar gates (per model), or a light attention over m conditioned on s_i^(m).
+- Feed fused segment embeddings into the unchanged global encoder and head.
+- Pros: single global encoder forward; closer to the original architecture’s compute profile.
+- Cons: minor code to add per‑model projections/gates.
+
+Implementation notes for comparability
+- Prefer committee models that share the baseline tokenizer/vocab (e.g., RoBERTa‑family: DistilRoBERTa, MiniLM‑L12‑H384, DeBERTa‑v3‑small if using compatible tokenizer). If disparate tokenizers are unavoidable:
+  - Keep segmentation defined in text units (sentences/paragraphs) and cap token budgets per model independently, but ensure identical document coverage/stride across models.
+  - For extractive QA, map spans to character offsets and reproject to each tokenizer to enable logit averaging; or ensemble at the answer string level with voting.
+- Match hidden size d via 1×1 projections; report added parameters.
+- Training:
+  - Freeze each small encoder for N warmup steps; train only projections/gates and the head; then optionally unfreeze the top 1–2 layers with a smaller LR (×0.1).
+- Efficiency parity:
+  - Keep batch size, precision, gradient checkpointing, and decoding identical. Report inference latency/throughput to contextualize accuracy changes.
+
+Variants to compare
+- Baseline: Original HT with its single large base encoder (same checkpoint as the paper).
+- Committee‑Avg (K): K small encoders; uniform averaging (logits for A; fused embeddings for B).
+- Committee‑Stack: learn a tiny meta‑learner on dev that takes per‑model logits and outputs final logits (L2‑regularized linear layer).
+- Committee‑Gate (optional): learned scalar α_m per model (global or per segment) with simplex constraint (softmax), trained on dev/train.
+- Single‑small controls: Each small encoder alone in the HT to separate “ensemble” from “capacity” effects.
+
+Recommended small open‑weight pools (examples)
+- RoBERTa‑family: DistilRoBERTa, RoBERTa‑base, MiniLM‑L12‑H384.
+- DeBERTa‑v3‑small/base (if tokenizer compatible or if you use char‑alignment workaround).
+- Long‑context smalls (if needed): LED‑base, Longformer‑base to maintain segment‑length behavior.
+
+Benchmark suite
+- Long‑document classification: Hyperpartisan (macro‑F1 primary), LEDGAR (macro‑F1).
+- Long‑context QA: Qasper (EM/F1; evidence overlap if available), HotpotQA (full wiki) for multi‑hop and supporting facts F1.
+- Long summarization (optional): PubMed/arXiv (ROUGE‑1/2/L and factuality proxy).
+- Length sensitivity: report per‑quartile results by effective tokens/document.
+
+Agreement, coverage, and regression metrics
+Agreement
+- Committee internal agreement:
+  - Pairwise Cohen’s κ (hard predictions) and average Fleiss’ κ across K.
+  - Mean pairwise Jensen–Shannon divergence between predictive distributions.
+  - Diversity: disagreement rate and double‑fault rate (fraction both wrong).
+- Agreement vs original:
+  - Percent same predictions; κ; probability KL(original || committee) on correct vs incorrect subsets.
+
+Coverage and selective prediction
+- Uncertainty from committee:
+  - Predictive entropy H(average p); variance of logits across models; mutual information (epistemic) via ensemble: MI ≈ H(average p) − average H(p_m).
+- Selective metrics (vary threshold τ on uncertainty):
+  - Risk–coverage curve; Area Under Risk–Coverage (AURC; lower is better).
+  - Selective accuracy/EM/F1 at fixed coverage levels (e.g., 50%, 70%, 90%).
+  - Abstention policy with fallback: if uncertainty > τ, defer to original baseline prediction; report blended performance and coverage (fraction handled by committee).
+
+Regressions vs original
+- Negative flips (regressions): fraction where original is correct and committee is wrong.
+- Positive flips (improvements): fraction where original is wrong and committee is correct.
+- Net gain: improvements − regressions; Error overlap Jaccard between error sets.
+- Conditional analysis: flips by length bin, class frequency, question type (QA), evidence distance.
+
+Calibration and reliability (support coverage analysis)
+- ECE and Brier score; NLL; calibration curves for committee vs original.
+- Overconfidence gap on wrong predictions.
+
+Efficiency (context)
+- Latency p50/p90 (batch=1), tokens/sec at {1, 4, 8}, peak memory; report relative to baseline to understand trade‑offs.
+
+Statistical analysis
+Design
+- Paired evaluation: same test documents and seeds for baseline and committee variants.
+- Seeds: 3–5 per variant; select checkpoints by the same dev criterion as baseline.
+
+Tests
+- Accuracy/EM/F1: paired bootstrap (10k resamples) for deltas with 95% CIs; McNemar’s test on per‑example correctness (baseline vs committee).
+- Agreement metrics: bootstrap CIs for κ and JS divergence; compare via paired Wilcoxon on per‑doc values.
+- Coverage: compare AURC via paired bootstrap across examples; for selective accuracy at fixed coverage, use paired bootstrap; for AUROC/AUPRC (if relevant), use DeLong/bootstraps.
+- Regressions: McNemar’s test on the 2×2 table of correct/incorrect; report NF and PF with Wilson CIs; test NF − PF via paired bootstrap.
+- Calibration: bootstrap CIs for ECE/Brier/NLL deltas.
+- Multiple comparisons: Holm–Bonferroni within each dataset family across model variants.
+
+Power guidance
+- Pilot on 10–20% test set to estimate SD of per‑example deltas; typical SD≈5–8 points yields >80% power to detect ≥1.5–2 point differences with N≥100 examples (paired). With full test sets (Qasper ~1k Qs; LEDGAR ~10k docs), power is ample.
+
+Procedural details to preserve comparability
+- Keep tokenizer/segmentation identical where possible; if not, enforce text‑based segmentation and exact document coverage/stride matches; verify same number of segments fed to the global module.
+- Identical optimization (optimizer, LR schedule, warmup, dropout), precision, and inference policies.
+- Same evaluation scripts and preprocessing rules (casing, punctuation) as the original.
+- Report parameter counts (per model and total), FLOPs estimates, and efficiency metrics.
+
+Optional analyses
+- Oracle aggregation: best‑member oracle accuracy to upper‑bound committee potential.
+- Stacking vs averaging: compare Committee‑Stack to Committee‑Avg; ensure meta‑learner is trained only on dev to avoid test leakage.
+- Distillation: train a single student base encoder to match committee logits on train+unlabeled; evaluate accuracy/efficiency vs both committee and baseline.
+
+Minimal code changes (sketch)
+- Add a CommitteeWrapper that:
+  - Holds K base encoders (and optional projections W_m).
+  - Implements forward(inputs) → list of per‑model segment embeddings or logits.
+  - Combines per the chosen rule (logit avg or fused embeddings) to match the original head interface.
+- For QA span ensembling across different tokenizers (if unavoidable):
+  - Decode spans to character offsets; merge by majority/score sum over overlapping character spans; map back to the head’s tokenizer if needed for scoring.
+
+Reporting template
+- Per dataset:
+  - Overall metric (mean±SD over seeds) for baseline, single‑small, Committee‑Avg/Stack.
+  - Agreement: κ (committee internal, vs baseline), JS divergence, diversity measures with 95% CIs.
+  - Coverage: AURC; selective metric at fixed coverages; fallback‑to‑baseline results with coverage fraction.
+  - Regressions: NF, PF, net gain; McNemar p‑value; length‑binned flip rates.
+  - Calibration: ECE/Brier/NLL with deltas.
+  - Efficiency: latency/throughput/m

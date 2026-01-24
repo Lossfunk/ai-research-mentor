@@ -1,0 +1,87 @@
+1. Problem framing and goals
+
+Context
+- Objective: Design and evaluate a low-compute, low-bandwidth multimodal misinformation detection pipeline that works on inexpensive Android phones and intermittent 2G/3G connectivity, supporting text-only, image-only, and image+text (memes/screenshots) cases common in messaging apps.
+- Constraints: Limited GPU/CPU and power; multilingual and code-switched content; scarce labeled data; privacy expectations; potential harms from false positives.
+- Approach: Two-tier, offline-first system.
+  - On-device lightweight models for: (a) text rumor triage, (b) meme/image plausibility checks (OCR + visual classifier), (c) confidence-calibrated “needs review” flags.
+  - Opportunistic sync to a low-cost server for periodic model updates, higher-capacity re-scoring, and human-in-the-loop fact-checking.
+- Success by 6 months
+  - Achieve macro-F1 ≥0.75 on text rumor detection in target languages (or code-switched) using distilled/quantized models; AUROC ≥0.80 on multimodal meme detection using late-fusion lightweight models.
+  - Bandwidth budget ≤30 KB/query (text-only ≤2 KB; image thumbnail ≤25 KB; metadata ≤3 KB) with store-and-forward robustness.
+  - Privacy: no raw messages or full-resolution images leave device by default; only hashed thumbnails or features when user opts in.
+
+Key references for datasets and tasks
+- Fakeddit (multimodal text+image fake news; >1M samples) [1–3].
+- PHEME (Twitter rumor detection and veracity classification) [4–5].
+- Hateful Memes (image+text benchmark for multimodal reasoning; strong baselines and AUROC metric common in meme classification) [9–12].
+- Weibo rumor datasets (Chinese/Asian-language rumor corpora; multimodal variants exist) [6–8].
+- Federated learning applied to fake news detection (survey and prototypes) [17–19].
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment 1: Lightweight multilingual text-only rumor detection
+- Hypothesis: Distilled, quantized multilingual transformers can reach strong rumor detection performance with <50 MB footprint and real-time inference on mid-range phones.
+- Setup:
+  - Data: PHEME for English [4–5]; a Weibo rumor dataset for Chinese [6–8]. Augment with translated subsets for target locales; curate 3–5k local-language examples via NGO/fact-checker partners (active learning).
+  - Models: MiniLM/DistilBERT multilingual variants distilled and post-training quantized to int8 (ONNX Runtime Mobile/TFLite). Calibrate thresholds for high recall.
+  - On-device: Benchmark on 4 GB RAM Android device; measure tok/s and energy.
+- Baselines: n-gram logistic regression; full XLM-R base (server-side).
+- Metrics: Macro-F1, AUROC, precision@0.9 recall; latency (p50/p95), energy/query; bandwidth (bytes/query).
+- Expected outcomes: Macro-F1 ≥0.75 on PHEME-like English; ≥0.70 on a Weibo-like split; <150 ms/query on-device; <2 KB text egress when syncing metadata.
+
+Experiment 2: Image+text meme classification via late fusion
+- Hypothesis: A MobileNetV3 image encoder plus a MiniLM text encoder with late fusion, distilled from a larger CLIP-like teacher, can match unimodal baselines and approach heavier multimodal models on constrained devices.
+- Setup:
+  - Data: Hateful Memes (for benchmarking multimodal fusion and AUROC) [9–12], Fakeddit (image+text subsets, fine-grained labels; binarize to misinfo vs not) [1–3].
+  - Models: Image—MobileNetV3-Large (int8); OCR—Tesseract or EasyOCR (small) to extract overlay text; Text—MiniLM (int8); Fusion—2-layer MLP on concatenated embeddings. Optional distillation from CLIP ViT-B/32 teacher on server.
+  - On-device: Quantized encoders; OCR throttled to thumbnails (≤256 px).
+- Baselines: Image-only MobileNet; text-only MiniLM; server-side multimodal baseline (UNITER/CLIP).
+- Metrics: AUROC (primary on Hateful Memes), macro-F1, ablations for OCR/no OCR, compute and energy, false positive rate on benign memes.
+- Expected outcomes: AUROC ≥0.75 on Hateful Memes; macro-F1 ≥0.70 on Fakeddit binary; ≤25 KB per image (thumbnail) when syncing; on-device ≥8 fps for image stream.
+
+Experiment 3: Bandwidth-aware inference and sync policies
+- Hypothesis: Adaptive policies (text-only local; image thumbnails hashed and cached; delayed sync) reduce bandwidth ≥10× with negligible accuracy loss versus always-upload.
+- Setup:
+  - Policies: Local-only mode; selective sync by uncertainty; periodic batch sync on Wi-Fi; delta updates for models.
+  - Network emulation: 2G/3G with 200–500 ms RTT, 64–256 kbps uplink; measure retries and dropouts.
+- Baselines: Always-upload full media to server; no caching.
+- Metrics: Bytes/query, queries/day within 10 MB/day device cap; accuracy delta vs server-only; time-to-decision; battery drain/session.
+- Expected outcomes: ≥10× reduction in upload bytes; ≤1–2% drop in macro-F1 vs server-only; robust operation with ≥30% packet loss.
+
+Experiment 4: Robustness to low-quality media and adversarial artifacts
+- Hypothesis: Simple preprocessing (denoise, contrast normalization), test-time augmentation (TTA), and OCR confidence gating improve robustness to low-light/compressed images and spurious overlays.
+- Setup:
+  - Corruptions: JPEG 10–30 quality, blur, low-light; synthetic overlay text and watermarks.
+  - Methods: CLAHE, denoise, TTA (flip/crop), OCR confidence thresholds; reweight training with corrupted samples.
+- Baselines: No preprocessing; fixed pipeline.
+- Metrics: ΔAUROC/F1 under corruptions; calibration drift (ECE); OCR failure rates; runtime overhead.
+- Expected outcomes: Recover ≥50% of accuracy lost to heavy compression/low-light; ≤10% latency overhead.
+
+Experiment 5: Data minimization and privacy-preserving training
+- Hypothesis: Client-side feature extraction with optional federated fine-tuning and compressed updates preserves privacy and performs within 2–3 points of centralized training.
+- Setup:
+  - Federated learning: Simulate 100–500 clients using Flower/FedML with FedAvg and update compression (8-bit quantization, top-k sparsification); evaluate on PHEME/Weibo splits [17–19].
+  - Privacy: No raw text/image uploads in FL; measure update sizes; document data life cycle.
+- Baselines: Centralized training; local-only fine-tuning.
+- Metrics: Macro-F1 gap to centralized; bytes per client per round; wall-clock to target accuracy; stability with 30–50% client dropout.
+- Expected outcomes: ≤3-point macro-F1 gap; ≥10× reduction in communication vs uncompressed FL; stable convergence under churn.
+
+Experiment 6: Fieldable verification assistant and human-in-the-loop
+- Hypothesis: A lightweight assistant (Android APK) with offline-first UX and templated, non-normative messages reduces harmful sharing intent and yields useful labels for active learning.
+- Setup:
+  - UX: Clear disclaimers; present evidence snippets when available; offer “mark uncertain” and “send later on Wi-Fi”; store-and-forward logs with opt-in.
+  - Human loop: NGO fact-checkers receive a low-bandwidth dashboard with ranked uncertain cases and thumbnails; return labels drive weekly on-device model updates.
+- Baselines: No assistant; server-only chatbot.
+- Metrics: User engagement (opt-in rates), reduction in self-reported share-intent on a simulated set, label throughput/week, annotation agreement, app crashes/battery use.
+- Expected outcomes: ≥20% reduction in share-intent on flagged items; ≥500 high-quality labels/month in pilot; stable app behavior on low-end phones.
+
+Notes on evidence
+- Fakeddit [1–3], PHEME [4–5], Hateful Memes [9–12], and Weibo rumor datasets [6–8] support text and multimodal evaluations. We could not retrieve MM-COVID via tools; to add multilingual COVID misinformation references, search: “MM-COVID multilingual misinformation dataset arXiv 2020” and cite its arXiv page.
+- FL for fake news shows feasibility and trade-offs [17–19].
+
+
+3. Timeline for the next 6 months with milestones
+
+Month 1

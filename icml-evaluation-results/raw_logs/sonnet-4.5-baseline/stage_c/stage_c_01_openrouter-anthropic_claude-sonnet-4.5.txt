@@ -1,0 +1,254 @@
+The search results show general deep learning for sea ice and GNNs for weather/climate, but no direct GNN+sea ice work. This represents a clear research gap. I'll construct a rigorous plan based on established GNN spatiotemporal methods applied to the sea ice domain.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Sea ice dynamics exhibit complex spatiotemporal dependencies driven by atmospheric forcing, ocean currents, and thermodynamic processes. Current operational forecasting relies on physics-based models (e.g., CICE, neXtSIM) that are computationally expensive and struggle with sub-seasonal accuracy, while existing deep learning approaches [1,2] use CNNs or U-Nets that treat spatial relationships uniformly and cannot naturally represent irregular ice edge geometries or variable connectivity between regions.
+
+**Core Hypothesis:**  
+Graph Neural Networks can improve sea ice concentration (SIC) and thickness (SIT) forecasting by:
+1. Explicitly modeling non-local teleconnections (e.g., Arctic Oscillation impacts)
+2. Adapting spatial message-passing to evolving ice edge topology
+3. Reducing computational cost vs. physics simulators while maintaining interpretability
+
+**Primary Goals:**
+- Develop GNN architectures for 1-day to 6-month sea ice forecasting
+- Achieve ≥5% reduction in RMSE vs. CNN baselines (IceNet [1]) for pan-Arctic SIC prediction
+- Demonstrate computational speedup (>100×) vs. CICE ensemble runs
+- Provide uncertainty quantification for operational use
+
+**Secondary Goals:**
+- Interpret learned graph structures to identify physical teleconnection patterns
+- Extend to multi-modal inputs (SAR imagery, ice charts, atmospheric reanalysis)
+- Test generalization from Arctic to Antarctic domains
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Static Graph GNN Baseline**
+
+**Hypothesis:** A GNN with fixed spatial graph structure (k-NN or radius-based connectivity) can match or exceed CNN performance for monthly SIC forecasting by capturing non-local dependencies.
+
+**Setup:**
+- **Architecture:** GraphSAGE or GCN with 4 message-passing layers, temporal encoding via positional embeddings
+- **Graph construction:** Nodes = 25km EASE-2 grid cells; edges connect k=8 nearest neighbors or r=200km radius
+- **Input features:** Monthly SIC, SIT, SST, SAT, wind vectors (u/v), ice drift from NSIDC
+- **Forecast horizon:** 1, 3, 6 months ahead
+- **Training:** 1979-2015 ERA5 + NSIDC passive microwave; validation 2016-2018; test 2019-2021
+
+**Baselines:**
+1. Persistence (previous month SIC)
+2. Linear regression on climate indices (AO, NAO)
+3. IceNet U-Net [1] (CNN with climate simulation pre-training)
+4. LSTM with convolutional layers
+
+**Evaluation Metrics:**
+- RMSE, MAE for SIC (%)
+- Binary accuracy for ice presence (SIC > 15%)
+- Integrated Ice Edge Error (IIEE) [km]
+- Sea Ice Extent (SIE) bias [10⁶ km²]
+- Computational cost: training time, inference latency, FLOPs
+
+**Expected Outcomes:**
+- Static GNN matches CNN RMSE (±2%) for 1-month lead
+- GNN shows advantage at 3-6 month leads where teleconnections matter (+3-5% RMSE improvement)
+- 10-20× faster inference than LSTM due to parallelizable message-passing
+
+---
+
+### **Experiment 2: Dynamic Graph Construction**
+
+**Hypothesis:** Learning adaptive edge weights or dynamic graph structures conditioned on ice state improves prediction, especially near the marginal ice zone (MIZ) where topology changes rapidly.
+
+**Setup:**
+- **Architecture:** Attention-based GNN (GAT or Transformer-style) with learned adjacency
+  - Option A: Soft attention weights over k-NN graph
+  - Option B: Gumbel-softmax graph rewiring at each layer
+- **Comparison:** Static graph (Exp 1) vs. dynamic graph with same node features
+- **Focus region:** Beaufort/Chukchi Seas (high variability MIZ)
+- **Temporal resolution:** Daily forecasts (1-15 day lead) using AMSR2 daily SIC
+
+**Baselines:**
+- Static GNN from Exp 1
+- ConvLSTM (captures local dynamics without explicit graph)
+
+**Evaluation Metrics:**
+- Same as Exp 1, plus:
+- Edge sparsity and stability (% edges changed per timestep)
+- Ablation: performance vs. attention budget (top-k edges)
+- Qualitative: visualize learned connectivity during ice breakup events
+
+**Expected Outcomes:**
+- Dynamic graphs improve MIZ prediction by 5-10% RMSE over static
+- Learned edges correlate with ocean current patterns (Beaufort Gyre) and atmospheric dipoles
+- Trade-off: 2-3× higher training cost for marginal gains in ice interior
+
+---
+
+### **Experiment 3: Spatiotemporal GNN with Recurrent Dynamics**
+
+**Hypothesis:** Combining message-passing spatial aggregation with recurrent temporal updates (GNN-RNN hybrid) captures ice memory effects (thickness-dependent melt lag) better than pure spatial or temporal models.
+
+**Setup:**
+- **Architecture:** 
+  - Encoder: GNN (3 layers) → node embeddings
+  - Temporal: GRU or Transformer applied to node time series
+  - Decoder: MLP per node → SIC, SIT predictions
+- **Multi-step rollout:** Autoregressive forecasting with teacher forcing schedule
+- **Inputs:** Daily ERA5 (10m wind, 2m temp, radiation), SMOS SIT, NSIDC SIC
+- **Forecast:** 15-day rollout with daily outputs
+
+**Baselines:**
+- GraphCast-style architecture [adapted from weather GNNs, refs 3,5,6]
+- Separate GNN (spatial) + LSTM (temporal) pipeline
+- Pure Transformer (treats grid as sequence)
+
+**Evaluation Metrics:**
+- Rollout stability: RMSE growth rate over 15 days
+- Physics consistency: conservation of ice mass, SIE trend correlation
+- Extreme event skill: POD/FAR for rapid ice loss events (>20% SIC drop in 3 days)
+
+**Expected Outcomes:**
+- GNN-GRU reduces error accumulation in rollouts vs. pure spatial models
+- Hybrid model captures thickness-concentration coupling (thicker ice → slower melt)
+- Identifies precursors to breakup events 5-7 days in advance
+
+---
+
+### **Experiment 4: Uncertainty Quantification via Ensemble GNNs**
+
+**Hypothesis:** Probabilistic GNN ensembles (via dropout, deep ensembles, or variational inference) provide calibrated uncertainty estimates needed for operational decision-making.
+
+**Setup:**
+- **Methods:**
+  1. MC Dropout (10 samples at inference)
+  2. Deep ensemble (5 GNN models with different initializations)
+  3. Evidential regression (outputs Dirichlet parameters)
+- **Calibration:** Evaluate on held-out 2020-2021 test set
+- **Use case:** Route planning for Arctic shipping (ice-free probability thresholds)
+
+**Baselines:**
+- Deterministic GNN + bootstrapped residuals
+- IceNet probabilistic outputs [1]
+
+**Evaluation Metrics:**
+- Continuous Ranked Probability Score (CRPS)
+- Reliability diagrams (calibration curves)
+- Sharpness (ensemble spread)
+- Coverage: % of observations within 90% prediction interval
+
+**Expected Outcomes:**
+- Deep ensembles best calibrated but 5× inference cost
+- MC Dropout under-confident (too wide intervals)
+- Evidential regression offers best speed/calibration trade-off
+
+---
+
+### **Experiment 5: Transfer Learning and Domain Adaptation**
+
+**Hypothesis:** A GNN pre-trained on Arctic data can be fine-tuned for Antarctic sea ice with limited data, and vice versa, despite different geography and dynamics.
+
+**Setup:**
+- **Pre-training:** Arctic 1979-2015 (37 years)
+- **Target:** Antarctic with only 2010-2021 data (12 years)
+- **Transfer methods:**
+  1. Freeze encoder, fine-tune decoder
+  2. Full fine-tuning with lower learning rate
+  3. Domain-adversarial training (align Arctic/Antarctic embeddings)
+- **Comparison:** Train from scratch on limited Antarctic data
+
+**Baselines:**
+- Ice-kNN-South [4] (Antarctic-specific ML model)
+- No transfer (train on Antarctic only)
+
+**Evaluation Metrics:**
+- Few-shot performance: RMSE with 1, 3, 5 years Antarctic data
+- Embedding similarity: CKA or SVCCA between Arctic/Antarctic node representations
+- Feature importance shift: SHAP values for atmosphere vs. ocean drivers
+
+**Expected Outcomes:**
+- Transfer learning reduces Antarctic data requirement by 50-70%
+- Shared representations: atmospheric forcing patterns generalize
+- Domain-specific adaptation needed for ocean currents (ACC vs. Arctic gyres)
+
+---
+
+## 3. Timeline for Next 6 Months
+
+| **Month** | **Milestones** | **Deliverables** |
+|-----------|----------------|------------------|
+| **M1** | Data pipeline setup; download NSIDC SIC/SIT, ERA5 reanalysis, SMOS; implement preprocessing (regridding, masking land); build static graph structures (k-NN, radius) | Data loader code; EDA notebook; graph statistics report |
+| **M2** | Implement Exp 1 (static GNN); train GraphSAGE, GCN, GAT variants; reproduce IceNet baseline; hyperparameter sweep (layers, hidden dim, k) | Trained models; comparison table vs. baselines; initial RMSE results |
+| **M3** | Complete Exp 1 evaluation; generate forecast maps for 2019-2021 test; compute IIEE, SIE bias; ablation studies (input features, graph connectivity); start Exp 2 (dynamic graphs) | Conference abstract draft; visualizations of 6-month forecasts; ablation results |
+| **M4** | Finish Exp 2 (dynamic graph GNN); implement attention mechanisms; analyze learned edge patterns; begin Exp 3 (spatiotemporal GNN-RNN); implement autoregressive rollout | Dynamic graph model; edge analysis plots; initial rollout results |
+| **M5** | Complete Exp 3; evaluate rollout stability and physics consistency; start Exp 4 (uncertainty quantification); implement MC Dropout and deep ensembles | Rollout stability report; extreme event case studies; probabilistic models |
+| **M6** | Finish Exp 4 and Exp 5 (transfer learning); generate calibration plots; write full paper draft; prepare code/model release; submit to journal (Nature Comms, GRL, or GMD) | Full manuscript; calibrated probabilistic forecasts; public GitHub repo; model checkpoints |
+
+**Key Decision Points:**
+- End of M2: If static GNN underperforms CNN, pivot to hybrid CNN-GNN architecture
+- End of M4: If dynamic graphs show minimal gains, deprioritize and expand Exp 5 scope
+
+---
+
+## 4. Resources
+
+### **Compute Requirements**
+- **Training:** 4× NVIDIA A100 (40GB) or equivalent
+  - Static GNN: ~24 GPU-hours per model (5 variants)
+  - Dynamic GNN: ~100 GPU-hours (attention overhead)
+  - Spatiotemporal GNN: ~150 GPU-hours (recurrent rollouts)
+  - Total estimated: ~500 GPU-hours over 6 months
+- **Inference:** Single V100 sufficient for real-time forecasting (<1s per 6-month prediction)
+- **Storage:** ~2TB for raw data (ERA5, NSIDC 1979-2021 at daily resolution)
+
+### **Software & Tools**
+- **Frameworks:** PyTorch Geometric (GNN layers), PyTorch Lightning (training loops)
+- **Baselines:** IceNet codebase [1], CICE model outputs (if available from collaborators)
+- **Preprocessing:** xarray, rasterio, pyproj (regridding), netCDF4
+- **Evaluation:** scikit-learn, properscoring (CRPS), xskillscore
+- **Visualization:** Cartopy, matplotlib, Plotly (interactive maps)
+- **Experiment tracking:** Weights & Biases or MLflow
+
+### **Datasets**
+1. **Sea Ice Concentration:** NSIDC passive microwave (1979-present, daily, 25km) [NSIDC-0051]
+2. **Sea Ice Thickness:** SMOS (2010-present, weekly, 25km), CryoSat-2, PIOMAS reanalysis
+3. **Atmospheric forcing:** ERA5 reanalysis (10m wind, 2m temp, MSLP, radiation, precipitation)
+4. **Ocean:** ORAS5 SST, salinity; AVISO sea surface height
+5. **Ice drift:** NSIDC Polar Pathfinder (weekly vectors)
+6. **Climate indices:** NOAA AO, NAO, PDO monthly indices
+7. **Ice charts (optional):** NIC/CIS operational charts for data-scarce periods
+8. **Validation:** CMIP6 model outputs for pre-training or physics consistency checks
+
+**Data Access:**
+- NSIDC: Open access, requires Earthdata login
+- ERA5: Copernicus CDS (free, rate-limited)
+- SMOS: ESA (registration required)
+
+---
+
+## 5. Risks and Mitigations
+
+| **Risk** | **Likelihood** | **Impact** | **Mitigation** |
+|----------|----------------|------------|----------------|
+| **GNN does not outperform CNN baseline** | Medium | High | (1) Ensure fair comparison: match parameter count, training data; (2) Hybrid CNN-GNN: use CNN for local features, GNN for teleconnections; (3) Focus on interpretability and computational efficiency as alternative contributions |
+| **Data sparsity in early satellite era (1979-1990)** | High | Medium | (1) Pre-train on CMIP6 climate simulations (IceNet approach [1]); (2) Data augmentation: spatial crops, temporal jittering; (3) Test on recent high-quality period (2010-2021) separately |
+| **Graph construction is ad-hoc (k-NN choice unclear)** | Medium | Medium | (1) Ablation study over k ∈ {4,8,16,32}; (2) Learn graph structure (Exp 2); (3) Multi-scale graphs (combine local + long-range edges) |
+| **Computational cost for dynamic graphs prohibitive** | Medium | Low | (1) Sparse attention (top-k edges only); (2) Graph pooling to reduce nodes; (3) Use dynamic graphs only in critical regions (MIZ) |
+| **Model overfits to seasonal cycle** | High | Medium | (1) Detrend/deseasonalize inputs; (2) Evaluate on anomaly RMSE; (3) Test on extreme years (2012 minimum, 2020 heatwave) |
+| **Uncertainty estimates poorly calibrated** | Medium | High | (1) Use temperature scaling post-hoc; (2) Validate on independent test set; (3) Compare multiple UQ methods (Exp 4) |
+| **Arctic-Antarctic transfer fails** | Medium | Medium | (1) Analyze domain shift (embedding visualizations); (2) Use domain adaptation techniques; (3) Report negative result as valuable finding |
+| **Reviewer demands physics-based model comparison** | Low | Medium | (1) Collaborate with sea ice modelers for CICE runs; (2) Use published CMIP6 outputs; (3) Frame as ML emulator, not replacement |
+| **Code/reproducibility issues delay publication** | Low | High | (1) Continuous integration testing; (2) Document hyperparameters in config files; (3) Release code+data simultaneously with preprint |
+
+---
+
+## 6. Stretch Ideas and Follow-Up Directions
+
+### **Immediate Extensions (within 12 months)**
+1. **Multi-modal fusion:** Incorporate Sentinel-1 SAR imagery for high-resolution ice type classification (first-year vs. multi-year ice); use GNN to propagate SAR features across passive microwave grid
+2. **Physics-informed losses:** Add conservation constraints (mass, energy) as soft penalties; test whether physics-guided training improves extrapolation to unseen climate regimes
+3. **Hierarchical graphs:** Coarse global graph (500km nodes) + fine regional subgraphs (25km) with cross-scale message-passing, inspired by OneForecast [6]
+4. **Causal discovery:** Use GNN attention weights + Granger causality to identify lead-lag relationships between

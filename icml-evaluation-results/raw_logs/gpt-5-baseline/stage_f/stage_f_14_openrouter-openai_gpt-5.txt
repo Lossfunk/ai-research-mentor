@@ -1,0 +1,104 @@
+Here’s a concise reviewer-facing risk map for climate-AI papers and a mitigation checklist you can apply to your final submission package.
+
+Major reviewer-facing risks
+
+Methodology and validity
+- Data leakage and non-stationarity: temporal or spatial leakage (e.g., random splits across space/time; reanalysis assimilation leaking future obs), train/test overlap via gridding or resampling, covariate shift not addressed.
+- Mis-specified targets and units: mixing anomalies vs absolutes; inconsistent units, CRS, or baselines; improper de-seasonalization.
+- Overclaiming causality or physical fidelity: correlational models framed as causal or “physics-consistent” without tests; no conservation or invariance checks.
+- Extremes and tails: performance reported on means, not extremes; no tail metrics or block maxima evaluation.
+- Uncertainty and calibration: point estimates only; no predictive intervals, calibration, or reliability.
+- Weak baselines and tuning parity: missing climatology/persistence/physics-model baselines; unfair hyperparameter budgets across models.
+
+Data, provenance, and licensing
+- Ambiguous data rights: unclear licenses (e.g., Copernicus/ERA5, NOAA, NASA, CMIP, private vendor data); redistribution of restricted assets.
+- Provenance gaps: unpinned versions, undocumented preprocessing, undocumented QC or gap-filling; missing station metadata.
+- Sensitive or indigenous data: use without consent or respect for data governance if applicable.
+
+Evaluation and claims
+- Contamination: fine-tuning or prompt contamination on evaluation sets; temporal leakage in hindcasts.
+- Metric choice mismatch: improper metrics for probabilistic forecasts (using RMSE only); no CRPS/Brier/reliability.
+- Domain-misaligned claims: “operational” or policy-relevant claims without external validation; greenwashing (energy savings without CO2 context).
+
+Reproducibility and artifacts
+- Missing code/configs, non-deterministic training, no container/lockfiles; large-data friction without fetch scripts.
+- Insufficient documentation to map each table/figure to commands and seeds.
+
+Ethics and societal impact
+- Misuse risk: claims enabling policy decisions without uncertainty/context; downplaying risks.
+- Environmental footprint opacity: no compute/CO2 disclosure or assumptions.
+
+Mitigation checklist for final submission package
+
+Data and licensing
+- [ ] Per-dataset table with: name, version/date, URL, license, permitted uses, redistribution stance, citation format.
+- [ ] Provide fetch scripts to official sources (no mirrored restricted data); include checksums.
+- [ ] Document all preprocessing: regridding, anomaly baselines, detrending, gap-filling, QC thresholds.
+- [ ] If using community/indigenous or sensitive datasets, include governance/consent statement or replace with public alternatives.
+
+Experimental design and splits
+- [ ] Use leakage-safe splits: temporal holdouts (hindcast-style), spatial block or leave-one-region-out, or spatiotemporal blocking. Justify choice.
+- [ ] For reanalysis/satellite inputs, document assimilation windows and ensure no target leakage (e.g., lag inputs, exclude overlapping windows).
+- [ ] Publish a seeded split manifest (hashes of IDs/timestamps/tiles).
+
+Baselines and tuning parity
+- [ ] Include climatology and persistence baselines; add simple statistical and physics-based benchmarks where applicable.
+- [ ] Declare identical tuning budgets/search spaces across models; provide a tuning protocol table.
+
+Metrics, uncertainty, and extremes
+- [ ] Report proper scoring rules for probabilistic forecasts (CRPS, Brier), plus RMSE/MAE where relevant.
+- [ ] Provide calibration diagnostics (reliability curves, PIT histograms, ECE) and well-calibrated intervals (80/95% coverage).
+- [ ] Evaluate extremes: tail metrics (quantile loss, hit rate/FAR for exceedances), block maxima, and return-period skill.
+- [ ] For classification-like tasks (events), include skill scores (CSI/ETS), precision-recall, and base-rate-aware metrics.
+
+Physical and scientific consistency
+- [ ] Unit tests on units/CRS and dimensionality; publish a units registry (e.g., pint).
+- [ ] Post-hoc physics checks: conservation or budget closure where applicable, monotonicity/invariance tests, sign/scale sanity checks.
+- [ ] Sensitivity to scientifically meaningful perturbations (e.g., small SST shifts, orography changes).
+
+Reproducibility and artifacts
+- [ ] Release code with one-command runners mapping each table/figure to a config; include a results manifest (expected metrics ± CI, seeds).
+- [ ] Pin environments (conda/poetry lockfile); add optional Docker; enable determinism flags; log git commit and env hash.
+- [ ] Provide small synthetic or downsampled examples to validate pipelines; clearly mark non-redistributable data.
+- [ ] Continuous integration: smoke test that fetches a tiny subset and runs end-to-end.
+- [ ] Archive via DOI (Zenodo) and provide checksums (SHA256) for weights and large files.
+
+Models and weights
+- [ ] Release checkpoints or weight deltas if upstream license restricts redistribution; include model cards with intended use, limitations, and OOD caveats.
+- [ ] Document training data windows, target definitions, and any pretraining corpora.
+
+Evaluation transparency
+- [ ] List decoding/inference settings and seeds; report mean ± CI via bootstrap/block bootstrap respecting autocorrelation.
+- [ ] Provide OOD tests (new years/regions/regimes) and clearly label in plots/tables.
+
+Ethics, scope, and policy guardrails
+- [ ] Ethics/impact statement: scope limits, non-operational disclaimer unless validated, uncertainty framing for policy audiences, misuse risks and mitigations.
+- [ ] Data governance: acknowledge data providers; include takedown/contact policy.
+- [ ] Green claims: report compute and CO2e (tool, region, emission factors) and tie energy savings to accuracy trade-offs.
+
+Licensing and compliance
+- [ ] Code license (e.g., Apache-2.0/MIT), model license (permissive or RAIL-style), data licensing notes and non-redistribution policy.
+- [ ] Dependency license inventory; ensure compatibility; remove or gate assets with restrictive terms.
+
+Documentation and README essentials
+- [ ] Overview and scope boundaries; non-operational use disclaimer.
+- [ ] Reproduction commands per table/figure; hardware/time expectations.
+- [ ] Data and model cards; SUSTAINABILITY/CO2 notes; CITATION.cff and BibTeX.
+
+Anonymization (if double-blind)
+- [ ] Anonymize repos and artifacts; remove institution names from code/docs; scrub metadata; cite prior work in third person.
+
+Pre-submission gates
+- [ ] Fresh-machine run reproduces at least one main result from public artifacts.
+- [ ] Leakage audit passes (temporal/spatial checks; assimilation lag confirmed).
+- [ ] Calibration and extremes metrics included; baselines and tuning parity documented.
+- [ ] License/provenance review signed off; all links accessible; DOI minted.
+
+Reviewer Q&A pack (attach in supplement)
+- [ ] Split diagrams and leakage checks.
+- [ ] Tuning protocol table and baseline definitions.
+- [ ] Calibration plots and tail-metric tables.
+- [ ] Physics-consistency test results.
+- [ ] Compute/CO2 worksheet and assumptions.
+
+This structure anticipates common concerns and equips reviewers with the evidence they need to assess methodological soundness, domain alignment, and responsible dissemination.

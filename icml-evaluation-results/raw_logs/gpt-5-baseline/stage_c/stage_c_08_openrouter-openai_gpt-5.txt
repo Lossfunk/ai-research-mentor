@@ -1,0 +1,42 @@
+1. Problem framing and goals
+
+Scope and constraints
+- Aim: Design, implement, and evaluate privacy-preserving mental health chatbots using only open-source tools, with strong safety constraints and offline-first operation. The system is not a diagnostic or therapeutic substitute; it provides psychoeducation, resource navigation, reflective listening, and crisis escalation to human help aligned with WHO guidance on suicide prevention messaging [21–22].
+- Privacy-by-design: Default to on-device inference (no telemetry), optional federated fine-tuning with differential privacy (DP), and local encrypted storage with strict data minimization. Avoid sending user text off-device. All components must be open source and locally deployable.
+- Safety-by-design: Detect high-risk disclosures (self-harm, harm to others) and respond with validated, conservative templates and resource links; prevent harmful instructions; calibrate refusals; document limitations.
+
+Six-month success criteria
+- On-device assistant: Run an open-source quantized instruction model (e.g., Mistral 7B Instruct) locally via llama.cpp with >15 tok/s on a consumer GPU or >3 tok/s CPU-only; zero network dependency; <1 MB/day logs with user-controlled retention [11–13,16,19].
+- Safety and crisis handling: Achieve macro-F1 ≥0.70 for suicidal risk screening on held-out CLPsych-like data; false-negative rate ≤10% at a clinically set threshold; pass clinician-coded safety checklists ≥90% on curated crisis prompts [16–17,31–33].
+- Privacy guarantees: For federated experiments, demonstrate ε≤8 (δ=1e-5) with Opacus while retaining ≥95% of non-private baseline accuracy; no plaintext PII ever leaves device [6–10].
+- Governance: Ethics review (or exemption), model card and data card, red-team report, and a public evaluation kit for safety/PII with runnable open-source scripts.
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+
+Experiment 1: On-device LLM feasibility and privacy guarantees
+- Hypothesis: A small open-source instruct model quantized to Q4–Q5 in GGUF via llama.cpp provides acceptable empathy/helpfulness for low-stakes tasks while preserving privacy by eliminating network calls.
+- Setup:
+  - Models: Mistral 7B Instruct (Apache-2.0) quantized with llama.cpp (Q4_K_M, Q5_K_M) [11–13,16,19].
+  - Runtime: llama.cpp or Ollama; CPU-only and single consumer GPU profiles; disable all network permissions.
+  - Orchestration: Rasa OSS for dialogue state and rule-based guardrails (Apache-2.0) [5].
+- Baselines: Remote hosted APIs (used only for offline comparison; no user data); non-quantized local inference.
+- Metrics: Throughput (tok/s), latency (p50/p95), memory/VRAM, energy (watts), offline compliance (no network egress), basic dialog quality (Likert empathy/helpfulness on 100 prompts).
+- Expected outcomes: ≥15 tok/s GPU; viable CPU-only mode; acceptable subjective quality for non-clinical tasks; verifiable zero egress.
+
+Experiment 2: High-risk intent detection (self-harm and crisis triage)
+- Hypothesis: A specialized classifier trained on annotated mental health datasets can identify suicidal ideation/risk reliably enough to trigger safe response flows.
+- Setup:
+  - Data: CLPsych shared task Reddit suicidality datasets (access on request) [16,18–20], Reddit C-SSRS dataset [28], UMD suicidality dataset [29]. Note: Newer RSD-15K exists but verify licensing before use [26–27].
+  - Model: Lightweight transformer classifier (DistilBERT or MiniLM) fine-tuned locally; calibrate with temperature scaling.
+  - Ethics: Follow dataset access terms; mask handles; no redistribution of raw text.
+- Baselines: Keyword/regex (e.g., “kill myself”); general-purpose toxicity detector (negative control).
+- Metrics: Macro-F1, AUROC, precision @ high recall; false-negative rate for “moderate/severe” classes; calibration (ECE); subgroup analysis across demographics proxies if present.
+- Expected outcomes: Macro-F1 ≥0.70; FN ≤10% at chosen threshold; calibrated outputs flag uncertain cases for conservative responses.
+
+Experiment 3: Safety policy and crisis-response evaluation
+- Hypothesis: A rule-first Rasa policy (WHO-aligned templates) augmented by an LLM improves safety consistency vs LLM-only generation on crisis prompts.
+- Setup:
+  - Safety rules: WHO messaging principles (do/don’t, offer resources, avoid glamorization) encoded as response templates and finite-state flows [21–22].
+  - Prompt set: 200–300 crisis scenarios adapted from recent safety-eval frameworks for mental health chatbots (role-play and direct disclosures) [31–33], plus benign controls.
+  - Conditions: LLM-only

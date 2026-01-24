@@ -1,0 +1,445 @@
+# **Stress-Testing Framework for Hierarchical Transformers**
+
+## **PART 1: OUT-OF-DOMAIN STRESS TESTS**
+
+### **1.1 Collaborative Code Understanding**
+
+#### **A. Task Design**
+```python
+class CollaborativeCodeStressTest:
+    """
+    Test hierarchical understanding of multi-file codebases
+    
+    Challenges:
+    - Cross-file dependencies
+    - Long-range references (imports, function calls)
+    - Hierarchical structure (file -> class -> function -> line)
+    - Mixed natural language (comments, docs) and code
+    """
+    
+    def __init__(self, hierarchical_transformer):
+        self.model = hierarchical_transformer
+        self.test_suites = self.create_test_suites()
+    
+    def create_test_suites(self):
+        """
+        Design comprehensive code understanding tasks
+        """
+        suites = {
+            # 1. Code Summarization
+            'multi_file_summarization': {
+                'task': 'Generate high-level summary of multi-file project',
+                'input': 'Multiple Python/Java files (5-20 files)',
+                'output': 'Natural language summary',
+                'hierarchy_test': 'File -> Class -> Function structure',
+                'metrics': ['ROUGE-L', 'BERTScore', 'CodeBERTScore'],
+                'stress_factor': 'Long context (10K-50K tokens)',
+            },
+            
+            # 2. Cross-File Bug Detection
+            'cross_file_bug_detection': {
+                'task': 'Detect bugs requiring cross-file understanding',
+                'examples': [
+                    'Type mismatches across files',
+                    'Undefined function calls',
+                    'Circular dependencies',
+                    'API contract violations',
+                ],
+                'metrics': ['Precision', 'Recall', 'F1'],
+                'stress_factor': 'Non-local dependencies',
+            },
+            
+            # 3. Code Navigation
+            'definition_usage_linking': {
+                'task': 'Link function definitions to all usages',
+                'input': 'Codebase + query (function/class name)',
+                'output': 'All usage locations',
+                'metrics': ['Exact Match', 'MRR', 'Recall@K'],
+                'stress_factor': 'Long-range references (>5000 tokens apart)',
+            },
+            
+            # 4. API Documentation Retrieval
+            'api_doc_retrieval': {
+                'task': 'Retrieve relevant documentation for code snippet',
+                'input': 'Code snippet + documentation corpus',
+                'output': 'Ranked relevant docs',
+                'metrics': ['NDCG@10', 'MAP', 'Recall@5'],
+                'stress_factor': 'Code-text alignment',
+            },
+            
+            # 5. Code Completion with Context
+            'long_context_completion': {
+                'task': 'Complete code with distant context dependencies',
+                'input': 'Partial code with imports/definitions far away',
+                'output': 'Completed code',
+                'metrics': ['Exact Match', 'Edit Distance', 'Compilation Success'],
+                'stress_factor': 'Dependencies 1K-10K tokens away',
+            },
+            
+            # 6. Commit Message Generation
+            'diff_summarization': {
+                'task': 'Generate commit message from multi-file diff',
+                'input': 'Git diff (multiple files)',
+                'output': 'Commit message',
+                'metrics': ['BLEU', 'METEOR', 'Human Evaluation'],
+                'stress_factor': 'Scattered changes across files',
+            },
+        }
+        
+        return suites
+    
+    def create_synthetic_codebase(self, complexity_level='medium'):
+        """
+        Generate synthetic codebases with controlled properties
+        """
+        configs = {
+            'simple': {
+                'num_files': 5,
+                'lines_per_file': 100,
+                'dependency_depth': 2,
+                'cross_file_refs': 10,
+            },
+            'medium': {
+                'num_files': 15,
+                'lines_per_file': 200,
+                'dependency_depth': 4,
+                'cross_file_refs': 50,
+            },
+            'complex': {
+                'num_files': 50,
+                'lines_per_file': 500,
+                'dependency_depth': 8,
+                'cross_file_refs': 200,
+            },
+            'extreme': {
+                'num_files': 100,
+                'lines_per_file': 1000,
+                'dependency_depth': 12,
+                'cross_file_refs': 500,
+            },
+        }
+        
+        config = configs[complexity_level]
+        
+        codebase = {
+            'files': [],
+            'dependency_graph': {},
+            'ground_truth_links': [],
+        }
+        
+        # Generate files with hierarchical structure
+        for i in range(config['num_files']):
+            file_content = self.generate_file(
+                file_id=i,
+                num_lines=config['lines_per_file'],
+                dependency_depth=config['dependency_depth']
+            )
+            codebase['files'].append(file_content)
+        
+        # Add cross-file references
+        codebase['ground_truth_links'] = self.add_cross_file_references(
+            codebase['files'],
+            num_refs=config['cross_file_refs']
+        )
+        
+        return codebase
+    
+    def generate_file(self, file_id, num_lines, dependency_depth):
+        """
+        Generate a synthetic Python file with hierarchical structure
+        """
+        file_structure = {
+            'file_id': file_id,
+            'name': f'module_{file_id}.py',
+            'imports': [],
+            'classes': [],
+            'functions': [],
+            'lines': [],
+        }
+        
+        # Generate imports (dependencies)
+        num_imports = min(file_id, dependency_depth)
+        for i in range(num_imports):
+            import_file_id = random.randint(0, file_id - 1)
+            file_structure['imports'].append({
+                'from': f'module_{import_file_id}',
+                'import': f'function_{import_file_id}',
+            })
+        
+        # Generate classes and functions
+        num_classes = random.randint(2, 5)
+        for c in range(num_classes):
+            class_def = {
+                'name': f'Class_{file_id}_{c}',
+                'methods': [],
+                'line_start': len(file_structure['lines']),
+            }
+            
+            num_methods = random.randint(3, 8)
+            for m in range(num_methods):
+                method_def = {
+                    'name': f'method_{m}',
+                    'line_start': len(file_structure['lines']),
+                    'calls': [],  # Will populate with cross-file calls
+                }
+                class_def['methods'].append(method_def)
+                
+                # Add method lines
+                file_structure['lines'].extend(
+                    self.generate_method_lines(method_def, num_lines=10)
+                )
+            
+            class_def['line_end'] = len(file_structure['lines'])
+            file_structure['classes'].append(class_def)
+        
+        return file_structure
+```
+
+---
+
+### **1.2 Long Document Tasks**
+
+#### **A. Extended Document Understanding**
+```python
+class LongDocumentStressTest:
+    """
+    Stress test on extremely long documents
+    """
+    
+    def __init__(self, hierarchical_transformer):
+        self.model = hierarchical_transformer
+        self.test_suites = self.create_long_doc_tests()
+    
+    def create_long_doc_tests(self):
+        """
+        Design long document understanding tasks
+        """
+        suites = {
+            # 1. Book-Length QA
+            'book_qa': {
+                'task': 'Answer questions about full books',
+                'lengths': [50000, 100000, 150000],  # tokens
+                'datasets': ['NarrativeQA', 'BookSum', 'Gutenberg-QA'],
+                'metrics': ['EM', 'F1', 'ROUGE-L'],
+                'stress_factor': 'Answer requires information from chapter 1 and 50',
+            },
+            
+            # 2. Legal Document Analysis
+            'legal_doc_analysis': {
+                'task': 'Extract clauses, detect inconsistencies',
+                'doc_types': ['Contracts', 'Court opinions', 'Legislation'],
+                'lengths': [10000, 50000, 100000],
+                'metrics': ['Clause Extraction F1', 'Inconsistency Detection Precision/Recall'],
+                'stress_factor': 'Cross-references across 100+ pages',
+            },
+            
+            # 3. Scientific Paper Understanding
+            'multi_paper_synthesis': {
+                'task': 'Synthesize information from multiple papers',
+                'input': '5-10 papers (50K-200K tokens total)',
+                'output': 'Literature review, contradiction detection',
+                'metrics': ['Factual Consistency', 'Citation Accuracy', 'Novelty Detection'],
+                'stress_factor': 'Information scattered across papers',
+            },
+            
+            # 4. Medical Record Analysis
+            'longitudinal_ehr': {
+                'task': 'Analyze patient history over years',
+                'input': 'Longitudinal EHR (10-50 visits)',
+                'output': 'Diagnosis prediction, treatment recommendations',
+                'metrics': ['Diagnosis Accuracy', 'Treatment Appropriateness'],
+                'stress_factor': 'Temporal dependencies over long timespan',
+            },
+            
+            # 5. News Article Timeline
+            'event_timeline_construction': {
+                'task': 'Build event timeline from news articles',
+                'input': '50-100 news articles on same topic',
+                'output': 'Chronological event timeline',
+                'metrics': ['Temporal Ordering Accuracy', 'Event Extraction F1'],
+                'stress_factor': 'Resolve conflicting information',
+            },
+        }
+        
+        return suites
+    
+    def generate_synthetic_long_document(self, target_length=100000, 
+                                        structure_type='hierarchical'):
+        """
+        Generate synthetic long documents with controlled properties
+        
+        Args:
+            target_length: Target token count
+            structure_type: 'hierarchical', 'flat', 'mixed'
+        """
+        if structure_type == 'hierarchical':
+            doc = self.generate_hierarchical_doc(target_length)
+        elif structure_type == 'flat':
+            doc = self.generate_flat_doc(target_length)
+        else:
+            doc = self.generate_mixed_doc(target_length)
+        
+        return doc
+    
+    def generate_hierarchical_doc(self, target_length):
+        """
+        Generate document with clear hierarchical structure
+        
+        Structure:
+        - Book
+          - Parts (3-5)
+            - Chapters (5-10 per part)
+              - Sections (3-5 per chapter)
+                - Paragraphs (5-10 per section)
+        """
+        doc = {
+            'structure_type': 'hierarchical',
+            'total_tokens': 0,
+            'parts': [],
+            'entities': [],  # Track entities for coreference
+            'facts': [],     # Track facts for QA
+        }
+        
+        num_parts = random.randint(3, 5)
+        tokens_per_part = target_length // num_parts
+        
+        for part_idx in range(num_parts):
+            part = {
+                'part_id': part_idx,
+                'title': f'Part {part_idx + 1}: {self.generate_title()}',
+                'chapters': [],
+            }
+            
+            num_chapters = random.randint(5, 10)
+            tokens_per_chapter = tokens_per_part // num_chapters
+            
+            for chapter_idx in range(num_chapters):
+                chapter = self.generate_chapter(
+                    chapter_idx=chapter_idx,
+                    target_tokens=tokens_per_chapter,
+                    doc_entities=doc['entities']
+                )
+                part['chapters'].append(chapter)
+                doc['total_tokens'] += chapter['token_count']
+                
+                # Extract facts for QA
+                doc['facts'].extend(chapter['facts'])
+            
+            doc['parts'].append(part)
+        
+        # Add long-range dependencies
+        doc['long_range_refs'] = self.add_long_range_references(doc)
+        
+        return doc
+    
+    def add_long_range_references(self, doc):
+        """
+        Add references that span large portions of document
+        
+        Examples:
+        - Character introduced in chapter 1, referenced in chapter 50
+        - Fact stated in part 1, contradicted in part 5
+        - Theme introduced early, resolved late
+        """
+        refs = []
+        
+        # Cross-part entity references
+        all_entities = doc['entities']
+        for entity in all_entities[:10]:  # Major entities
+            # Find all mentions
+            mentions = []
+            for part in doc['parts']:
+                for chapter in part['chapters']:
+                    for section in chapter['sections']:
+                        if entity['name'] in section['text']:
+                            mentions.append({
+                                'part': part['part_id'],
+                                'chapter': chapter['chapter_id'],
+                                'position': section['token_position'],
+                            })
+            
+            if len(mentions) >= 2:
+                # Calculate max distance
+                positions = [m['position'] for m in mentions]
+                max_distance = max(positions) - min(positions)
+                
+                refs.append({
+                    'entity': entity['name'],
+                    'mentions': mentions,
+                    'max_distance': max_distance,
+                    'type': 'entity_coreference',
+                })
+        
+        # Add contradictions
+        facts = doc['facts']
+        for i, fact1 in enumerate(facts):
+            for j, fact2 in enumerate(facts[i+1:], i+1):
+                if self.are_contradictory(fact1, fact2):
+                    refs.append({
+                        'type': 'contradiction',
+                        'fact1': fact1,
+                        'fact2': fact2,
+                        'distance': abs(fact1['position'] - fact2['position']),
+                    })
+        
+        return refs
+```
+
+---
+
+## **PART 2: SYNTHETIC PERTURBATIONS**
+
+### **2.1 Structural Perturbations**
+
+#### **A. Hierarchy Disruption**
+```python
+class HierarchyPerturbations:
+    """
+    Perturbations that test hierarchical structure understanding
+    """
+    
+    def __init__(self):
+        self.perturbation_types = self.define_perturbations()
+    
+    def define_perturbations(self):
+        """
+        Define structural perturbations
+        """
+        perturbations = {
+            # 1. Shuffle Sections
+            'shuffle_sections': {
+                'description': 'Randomly shuffle document sections',
+                'severity_levels': {
+                    'mild': 'Shuffle within chapters',
+                    'moderate': 'Shuffle across chapters',
+                    'severe': 'Complete random shuffle',
+                },
+                'expected_impact': 'Tests reliance on positional cues',
+            },
+            
+            # 2. Remove Hierarchical Markers
+            'remove_markers': {
+                'description': 'Remove section headers, chapter titles',
+                'severity_levels': {
+                    'mild': 'Remove section numbers',
+                    'moderate': 'Remove section headers',
+                    'severe': 'Remove all structural markers',
+                },
+                'expected_impact': 'Tests implicit structure understanding',
+            },
+            
+            # 3. Flatten Hierarchy
+            'flatten_hierarchy': {
+                'description': 'Collapse hierarchical levels',
+                'severity_levels': {
+                    'mild': 'Merge subsections',
+                    'moderate': 'Merge sections',
+                    'severe': 'Single flat document',
+                },
+                'expected_impact': 'Tests hierarchical processing advantage',
+            },
+            
+            # 4. Insert Noise Sections
+            'insert_noise': {
+                'description': 'Insert irrelevant sections',
+                'severity

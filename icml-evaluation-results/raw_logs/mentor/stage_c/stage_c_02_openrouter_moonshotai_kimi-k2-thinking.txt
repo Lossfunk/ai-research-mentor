@@ -1,0 +1,160 @@
+<thinking>
+User is experienced. Topic is clear but risky: “compressible LLMs” can be vague and already crowded (quantization, pruning). Need to frame tightly around a defensible, testable contribution (e.g., learned compression operators with controllable loss). No need to ask context. Lead with honest assessment. </thinking>
+
+**Blunt assessment:**  
+“Compressible LLMs” is only publishable if you go beyond *standard post‑hoc compression* (quantization, pruning, LoRA). Reviewers will kill anything that looks like “we compress more.” You need a **principled notion of compressibility** (what structure is exploited, when, and why) and **clear tradeoffs** between compression ratio, downstream loss, and adaptability.
+
+Below is a plan that assumes your core claim is: *LLMs can be trained to expose internal low-entropy structure that enables aggressive, task-preserving compression at inference time.*
+
+---
+
+## 1. Problem framing and goals
+
+**Problem.**  
+LLMs are massively overparameterized relative to specific deployment regimes (domain, task set, context length). Existing compression methods are mostly *after-the-fact* and brittle: once compressed, models lose adaptability or require retraining.
+
+**Core idea.**  
+Train LLMs to be **explicitly compressible** by learning internal representations (weights, activations, or token-level states) that admit **adaptive, information-theoretic compression** with bounded loss.
+
+**Goal.**  
+Show that:
+- Compressibility can be **learned during pretraining or finetuning**, not just imposed afterward.
+- The same base model supports **multiple compression ratios** without retraining.
+- Compression-aware models degrade more gracefully than standard LLMs.
+
+**Claim reviewers should believe if you succeed:**  
+Compression is not just an engineering trick—it is a *learnable inductive bias*.
+
+---
+
+## 2. Experiments
+
+### Experiment 1: Compression-aware training vs post-hoc compression
+
+**Hypothesis.**  
+Models trained with compression-aware objectives retain performance better under aggressive compression than standard LLMs.
+
+**Setup.**  
+- Base model: 1–7B parameter transformer.
+- Train with an auxiliary loss encouraging low-entropy weight blocks or activations (e.g., predictability, low-rank structure).
+- Apply identical post-hoc compression (quantization + pruning) to both models.
+
+**Baselines.**  
+- Standard pretraining + post-hoc compression  
+- QAT (quantization-aware training)
+
+**Metrics.**  
+Perplexity, downstream task accuracy, performance vs compression ratio curves.
+
+**Expected outcome.**  
+Compression-aware models dominate the Pareto frontier (lower loss at same size).
+
+---
+
+### Experiment 2: Adaptive compression at inference time
+
+**Hypothesis.**  
+Compression-aware LLMs can dynamically trade accuracy for compute/size *per request*.
+
+**Setup.**  
+- Learn a controllable compression knob (e.g., rank truncation, token-state sparsification).
+- Vary compression at inference without retraining.
+- Evaluate across tasks of varying difficulty.
+
+**Baselines.**  
+- Static compressed models  
+- Mixture-of-experts with routing
+
+**Metrics.**  
+Latency, memory, accuracy; slope of degradation as compression increases.
+
+**Expected outcome.**  
+Smooth, predictable degradation rather than sharp collapse.
+
+---
+
+### Experiment 3: Where is compressibility located?
+
+**Hypothesis.**  
+Compressibility is unevenly distributed across layers, heads, and token positions.
+
+**Setup.**  
+- Structured ablations: compress only early layers, only MLPs, only attention.
+- Token-wise compression conditioned on entropy or attention dispersion.
+
+**Baselines.**  
+- Uniform compression  
+- Random structure removal
+
+**Metrics.**  
+Task accuracy, calibration, interpretability diagnostics.
+
+**Expected outcome.**  
+Clear identification of “compression-safe” substructures.
+
+---
+
+## 3. Timeline (6 months)
+
+**Month 1:**  
+Literature replication (quantization, pruning baselines), metric setup.
+
+**Month 2:**  
+Implement compression-aware objective; train small-scale models.
+
+**Month 3:**  
+Scale to mid-size model; run Experiment 1 fully.
+
+**Month 4:**  
+Adaptive inference mechanisms; Experiment 2.
+
+**Month 5:**  
+Ablations and localization of compressibility (Experiment 3).
+
+**Month 6:**  
+Paper writing, compression–performance tradeoff analysis, release code.
+
+---
+
+## 4. Resources
+
+**Compute.**  
+- 4–8 GPUs (A100-class) for training; single GPU for inference tests.
+
+**Tools.**  
+- PyTorch + FSDP  
+- BitsAndBytes / custom quantization kernels  
+- Weights & Biases for tradeoff tracking
+
+**Datasets.**  
+- The Pile or equivalent open corpus  
+- Standard downstream eval suites (GLUE-style, reasoning benchmarks)
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Incremental vs prior work | Desk reject | Emphasize *learned* compressibility |
+| Gains only at small scale | Weak claim | Show scaling trends, not just absolute gains |
+| Engineering-heavy perception | Reviewer fatigue | Formalize compressibility as a property |
+| Training instability | Delays | Start with small models + strong baselines |
+
+---
+
+## 6. Stretch ideas / follow-up
+
+- Information-theoretic bounds on LLM compressibility  
+- Joint compression + continual learning  
+- Compressible multimodal models (vision–language)
+
+---
+
+**Evidence note.**  
+There is **no single canonical benchmark or theory for “compressible LLMs.”** Existing work spans quantization, pruning, low-rank adaptation, and MoE, but lacks a unified framing. You should explicitly argue this gap and position your work as filling it. If reviewers ask for theory, a lightweight entropy or MDL-based analysis will help.
+
+---
+
+**Optional next step:**  
+Decide whether your *main contribution* is **training methodology** or **adaptive inference**—trying to sell both equally will weaken the paper.

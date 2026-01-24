@@ -1,0 +1,158 @@
+<thinking>
+User is experienced, wants turnkey plan. Topic is broad but acceptable. Need to choose a concrete, defensible angle for GNNs in sea ice, not a vague “apply GNNs”. Lead with assessment: viable but only if framed around graph structure advantages (irregular grids, dynamics). Provide full plan sections. Cite arXiv sparingly. No clarifying questions. </thinking>
+
+**Blunt assessment:**  
+“GNNs for sea ice” is only publishable if you **explicitly exploit graph structure that CNNs/ViTs cannot** (irregular meshes, Lagrangian ice motion, topology-aware interactions). A generic GNN slapped onto gridded reanalysis will be rejected as unnecessary. The plan below is framed around that constraint.
+
+---
+
+## 1. Problem framing and goals
+
+**Problem.**  
+Operational and scientific sea-ice forecasting (concentration, thickness, velocity) still relies on Eulerian grids that poorly represent **ice–ice interactions, fracture, and advection on deforming geometries**. Most recent ML work uses CNNs or diffusion models on fixed grids, which implicitly assume locality and stationarity.
+
+**Core idea.**  
+Represent sea ice as a **dynamic graph** (nodes = ice parcels or adaptive spatial cells; edges = physical interactions and transport pathways) and use **spatiotemporal GNNs** to predict short-to-medium-range evolution (1–30 days).
+
+**Goal.**  
+Demonstrate that GNNs:
+- outperform grid-based ML baselines **under deformation, sparse observations, and coastline complexity**, and  
+- provide **physically interpretable interaction signals** (stress propagation, lead formation).
+
+**Target outputs.**  
+Sea ice concentration (SIC), velocity (SIV), optionally thickness (SIT).
+
+---
+
+## 2. Experiments
+
+### Experiment 1: Static-graph GNN vs CNN on irregular Arctic mesh
+
+**Hypothesis.**  
+On irregular spatial discretizations (e.g., coastal regions, polar cap), GNNs outperform CNNs trained on remapped grids.
+
+**Setup.**  
+- Nodes: centroids of adaptive mesh (e.g., EASE-grid cells masked by ice presence).  
+- Edges: k-nearest neighbors + distance-weighted adjacency.  
+- Model: Graph Convolution + temporal encoder (GRU or temporal attention).  
+- Inputs: past SIC/SIV + ERA5 forcings.
+
+**Baselines.**  
+- U-Net / ConvLSTM on regular grid  
+- Persistence and climatology
+
+**Metrics.**  
+RMSE, MAE, anomaly correlation; coastal-region subset scores.
+
+**Expected outcome.**  
+Modest global gains, **clear gains near coastlines and marginal ice zones** (where grids distort geometry).
+
+---
+
+### Experiment 2: Dynamic graph from Lagrangian ice motion
+
+**Hypothesis.**  
+Updating graph connectivity using predicted/observed ice velocity improves medium-range forecasts.
+
+**Setup.**  
+- Nodes advect with SIV (Lagrangian frame).  
+- Edges recomputed each timestep based on proximity and velocity shear.  
+- Model: Dynamic GNN with edge-update network.
+
+**Baselines.**  
+- Static-graph GNN  
+- Eulerian CNN/Transformer
+
+**Metrics.**  
+Forecast skill vs lead time (1, 7, 14, 30 days); error growth rate.
+
+**Expected outcome.**  
+Slower error accumulation and better structural realism of ice motion.
+
+---
+
+### Experiment 3: Physics-informed edge constraints
+
+**Hypothesis.**  
+Encoding physical constraints at edges (e.g., stress limits, divergence penalties) improves generalization.
+
+**Setup.**  
+- Add regularization enforcing bounded divergence and smooth stress propagation across edges.  
+- Compare learned vs constrained edges.
+
+**Baselines.**  
+- Unconstrained GNN  
+- Pure data-driven CNN
+
+**Metrics.**  
+Physical consistency scores (mass conservation proxies), out-of-distribution years.
+
+**Expected outcome.**  
+Small RMSE gains, **large robustness gains** during extreme melt or freeze years.
+
+---
+
+## 3. Timeline (6 months)
+
+**Month 1:**  
+Data ingestion, mesh/graph construction, CNN baseline reproduction.
+
+**Month 2:**  
+Static-graph GNN implementation + evaluation.
+
+**Month 3:**  
+Dynamic graph formulation and ablation.
+
+**Month 4:**  
+Physics-informed constraints and robustness testing.
+
+**Month 5:**  
+Error analysis, regional diagnostics, interpretability (edge attention maps).
+
+**Month 6:**  
+Paper writing, figures, reproducibility cleanup, submission.
+
+---
+
+## 4. Resources
+
+**Compute.**  
+- 1–2 GPUs (A100/V100-class ideal, but RTX 3090 workable).
+
+**Datasets.**  
+- NSIDC SIC/SIV products  
+- ERA5 atmospheric forcings  
+- Optional: CryoSat-2 / SMOS SIT (limited coverage)
+
+**Tools.**  
+- PyTorch Geometric or DGL  
+- xarray, cartopy for geospatial handling
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| GNN underperforms CNN | Rejection | Focus analysis on regimes where it wins |
+| Graph construction arbitrary | Reviewer skepticism | Strong ablations, physical motivation |
+| Data sparsity (SIT) | Weak results | Position SIT as optional extension |
+| Too incremental | Desk reject | Emphasize dynamic/Lagrangian graph novelty |
+
+---
+
+## 6. Stretch ideas / follow-up
+
+- Coupling GNN with **sea-ice rheology solvers** as hybrid surrogate models  
+- Graph diffusion models for probabilistic forecasting  
+- Transfer to Antarctic sea ice without retraining
+
+---
+
+**Evidence note.**  
+There is **very limited prior work explicitly using GNNs for sea ice**, which is good for novelty but risky. Most related work uses CNNs or physics-informed networks (e.g., Koo & Rahnemoonfar, 2023–2025 on arXiv). You should position this as *structure-aware ML*, not just “another deep model.”
+
+---
+
+**Optional next step:**  
+Decide **static vs dynamic graph** as the core contribution—trying to sell both equally will dilute the paper.

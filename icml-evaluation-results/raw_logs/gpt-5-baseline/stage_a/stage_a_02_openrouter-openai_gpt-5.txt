@@ -1,0 +1,74 @@
+Awesome area. Climate + ML is rich, but you can start with scoped, low-compute projects that teach the workflow: data wrangling, geospatial quirks, modeling, and honest evaluation.
+
+Good beginner-friendly paths (pick one)
+1) Remote sensing land-use/land-cover (easiest to start)
+- Goal: Classify land cover from Sentinel‑2 image chips (e.g., EuroSAT dataset).
+- Why it matters: Carbon accounting, deforestation monitoring, urban expansion.
+- What you’ll learn: Handling multispectral imagery, geospatial splits, augmentations, model evaluation.
+- Baseline: ResNet‑18 (ImageNet-pretrained) on RGB; then add multispectral bands.
+- Stretch: Try a remote-sensing-pretrained model (e.g., TorchGeo + timm backbones), add cloud masking, test generalization to a different region/time.
+
+2) Renewable energy forecasting (timeseries; still beginner-friendly)
+- Goal: Forecast next-day wind or solar power from weather forecasts and past generation.
+- Datasets: GEFCom2014 (wind/solar), or a public PV timeseries on Kaggle.
+- Baseline: XGBoost/lightGBM with lag features; compare to naive persistence and simple ARIMA/LSTM.
+- Why it matters: Grid stability and integrating renewables.
+- Stretch: Probabilistic forecasts (quantile loss), add exogenous features (wind speed at hub height), calibration.
+
+3) Weather/climate downscaling (a bit more advanced, still doable small-scale)
+- Goal: Super-resolve coarse reanalysis (e.g., ERA5 2m temperature/precip) to finer grid over one region.
+- Baseline: Bicubic interpolation; ML: small UNet/SRCNN.
+- Skills: xarray/netCDF/zarr, consistent geospatial train/val/test by time/space.
+- Stretch: Add orography/land-sea mask as inputs; evaluate skill vs baseline, not just RMSE.
+
+Concrete 6-week starter plan (assuming ~8–10 hrs/week)
+Target: EuroSAT land-cover classification with multispectral Sentinel‑2
+
+Week 1: Setup + orientation
+- Tools: Python, PyTorch, torchvision, timm, TorchGeo, numpy/pandas, matplotlib, scikit-learn; geospatial basics: rasterio, rioxarray, shapely/geopandas (light use).
+- Download EuroSAT (RGB first). Explore classes, image sizes. Build a clean data loader.
+
+Week 2: Strong baselines and evaluation
+- Train ResNet‑18 (ImageNet-pretrained) on RGB. Use standard augments (random crop/flip, color jitter).
+- Report: accuracy + macro-F1; confusion matrix. Keep seeds, log runs (Weights & Biases or TensorBoard).
+- Do proper splits: avoid leakage by ensuring chips from same area don’t appear in both train/test (if dataset doesn’t guarantee this, simulate a geographic split by grouping tiles).
+
+Week 3: Multispectral and ablations
+- Switch to EuroSAT multispectral (13 bands). Swap first conv to accept 13 channels or use a 1x1 conv to map 13→3 before a standard backbone.
+- Compare: RGB vs multispectral. Do ablations: which bands help most? Try band-drop experiments.
+
+Week 4: Robustness and domain shift
+- Cloud sensitivity: test performance on cloudier chips (filter by QA bands if available, or approximate via brightness/whiteness).
+- Domain shift test: hold out one class or region; or evaluate on a small external set (e.g., a few Sentinel‑2 tiles you sample yourself).
+- Add Grad-CAM/Integrated Gradients to check if the model uses plausible regions.
+
+Week 5: Improve with remote-sensing pretraining or better augments
+- Try a backbone with remote-sensing pretraining (e.g., in TorchGeo model zoo) or self-supervised weights (DINO/MAE).
+- Try augmentations useful for RS: MixUp/CutMix, Random Erasing.
+- If comfortable, try a light segmentation task on a small dataset (e.g., flood or building footprints) using UNet to experience pixel-level labels.
+
+Week 6: Make it researchy
+- Write a short report: problem, data, method, baselines, metrics, ablations, robustness, limitations.
+- Release code + a reproducible training script.
+- Optional: small extension worthy of a workshop post: geographic cross-validation, label noise study, or cloud-robust training.
+
+What to pay attention to (common climate/geo pitfalls)
+- Spatiotemporal leakage: Split by geography and/or time, not random pixels.
+- Baselines first: Compare to simple baselines (e.g., k-NN on hand-crafted indices like NDVI; small CNN).
+- Metrics: Use macro-F1 when classes are imbalanced; for segmentation, IoU; for forecasting, MAE/RMSE and skill vs persistence.
+- Uncertainty: Consider prediction intervals or ensembling; calibrated probabilities matter for decisions.
+- Documentation: Record coordinate reference systems, resolution, and any resampling you do.
+
+Recommended tools for climate/geo ML
+- General: PyTorch + timm; Lightning or plain scripts; W&B or MLflow.
+- Geospatial/earth data: TorchGeo, xarray, rioxarray, rasterio, geopandas, pyproj.
+- Data sources to explore later: Google Earth Engine, Pangeo cloud, Copernicus Open Access Hub, Radiant MLHub.
+- Weather/climate datasets for next steps: ERA5/ERA5-Land (reanalysis), WeatherBench(2), CMIP6, SEVIR (nowcasting), BigEarthNet (multi-label land cover).
+
+After your first project, possible next steps
+- Wildfire: burned area mapping or smoke detection from Sentinel‑2/Sentinel‑5P.
+- Flood mapping: SAR (Sentinel‑1) segmentation; good for cloud-penetrating data.
+- Emissions/maps: estimate NO2/PM2.5 from Sentinel‑5P with ground stations.
+- Downscaling/nowcasting: UNet/ConvLSTM on a small region; compare to physics baselines.
+
+If you share your background (Python experience, math comfort), compute access (Colab vs a GPU), and whether you prefer images or time series, I can tailor a specific dataset, model, and a starter notebook outline.

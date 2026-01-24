@@ -1,0 +1,101 @@
+This research plan targets the "post-training ternarization" gap: bridging the performance of 1-bit architectures (like BitNet b1.58) with the accessibility of pre-trained dense models (like Llama-3), avoiding the prohibitive cost of pre-training from scratch.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Current state-of-the-art compression (e.g., GPTQ, AWQ) hits a "quality wall" below 3 bits. While architectures like BitNet b1.58 demonstrate that Large Language Models (LLMs) can operate with ternary weights ({-1, 0, 1}), they currently require expensive pre-training from scratch. There is no turnkey methodology to "retrofit" existing open-weights models (e.g., Llama-3, Mistral) into these highly compressible ternary states without catastrophic performance degradation.
+
+**Research Goal:**
+Develop a **Post-Training Ternarization (PTT)** framework that converts dense, pre-trained LLMs into 1.58-bit (ternary) models with $>95\%$ performance retention. The approach will combine **activation flattening** (to handle outliers) with **distillation-aware quantization**, proving that compressibility can be induced in dense models with minimal compute.
+
+**Core Objectives:**
+1.  **Extreme Quantization:** Push weight precision to $\approx1.58$ bits (ternary) and activations to 4-8 bits.
+2.  **Outlier Mitigation:** Adapt "FlatQuant" principles to suppress activation outliers that break low-bit quantization [4].
+3.  **Efficiency:** Achieve this via short fine-tuning runs ( < 1B tokens), not pre-training.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "Flatness" Baseline (Rotation vs. Smoothing)
+**Hypothesis:** Pre-processing weights and activations with learnable affine transformations (flattening) significantly reduces the quantization error for ternary grids compared to standard rounding.
+*   **Setup:**
+    *   **Model:** Llama-3-8B.
+    *   **Techniques:** Compare **HIGGS** (Hadamard rotations) [1] vs. **FlatQuant** (learnable affine scales) [4] vs. **Standard Round-to-Nearest (RTN)**.
+    *   **Target:** Ternary weights ({-1, 0, 1}), INT8 activations.
+*   **Baselines:** GPTQ (4-bit), QuIP# (2-bit).
+*   **Evaluation Metrics:** Perplexity (WikiText-2), Zero-shot accuracy (MMLU, ARC-Challenge), KL-Divergence between FP16 and Quantized logits.
+*   **Expected Outcome:** FlatQuant/HIGGS methods will outperform RTN by >15% in perplexity but may still lag behind FP16 by >10%, motivating the need for fine-tuning (Exp 2).
+
+#### Experiment 2: Distillation-Aware Ternary Fine-Tuning (The Core Novelty)
+**Hypothesis:** A "Soft-to-Hard" curriculum—where weights are gradually penalized for deviating from {-1, 0, 1} while distilling from the FP16 teacher—recovers the accuracy lost in Exp 1.
+*   **Setup:**
+    *   **Teacher:** Llama-3-8B (FP16).
+    *   **Student:** Llama-3-8B (Quantized).
+    *   **Method:** Apply LoRA adapters to the quantized backbone. Use a loss function $L = L_{distill} + \lambda L_{reg}$, where $L_{reg}$ forces the effective weights (Base + LoRA) towards ternary values.
+    *   **Ablation:** Freezing base weights vs. allowing Straight-Through Estimator (STE) updates.
+*   **Baselines:** QLoRA (4-bit), BitNet b1.58 (reported scores).
+*   **Evaluation Metrics:** Downstream task performance (GSM8k for reasoning), Inference throughput (tokens/sec).
+*   **Expected Outcome:** The "Soft-to-Hard" LoRA approach recovers 95-98% of FP16 performance on reasoning tasks, outperforming standard 2-bit PTQ methods like VPTQ [3].
+
+#### Experiment 3: Sensitivity-Based Mixed Precision
+**Hypothesis:** A small fraction (<1%) of "salient" weights (e.g., attention output heads) are incompressible and must remain at INT8 to prevent collapse.
+*   **Setup:**
+    *   **Method:** Compute Fisher Information Matrix or Hessian trace for each layer/block. Keep top $k\%$ sensitive layers at INT4/8, quantize rest to Ternary.
+    *   **Sparsity Check:** Compare against unstructured pruning (SparseGPT) to see if ternary dense > sparse FP16.
+*   **Baselines:** Uniform 1.58-bit quantization.
+*   **Evaluation Metrics:** Accuracy vs. Model Size (Bits per parameter), Latency.
+*   **Expected Outcome:** A "Pareto" curve showing that keeping just the first and last layers at higher precision yields disproportionate gains in stability.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Pipeline & Baselines** | Implement evaluation harness (LM-Eval-Harness). Reproduce **FlatQuant** [4] and **HIGGS** [1] results on Llama-3. |
+| **Month 2** | **Ternary Kernels** | Implement custom CUDA/Triton kernels for ternary matrix multiplication (or simulate for initial research). |
+| **Month 3** | **Exp 1: Rotation Studies** | Benchmark Hadamard vs. Learned Affine transforms for ternary mapping. Freeze "Pre-processing" strategy. |
+| **Month 4** | **Exp 2: Distillation Loop** | Build the Teacher-Student loop. Run "Soft-to-Hard" fine-tuning experiments. Tune $\lambda$ regularization schedules. |
+| **Month 5** | **Exp 3 & Analysis** | Mixed-precision sensitivity sweep. Ablation studies on dataset size (how many tokens needed to heal quantization?). |
+| **Month 6** | **Paper & Release** | Draft paper. Release "Ternarizer" code and model checkpoints (e.g., "Llama-3-Ternary"). |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 4x A100 (80GB) or 8x H100. (Distillation requires holding both Teacher and Student in VRAM, plus activation gradients).
+*   **Optimization:** Use `FSDP` (Fully Sharded Data Parallel) or `DeepSpeed` ZeRO-3 to fit models.
+
+**Tools & Libraries:**
+*   **Base Frameworks:** PyTorch, Hugging Face Transformers.
+*   **Quantization:** `AutoGPTQ`, `BitsAndBytes` (for baselines).
+*   **Research Codebases:** Look for official repos of **FlatQuant** (usually under `mit-han-lab` or similar) and **QuIP#**.
+*   **Evaluation:** `lm-evaluation-harness` (EleutherAI).
+
+**Datasets:**
+*   **Calibration:** RedPajama or C4 (subset, ~128 samples) for PTQ statistics.
+*   **Fine-tuning:** UltraChat or OpenOrca (high-quality instruction data) for the distillation phase to preserve instruction following.
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Training Instability** | Ternary weights cause exploding/vanishing gradients (STE is unstable). | **Warm-up:** Start with INT4 quantization and anneal down to ternary. Use "Weight Decay" towards discrete points rather than hard clamping initially. |
+| **Outlier Activations** | Llama-3 has massive activation outliers that break static quantization. | **FlatQuant [4]:** Explicitly apply the learned affine smoothing. If that fails, fall back to keeping outlier channels in FP16 (SpQR method). |
+| **Kernel Engineering** | Simulated quantization is slow; actual speedup requires custom kernels. | Focus on **accuracy validation** first (simulated). For the paper, theoretical FLOPs reduction is acceptable if custom kernels (Triton) are too risky/time-consuming. |
+| **Overfitting** | Model memorizes the small calibration set during fine-tuning. | Use a larger, diverse instruction-tuning dataset (10k-50k samples) rather than just a calibration set (128 samples). |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Vector Quantization (VPTQ) Hybrid:** Instead of scalar ternary $\{-1, 0, 1\}$, use vector quantization where blocks of weights map to a small codebook. Combine **VPTQ** [3] with the distillation pipeline.
+*   **Generative Quantization:** Train a hypernetwork that *predicts* the optimal quantization parameters for each layer based on the input prompt (Dynamic Quantization).
+*   **KV-Cache Compression:** Extend the ternary concept to the KV-cache to enable massive context windows (1M+) on consumer hardware.
+
+**Optional next step:**
+Configure the **LM-Evaluation-Harness** immediately to establish a "Ground Truth" FP16 baseline for Llama-3-8B on MMLU and WikiText-2, as all quantization efforts will be measured against this absolute ceiling.

@@ -1,0 +1,70 @@
+This experimental design tests the hypothesis that **Privacy/Governance Constraints** (specifically the resource constraints required for offline, on-premise inference) degrade the model's **Calibration**—its ability to "know when it doesn't know."
+
+In "Verification-like" tasks (e.g., Fact-Checking or Legal Entailment), a failure isn't just a wrong prediction; it is a **High-Confidence Error** or a failure to predict "Not Enough Information."
+
+### 1. Defining the Constraint: "The Offline Enclave"
+
+To simulate a strict governance environment (where data cannot leave a secure facility and compute is limited), we apply two specific constraints to the Hierarchical Transformer:
+
+1.  **Constraint A (Quantization):** Convert the model weights from `Float32` to `Int8` (Dynamic Quantization). This simulates deployment on secure edge hardware or non-GPU servers.
+2.  **Constraint B (Sanitization):** Pre-processing that aggressively masks entities (Dates, Names, Locations) using `[MASK]` tokens before inference, simulating PII redaction protocols.
+
+### 2. Datasets (Verification-Centric)
+
+We need datasets where the "absence of evidence" is a valid label, as this is where verification systems fail most often.
+
+*   **Primary: FEVER (Fact Extraction and VERification)**
+    *   *Task:* Given a claim and a long document, predict `Supported`, `Refuted`, or `NotEnoughInfo` (NEI).
+    *   *Relevance:* The `NEI` class is the "Verification" safety valve.
+*   **Secondary: ContractNLI (Legal)**
+    *   *Task:* Does a contract entail a specific clause? (Entailment / Contradiction / Not Mentioned).
+    *   *Relevance:* High governance impact. "Not Mentioned" requires scanning the whole document and *verifying* absence.
+
+### 3. Baselines
+
+1.  **The Oracle (Unconstrained):** The standard Hierarchical Transformer (RoBERTa-Large backbone) running in Float32 with full access to raw text.
+2.  **The Quantized (Constraint A):** The exact same model, post-training quantized to Int8.
+3.  **The Redacted (Constraint B):** The Oracle model running on PII-scrubbed text.
+
+### 4. Metrics: Quantifying "Verification Failure"
+
+Standard Accuracy is insufficient. We need to measure **Calibration** and **Fail-Safe Reliability**.
+
+*   **Metric 1: Expected Calibration Error (ECE)**
+    *   Measures the gap between Model Confidence and Empirical Accuracy.
+    *   *Hypothesis:* Constraints will increase ECE (Model remains confident even when quantization noise flips the prediction).
+*   **Metric 2: NEI-Recall (The "Safety Rate")**
+    *   Specifically measures the recall on the `NotEnoughInfo` class.
+    *   *Failure Mode:* If the constrained model hallucinates evidence due to noise, NEI-Recall will drop, and `Supported/Refuted` False Positives will rise.
+*   **Metric 3: The "Overconfidence Tax"**
+    *   Average confidence of *incorrect* predictions.
+
+### 5. Statistical Analysis Plan
+
+We need to prove that the degradation in verification is statistically significant and not just random noise.
+
+#### A. The "Reliability Diagram" Comparison
+Plot the Confidence (X-axis) vs. Accuracy (Y-axis) for the Baseline and Constrained models.
+*   **Visual Test:** If the Constrained curve dips below the diagonal ($y=x$) in the high-confidence region (0.8-1.0), the constraint creates **High-Confidence Hallucinations**.
+
+#### B. Statistical Test: Wilcoxon Signed-Rank Test on Entropy
+We want to see if the constraint reduces the model's "uncertainty awareness."
+1.  Collect the **Entropy** of the prediction distribution for all **Error Cases** in the Test Set.
+2.  **Null Hypothesis ($H_0$):** The entropy distribution of errors is identical for Float32 and Int8 models.
+3.  **Test:** If Int8 errors have significantly *lower* entropy (higher confidence) than Float32 errors ($p < 0.05$), the privacy constraint has structurally damaged the verification mechanism.
+
+#### C. Impact Analysis: The "Aggregator Noise" Check
+Hierarchical models rely on aggregating signals from multiple chunks. Quantization adds noise to *every* chunk embedding.
+*   **Procedure:** Calculate the **Cosine Similarity** between the Level 2 (Document) embeddings of the Float32 and Int8 models.
+*   **Correlation:** Correlate this similarity with the Document Length.
+*   **Failure Prediction:** If similarity drops as Length increases, it proves that **Offline Constraints disproportionately affect longer documents**, causing verification failure specifically in complex cases.
+
+### 6. Summary of Expected Outcomes
+
+| Metric | Unconstrained (Baseline) | Offline/Quantized (Constraint) | implication |
+| :--- | :--- | :--- | :--- |
+| **Accuracy** | 92.0% | 90.5% | Minor drop (looks acceptable). |
+| **ECE (Calibration)** | 0.04 | **0.12** | **Major Failure:** Model is lying about its certainty. |
+| **NEI-Recall** | 85% | **72%** | **Verification Failure:** Model "hallucinates" support where there is none. |
+
+**Conclusion:** If the ECE spikes, you must conclude that **"Offline deployment requires re-calibration."** You cannot simply quantize a Hierarchical Verification model and expect its confidence scores to remain safe for governance decisions.

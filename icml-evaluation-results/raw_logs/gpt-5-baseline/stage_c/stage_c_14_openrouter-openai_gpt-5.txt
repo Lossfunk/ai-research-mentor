@@ -1,0 +1,106 @@
+1. Problem framing and goals
+
+Context
+- Goal: Build and evaluate federated reinforcement learning (FRL) for smart-grid control under realistic heterogeneity, tight privacy, and reliability constraints. Focus on two representative tasks and simulators:
+  - Transmission topology control and remedial actions using Grid2Op/L2RPN [7,17,19,20].
+  - Distribution-level demand response or storage control (e.g., CityLearn; limitation: the tool did not retrieve authoritative links; plan to add via targeted search “CityLearn challenge arXiv 2020/2022”).
+- Why FRL: Enables multiple utilities or microgrids to collaboratively learn control policies without sharing raw data; surveys highlight both promise and vulnerabilities in smart-grid FL and FRL [1,5].
+- Privacy and reliability emphasis: Integrate secure aggregation (cryptographic), differential privacy (DP) where feasible, robust aggregation against Byzantine/poisoning clients, safe RL constraints, and rigorous failure testing.
+
+Success criteria by 9 months
+- Performance: FRL achieves within 3–5% of centralized RL on cumulative reward and task-specific grid metrics (load shedding, constraint violations) across at least two environments [7,17,19].
+- Privacy: Demonstrate secure aggregation overhead ≤10–20% and, in DP runs, ε≤8 at δ=1e-5 with ≤5% performance loss (limitation: canonical DP-in-RL references not retrieved; plan to search “differentially private policy gradient arXiv 2020” and “private RL MDP arXiv” for authoritative sources).
+- Robustness: Byzantine-robust aggregation (median/Krum/Bulyan-style) limits attack impact to ≤5% reward drop under 20% adversarial clients [10]; resilience to client churn (≥30% dropout) with no divergence.
+- Safety: Constrained MDP checks (chance constraints/Lyapunov-style baselines) keep violation rates within targets while maintaining performance [11,13].
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment A: FRL vs centralized RL under client heterogeneity (core ablation)
+- Hypothesis: Policy-gradient FRL with proximal updates (FedPG/FedPPO) and limited local steps reaches centralized performance under realistic heterogeneity with asynchronous aggregation improving wall-clock [5,16].
+- Setup:
+  - Environments: Grid2Op/L2RPN small and medium grids [7,17,19]; CityLearn for DR/storage (to be added via targeted search).
+  - Clients: 5–20 simulated utilities with heterogeneous load/renewable profiles and observation noise; heterogeneity via different seeds and scenario distributions.
+  - Algorithms: Centralized PPO/A2C; FRL variants—FedAvg on policy parameters, FedProx regularization, asynchronous FRL (AFedPG) [16].
+  - Ablations: local steps ∈ {5, 20, 50}, sync vs semi/async, client sampling rate, optimizer settings.
+- Baselines: Local-only RL (no federation); centralized training upper bound.
+- Metrics: Task reward; load shedding (MWh), N-1 survival and line thermal-limit violations for Grid2Op [7,17]; energy cost, comfort violations for CityLearn; wall-clock to a target score; variance across clients.
+- Expected outcomes: FRL within 3–5% of centralized; async reduces time-to-target by ≥20% under churn [16].
+
+Experiment B: Communication and computation budget ablations
+- Hypothesis: Model/gradient compression (8-bit quantization, top-k sparsification) with error feedback preserves convergence and reduces upstream bytes ≥10×.
+- Setup: Apply per-layer 8-bit and k% top-k with correction; vary aggregation frequency; emulate 1–10 Mbps WAN with 100–300 ms RTT.
+- Baselines: Uncompressed FRL; centralized RL.
+- Metrics: Bytes/round; total bytes to reach target reward; final performance; client/aggregator CPU/GPU utilization.
+- Expected outcomes: ≥10× reduction in bytes, ≤2–3% reward loss; modest aggregator CPU overhead.
+
+Experiment C: Privacy mechanisms—secure aggregation and DP
+- Hypothesis: Secure aggregation adds tolerable latency and DP-SGD on policy/value heads can achieve meaningful ε with small performance impact.
+- Setup:
+  - Secure aggregation: Integrate a Bonawitz-style protocol at the server (limitation: canonical CCS 2017 reference not retrieved; add via “Bonawitz secure aggregation CCS 2017 arXiv”).
+  - DP: Per-update clipping and Gaussian noise for policy/value gradients; privacy accounting (moments accountant).
+  - Ablations: clipping norm, noise multiplier, secure-agg batch sizes.
+- Baselines: No DP; no secure aggregation.
+- Metrics: ε, δ vs reward; secure-agg overhead (latency %, CPU); attack surface notes.
+- Expected outcomes: ε≤8 with ≤5% reward loss; secure-agg adds ≤20% round time.
+
+Experiment D: Byzantine robustness and poisoning resistance
+- Hypothesis: Robust aggregators (median, trimmed-mean, Multi-Krum/Bulyan) limit degradation with 10–30% malicious clients [10].
+- Setup: Inject label-free RL poisoning by gradient sign flipping, scaled updates, and targeted attacks (inducing unsafe line switching).
+- Baselines: FedAvg; AggregaThor implementations of robust rules [10].
+- Metrics: Reward under attack, constraint violation rate, detection/flagging rate of outlier updates, convergence stability.
+- Expected outcomes: Robust aggregation caps reward loss ≤5% at 20% adversaries; violation rates do not spike.
+
+Experiment E: Safe FRL via constrained RL
+- Hypothesis: Constrained MDP (CMDP) techniques and chance-constraint proxies reduce safety violations with minimal performance loss [11,13].
+- Setup: Penalty shaping vs Lagrangian CMDP vs Lyapunov-based constraints on line loading and allowable load shedding; maintain feasibility on unseen scenarios.
+- Baselines: Unconstrained PPO; heuristic rule-based safety filters.
+- Metrics: Violation count per episode; mean severity of excursions; reward; constraint satisfaction rate with confidence.
+- Expected outcomes: ≥50% reduction in constraint violations with ≤3% reward loss [11,13].
+
+Experiment F: Knowledge sharing modality ablations (policy vs value vs distillation)
+- Hypothesis: Sharing value-function parameters or logits (distillation) is more stable under heterogeneity than direct policy sharing in FRL [21,22].
+- Setup: Compare sharing policy θ, value φ, and proxy logits/distilled targets; optionally use federated distillation with proxy experience buffers [22].
+- Baselines: Policy-only FRL; local-only.
+- Metrics: Sample efficiency, final reward, cross-client variance, stability (training oscillations).
+- Expected outcomes: Value-sharing or distillation improves stability and client fairness with small overhead.
+
+Experiment G: Reliability stress tests and OOD generalization
+- Hypothesis: Agents that pass saliency/ablation-based checks and scenario stress tests generalize better to unseen disturbances (storm-induced outages, renewable ramps).
+- Setup: Evaluate on OOD scenarios from L2RPN (line contingencies, demand spikes) [7,17]; run k-out component failures; measure recovery time and safety.
+- Baselines: Centralized RL; heuristic controllers.
+- Metrics: Time to safe state recovery; unsupplied energy; survival rate under OOD.
+- Expected outcomes: FRL performance within 5% of centralized; robust recovery under OOD.
+
+Notes on evidence
+- Smart-grid FL surveys and FRL reviews provide context [1,5].
+- Grid2Op/L2RPN are mature RL environments for power networks [7,17,19,20].
+- Robust aggregation implementations (AggregaThor) cover Krum/Bulyan-style methods [10].
+- Safe RL in CMDPs provides principled safety mechanisms [11,13].
+- Asynchronous FRL theory (AFedPG) supports delay-tolerant designs [16].
+
+
+3. Timeline for the next 9 months with milestones
+
+Month 1
+- Finalize governance (MoU, roles), preregister protocols (tasks, splits, metrics).
+- Stand up simulators (Grid2Op/L2RPN; CityLearn pending reference addition) and baseline centralized PPO.
+- Milestones: Baseline centralized PPO achieving published L2RPN small-grid scores [7,17].
+
+Month 2
+- Implement FRL scaffolding (Flower/FedML + RLlib/Stable-Baselines3).
+- Run Experiment A minimal: FedAvg policy sharing vs centralized; 5 clients; synchronous.
+- Milestones: FRL within 10% of centralized on small grid.
+
+Month 3
+- Expand heterogeneity/churn; add FedProx and asynchronous FRL (AFedPG) [16]; ablate local steps and sampling.
+- Start Experiment B compression ablations.
+- Milestones: Async shows ≥20% wall-clock speedup at fixed performance.
+
+Month 4
+- Integrate secure aggregation; measure overhead. Begin DP ablations (Experiment C).
+- Implement robust aggregation (AggregaThor) and attack harness (Experiment D) [10].
+- Milestones: Secure agg overhead ≤20%; first robust-agg results at 10% adversaries.
+
+Month 5
+- Safe RL (Experiment E

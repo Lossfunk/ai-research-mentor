@@ -239,11 +239,36 @@ class SingleTurnOrchestrator:
             response_text = ""
             error_payload: Optional[str] = None
             try:
+                import signal
+
+                # Set up timeout handler
+                def timeout_handler(signum, frame):
+                    raise TimeoutError(f"Agent execution exceeded {timeout} seconds timeout")
+
                 augmented_prompt, directive_id = apply_stage_directives(stage, prompt_text)
-                reply = entry.agent.run(augmented_prompt)
-                response_text = getattr(reply, "content", "") or getattr(reply, "text", "") or ""
+
+                # Set timeout for agent execution
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout)
+
+                try:
+                    reply = entry.agent.run(augmented_prompt)
+                finally:
+                    # Cancel the alarm
+                    signal.alarm(0)
+
+                # agent.run() returns a string directly, not an object with .content
+                if isinstance(reply, str):
+                    response_text = reply
+                else:
+                    # Fallback for other types (Message objects, etc.)
+                    response_text = getattr(reply, "content", "") or getattr(reply, "text", "") or str(reply)
             except Exception as exc:  # noqa: BLE001
-                error_payload = str(exc)
+                import traceback
+                error_details = f"{type(exc).__name__}: {exc}"
+                # Capture full traceback for debugging
+                tb = traceback.format_exc()
+                error_payload = f"{error_details}\n\nTraceback:\n{tb}"
                 directive_id = None
 
             elapsed = time.time() - start

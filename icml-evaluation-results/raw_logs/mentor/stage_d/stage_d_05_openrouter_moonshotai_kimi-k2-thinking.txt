@@ -1,0 +1,52 @@
+<thinking>
+Experienced researcher. They want a concrete replication plan plus stats discipline. Key isn’t mechanics; it’s avoiding overclaiming correlated gains. I should be blunt about where replications usually fail, then give a tight two‑phase plan, power logic, and correlation control. 150–300 words.
+</thinking>
+
+**Blunt assessment:** Most “replications + improvement” papers fail because Phase 1 isn’t *actually* faithful, and Phase 2 double-counts gains that come from the same underlying effect (capacity or smoothing). If you don’t lock Phase 1 hard and pre-register Phase 2 comparisons, reviewers will tear it apart.
+
+Here’s a plan that avoids that.
+
+---
+
+## Phase 1: Faithful baseline replication
+Goal: demonstrate you can *exactly* reproduce the reported numbers.
+
+- Re-implement architecture, preprocessing, and rollout logic verbatim.
+- Match **parameter count, token counts, rollout horizon, and training steps**.
+- Success criterion: baseline mean within original CI, variance comparable.
+
+If you miss this, stop. Phase 2 is meaningless otherwise.
+
+---
+
+## Phase 2: Low-parameter alternative (grouped pooling)
+Replace hierarchical levels with **fixed grouped pooling**:
+- Partition tokens into groups (same temporal spans as hierarchy).
+- Pool within groups using mean or gated mean.
+- Single-level transformer downstream.
+
+Critically: **match total parameters and FLOPs** to the baseline. If your model is cheaper, pad it; if more expensive, shrink it.
+
+---
+
+## Power analysis (practical, not ceremonial)
+- Use Phase 1 variance to estimate effect size.
+- Target detecting **≥0.5σ improvement** in primary metric with 80% power.
+- This typically implies **5–8 seeds per condition**, not 3.
+- Reuse identical seeds across models (paired design).
+
+Underpowered “wins” don’t count.
+
+---
+
+## Avoiding double-counting correlated improvements
+This is the subtle part.
+
+- Treat **accuracy**, **latency**, and **memory** as *correlated outcomes*, not independent wins.
+- Use **paired multivariate analysis** (e.g., MANOVA or bootstrap on joint metric vectors), not separate cherry-picked tests.
+- Report **one primary claim** (e.g., accuracy at matched FLOPs). Everything else is secondary evidence.
+- Do not sum “+accuracy” and “+efficiency” as separate contributions unless one is held constant.
+
+If both models improve because they smooth representations, reviewers will notice. Your job is to show *where* they differ.
+
+If you want, tell me the target venue—I can help you phrase this so it survives a skeptical reviewer who hates “improvements over baselines.”

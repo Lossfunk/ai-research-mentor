@@ -1,0 +1,137 @@
+Here’s a focused two-week sprint plan to polish the camera-ready version of your graph foundation models paper, with day-by-day tasks, artifact packaging, licensing, and release notes. Adjust sequencing to your actual deadline and venue requirements.
+
+Assumptions
+- You will release: code, configs, pretrained weights, evaluation scripts, and de-identified/synthetic samples (not full datasets if licenses restrict).
+- Targets: GitHub (or equivalent), Zenodo DOI, and optional Hugging Face model hub.
+
+Two-week sprint (Day 1–14)
+
+Day 1: Scope lock and checklist setup
+- Lock camera-ready requirements (template, page limits, forms) and artifact expectations (code+weights+eval).
+- Create a tracked checklist (issues/milestones) for all items below with owners and deadlines.
+- Decide release versioning (v1.0.0 for camera-ready) and artifact channels (GitHub, HF, Zenodo).
+
+Day 2: Reproducibility backbone
+- Map every main table/figure to a config and command; create reproduce.sh/make targets.
+- Fix random seeds; record dataset split seeds and hashing method for integrity.
+- Add a results manifest (CSV/JSON): figure/table → config ID → seed → expected metrics ± CI.
+
+Day 3: Environment and container
+- Pin dependencies (Conda/Poetry lockfile) and create a Docker image (CPU and optional GPU).
+- Add determinism flags and document them (framework, CUDA/cuDNN, PyTorch flags).
+- Fresh-machine smoke test for one end-to-end run (simulated or small).
+
+Day 4: Model and feature packaging (graph-specific)
+- Package pretrained weights: safe format (e.g., safetensors + PyTorch state_dict), plus config.json (architecture, dims, heads, positional enc/PE, tokenizer/featurizer versions).
+- Include graph featurization pipeline (node/edge attributes, positional encodings, Laplacian/PE seeds) with a single function/API.
+- Provide task adapters/heads (node/edge/graph-level) and inference scripts; save precomputed embeddings for at least one benchmark to reduce compute.
+
+Day 5: Dataset provenance and scripts
+- Build data-fetch scripts that pull from official sources (e.g., OGB) and do not mirror restricted data.
+- Create a data card: dataset names, URLs, licenses, redistribution stance, known issues; document split strategies (random, scaffold, time-based).
+- Add integrity checks (checksums) and a failure-safe path for missing assets.
+
+Day 6: Licensing and policy
+- Select licenses:
+  - Code: Apache-2.0 or MIT (unless dependencies force otherwise).
+  - Model weights: RAIL or custom acceptable-use license if risk-sensitive; otherwise Apache-2.0 if permissible.
+  - Data: No redistribution; document original licenses and require users to fetch themselves.
+- Generate LICENSE files for code and weights, plus a dependency license inventory (e.g., pip-licenses/scancode).
+- Add an acceptable-use policy and disclaimer (e.g., not for clinical/regulated use).
+
+Day 7: Documentation and cards
+- README: quickstart, install, one-command reproduction, hardware/expected runtime, links to paper and DOI.
+- Model card: training data summary, objectives, architecture, intended use, limitations, risks, eval metrics, compute/CO2 estimates.
+- Data card(s): provenance/licensing, preprocessing, splits, known biases.
+- Add CITATION.cff and a BibTeX entry; include acknowledgments/funding in repo (even if omitted in the paper).
+
+Day 8: Evaluation harness and CI
+- Standardize evaluation metrics across tasks (node, edge, graph) and add confidence intervals.
+- Add a simple CI to test import, smoke runs, lint, and docs build.
+- Re-run primary results with final configs; store logs and metrics; update manifest.
+
+Day 9: Camera-ready paper polish
+- Final edit for clarity and consistency with artifacts; update method details to match released configs.
+- Verify figure resolution, fonts, references, and required statements (ethics/limitations, reproducibility).
+- Update supplementary with precise commands, seeds, and links (anonymous or named per venue).
+
+Day 10: Security/privacy and quality pass
+- Scrub logs, notebooks, and configs for secrets or PII; remove any path/usernames in code/comments.
+- Verify weight files and sample data contain no proprietary content.
+- Add SBOM (optional) and a SECURITY.md with contact for vulnerability disclosure.
+
+Day 11: Release engineering
+- Tag v1.0.0; prepare GitHub Release draft with checksums (SHA256) for weights and key assets.
+- Build and test PyPI package (if releasing a library) and publish Docker image to a registry.
+- Prepare Zenodo sandbox draft to auto-mint DOI from GitHub release; confirm metadata.
+
+Day 12: Publish artifacts
+- Publish GitHub Release (attach weights, small sample data, container digest).
+- Push models to Hugging Face hub with a populated model card and inference examples.
+- Mint Zenodo DOI; update README, model card, and paper with the DOI and links.
+
+Day 13: Final QA and link freeze
+- Fresh-machine reproducibility using the public artifacts for at least one main result.
+- Link checker across paper and README; repair 404s/permissions.
+- Finalize release notes and known issues; open a “post-camera” roadmap issue.
+
+Day 14: Submit camera-ready
+- Submit final PDF and supplementary; fill any camera-ready forms (e.g., copyright).
+- Archive the exact commit, container digest, and checksums; export a zipped “AE bundle” if the venue supports artifact evaluation.
+
+Artifact packaging checklist (graph FM-focused)
+- Repo structure
+  - src/ (library code); scripts/ (train/eval); configs/ (YAML/TOML per experiment); notebooks/ (optional demos)
+  - data_scripts/ (fetch/prep); models/ (weights+configs or pointers); docs/; tests/
+- Reproducibility
+  - reproduce.sh/make targets; results manifest; fixed seeds; logging of config+git commit+env hash
+- Models
+  - Weights (safetensors); config.json; adapter heads; feature pipeline; versioned artifact names
+- Datasets
+  - Fetch scripts; license headers; split seeds; integrity checks
+- Environment
+  - conda.yml/poetry.lock; Dockerfile; determinism flags; minimal and full env variants
+- Evaluation
+  - Task-agnostic evaluator (node/edge/graph); metrics with CIs; plotting scripts
+- Docs
+  - README, Model/Data cards, CITATION.cff, LICENSE(s), acceptable-use policy, SECURITY.md, CONTRIBUTING.md (optional)
+- Metadata
+  - Checksums; model and dataset manifests; CHANGELOG.md; release notes
+
+Licensing audit checklist
+- Inventory third-party licenses; confirm no copyleft code (e.g., GPL) conflicts with your chosen license.
+- Validate dataset licenses; exclude or gate assets with restrictive terms; state non-redistribution clearly.
+- Ensure base model licenses allow redistribution of derivatives; if not, provide weight deltas + instructions.
+
+Release notes template (paste into GitHub/HF/Zenodo)
+- Title: Graph Foundation Models v1.0.0 (Camera-ready)
+- Highlights
+  - Pretrained [architecture] on [datasets]; adapters for node/edge/graph tasks
+  - Reproducibility: one-command scripts; Docker/Conda; exact seeds and manifests
+  - New since submission: [bug fix X], [added evaluator Y], [weights migrated to safetensors], [docs/cards]
+- Breaking changes
+  - Config naming changes [old → new]; default featurizer updated [detail]
+- Artifacts
+  - Code tag: v1.0.0 (commit ABC…)
+  - Weights: filenames + SHA256
+  - Docker image: repo:tag + digest
+  - Zenodo DOI: [link]; HF model: [link]
+- Known issues
+  - Large memory for [dataset]; workaround [flag]; planned fix in v1.0.1
+- How to reproduce the paper
+  - Commands for Table 1/2 and Figure 3, with expected metrics (± CI)
+- Acknowledgments and citation
+  - BibTeX and CITATION.cff
+
+Ethics/compliance notes (include in paper and repo)
+- Data/use: We list datasets and licenses; we don’t redistribute restricted data; fetch scripts provided.
+- Safety/limitations: Not for deployment in high-stakes domains without domain validation; known biases and failure modes documented in the model card.
+- Environmental impact: Report total accelerator-hours and estimated CO2e; efficiency measures noted.
+- Takedown/contact: Provide email/form for concerns about data or results.
+
+Go/no-go gates
+- Day 8: Primary results reproducible with final configs on at least one machine.
+- Day 12: Public artifacts published with DOI and checksums; links stable.
+- Day 13: Fresh-machine repro passes; all links resolve; release notes complete.
+
+If you share your target venue and which graph backbones you’re releasing (e.g., GraphTransformer/GraphGPS/GNN variants) I can tailor the configs, evaluator defaults, and model card sections, and draft a ready-to-ship README with exact reproduction commands for your tables.

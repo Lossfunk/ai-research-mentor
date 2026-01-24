@@ -1,0 +1,102 @@
+This plan designs a **"Structural Salience Heuristic"** (SSH). This is a transparent, computation-free algorithm that attempts to replicate the attention mechanism of the Hierarchical Transformer using only explicit linguistic cues (headers, discourse markers, position).
+
+The goal is to determine how much of the Transformer's performance comes from "deep understanding" versus simply learning to look at the Introduction and Conclusion.
+
+### 1. Prototype: The Structural Salience Heuristic (SSH)
+
+The SSH assigns a scalar importance score ($S_{chunk}$) to every text chunk based on three deterministic rules. It then performs a weighted aggregation of a simple Lexicon-based classifier (e.g., TF-IDF or VADER).
+
+**Step A: Feature Extraction (The Rules)**
+
+For each chunk $C_i$, calculate binary flags:
+
+1.  **The Header Rule ($F_{head}$):**
+    *   *Logic:* Does the chunk contain a line that is < 10 words, ends in a colon, or is fully capitalized?
+    *   *Regex:* `^[A-Z\s]{3,50}$` or `^\w+(\s\w+){0,5}:$`.
+2.  **The Discourse Rule ($F_{disc}$):**
+    *   *Logic:* Does the chunk start with a strong discourse marker indicating summary or contrast?
+    *   *Lexicon:* `['Therefore', 'In conclusion', 'However', 'Consequently', 'Thus', 'Finally']`.
+3.  **The Positional Rule ($F_{pos}$):**
+    *   *Logic:* Is this the first ($i=0$) or last ($i=K$) chunk? (The "Recency/Primacy" bias).
+
+**Step B: The Scoring Function**
+
+$$S(C_i) = 1.0 + (w_h \cdot F_{head}) + (w_d \cdot F_{disc}) + (w_p \cdot F_{pos})$$
+
+*   *Weights:* Set heuristically (e.g., $w_h=2.0$, $w_d=1.5$, $w_p=1.2$) or fitted via simple Logistic Regression on a validation set.
+
+**Step C: The "Inference" (Weighted Aggregation)**
+
+Instead of a neural network, use a dictionary-based scorer (e.g., a Sentiment Lexicon $L$).
+$$Prediction = \frac{\sum_{i=1}^{K} S(C_i) \cdot L(C_i)}{\sum_{i=1}^{K} S(C_i)}$$
+
+### 2. Metrics to Assess Parity
+
+We do not just want to know if the Heuristic is accurate; we want to know if it mimics the Transformer.
+
+**A. Attention-to-Salience Correlation (Kendall’s $\tau$)**
+*   *Measure:* Rank correlation between the **Transformer's Level 2 Attention Weights** and the **Heuristic's Salience Scores** ($S$).
+*   *Interpretation:*
+    *   $\tau > 0.6$: The Transformer has effectively just learned to spot headers and discourse markers. It is not doing "deep" reasoning.
+    *   $\tau < 0.2$: The Transformer is attending to latent semantic features invisible to the rules.
+
+**B. The "Easy Subset" Overlap**
+*   *Measure:* Calculate the intersection of the set of documents correctly classified by the Heuristic ($D_{heur}$) and the Transformer ($D_{trans}$).
+*   *Metric:* **Jaccard Index** = $\frac{|D_{heur} \cap D_{trans}|}{|D_{heur} \cup D_{trans}|}$.
+*   *Goal:* If Jaccard is high (>0.8), the expensive Transformer provides marginal utility over the cheap rules.
+
+**C. Computational Parity Gap**
+*   *Measure:* $\frac{\text{Transformer Latency (ms)}}{\text{Heuristic Latency (ms)}}$.
+*   *Typical Result:* Expect a factor of 1,000x - 10,000x. This justifies the Heuristic even if accuracy is 5-10% lower.
+
+### 3. Error Analysis Plan
+
+To diagnose the gap between the Rule-Based SSH and the Deep Hierarchical Model:
+
+**A. The "Implicit Structure" Audit**
+*   *Condition:* Filter for documents where the Heuristic failed (Wrong Prediction) but the Transformer succeeded.
+*   *Analysis:* Check if these documents lack explicit headers ($F_{head}=0$).
+*   *Conclusion:* If the gap is concentrated here, the Transformer's value add is **Implicit Structure Induction** (detecting topic shifts without explicit formatting).
+
+**B. The "Irony/Negation" Trap**
+*   *Condition:* Look at Sentiment Analysis tasks.
+*   *Analysis:* The Heuristic (Bag-of-Words) fails on "not bad" or sarcasm.
+*   *Check:* Does the Transformer attend to the *negation* word (e.g., "not") while the Heuristic weights the *sentiment* word (e.g., "bad")?
+
+**C. Bland-Altman Agreement Plot**
+*   *Plot:* X-axis = Average Probability (Transformer + Heuristic)/2. Y-axis = Difference (Transformer - Heuristic).
+*   *Purpose:* Visualizes if the disagreement is random or systematic.
+    *   *Systematic Bias:* If the Heuristic is consistently more confident (or less) than the Transformer on long documents, the plot will show a slope.
+
+### 4. Implementation Snippet (The "Shadow" Filter)
+
+```python
+import re
+
+DISCOURSE_MARKERS = {'however', 'therefore', 'consequently', 'in conclusion', 'finally'}
+
+def calculate_heuristic_score(chunks):
+    scores = []
+    for i, chunk in enumerate(chunks):
+        score = 1.0
+        text = chunk.lower()
+        
+        # Rule 1: Header Detection (Short, ends in colon)
+        if len(text.split()) < 10 and text.strip().endswith(':'):
+            score += 2.0
+            
+        # Rule 2: Discourse Markers (Start of chunk)
+        first_word = text.split()[0]
+        if first_word in DISCOURSE_MARKERS:
+            score += 1.5
+            
+        # Rule 3: Positional Bias (First/Last)
+        if i == 0 or i == len(chunks) - 1:
+            score += 1.2
+            
+        scores.append(score)
+        
+    # Normalize to sum to 1 (like Attention)
+    total = sum(scores)
+    return [s/total for s in scores]
+```

@@ -1,0 +1,225 @@
+**Web search unavailable.** The following plan draws on established domain knowledge of federated reinforcement learning (FRL), smart grid control, and privacy-preserving ML. For publication-grade rigor, you should conduct systematic literature reviews via Google Scholar, arXiv (cs.LG, cs.MA, cs.DC, eess.SY), and energy systems journals (IEEE Transactions on Smart Grid, Applied Energy, Energy and AI) focusing on: (1) FRL architectures for multi-agent systems, (2) differential privacy mechanisms for RL, (3) Byzantine-robust aggregation for federated learning, (4) demand response and distributed energy resource (DER) management, and (5) smart grid simulation environments (CityLearn, Grid2Op, PowerGridworld).
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Smart grids require distributed control of heterogeneous agents (households, EVs, batteries, solar panels) to optimize energy consumption, demand response, and grid stability. Federated Reinforcement Learning (FRL) enables collaborative policy learning without centralizing sensitive consumption data, but faces critical challenges:
+
+1. **Privacy risks:** Raw consumption patterns reveal occupancy, appliance usage, socioeconomic status; gradients/model updates can leak private information via reconstruction attacks
+2. **Reliability concerns:** Byzantine agents (malicious/faulty), communication failures, non-IID data distributions, concept drift (seasonal/behavioral changes)
+3. **Scalability:** 1000s-100,000s of agents with heterogeneous action/observation spaces, asynchronous updates, limited bandwidth
+4. **Safety constraints:** RL policies must respect voltage limits, transformer capacity, frequency stability (hard constraints, not just reward shaping)
+5. **Evaluation gaps:** Lack of standardized benchmarks combining privacy, reliability, and grid-realistic constraints
+
+**Core Hypothesis:**  
+Federated RL with differential privacy (DP-FRL) and Byzantine-robust aggregation can achieve near-centralized performance (≥90% reward) on smart grid control tasks (demand response, EV charging, DER coordination) while providing formal privacy guarantees (ε≤3 DP) and tolerating 20-30% Byzantine/faulty agents, validated through ablation studies isolating privacy-utility-reliability trade-offs.
+
+**Primary Goals (9-month horizon):**
+- **Algorithmic contributions:** Develop DP-FRL algorithms with Byzantine robustness, ablate privacy mechanisms (gradient clipping, noise injection, secure aggregation) and aggregation strategies (FedAvg, median, trimmed mean, Krum)
+- **Privacy validation:** Membership inference attacks, gradient inversion attacks, privacy accounting (ε, δ budgets)
+- **Reliability validation:** Byzantine attack simulations (label flipping, gradient poisoning, backdoor), fault injection (dropout, delays, non-IID data)
+- **Smart grid evaluation:** 3-5 control tasks (demand response, EV coordination, voltage regulation) on realistic simulators (CityLearn, Grid2Op)
+- **Publication:** Conference paper (NeurIPS, ICML, ICLR, AAMAS) + workshop paper (Privacy in ML, Tackling Climate Change with ML)
+
+**Secondary Goals:**
+- Communication efficiency: Gradient compression, quantization, periodic aggregation
+- Heterogeneity: Handle diverse agent capabilities (compute, battery capacity, solar generation)
+- Explainability: Interpretable policies for regulatory compliance
+- Real-world pilot: Partner with utility for 50-100 household deployment (months 7-9)
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline FRL Architectures for Smart Grid Control (Months 1-2)**
+
+**Hypothesis:** Standard federated RL algorithms (FedAvg-DQN, FedAvg-PPO, FedAvg-DDPG) achieve 70-85% of centralized performance on smart grid tasks but exhibit severe privacy leakage (membership inference AUC >0.8) and fail under 10-20% Byzantine agents.
+
+**Setup:**
+- **RL algorithms (3-4 baselines):**
+  1. **FedAvg-DQN:** Discrete action spaces (on/off appliances, discrete charging rates)
+  2. **FedAvg-PPO:** Continuous/discrete hybrid (flexible for heterogeneous agents)
+  3. **FedAvg-DDPG:** Continuous control (EV charging rates, battery dispatch)
+  4. **FedAvg-SAC:** Entropy-regularized for exploration (optional if compute allows)
+- **Smart grid tasks (3-5):**
+  1. **Demand response:** Minimize peak load + energy cost, 100-500 households
+  2. **EV charging coordination:** Minimize grid stress while meeting mobility needs, 50-200 EVs
+  3. **DER management:** Coordinate solar + batteries for voltage regulation, 50-100 prosumers
+  4. **HVAC control:** Thermostat setpoint optimization for energy + comfort, 100-300 homes
+  5. **Voltage regulation:** Reactive power control for distribution grid stability (stretch goal)
+- **Simulators:**
+  - **CityLearn:** Building energy management, 10-100 buildings, OpenAI Gym interface
+  - **Grid2Op:** Power grid operation, realistic topology, N-1 security constraints
+  - **Custom environment:** Extend CityLearn with communication/privacy modules
+- **Federation setup:**
+  - **Agents:** 100-500 (households/EVs/DERs)
+  - **Aggregation frequency:** Every 10-50 episodes
+  - **Communication:** Simulated bandwidth constraints (10-100 KB/update)
+  - **Non-IID data:** Agents have different consumption patterns (residential vs. commercial, solar vs. no solar)
+- **Training:**
+  - 1000-5000 episodes per agent (parallelized across agents)
+  - Centralized baseline: Train single policy on pooled data (privacy-violating upper bound)
+  - Local-only baseline: Each agent trains independently (no collaboration)
+
+**Baselines:**
+1. Centralized RL (privacy-violating upper bound)
+2. Local-only RL (no collaboration, lower bound)
+3. Rule-based control (time-of-use pricing, proportional control)
+4. Model predictive control (MPC, if feasible for small-scale comparison)
+
+**Evaluation Metrics:**
+1. **Control performance:**
+   - Cumulative reward (energy cost, peak demand, comfort violations)
+   - Peak-to-average ratio (PAR): Grid stress metric
+   - Voltage deviation: Max |V - V_nominal| (for voltage regulation task)
+   - Constraint violations: % of timesteps violating safety constraints
+2. **Privacy (baseline, no protection yet):**
+   - Membership inference attack (MIA): Train classifier to distinguish training vs. test agents (AUC, accuracy)
+   - Gradient inversion: Reconstruct consumption patterns from gradients (MSE, SSIM)
+   - Linkability: Can attacker link updates to specific households?
+3. **Convergence:**
+   - Episodes to reach 90% of final reward
+   - Communication rounds to convergence
+   - Variance across agents (fairness)
+4. **Efficiency:**
+   - Communication cost (MB per agent per round)
+   - Computation time (GPU-hours, wall-clock time)
+
+**Expected Outcomes:**
+- **FedAvg-PPO:** 75-85% of centralized reward, best overall performance
+- **FedAvg-DQN:** 70-80% reward, faster convergence but lower asymptotic performance
+- **FedAvg-DDPG:** 72-82% reward, best for continuous control (EV charging)
+- **Privacy:** MIA AUC 0.75-0.90 (severe leakage), gradient inversion recovers consumption patterns with 0.6-0.8 correlation
+- **Non-IID impact:** 10-15% reward degradation vs. IID data
+- **Convergence:** 500-1500 episodes (50-150 communication rounds with aggregation every 10 episodes)
+
+**Ablations:**
+- Aggregation frequency: {5, 10, 20, 50} episodes
+- Network architecture: {2-layer, 3-layer, 4-layer} MLPs, hidden size {64, 128, 256}
+- Hyperparameters: Learning rate, batch size, discount factor
+- Non-IID severity: Vary distribution skew across agents
+
+---
+
+### **Experiment 2: Differential Privacy Mechanisms for FRL (Months 2-4)**
+
+**Hypothesis:** Gradient-level differential privacy (DP-SGD, gradient clipping + Gaussian noise) achieves ε≤3 privacy with 10-20% reward degradation vs. non-private FRL, while model-level DP (PATE, noisy aggregation) achieves ε≤5 with 5-15% degradation but weaker guarantees.
+
+**Setup:**
+- **DP mechanisms (4-5 to compare):**
+  1. **DP-SGD (gradient-level):** Clip gradients (C=1.0-5.0), add Gaussian noise (σ proportional to C/ε)
+  2. **Local DP:** Each agent adds noise before sending updates (stronger privacy, higher utility loss)
+  3. **Secure aggregation + DP:** Combine secure multi-party computation (MPC) with DP (prevents server from seeing individual updates)
+  4. **PATE-RL:** Private Aggregation of Teacher Ensembles adapted for RL (noisy voting over teacher policies)
+  5. **Shuffled DP:** Anonymize agent identities before aggregation (weaker than local DP, stronger than central DP)
+- **Privacy budgets:** ε ∈ {1, 3, 5, 10, ∞}, δ=10⁻⁵
+- **Privacy accounting:** 
+  - Rényi Differential Privacy (RDP) for tight composition
+  - Privacy amplification by sampling (if using mini-batch aggregation)
+  - Total budget over 9 months: ε_total ≤ 10 (conservative for long-term deployment)
+- **Implementation:**
+  - Opacus (PyTorch DP library) for DP-SGD
+  - CrypTen (PyTorch MPC library) for secure aggregation
+  - Custom noise injection for RL-specific DP
+- **Tasks:** Same as Exp 1 (demand response, EV charging, DER management)
+- **Baselines:** Non-private FRL from Exp 1
+
+**Evaluation Metrics:**
+1. **Privacy:**
+   - **Formal guarantee:** Achieved (ε, δ)
+   - **Empirical privacy:** MIA AUC (should approach 0.5 = random guessing), gradient inversion MSE (should increase)
+   - **Privacy-utility trade-off:** Reward vs. ε curves
+2. **Utility:**
+   - Reward degradation vs. non-private baseline (%)
+   - Convergence speed (episodes to 90% reward)
+   - Stability (reward variance across runs)
+3. **Ablations:**
+   - Clipping threshold C: {0.5, 1.0, 2.0, 5.0}
+   - Noise scale σ: Derived from (ε, δ, C) but validate empirically
+   - DP application frequency: Every update vs. every K updates
+   - Adaptive clipping: Learn C from gradient statistics
+
+**Expected Outcomes:**
+- **DP-SGD (ε=3):** 12-18% reward degradation, MIA AUC 0.52-0.58 (near random), gradient inversion fails (MSE 10× higher)
+- **Local DP (ε=3):** 20-28% degradation (stronger privacy but higher utility cost)
+- **Secure aggregation + DP:** Same utility as central DP but prevents server-side attacks
+- **PATE-RL (ε=5):** 8-15% degradation, better utility but weaker privacy than gradient-level DP
+- **Optimal C:** 1.0-2.0 (lower = more privacy but slower convergence, higher = less privacy but better utility)
+- **Privacy amplification:** Sampling 10-20% of agents per round reduces ε by 2-3×
+
+**Ablations:**
+- DP mechanism: Gradient-level vs. model-level vs. local
+- Privacy budget allocation: Uniform ε per round vs. adaptive (higher ε early for exploration, lower later)
+- Noise distribution: Gaussian vs. Laplace vs. exponential mechanism
+- Heterogeneity: Does DP impact vary by agent type (high vs. low consumption)?
+
+---
+
+### **Experiment 3: Byzantine-Robust Aggregation for Reliability (Months 4-6)**
+
+**Hypothesis:** Byzantine-robust aggregation (Krum, trimmed mean, median) tolerates 20-30% malicious/faulty agents with <10% reward degradation vs. honest-majority FRL, while FedAvg fails catastrophically (>50% degradation) under 10-15% attack rate.
+
+**Setup:**
+- **Byzantine attacks (5-7 types):**
+  1. **Label flipping:** Malicious agents report inverted rewards (good actions → low reward)
+  2. **Gradient poisoning:** Send adversarial gradients to degrade global policy
+  3. **Model poisoning:** Send corrupted model parameters
+  4. **Backdoor attacks:** Embed triggers causing policy failures under specific conditions
+  5. **Sybil attacks:** Single attacker controls multiple agent identities
+  6. **Random noise:** Faulty agents send random updates (simulates sensor failures)
+  7. **Data poisoning:** Malicious agents train on manipulated data
+- **Attack rates:** {5%, 10%, 20%, 30%, 40%} of agents are Byzantine
+- **Robust aggregation (5-6 methods):**
+  1. **Krum:** Select single update closest to majority (high computational cost)
+  2. **Trimmed mean:** Remove top/bottom α% of updates, average remainder
+  3. **Median:** Coordinate-wise median (robust but may discard useful info)
+  4. **Geometric median:** Minimize L2 distance to all updates (more robust than mean)
+  5. **FoolsGold:** Weight updates by similarity to historical patterns (detect Sybils)
+  6. **RONI (Reject On Negative Influence):** Test each update's impact on validation set
+- **Defense evaluation:**
+  - Train with honest agents only (baseline)
+  - Train with Byzantine agents + defense
+  - Compare reward, convergence, fairness
+- **Tasks:** Same as Exp 1-2 (demand response, EV charging, DER management)
+
+**Baselines:**
+1. FedAvg (no defense, vulnerable)
+2. Honest-only (no Byzantine agents, upper bound)
+3. Random selection (sanity check)
+
+**Evaluation Metrics:**
+1. **Robustness:**
+   - Reward under attack vs. honest-only baseline (%)
+   - Attack success rate: % of poisoned models that degrade performance >10%
+   - Breakdown point: Max attack rate before catastrophic failure
+2. **Detection:**
+   - True positive rate (detect Byzantine agents)
+   - False positive rate (honest agents flagged as Byzantine)
+   - F1 score for Byzantine detection
+3. **Fairness:**
+   - Reward variance across honest agents (does defense harm some agents?)
+   - Exclusion rate: % of honest agents excluded by defense
+4. **Efficiency:**
+   - Computational overhead (seconds per aggregation)
+   - Communication overhead (if defense requires additional rounds)
+
+**Expected Outcomes:**
+- **FedAvg:** Fails at 10-15% attack rate (>50% reward degradation), catastrophic at 20%+
+- **Krum:** Tolerates 30-35% attack rate with <10% degradation, but 5-10× slower aggregation
+- **Trimmed mean (α=0.2):** Tolerates 20-25% attack rate with <12% degradation, 2× overhead
+- **Median:** Tolerates 30-40% attack rate with <15% degradation, minimal overhead
+- **FoolsGold:** Best Sybil defense (detects 80-90% of Sybils), 3-5% honest-agent false positives
+- **RONI:** Highest accuracy (95%+ detection) but requires validation set (privacy concerns)
+- **Trade-off:** Robustness vs. efficiency (Krum most robust but slowest, trimmed mean balanced)
+
+**Ablations:**
+- Trimming ratio α: {0.1, 0.2, 0.3, 0.4}
+- Attack timing: Early (episodes 1-500) vs. late (episodes 500-1000) vs. continuous
+- Attack coordination: Independent vs. coordinated Byzantine agents
+- Defense combination: Trimmed mean + FoolsGold (detect Sybils, then robust aggregation)
+
+---
+
+### **Experiment 4:

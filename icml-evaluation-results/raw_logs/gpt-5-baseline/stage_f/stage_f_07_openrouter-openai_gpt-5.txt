@@ -1,0 +1,109 @@
+Below is a rebuttal-style simulated reviewer summary for a federated learning (FL) benchmark paper. It highlights major strengths, key concerns, pointed rebuttal questions, and missing artifacts the authors should provide before acceptance.
+
+Summary
+- The paper proposes a federated learning benchmark suite targeting both cross-device and cross-silo settings, with standardized datasets, APIs, and evaluation metrics. It reports results for common FL algorithms across a range of heterogeneity levels and participation rates, and claims improved comparability and reproducibility.
+
+Major strengths
+- Scope and organization
+  - Comprehensive coverage of FL settings (cross-device partial participation and cross-silo full participation).
+  - Unified API and clear task taxonomy; lowers barrier for fair comparisons.
+- Methodological baseline breadth
+  - Includes widely used algorithms (e.g., FedAvg, FedProx, SCAFFOLD, FedOpt/Adam, FedNova, Ditto/Per-FedAvg, FedBN). Baseline implementations seem faithful and easy to extend.
+- Metrics beyond accuracy
+  - Tracks rounds-to-target, wall-clock, communication volume, client-side FLOPs, and per-client fairness metrics (macro/micro, worst-client).
+- Heterogeneity controls
+  - Provides configurable non-IID generators (e.g., Dirichlet α, label skew, quantity skew) and device heterogeneity (compute/network tiers).
+- Reproducibility emphasis
+  - Fixed seeds, documented splits, and automation scripts; ablations on α, participation p, and straggler rates.
+- Practical relevance
+  - Support for both synchronous and (limited) asynchronous training; basic simulation of stragglers and dropouts; clean reference implementations.
+
+Key concerns and weaknesses
+- Representativeness of workloads
+  - Realism: Non-IID modeling mainly via synthetic Dirichlet and simple quantity/label skew. Limited use of real client traces or production-like behaviors (diurnal patterns, bursty connectivity, long-tail participation).
+  - Dataset diversity: Mostly vision/NLP academic datasets; limited verticals (e.g., speech, on-device keyboards, tabular/health). Risk of overfitting benchmark to a narrow set.
+- Systems realism and measurement
+  - Communication: Uses byte-count proxies without network contention or protocol overheads; unclear if secure aggregation overhead is modeled.
+  - Wall-clock: Mixed reporting (rounds vs time); unclear synchronization model for partial participation; limited results on asynchronous methods under stragglers.
+- Fairness and personalization
+  - Fairness metrics included but not tied to decision thresholds; no exploration of group fairness vs client fairness trade-offs.
+  - Personalization baselines present but shallow; lack of per-client calibration/uncertainty or coverage of recent strong methods.
+- Privacy/compliance claims
+  - DP-FL integration is mentioned but not fully evidenced: no privacy accountant artifacts (ε, δ, sampling, composition) or membership inference audits.
+  - Secure aggregation assumed in text but not benchmarked; no cryptographic cost model or protocol compatibility.
+- Tuning and comparability
+  - Hyperparameter tuning budget parity across methods is underspecified; possible advantage to a subset of algorithms.
+  - Some datasets use different tokenizers/augmentations across baselines; may confound results.
+- Reproducibility/statefulness
+  - Client split generation not fully specified for exact regeneration (missing manifest/seed registry).
+  - Asynchrony experiments not fully deterministic; unclear replayability.
+
+Specific questions for rebuttal
+- Client sampling and participation
+  - What is the exact sampling scheme (with/without replacement, per-round p, stratification)? Are seeds and participant lists logged and reproducible?
+- Heterogeneity realism
+  - Beyond Dirichlet α, do you provide empirical non-IID splits derived from real-world logs? Any publicly shareable client traces or synthetic generators calibrated on them?
+- Systems and measurement
+  - How do you measure wall-clock numbers (hardware, parallelism, clock sync)? Do you model packet loss/latency distributions, or only bytes?
+  - Do you support asynchronous aggregation with bounded staleness? How are stragglers modeled?
+- Privacy
+  - If you claim DP-FL readiness, please report ε, δ, accountant type (RDP/moments), clipping, noise, lot size, sampling assumptions, and attach accountant logs. Any leakage audits (membership inference, canaries)?
+  - Is secure aggregation modeled/measured, and if not, can you clarify what the benchmark’s “privacy” claims cover vs do not?
+- Tuning parity
+  - What is the per-method tuning budget and search space? Are learning rates/regularizers aligned across methods and datasets? Provide a tuning protocol table.
+- Dataset licensing and redistribution
+  - Confirm licenses and redistribution stance. Are any client-level splits redistributed, or are they generated locally via scripts?
+- Personalization and fairness
+  - Which personalization baselines are included (e.g., Ditto, Per-FedAvg, FedBN, pFedMe), and do you report per-client calibration or worst-group metrics?
+
+Missing artifacts required for acceptance
+- Reproducibility
+  - Seeded split manifest: a registry mapping dataset → client IDs → sample lists with seeds and hashing of raw data to ensure exact regeneration.
+  - One-command runners and config files (YAML/TOML) for every main table/figure; mapping from results → config/seed.
+  - Environment lockfile and optional Docker image; hardware spec and determinism flags.
+- Systems and metrics
+  - Communication/computation profiler integrated into training loop; exported per-round CSVs with bytes up/down, FLOPs, time, memory footprint.
+  - Asynchrony/straggler simulator configuration and logs; partial participation traces.
+  - Optional: energy/CO2e estimates and methodology (even if approximate).
+- Privacy
+  - DP accountant artifacts: code + logs with ε, δ per run; sampling and composition details; clipping/noise stats over training.
+  - Leakage audit scripts and results (membership inference, canary exposure) for at least one representative setup.
+  - Secure aggregation assumption clarified; if unsupported, state explicitly in docs.
+- Fairness and personalization
+  - Per-client metrics and distributions; worst-client and percentile curves.
+  - Personalization baselines with configs; calibration metrics (ECE/Brier) optional but encouraged.
+- Data/licensing
+  - Provenance appendix with dataset URLs, licenses, permitted uses, redistribution policy.
+  - Data-fetch scripts; no mirroring of restricted datasets.
+- Documentation
+  - README with exact commands, expected runtime/hardware, and result-to-config manifest.
+  - LICENSE and CITATION files; acceptable-use policy if releasing any models trained on sensitive data.
+
+Actionable revisions before camera-ready
+- Add real-world–calibrated heterogeneity option (e.g., pre-generated client splits derived from public longitudinal datasets or calibrated synthetic generators) and release the split seeds/manifests.
+- Standardize tuning protocol and disclose budgets; re-run key baselines under a common search space.
+- Provide full DP-FL accounting (ε, δ, accountant, clipping/noise) and run a simple leakage audit; clarify that secure aggregation is out-of-scope if not implemented.
+- Report both rounds and wall-clock on fixed hardware; include communication bytes and straggler sensitivity.
+- Expand personalization coverage or clarify scope; add worst-client/per-client distributions in main or appendix.
+
+Ethics/compliance notes
+- State privacy scope precisely (DP-FL availability vs default off; secure aggregation not modeled if true).
+- Confirm dataset licenses; avoid redistributing restricted content. Provide takedown/contact policy.
+- If any human data are involved, include IRB/ethics determination or public-data status; de-identification statement.
+
+Overall assessment (simulated)
+- Score: 6 (weak accept) contingent on releasing missing artifacts and clarifying privacy/tuning protocols.
+- Confidence: 4/5.
+- Rationale: Strong potential impact as a standardized FL benchmark with breadth and useful metrics; current omissions around privacy accounting, realism of heterogeneity, and tuning parity reduce confidence. With the requested artifacts and clarifications, this would be a valuable community resource.
+
+Minor clarity/quality notes
+- Clearly separate cross-silo vs cross-device results; avoid mixing participation assumptions.
+- Use consistent tokenization/augmentation across baselines to avoid confounding.
+- Add a table summarizing all algorithms, hyperparameters, and tuning ranges.
+
+Post-rebuttal acceptance conditions (checklist)
+- [ ] Release seeded split manifests and one-command repro scripts + container.
+- [ ] Provide communication/computation/time logs for main experiments.
+- [ ] Add DP accountant logs and at least one leakage audit; clarify secure aggregation scope.
+- [ ] Publish tuning protocol with equalized budgets and rerun key baselines.
+- [ ] Provide per-client distributions and worst-client metrics; include at least one personalization baseline beyond FedAvg fine-tuning.

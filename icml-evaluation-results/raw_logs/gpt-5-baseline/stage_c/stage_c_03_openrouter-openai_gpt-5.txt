@@ -1,0 +1,52 @@
+1. Problem framing and goals
+
+Ambition: Reduce cancer mortality and morbidity via AI that measurably improves key steps in the oncology care pathway within 6 months. “Curing cancer tomorrow” is not feasible; however, we can deliver rigorously validated models for earlier detection, risk stratification, treatment selection, and trial matching, and run a prospective silent pilot in a tumor board to demonstrate utility and safety.
+
+Primary goals (6 months)
+- Deployable models (retrospectively validated, prospectively piloted in silent mode) for:
+  - Pathology biomarker/response prediction from H&E whole-slide images (WSIs), adapted from strong foundation models [1–3].
+  - Multimodal survival/treatment benefit prediction integrating pathology, imaging, and EHR labs/notes; externally validated on at least one independent cohort.
+  - Automated clinical-trial matching with audited precision/recall versus expert curation.
+- Safety and reliability: Calibrated predictions, subgroup fairness analyses, shift robustness, and decision-curve analysis demonstrating clinical utility.
+- Operational readiness: IRB approval, data governance, model cards, and deployment pathway for a prospective silent pilot; two manuscripts (computational pathology and multimodal outcomes).
+
+Key constraints
+- Data access and ethics: IRB, HIPAA/GDPR, informed governance.
+- External validation: At least one multi-institution dataset (e.g., TCIA) [11–14].
+- Clinician-in-the-loop evaluation before any patient-facing use.
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment 1: Foundation-model–based WSI biomarker and response prediction
+- Hypothesis: Fine-tuning or linear probing on a state-of-the-art WSI foundation model (e.g., Virchow/Virchow2) yields clinically relevant gains in predicting therapy biomarkers (e.g., MSI-H, PD-L1 strata proxies) and neoadjuvant/adjuvant response from H&E, outperforming classical MIL baselines [1–3].
+- Setup:
+  - Data: TCGA and CPTAC WSIs with matched labels (e.g., MSI from TCGA-COAD/READ, hormone receptor status in BRCA). If biomarker labels are sparse, use weak supervision via reports.
+  - Preprocessing: TIAToolbox for WSI IO, stain normalization, tiling at 20×/10×, tissue masking [6–9].
+  - Model: Fixed Virchow(-2) features with MIL heads (CLAM/HIPT-style), plus end-to-end fine-tuning on a subset with strong regularization [1–3].
+  - Training: Stratified cross-validation across sites; hold-out external set from a different institution or TCIA-linked cohorts when possible [11–14].
+- Baselines: CLAM/HIPT on ImageNet features; ResNet/ViT tile encoders; clinical-only logistic/Cox models.
+- Metrics: AUROC/AUPRC; calibration (ECE, Brier); site-level leave-one-site-out performance; subgroup AUROC (age, sex, race); net benefit via decision-curve analysis.
+- Expected outcomes: +3–7 AUROC points vs ImageNet encoders and improved calibration; maintain performance under leave-one-site-out. Clear error analysis of failure modes (necrosis, artifacts). References support feasibility and SOTA potential [1–3].
+
+Experiment 2: Multimodal survival and treatment benefit prediction (pathology + imaging + EHR)
+- Hypothesis: Late-fusion models combining WSI embeddings, radiology features, and clinical variables improve time-to-event prediction (OS/PFS) and identify treatment responders compared with clinical-only Cox models.
+- Setup:
+  - Data: TCGA (WSIs, molecular, limited imaging links) plus TCIA imaging collections (e.g., glioma, lung nodule cohorts) with curated outcomes [11–14]. Clinical variables from public data dictionaries; if internal EHR available, map to FHIR/OMOP for harmonization.
+  - Features: Pathology FM embeddings; radiomics or CNN features from CT/MRI; structured EHR (stage, ECOG, labs).
+  - Model: Deep survival (DeepHit/DeepSurv) or CoxTime with late fusion; treatment-interaction heads for benefit modeling; uncertainty via MC dropout or deep ensembles.
+- Baselines: CoxPH with clinical covariates; random survival forests; single-modality deep models.
+- Metrics: Harrell’s c-index, time-dependent AUC, integrated Brier score, calibration belts; DCA net benefit; subgroup performance and fairness audits [16–18].
+- Expected outcomes: +0.03–0.06 c-index over clinical-only; improved net benefit at clinically relevant thresholds; robust external validation on at least one TCIA cohort. If imaging linkage is insufficient publicly, report limitation and run ablation on two-modality subsets.
+
+Experiment 3: Lung nodule malignancy risk and triage from CT
+- Hypothesis: A 3D CNN or transformer with robust uncertainty estimation can prioritize malignant nodules and reduce radiologist workload at fixed specificity.
+- Setup:
+  - Data: LIDC-IDRI (for detection/benign-malignant ratings) and other TCIA lung collections; harmonize and split by site [11–14].
+  - Model: nnU-Net/3D U-Net or 3D ViT for detection/segmentation; malignancy head; conformal risk control for triage thresholds.
+- Baselines: Traditional radiomics + gradient boosting; 2D CNNs.
+- Metrics: FROC (sensitivity at 1–2 false positives/scan), AUROC for malignancy, case-level sensitivity at fixed specificity; calibration; time-to-read simulation.
+- Expected outcomes: Competitive to prior public benchmarks; calibrated risk scores enabling safe triage. Note: public labels are imperfect—include reader study on a subset if feasible.
+
+Experiment 4: Automated clinical trial matching (NLP + rules)
+- Hypothesis: A transformer-based pipeline that structures eligibility criteria and patient

@@ -1,0 +1,55 @@
+Here is a simulated **"Reviewer 2" summary** for a Federated Learning (FL) Benchmark paper submitted to a venue like **NeurIPS (Datasets & Benchmarks Track)** or **ICLR**.
+
+This simulation highlights the most common pitfalls for FL benchmarks: artificial data partitioning, lack of system metrics, and weak privacy evaluations.
+
+***
+
+### **Reviewer 2 (Score: 5 - Borderline)**
+**Confidence:** 4 (High)
+
+**Summary:**
+The authors propose "Fed-X," a new benchmarking suite for federated learning that includes [N] datasets across vision and NLP tasks. The paper provides a unified API for simulation, implements standard baselines (FedAvg, FedProx), and introduces a leaderboard. The goal is to standardize evaluations for non-IID data distributions.
+
+**Strengths:**
+1.  **Scope & Diversity:** The inclusion of both cross-device (thousands of clients, small data) and cross-silo (few clients, large data) settings is a strong contribution. Most benchmarks focus too heavily on one or the other.
+2.  **Ease of Use:** The proposed API appears compatible with PyTorch, which lowers the barrier to entry.
+3.  **Documentation:** The documentation provided in the supplementary material is cleaner than many existing libraries (e.g., LEAF or FLBenchmark).
+
+**Weaknesses & Key Concerns:**
+1.  **Artificial vs. Natural Splits (Critical):**
+    The paper relies heavily on **synthetically partitioned data** (e.g., CIFAR-10 split via LDA/Dirichlet distribution). While common, this is becoming outdated. The community values *natural* splits (e.g., partitioning by "User ID" in the original metadata) over artificial statistical splits. The paper claims "real-world applicability," but synthetic splits do not reflect real-world feature shift, only label shift.
+2.  **Missing System Metrics:**
+    The evaluation focuses almost entirely on **Global Accuracy vs. Communication Rounds**. However, FL is a systems problem. The benchmark fails to track:
+    *   *Client Compute Time:* How does the benchmark handle stragglers?
+    *   *Communication Cost:* Total bytes uploaded/downloaded.
+    *   *Memory Footprint:* Can these models actually fit on edge devices (e.g., Raspberry Pi or Mobile)?
+3.  **Weak Baseline Selection:**
+    The paper compares FedAvg, FedProx, and SCAFFOLD. It omits modern **Server-side Optimization** methods (e.g., FedAdam, FedYogi) which are now standard in production FL (see Google/Apple papers). Without FedOpt, the baselines feel stuck in 2019.
+4.  **The "Privacy" Gap:**
+    The title mentions "Privacy-Preserving," but there is no evaluation of Differential Privacy (DP) trade-offs. A benchmark claiming to be for FL must show how performance degrades when clipping norms and noise ($\epsilon$) are added.
+
+**Missing Artifacts & Compliance Issues:**
+1.  **Leaderboard Maintenance Plan:** The paper mentions a leaderboard but does not specify *who* will maintain it or *how* submissions are verified to prevent overfitting on the test set.
+2.  **Dataset Licenses:** Three of the datasets used (e.g., the medical imaging subset) have non-commercial licenses. The authors must clarify if their "processed" versions violate these redistribution terms.
+3.  **Reproducibility Scripts:** The code provided allows running the benchmark, but lacks the exact **seed generation scripts** used to create the specific non-IID partitions reported in Table 2.
+
+**Questions for Rebuttal:**
+*   Can you provide results for at least one "Natural Partition" dataset where the client split is defined by the data source, not a Dirichlet distribution?
+*   What is the storage overhead of the library? Does it require duplicating the entire dataset for every client simulation?
+
+***
+
+### **How to "Pre-Rebut" This Before Submission**
+
+Based on the simulation above, here is your **Fix-It Checklist** for the next 4 weeks:
+
+1.  **The "Natural Split" Defense:**
+    *   *Fix:* If you are using CIFAR/MNIST, you *must* justify it as "Unit Testing." Ensure you have at least one dataset (like Shakespeare, StackOverflow, or a Medical dataset) that is split by **User ID** or **Hospital ID**, not by a random number generator.
+2.  **Add System Metrics Columns:**
+    *   *Fix:* In your main results table, add a column for **"Comm. Volume (GB)"** to reach target accuracy. This proves you care about bandwidth.
+3.  **The DP Audit:**
+    *   *Fix:* You don't need to invent a new privacy method, but you must run **FedAvg + DP-SGD** (with a fixed $\epsilon$) to show the "Price of Privacy" on your benchmark.
+4.  **License Table:**
+    *   *Fix:* Add a table in the Appendix explicitly listing the license of *every* source dataset and a column confirming "Redistribution Allowed: Yes/No."
+5.  **Modern Baselines:**
+    *   *Fix:* Add **FedAdam** (Server Momentum). It is usually a 3-line code change and often beats FedAvg. Including it stops Reviewer 2 from calling your baselines "outdated."

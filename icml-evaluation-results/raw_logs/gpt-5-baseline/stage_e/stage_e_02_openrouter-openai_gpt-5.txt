@@ -1,0 +1,54 @@
+Here’s a concise way to frame the limitations around the modest gains in aspect score prediction, plus a concrete contingency plan you can commit to in future work.
+
+How to frame the limitations (discussion-ready language)
+- Subjectivity and ceiling effects: Aspect scores (e.g., clarity, originality, impact) are subjective, ordinal, and venue/rater dependent. Inter-rater reliability sets a hard upper bound on predictive performance. Our gains are modest but consistent with this reliability ceiling.
+- Scale heterogeneity: Rubrics and scoring scales vary across venues and years, making raw scores incomparable. Treating them as cardinal targets likely underestimates model capacity.
+- Data limitations: The labeled subset is small relative to task complexity, with distribution shift across years/venues/subfields. Many aspects (e.g., novelty, impact) require context beyond the paper text (prior art, citation graph), which our current models do not use.
+- Metric misalignment: Using regression metrics on ordinal labels obscures improvements that matter to ranking or triage. Calibration and rank correlation are more appropriate but under-reported historically.
+- Noise sensitivity: Single-rater or weakly aggregated labels introduce noise. Without modeling rater effects or label uncertainty, models risk overfitting artifacts and under-delivering on true generalization.
+- Interpretability and use: Even accurate aspect predictions are not decision rules; they are signals that should support, not replace, human judgment. We emphasize decision support over automation.
+
+Immediate mitigations you can add now
+- Quantify the ceiling: Report inter-rater reliability (e.g., ICC, Kendall’s W) per aspect and convert to a noise-adjusted upper bound on R2/MSE or maximum attainable Kendall’s τ. Express model performance as a fraction of this ceiling.
+- Use ordinal-aware evaluation: Report Kendall’s τ/Spearman’s ρ and calibration metrics (e.g., ECE for binned ordinal probabilities) alongside MAE/MSE.
+- Control venue/year effects: Standardize scores within venue-year (z-scores or ordinal anchoring) and include fixed effects; report performance stratified by venue/year/subfield.
+
+Contingency plan for future work
+Phase 1: Reliability and denoising (short term, 1–2 months)
+- Label audit: Estimate inter-rater reliability per aspect on OpenReview-style datasets; compute noise-adjusted performance ceilings.
+- Ordinal/rater-aware models: Replace MSE with ordinal regression (cumulative link/probit) and add hierarchical rater/venue effects where rater IDs exist; otherwise use venue-year random effects.
+- Score harmonization: Calibrate scales across venues/years (z-score within cells; optionally align via ordinal anchoring or IRT).
+- Success criteria: +0.05–0.10 absolute gain in Kendall’s τ over baseline for at least two aspects and ECE ≤ 0.10 after calibration; performance ≥ 70–80% of the estimated ceiling.
+
+Phase 2: Data and supervision expansion (mid term, 2–4 months)
+- Multi-rater aggregation: Collect or mine multiple aspect ratings per paper where available; aggregate with Dawid–Skene, GLAD, or IRT to reduce label noise and estimate uncertainty.
+- Weak supervision from reviews: Extract aspect-specific cues from review text (distant labels via aspect spans/sentiment); use them for pretraining or as auxiliary targets.
+- Pairwise preferences: Convert scores into pairwise comparisons within venue-year; train ranking models (pairwise/listwise) that better match editorial workflows.
+- Success criteria: Additional +0.03–0.05 τ on average; statistically significant improvements across ≥ 3 venues/years.
+
+Phase 3: Modeling richer signals (mid term, 3–6 months)
+- Section- and structure-aware encoders: Use section tagging, long-context transformers, and hierarchical models to capture method/results/limitations differently.
+- Retrieval-augmented novelty/impact: Incorporate citation graphs and retrieval of nearest prior art to estimate originality/impact; add temporal features (citation age, field momentum).
+- Multi-task and uncertainty: Jointly predict acceptance + aspects; output calibrated predictive distributions and abstain when uncertain.
+- Success criteria: For “hard” aspects (originality/impact), close ≥ 10–15% of the gap to the reliability ceiling; well-calibrated uncertainty (coverage within 5% of nominal for prediction intervals).
+
+Phase 4: Evaluation and utility (ongoing)
+- Robustness: Cross-year/venue generalization, topic stratification, and label-noise sensitivity analyses.
+- Human-in-the-loop pilots: Test whether models improve reviewer triage (e.g., ranking correlation, time-to-first-decision) or checklist compliance, even if raw score prediction gains are modest.
+- Guardrails and fairness: Monitor spurious correlations (author count, institution), report subgroup performance, and minimize identity leakage.
+
+Fallback path if gains remain modest after Phases 1–3
+- Reframe the objective from point prediction to decision support:
+  - High-precision flagging of extremes (very low clarity or very high clarity) with abstention elsewhere.
+  - Checklist generation and section-specific critiques to support authors/reviewers.
+  - Pairwise ranking within topical/venue-year cohorts rather than global scoring.
+- Position the task as measurement under uncertainty:
+  - Report calibrated distributions with prediction intervals and reliability-adjusted scores.
+  - Use IRT to infer latent aspect traits and rater severity; provide uncertainty-aware summaries.
+
+Suggested sentences you can include verbatim
+- “Because aspect scores are subjective, ordinal, and venue/rater dependent, inter-rater reliability imposes a hard ceiling. Our observed gains are modest but approach X% of this reliability-adjusted upper bound.”
+- “We therefore evaluate with ordinal and calibration metrics (Kendall’s τ, ECE) and standardize scores within venue-year to control for rubric drift.”
+- “Future work prioritizes (i) label denoising via multi-rater aggregation and rater-effect modeling, (ii) retrieval-augmented representations for originality/impact, and (iii) human-in-the-loop evaluation focused on triage and calibrated uncertainty. If predictive gains remain limited, we will pivot from point estimates to high-precision extreme-case flagging and uncertainty-aware decision support.”
+
+This framing acknowledges why gains are modest, aligns evaluation with the nature of the labels, and sets a concrete, testable plan with go/no-go criteria and a practical fallback.

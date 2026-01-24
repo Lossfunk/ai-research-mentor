@@ -1,0 +1,84 @@
+This is a critical phase. For **Interpretable Medical Imaging**, you are navigating the intersection of **patient privacy (HIPAA/GDPR)** and **scientific reproducibility**.
+
+Here are the drafted Release Notes and Reviewer Response strategies tailored to these constraints.
+
+---
+
+### **Part 1: Artifact Release Notes (README.md / RELEASE.md)**
+
+**Context:** This document goes into your anonymized GitHub repository. It must explain how to run the code *without* giving access to private patient data.
+
+#### **Project: [Anonymized Method Name] for Medical Image Interpretation**
+**Version:** 1.0.0 (Submission Snapshot)
+**License:** Apache 2.0 (Code) / CC-BY-NC 4.0 (Model Weights)
+
+#### **1. Data Availability & Privacy Statement**
+> **Important:** The primary dataset used in this study ([Hospital Name] Internal Cohort) contains Protected Health Information (PHI) and cannot be publicly released due to patient privacy constraints and IRB restrictions.
+>
+> To ensure reproducibility, we provide:
+> *   **`data/sample_synthetic/`**: A folder containing 10 synthetic/dummy DICOM images to verify the pipeline runs.
+> *   **Public Benchmark Support:** The codebase is configured to run out-of-the-box on the public **[CheXpert / RSNA / MIMIC-CXR]** dataset. See `docs/public_data_setup.md` for download instructions.
+
+#### **2. Pre-trained Weights**
+> We provide model checkpoints pre-trained on the public benchmarks.
+> *   **Link:** [Anonymous Hugging Face / Google Drive Link]
+> *   **Note:** Checkpoints trained on private institutional data are withheld to prevent potential membership inference attacks or PII leakage via model inversion.
+
+#### **3. Interpretability & Visualization**
+> To generate the saliency maps/explanations shown in Figure 3 of the paper:
+> ```bash
+> python explain.py --image_path data/sample_synthetic/patient_01.dcm --method gradcam_plus_plus --output_dir viz/
+> ```
+> *   **Sanity Checks:** We include a script `tests/sanity_check.py` that implements the "Cascading Randomization" test (Adebayo et al.) to verify that our interpretability method is not just an edge detector.
+
+#### **4. Medical Disclaimer**
+> **⚠️ Research Use Only:** This model and interpretability suite are for research purposes only. They have **not** been cleared for clinical use (FDA/CE). Do not use for diagnostic decision-making.
+
+---
+
+### **Part 2: Reviewer Response Strategy**
+
+Use these bullet points to preemptively address common critiques regarding data access and interpretability validity.
+
+#### **Topic 1: "I cannot access your private dataset to reproduce the results."**
+*   "We acknowledge the limitation regarding access to the private [Modality] dataset. To mitigate this, we have:
+    1.  Replicated our main experiments on the public **[Public Dataset Name]** benchmark, achieving consistent results (see Table 2).
+    2.  Provided a fully containerized environment (Docker) and synthetic dummy data to allow reviewers to verify the *correctness* of the training and inference code.
+    3.  Released the pre-trained weights for the public benchmark version of the model."
+
+#### **Topic 2: "How do we know the explanations (heatmaps) are clinically relevant?"**
+*   "We validated the interpretability method through a **Reader Study** involving [N] board-certified radiologists.
+    *   We measured the **Intersection over Union (IoU)** between the model's attention maps and the radiologists' ground-truth bounding boxes.
+    *   We report the 'Faithfulness' metric (how much accuracy drops when the highlighted region is occluded)."
+
+#### **Topic 3: "Did you ensure no Patient Health Information (PHI) leaked?"**
+*   "We employed a strict de-identification protocol prior to any model training:
+    1.  **DICOM Tag Scrubbing:** All metadata tags (PatientName, PatientID, DateOfBirth) were removed using the RSNA CTP protocol.
+    2.  **Pixel Anonymization:** For head CT/MRI, we applied skull-stripping/face-blurring to prevent facial reconstruction.
+    3.  **Manual Audit:** A random subset of 100 images was manually reviewed to ensure no 'burnt-in' text (e.g., hospital headers) remained in the pixel data."
+
+---
+
+### **Part 3: Final Compliance Checklist (The "Safety Audit")**
+
+Before you zip your code or upload your PDF, check these specific medical imaging traps:
+
+**1. The "Burnt-In" Pixel Trap**
+*   [ ] Open 20 random images from your dataset. Do any of them have text in the corners (e.g., "General Hospital," "DOB: 01/01/80")?
+    *   *Fix:* You must crop or mask these regions in your data loader. **Do not** submit figures with this text visible.
+
+**2. The Metadata Leak**
+*   [ ] If you are uploading sample `.dcm` (DICOM) files, run `gdcmanon` or a Python script to print all tags.
+    *   *Check:* Does `0010,0010` (Patient Name) or `0008,0080` (Institution Name) contain data? Scrub it.
+
+**3. The "Clinician" De-Anonymization**
+*   [ ] In your text, did you say: *"We thank Dr. Smith from the Radiology Department for labeling..."*?
+    *   *Fix:* Change to: *"We thank the clinical annotators for their assistance."*
+
+**4. Institutional Review Board (IRB)**
+*   [ ] Did you state the IRB status?
+    *   *Required Phrasing:* "This retrospective study was approved by the Institutional Review Board (IRB) #XXXX (or 'of the authors' institution') with a waiver of informed consent." (Waivers are common for retrospective analysis; if you recruited patients prospectively, you need *Informed Consent*).
+
+**5. License Compatibility**
+*   [ ] If you used **MIMIC-CXR** or **ADNI**, you **cannot** re-host the data.
+    *   *Fix:* Your README must link to the official credentialed access page, not a Google Drive link. Re-hosting restricted medical data is an instant ethics rejection.

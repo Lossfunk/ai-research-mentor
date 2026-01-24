@@ -1,0 +1,70 @@
+This 2-week sprint shifts your mindset from **"Convince the Reviewer"** to **"Ensure Reproducibility & Usability."**
+
+For Graph Foundation Models (GFMs), the biggest risks are **dependency hell** (PyG/DGL versions), **dataset licensing** (proprietary vs. public graphs), and **usability** (can someone actually fine-tune your massive model?).
+
+### **Week 1: Artifacts, Code, and Data Hygiene**
+
+**Goal:** Ensure the code runs on a stranger's machine and the data is legally compliant.
+
+| Day | Focus | Action Items |
+| :--- | :--- | :--- |
+| **Mon** | **Reviewer Integration** | • Incorporate *mandatory* changes requested by reviewers. <br>• Add a "Limitations" paragraph specifically addressing GFM scalability or negative transfer on small graphs (if noted by reviewers). |
+| **Tue** | **Dependency Hell** | • **Dockerize:** Create a `Dockerfile` that locks CUDA, PyTorch Geometric (PyG), or DGL versions. GFM libraries break constantly; a `requirements.txt` is rarely enough. <br>• **Sanity Test:** `docker run` your inference script on a fresh machine. |
+| **Wed** | **Model Weights** | • Upload pre-trained checkpoints to **Hugging Face Hub** (not Google Drive). <br>• Convert weights to a standard format (e.g., SafeTensors) for faster loading. <br>• **Model Card:** Fill out the HF Model Card (Usage, Bias, Training Data). |
+| **Thu** | **Data Manifest** | • Create a `DATASETS.md`. <br>• **Audit:** List every upstream graph used (e.g., OGB, ImageNet-Graph). <br>• **Compliance:** If you used crawled data (e.g., social networks), confirm you stripped user IDs. |
+| **Fri** | **The "Easy" API** | • Write a `demo.ipynb` (Colab compatible). <br>• **Goal:** User should be able to load your GFM and run zero-shot classification on a small graph (e.g., Cora/Zinc) in <5 minutes. |
+
+---
+
+### **Week 2: Paper Polish, Licensing, and Release**
+
+**Goal:** Finalize the PDF and prepare the public launch.
+
+| Day | Focus | Action Items |
+| :--- | :--- | :--- |
+| **Mon** | **De-Anonymization** | • **Authors:** Add names, affiliations, and emails. <br>• **Links:** Replace "Anonymous GitHub" with the real repo URL. <br>• **Acknowledgments:** Add grant numbers (NSF/NIH) and compute providers (e.g., "Compute provided by [Cluster Name]"). |
+| **Tue** | **Visual Polish** | • **Figures:** Re-export all plots as vector graphics (PDF/SVG), not PNG. Zoom in to 400% to check for pixelation. <br>• **Tables:** Bold the best results. ensure standard deviations are included ($\pm \sigma$). |
+| **Wed** | **Licensing Strategy** | • **Code:** Apply **MIT** or **Apache 2.0**. <br>• **Weights:** Apply **CC-BY-4.0** (Open) or **OpenRAIL-M** (Responsible AI License) if you want to restrict misuse (e.g., generating bio-weapons via molecular graphs). <br>• **Data:** Ensure your release doesn't violate upstream licenses (e.g., OGB is MIT, but some biochemical databases are non-commercial). |
+| **Thu** | **Release Notes** | • Draft the GitHub Release (v1.0). <br>• **Changelog:** "Added pre-trained weights for [Dataset X]; Fixed sparse matrix multiplication bug." <br>• **Citation:** Create a `CITATION.cff` file so people cite you correctly. |
+| **Fri** | **Submission** | • **Final Read:** Read the abstract and conclusion out loud. <br>• **Upload:** Submit the Camera-Ready PDF and the signed Copyright Form. <br>• **Archive:** Push the final version to arXiv (update the existing preprint). |
+
+---
+
+### **Specific Checklists for Graph Foundation Models**
+
+#### **1. The "Graph License" Matrix**
+*   *Risk:* You pre-trained on a mix of Open Graph Benchmark (OGB) and proprietary data.
+*   *Action:* In your appendix, add a table:
+    | Dataset | Source | License | Modified? |
+    | :--- | :--- | :--- | :--- |
+    | OGB-MolHive | Stanford | MIT | No |
+    | Reddit-Threads | Pushshift | Public Domain | Yes (Anonymized) |
+
+#### **2. Artifact Packaging Structure**
+Your GitHub repo should look like this for the release:
+```text
+/assets          # High-res diagrams for the README
+/configs         # YAML files for Pre-training vs. Fine-tuning
+/checkpoints     # Links to Hugging Face (DO NOT commit weights to git)
+/data            # Loaders (DO NOT commit large graphs)
+   /preprocessing_scripts  # How to turn raw CSVs into Graph Objects
+Dockerfile
+LICENSE
+model_card.md    # Ethics and limitations
+README.md        # "How to run"
+```
+
+#### **3. Release Notes / README "Must-Haves"**
+*   **Hardware Requirements:** "Fine-tuning requires 24GB VRAM (A10g/3090). Inference runs on CPU."
+*   **Graph Format:** Explicitly state the input format. "Expects `torch_geometric.data.Data` objects with `x` (features) and `edge_index`."
+*   **Reproducibility Command:**
+    ```bash
+    python main.py --task pretrain --dataset zinc --seed 42
+    ```
+
+### **Final Ethics Sanity Check (The "Red Team")**
+Before uploading, ask yourself:
+1.  **Molecule Generation:** If your GFM generates molecules, did you check if it can generate known toxins? (Add a disclaimer: "For research use only").
+2.  **Social Network De-anonymization:** If your model creates embeddings for social nodes, can they be reversed to identify users? (Ensure embeddings are not released with PII metadata).
+
+**Ready to start Week 1?** I can generate the `Dockerfile` or the `Hugging Face Model Card` template if you need them.

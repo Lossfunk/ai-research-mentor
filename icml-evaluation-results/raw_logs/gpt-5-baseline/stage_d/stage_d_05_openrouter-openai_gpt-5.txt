@@ -1,0 +1,89 @@
+Here is a two-phase replication plan with a low-parameter alternative to the hierarchy, plus power analysis and safeguards against double-counting correlated improvements.
+
+Scope and invariants (apply to both phases)
+- Keep identical: datasets and official splits, tokenizer+vocab, sentence/segmenter, segment length/stride/max segments, masking, special tokens, training schedule (optimizer, LR schedule, warmup, dropout), checkpoint selection criterion (dev metric), inference windowing, and metrics.
+- Fix environment: hardware (GPU model/VRAM), CUDA/cuDNN/framework versions, AMP/bfloat16 policy, TF32, deterministic flags, seeds.
+- Report: parameter counts, FLOPs estimate per forward, peak inference memory at batch=1, and dev/test metrics to establish comparability.
+
+Phase 1: Re-implement the Hierarchical Transformer baseline
+- Inputs to collect from the paper
+  - Data: sources, time cutoff, dedup method, text normalization, sentence/paragraph boundaries, document chunking into segments Lseg (e.g., 512), stride, max segments.
+  - Tokenizer: type (BPE/Unigram), vocab size, normalization rules, special tokens; whether trained on pretrain-only.
+  - Model: local encoder hyperparams (layers, d_model, heads, d_ff, dropout, positional encoding type), pooling choices at token→segment and segment→document, global encoder hyperparams and positional signals over segment order, parameter tying/sharing, initialization.
+  - Training: objectives (e.g., MLM, SOP, hierarchical masking), curriculum for max length/segments, optimizer (AdamW betas/eps, weight decay), LR schedule and warmup, gradient clipping, grad checkpointing, mixed precision, batch sizes/effective batch, steps/epochs.
+  - Eval: exact preprocessing, inference windowing (stride/overlap), metrics and scripts (macro-F1, EM/F1, ROUGE variants).
+- Implementation checklist
+  - Build segment-wise local encoder that shares weights across segments.
+  - Construct segment representations as in the paper (e.g., [CLS], attention pooling, mean).
+  - Build global encoder over segment embeddings with segment-order positional encodings.
+  - Preserve attention masks distinguishing intra- vs inter-segment attention.
+  - Implement pooling and classifier/decoder heads exactly as specified.
+- Quality gates
+  - Unit tests: padding-invariance for means/attention, mask correctness, shape checks for ragged last segments.
+  - Sanity runs: short documents where hierarchical/global outputs reduce to local-only behavior; recover baseline loss curves on a small subset.
+  - Acceptance criterion: reproduce paper’s reported dev/test metrics within 95% CI or within an absolute delta (e.g., ≤0.5 macro-F1 points for classification; ≤0.5 EM and ≤1.0 F1 for QA; ≤0.5 ROUGE-L for summarization), averaged over 3–5 seeds.
+- Debugging aids
+  - Align per-step losses and layer-norm stats versus a reference checkpoint on a small corpus.
+  - Compare segment-embedding cosine similarity distributions and global [CLS] activations layer-wise.
+  - Ablate global encoder (off) to verify local encoder alone matches expectations.
+
+Phase 2: Low-parameter alternative to the hierarchy (grouped pooling)
+- Motivation: Replace the multi-layer global transformer with a lightweight, low-parameter aggregator over segment embeddings while keeping the local encoder unchanged.
+- Designs (pick one primary, treat others as ablations)
+  1) Grouped mean pooling (contiguous groups)
+     - Partition T segments into G groups of size g ≈ ceil(T/G) (e.g., G ∈ {4, 8}). For group k, take masked mean of its member segment embeddings: g_k = mean({s_i in group k}).
+     - Form document vector d by mean or attention over g_k using a single shared vector u ∈ R^d: w_k = softmax_k(u^T LN(g_k)); d = sum_k w_k g_k.
+     - Parameters: u (d params) + LayerNorm affine (2d) + optional 1×1 projection (d×d, can be shared or identity).
+  2) Depthwise conv over segments
+     - Apply a 1D depthwise separable conv over [T, d]: channel-wise kernel size K (e.g., 3 or 5) with stride s>1 for downsampling; then masked mean.
+     - Parameters: d×K (depthwise) + d×d’ (optional pointwise with d’<=d).
+  3) Squeeze-and-Excitation over segments
+     - Compute a global mean m = mean_i s_i; gates r_i = sigmoid(v^T tanh(W s_i) + b) with W ∈ R^{r×d}, v ∈ R^r shared across segments, small r (e.g., 16). d = sum_i r_i s_i / sum_i r_i.
+     - Parameters: r×d + r ≪ parameters of a global transformer.
+- Minimal code changes
+  - Add config flags: global_agg = {hierarchical_transformer, grouped_mean, depthwise_conv, se_pool}, num_groups G or kernel size K, and keep_token_to_segment_pooling = true.
+  - Replace only the inter-segment module with the chosen aggregator; retain classifier head interface (expecting a document-level embedding).
+  - Keep attention masks, segment embeddings s_i, and dropout consistent. Initialize new params to small-norm values; freeze local encoder for the first N fine-tuning steps to stabilize, then unfreeze.
+- Variants matrix
+  - Baseline: full hierarchical global transformer.
+  - GP-Mean: grouped mean with uniform weights (no u).
+  - GP-Attn: grouped mean + learned u (primary low-param).
+  - DW-Conv: depthwise conv K=3, stride 2.
+  - SE-Pool: squeeze-excite r=16.
+  - Optional fairness control: “Small-Global-Tx”: 1-layer, 2-head global transformer with shared weights across layers to match low parameter counts.
+- Parameter/computation budget
+  - Target ≤1–5% of baseline global module parameters; wall-clock latency reduced by ≥20% at batch=1 on long docs if possible.
+  - Keep local encoder identical to isolate the effect.
+
+Benchmark suite and metrics
+- Long-document classification: Hyperpartisan (macro-F1 primary), LEDGAR (macro-F1).
+- Long-context QA: Qasper (EM/F1), QuALITY (accuracy; report ECE as secondary).
+- Long summarization: PubMed and/or arXiv (ROUGE-1/2/Lsum; optional factuality metric).
+- Length sensitivity: bin results by effective tokens/document (quartiles) to detect long-context degradation.
+- Efficiency: latency p50/p90 at batch=1, tokens/sec at batch sizes {1, 4, 8}, and peak memory at batch=1.
+
+Compute budget (replicable and scalable)
+- Hardware targets
+  - Minimal: 1× A100 40GB or 2× 24GB GPUs with gradient accumulation; AMP on; grad checkpointing for local encoder.
+  - Comfort: 2–4× A100 40/80GB to parallelize seeds or datasets.
+- Training per dataset (fine-tuning, not pretraining)
+  - Classification (Hyperpartisan, LEDGAR): 3–5 epochs; effective batch 32–64 docs; steps ≈ 5k–20k per dataset; ~2–6 GPU-hours per seed for baseline; low-param variants often 20–40% faster.
+  - QA (Qasper, QuALITY): 3–6 epochs; steps 10k–30k; ~6–16 GPU-hours per seed.
+  - Summarization (PubMed/arXiv): 50k–100k steps with early stopping on dev ROUGE; ~1–3 GPU-days per seed; consider curriculum on max segments.
+- Seeds
+  - 5 seeds per variant for classification/QA; 3 seeds for summarization (costly), with paired evaluation.
+- Measurement
+  - Add efficiency runs post-training: latency/throughput on test set after warmup; record peak memory.
+
+Power analysis (accuracy and efficiency)
+- General approach
+  - Use paired designs wherever possible (same documents across variants; matched seeds) to reduce variance.
+  - Pilot on 10–20% of test data and 2 seeds to estimate variance terms, then finalize sample sizes.
+- Classification accuracy (macro-F1 delta)
+  - Across seeds: let Δ_s be per-seed test macro-F1 difference (variant − baseline). Estimate σ_Δ from pilot (often 0.10–0.25 F1 points).
+  - Required seeds for 80% power at α=0.05 (paired t on Δ_s): S ≈ ((z_0.975 + z_0.8) × σ_Δ / δ)^2. Example: σ_Δ=0.15, δ=0.3 → S ≈ (2.8×0.15/0.3)^2 ≈ 2; use 5 seeds to be safe and allow multiple datasets.
+  - Per-example: run McNemar on paired predictions; ensure ≥100–300 discordant pairs for stable power. Bootstrap macro-F1 deltas with 10k stratified resamples for CIs.
+- QA and summarization
+  - Paired bootstrap over examples for EM/F1 or ROUGE. Power improves with test size; typical Qasper (∼1k Qs) gives tight CIs for δ≥1–2 F1 points.
+- Efficiency
+  - Latency deltas per document are highly powered; use Wilcoxon signed-rank on per-doc deltas. For detectable δ=5% with large N, power is near 1. Report p50/p90 and 95

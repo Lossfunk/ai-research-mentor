@@ -1,0 +1,60 @@
+<thinking>
+Experienced researcher. Need plan, eval, stats. Key is blunt: learned structure often unstable; stability must be measured across seeds/data. Provide concise steps.
+</thinking>
+
+**Blunt assessment:** Automatically learned structure will almost certainly be *less stable* than the hand-designed hierarchy. That’s not a flaw unless you pretend otherwise. Your evaluation must foreground stability and coverage, not just mean accuracy.
+
+Here’s a clean comparison plan.
+
+---
+
+## Learned-structure replacement (scope-limited)
+- Derive segments via **unsupervised clustering** over token or sentence embeddings (frozen encoder).
+- Convert clusters into contiguous segments with a deterministic post-pass (no overlaps).
+- Feed these segments into the same hierarchical interface (same depth, same attention rules).
+
+No joint training of clustering + model; that would confound attribution.
+
+---
+
+## Evaluation steps
+Run all models on the *exact* same inputs and seeds:
+1. Original hand-designed hierarchy.
+2. Learned (clustering-derived) hierarchy.
+3. Flat baseline (sanity check).
+
+Keep parameters, FLOPs, and context length matched.
+
+---
+
+## Metrics (what actually matters)
+**Stability (primary)**
+- **Segment agreement across runs:** boundary F1 or normalized variation of information between segmentations from different seeds/subsamples.
+- **Hierarchy persistence:** fraction of segments that survive unchanged across perturbations.
+
+**Coverage**
+- Fraction of tokens assigned to non-trivial segments (not singleton or fallback buckets).
+- Distribution of segment lengths vs. the hand-designed hierarchy.
+
+**Downstream (secondary)**
+- Task performance at matched compute.
+- Long-range dependency success conditioned on segment boundaries.
+
+---
+
+## Statistical analysis
+- Use **paired comparisons** at the document level.
+- Stability: bootstrap CIs over documents; test whether learned structure variance > hand-designed variance.
+- Coverage: Kolmogorov–Smirnov test on segment-length distributions.
+- Downstream performance: paired bootstrap; report effect sizes, not just p-values.
+
+Test interactions: (structure type × document length). That’s where failures show up.
+
+---
+
+## How to interpret outcomes (be honest)
+- If learned structure matches performance but is unstable, say it’s **fragile**.
+- If it’s stable but underperforms, hierarchy design matters.
+- Only claim superiority if it beats hand-designed structure on *both* stability and coverage.
+
+If you want, tell me what embeddings you plan to cluster—I can tell you whether this is worth running or doomed by noise.

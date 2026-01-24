@@ -1,0 +1,97 @@
+This research plan targets **Two-Sided Marketplace Fairness**, specifically addressing the "Starvation" problem where small vendors in emerging markets (who often lack marketing budgets) are invisible to algorithms optimized solely for click-through rates (CTR).
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Standard Collaborative Filtering (CF) algorithms suffer from severe **Popularity Bias**. In emerging market marketplaces (e.g., Shopee, Jumia, Olist), this creates a "rich-get-richer" feedback loop where a top 1% of vendors receive 80% of exposure. For small stores, this algorithmic invisibility leads to platform churn (vendors leaving) and reduced catalog diversity. Existing fairness solutions often require massive interaction data, which small, sparse marketplaces lack.
+
+**Research Goal:**
+Develop a **"Minimum Viable Fairness" (MVF) Re-ranking Protocol**. The goal is to maximize **Provider Fairness** (equitable exposure across vendors) while maintaining **User Utility** (relevance/NDCG) within a tight tolerance window (e.g., <5% drop in accuracy).
+
+**Core Objectives:**
+1.  **Quantify Inequality:** Measure the "Gini Coefficient of Exposure" in standard algorithms (Matrix Factorization, LightGCN) on real-world emerging market data.
+2.  **Fair Re-ranking:** Implement a post-processing algorithm that re-shuffles top-$K$ recommendations to boost long-tail vendors without retraining the base model (crucial for low-resource environments).
+3.  **Pareto Analysis:** Map the trade-off curve between Fairness and Accuracy to determine the optimal $\lambda$ (fairness weight) for small marketplaces.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "Inequality Audit" (Baseline)
+**Hypothesis:** State-of-the-art models (LightGCN) will exhibit a Gini Coefficient > 0.8 (extreme inequality) regarding vendor exposure on sparse datasets.
+*   **Setup:**
+    *   **Dataset:** **Olist E-Commerce Dataset** (Real Brazilian marketplace data, highly relevant to emerging markets).
+    *   **Models:** BPR-MF (Matrix Factorization), LightGCN (Graph Neural Network), and ItemKNN.
+    *   **Metric:** Compute the cumulative exposure of vendors.
+*   **Baselines:** Random Recommendation (Theoretical limit of fairness).
+*   **Evaluation Metrics:** **Gini Coefficient** (0=Perfect Equality, 1=One vendor gets all); **Catalog Coverage** (% of items ever recommended).
+*   **Expected Outcome:** Deep learning models (LightGCN) will be *less* fair than simple ItemKNN, confirming that complexity exacerbates bias in sparse data.
+
+#### Experiment 2: Deterministic Re-ranking (The Solution)
+**Hypothesis:** A greedy re-ranking strategy that promotes the "most relevant item from the least exposed vendor" can reduce the Gini Coefficient by 30% while sacrificing less than 5% NDCG.
+*   **Setup:**
+    *   **Method:** Implement **Fairness-Aware Re-ranking (FAR)**.
+        *   Step 1: Generate top-100 items per user using Base Model (Exp 1).
+        *   Step 2: Re-rank top-10 using a scoring function: $S_{new} = (1-\lambda)S_{rel} + \lambda S_{fair}$, where $S_{fair}$ is the inverse of the vendor's historical exposure.
+    *   **Hyperparameter:** Sweep $\lambda$ from 0.0 (Pure Accuracy) to 1.0 (Pure Fairness).
+*   **Baselines:** The raw output from Experiment 1.
+*   **Evaluation Metrics:** **NDCG@10** (User Satisfaction) vs. **Provider Fairness@10**.
+*   **Expected Outcome:** A "Sweet Spot" will be found at $\lambda \approx 0.1-0.2$, effectively boosting small vendors with imperceptible impact on user relevance.
+
+#### Experiment 3: The Cold-Start Stress Test
+**Hypothesis:** Fairness-aware algorithms perform *better* than standard algorithms for new users (Cold Start) because they force the system to explore the catalog rather than overfitting to popular items.
+*   **Setup:**
+    *   **Data Split:** Isolate users with <5 interactions (Cold Start cohort).
+    *   **Comparison:** Compare Recall@10 of the Base Model vs. the FAR Model (from Exp 2) specifically on this cohort.
+*   **Evaluation Metrics:** Recall@10, User Retention Proxy (diversity of recommended categories).
+*   **Expected Outcome:** The Fairness model will show higher diversity and equal/better recall for cold-start users, framing fairness not as a "cost" but as a "solution" to the sparsity problem.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Data Engineering** | Clean Olist dataset. Map Products $\rightarrow$ Sellers. Create "exposure logs" to simulate history. |
+| **Month 2** | **Baseline Training** | Train LightGCN and BPR-MF. Generate the "Inequality Audit" report (Exp 1). |
+| **Month 3** | **Algorithm Dev** | Code the Re-ranking logic. This is a post-processing wrapper, so it is model-agnostic. |
+| **Month 4** | **Trade-off Analysis** | Run Experiment 2 (Sweep $\lambda$). Generate Pareto Frontier plots (Accuracy vs. Fairness). |
+| **Month 5** | **Sparsity Analysis** | Run Experiment 3 (Cold Start). Analyze performance on the "Long Tail" of vendors specifically. |
+| **Month 6** | **Writing & Packaging** | Draft paper. Package code as a simple Python library (`pip install fair-rank`) for easy adoption by small stores. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 1x NVIDIA T4 (Google Colab Free/Pro is sufficient). Re-ranking is CPU-bound; only the base model training requires a GPU.
+*   **RAM:** 16GB System RAM (Olist is ~100k orders, fits in memory).
+
+**Tools & Libraries:**
+*   **Framework:** **RecBole** (The gold standard PyTorch library for recommendation). It has built-in dataloaders for Olist and implementations of LightGCN.
+*   **Analysis:** `pandas`, `numpy`, `matplotlib` (for Pareto curves).
+
+**Datasets:**
+*   **Primary:** **Brazilian E-Commerce Public Dataset by Olist** (Kaggle). Contains 100k orders, real seller IDs, and product categories.
+*   **Secondary (Validation):** **Pakistan E-Commerce Dataset** (Kaggle) – useful to cross-validate findings in a different emerging market context.
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Relevance Collapse** | Aggressive fairness makes recommendations garbage (random stuff), destroying user trust. | **Dynamic $\lambda$:** Implement a "Relevance Guardrail." If the re-ranked item's original relevance score is < Threshold, skip it, even if it helps fairness. |
+| **Vendor Spam** | The algorithm boosts "bad" vendors who have low exposure because they sell low-quality goods. | **Quality Filter:** Pre-filter vendors based on "Review Score > 3.0" before calculating fairness. Do not optimize fairness for scammers. |
+| **Data Leakage** | Olist data is temporal. Training on future data invalidates results. | **Strict Split:** Use a "Global Timestamp Split" (Train: Jan-Aug, Test: Sep-Oct) rather than random shuffling to respect causality. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Fairness-Aware Reinforcement Learning:** Instead of static re-ranking, use a Bandit algorithm (Thompson Sampling) that treats "Vendor Fairness" as part of the reward function, dynamically learning which users are "tolerant" of diverse recommendations.
+*   **UI Interventions:** Instead of hiding fairness in the algorithm, test "Explanation" interfaces: "Featured Small Business" badges. Does explicit labeling change user acceptance of lower-ranked items?
+*   **Multi-Stakeholder Fairness:** Optimize for *three* variables: User Relevance, Vendor Exposure, and Platform Revenue (taking commission rates into account).
+
+**Optional next step:**
+Download the **RecBole** library and the **Olist** dataset. Run the standard `run_recbole(model='BPR', dataset='olist')` script to establish your baseline accuracy (NDCG@10) immediately.

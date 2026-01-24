@@ -1,0 +1,77 @@
+1. Problem framing and goals
+
+Context
+- Objective: Build a rigorous, reproducible evaluation program for interpretability (XAI) methods applied to autonomous driving perception models (2D detection/segmentation, 3D detection, and camera–LiDAR fusion), with ablations, reliability tests, and governance checkpoints over one year.
+- Why: Interpretability is used for debugging, incident analysis, and assurance, but many XAI methods can be misleading. We will quantify faithfulness, localization, stability, and human usefulness, with clear acceptance criteria and sign-off procedures aligned to automotive safety processes (e.g., ISO 21448 SOTIF/ISO 26262).
+
+Key questions and success criteria
+- Faithfulness: Do explanations identify features causally important to model decisions? Target: deletion/insertion AUC and ROAR-style retraining drops consistent with top-tier methods; pass sanity checks that fail on randomized models.
+- Localization: Do explanations focus on true object/region extents? Target: pointing-game accuracy ≥80% for large objects and ≥60% for small/occluded on held-out sets; IoU/energy within masks significantly above random.
+- Stability and robustness: Are explanations consistent under benign perturbations (brightness, weather, viewpoint)? Target: ≥0.7 Spearman correlation of attribution ranks under common corruptions at matched confidence.
+- Human alignment and usefulness: Do expert raters agree that explanations reflect plausible cues, and do they aid error triage? Target: inter-rater κ≥0.6; 20–30% reduction in time-to-root-cause in controlled debugging tasks.
+- Governance: Integrate explanation QA into ML safety lifecycle: pre-deployment XAI test report, model/explanation cards, CI checks for sanity tests, and periodic audits.
+
+Evidence note: Web search was not available in this environment. To attach authoritative references, use targeted queries such as:
+- “Adebayo 2018 Sanity Checks for Saliency Maps NeurIPS”
+- “ROAR Hooker Benchmark for Interpretability 2019”
+- “RISE Randomized Input Sampling for Explanation 2018”
+- “Meaningful Perturbations Fong Vedaldi 2017”
+- “Grad-CAM Selvaraju 2017”, “Integrated Gradients Sundararajan 2017”, “Infidelity Yeh 2019”, “TCAV Kim 2018”
+- “Point cloud saliency point-dropping explanation” and “BEVFusion interpretability”
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+
+Experiment 1: Baseline saliency/attribution evaluation on 2D detectors
+- Hypothesis: Gradient-based attribution (Grad-CAM/Grad-CAM++, IG, DeepLIFT/LRP) produces faithful, localized explanations for object detectors when targeted to class-specific heads and layers.
+- Setup:
+  - Models: Faster R-CNN/RetinaNet/YOLOv8 (pretrained on COCO/BDD100K) fine-tuned on driving data (nuImages or BDD100K).
+  - Methods: Grad-CAM, Grad-CAM++, Integrated Gradients (varied baselines), SmoothGrad, LRP/DeepLIFT; TorchCAM/Captum implementations.
+  - Ablations: Target different layers (early/mid/late); vary IG step count and baselines (black, blur, dataset mean); SmoothGrad noise σ and samples.
+- Baselines: Random attribution, uniform heatmap; occlusion sensitivity as a perturbation baseline.
+- Metrics: Localization—pointing game accuracy (max attribution inside GT box) and attribution energy inside/outside GT masks; Faithfulness—deletion/insertion AUC; Sanity—parameter/randomization tests; Runtime per image.
+- Expected outcomes: Grad-CAM(+ smoothing) competitive localization; IG improves faithfulness but is slower; sanity checks reject methods that ignore learned weights.
+
+Experiment 2: Perturbation-based faithfulness vs gradient-based methods (2D segmentation)
+- Hypothesis: RISE, occlusion, and meaningful perturbations yield more faithful but costlier explanations than gradients for semantic segmentation (e.g., DeepLabV3/HRNet).
+- Setup:
+  - Models: Cityscapes/BDD100K segmentation models.
+  - Methods: RISE (binary masks), patch occlusion, meaningful perturbation masks (optimize deletion).
+  - Ablations: Mask density/size, number of RISE samples, occlusion patch size/stride, perturbation types (blur/gray).
+- Baselines: Grad-CAM on segmentation logits; random masks.
+- Metrics: Comprehensiveness/sufficiency (probability change with top-k kept/removed), deletion/insertion AUC, IoU overlap with class masks, compute cost.
+- Expected outcomes: RISE/meaningful perturbations best on faithfulness metrics with 5–10× runtime cost; Grad-CAM superior speed for operational use.
+
+Experiment 3: 3D point-cloud and BEV interpretability
+- Hypothesis: Point-dropping saliency and per-point attribution reveal critical geometry for 3D detectors; in camera–LiDAR fusion (e.g., BEVFusion/CenterPoint+camera), modality-wise attributions show when the model relies on camera vs LiDAR.
+- Setup:
+  - Models: PointPillars/CenterPoint (LiDAR-only) and BEVFusion (camera+LiDAR) on nuScenes/Waymo Open.
+  - Methods: Point-level saliency via gradient norms; iterative point-dropping (remove top-attribution points and measure AP drop); voxel/BEV attribution maps; modality ablation (zero out modality with/without top-attribution regions).
+  - Ablations: Drop ratio (1–20%), spatial clustering vs independent removal, temporal context (t-1 frames).
+- Baselines: Random point dropping; uniform modality ablation.
+- Metrics: AP drop vs fraction dropped (faithfulness curves), attribution concentration around object surfaces, cross-modality reliance measures, compute overhead.
+- Expected outcomes: Faithful attributions lead to steep AP drops at low removal percentages; BEV models show scenario-dependent modality reliance (night/rain → LiDAR dominance).
+
+Experiment 4: Concept-based explanations (TCAV) for perception cues
+- Hypothesis: TCAV with curated concept banks (e.g., crosswalk markings, pedestrian silhouettes, red traffic lights) yields directional sensitivity that predicts detector errors in relevant scenarios.
+- Setup:
+  - Concepts: Build positive/negative sets from BDD100K/Cityscapes crops; validate via human audit. Include “random concepts” as negative controls.
+  - Targets: Detector class logits (pedestrian, cyclist, traffic light status) and scene attributes.
+  - Ablations: Number of concept examples, layer selection, random-concept tests.
+- Baselines: Pixel-space saliency; bag-of-visual-words concept probes (negative control).
+- Metrics: TCAV scores (fraction of directional derivatives >0), stability across splits, error correlation (higher TCAV for concepts implicated in false positives/negatives).
+- Expected outcomes: Significant TCAV for relevant concepts; random concepts near 0; actionable insights into spurious correlations (e.g., reflections mistaken for signals).
+
+Experiment 5: Counterfactuals and spurious correlation audits
+- Hypothesis: Inpainting/copy–paste counterfactual edits aligned with high-attribution regions cause larger prediction changes than edits in low-attribution regions; reveals spurious cues (e.g., snowbanks → “vehicles”).
+- Setup:
+  - Methods: Copy–paste removal/insertion of objects; background inpainting (LaMa or similar OSS); targeted edits guided by top-k attribution vs bottom-k control.
+  - Ablations: Edit size/location; weather overlays (fog/rain) to test robustness; temporal consistency (video).
+- Baselines: Random edits of matched size/location.
+- Metrics: Δconfidence/IoU/AP, causal effect size (ATE between high- vs low-attr edits), qualitative audit catalog.
+- Expected outcomes: Larger causal effects for high-attr edits; identification of brittle cues for mitigation.
+
+Experiment 6: Stability and invariance under common corruptions
+- Hypothesis: Faithful explanations remain consistent under label-preserving transforms; instability flags non-robust reliance.
+- Setup:
+  - Corruptions: Brightness/contrast, Gaussian noise,

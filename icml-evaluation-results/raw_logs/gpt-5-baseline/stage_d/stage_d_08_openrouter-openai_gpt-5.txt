@@ -1,0 +1,91 @@
+Below is a plug-in “zero-hierarchy-pretrain” variant and evaluation plan that preserves the original pipeline and metrics while removing any hierarchy-specific pretraining. It supports two usage modes: (A) zero-shot inference (no supervised training at all) and (B) supervised fine-tuning without any additional hierarchical pretraining.
+
+Variant: Zero-Pretrain Hierarchical Transformer (ZP-HT)
+- Goal
+  - Remove all hierarchy-specific pretraining (e.g., hierarchical MLM, next-segment prediction, global-transformer pretraining).
+  - Keep tokenization, segmentation, and downstream evaluation unchanged.
+- Architecture (unchanged I/O)
+  - Tokenization/segmenting: identical to the baseline (same tokenizer version, segment length, stride, max segments).
+  - Local encoder: load a public, non-hierarchical pretrained checkpoint (e.g., RoBERTa/DeBERTa/Longformer) and use it as the segment encoder. No new pretraining.
+  - Segment representation: masked mean or [CLS] per segment (match whatever the original downstream head expects).
+  - Global aggregation (replace hierarchical block):
+    - ZP-Mean (parameter-free primary): masked mean over segment embeddings.
+    - ZP-Attn (low-parameter optional): a single learned query vector u with softmax(u^T LN(s_i)) over segments; no pretraining—learned only during supervised fine-tuning.
+  - Heads:
+    - Classification: same linear classifier as baseline, taking the document embedding.
+    - Extractive QA: same start/end span head applied at token level within windows; document embedding used only for auxiliary/global losses if the baseline had them (omit if not used).
+    - Summarization: same decoder/head; if the baseline used a global encoder to provide memory tokens, swap them with ZP-Attn pooled doc embedding replicated as few “global” tokens (parameter-free or with a 1×1 projection).
+
+Two usage modes
+A) Zero-shot inference (no supervised training)
+- Classification: label-entailment scoring
+  - Build label verbalizers/prompts. Score each segment with an off-the-shelf NLI model (e.g., DeBERTa-large-MNLI) for entailment of “This document is <label>.”
+  - Aggregate by max or mean over segments to get doc-level label scores; pick argmax. No training, no hierarchy pretraining.
+- QA:
+  - Answer sentence selection: use off-the-shelf NLI/STS to score each candidate sentence vs question; pick highest-scoring sentence; for extractive spans, return the longest named entity or noun phrase within that sentence (rule-based) or use a zero-shot extractive reader (if allowed).
+- Summarization (optional):
+  - Unsupervised extractive: TextRank/lead-k or MMR over sentence embeddings from the local encoder; concatenate top-k sentences to match the baseline summary length budget.
+
+B) Supervised fine-tuning without hierarchy-specific pretraining (recommended for comparability)
+- Stage 0: freeze the local encoder, train only the global aggregator (ZP-Mean has no params; ZP-Attn learns u) and the task head for N steps (e.g., 1–3k).
+- Stage 1: unfreeze the last L_local layers of the local encoder (e.g., 1–2 layers) with a 10× lower LR than the head/aggregator; train to convergence on the downstream task.
+- Optional adapters/LoRA: if you must touch the local encoder, insert low-rank adapters (r=8–16) instead of full unfreeze to keep parameters small and avoid implicit pretraining.
+
+Training configuration (supervised, no hierarchy pretraining)
+- Optimizer: AdamW (β1=0.9, β2=0.98, ε=1e-8), weight decay 0.01.
+- LR:
+  - Head/aggregator: 1e-3 to 3e-4 (classification/QA), 5e-5 to 1e-4 (summarization).
+  - Local encoder (if partially unfrozen): 1e-5 to 5e-6.
+- Schedule: 5–10% warmup, cosine or linear decay.
+- Regularization: dropout equal to baseline; attention dropout same as local encoder default; label smoothing if used in baseline.
+- Batch/length: identical segment length, stride, max segments; same gradient accumulation to match effective batch size.
+- Precision: same AMP/bfloat16/TF32 policy; same gradient clipping/checkpointing settings as baseline.
+- Checkpoint selection: dev metric identical to baseline; do not select by efficiency.
+
+Maintaining metric comparability to the original
+- Inputs: same datasets, splits, tokenizer version, text normalization, segment length/stride/max segments, truncation policy.
+- Inference: same sliding-window policy, max segments at test, special tokens, attention masks.
+- Metrics: identical official scripts (macro-F1, EM/F1, ROUGE variants, etc.), same casing/punctuation rules.
+- Seeds and selection: same number of seeds; choose checkpoints by the same dev criterion; report mean±SD and paired deltas vs baseline.
+- Compute/reporting: report params, FLOPs estimates, and inference latency the same way as in the original; do not change hardware/precision.
+
+Analysis plan
+- Primary comparison (supervised ZP-HT vs baseline):
+  - Paired bootstrap (10k) over examples for metric deltas with 95% CIs.
+  - McNemar’s test (classification) or paired bootstrap for QA/ROUGE to test significance.
+  - Non-inferiority option: declare ZP-HT non-inferior if the lower bound of Δ ≥ −ε (e.g., ε=0.5 macro-F1 points; 1.0 F1 for QA; 0.5 ROUGE-L), pre-registered.
+- Zero-shot mode:
+  - Use same test sets and metrics. No checkpoint selection; report single-run results with CIs via bootstrap.
+  - Treat zero-shot as a lower bound; compare to baseline and to a trivial heuristic (e.g., majority class or lead-k) to contextualize.
+- Length sensitivity:
+  - Bin by effective tokens per document (quartiles); plot metric vs length; fit mixed-effects model: correct ~ model + log(tokens) + (1|doc) to detect differential long-context degradation.
+- Multiple comparisons:
+  - If evaluating ZP-Mean and ZP-Attn (and baseline), use Holm–Bonferroni within each dataset.
+
+Minimal code changes
+- Add flag global_agg = {hier, zp_mean, zp_attn}.
+- Implement zp_mean: masked mean over segment embeddings to produce a document embedding; optional LayerNorm + affine scale/bias.
+- Implement zp_attn: learn a single query vector u ∈ R^d; weights w_i = softmax(u^T LN(s_i)); doc = Σ_i w_i s_i. Initialize u ~ N(0, 0.02).
+- Keep local encoder, token→segment pooling, masks, and heads identical; swap only the inter-segment module.
+- For zero-shot:
+  - Add an evaluation path that scores segments with an NLI/STS model and aggregates scores; no training loop.
+
+Compute budget (per dataset, supervised)
+- Classification: 5 seeds × (2–5 GPU-hours/seed on a single 24–40GB GPU), typically 20–40% faster than hierarchical baseline at batch=1 due to removal of global transformer.
+- QA: 5–12 GPU-hours/seed; cost dominated by local encoder passes; identical to or slightly faster than baseline.
+- Summarization: 1–2 GPU-days/seed; similar speedups on forward pass; training dominated by decoder if present.
+
+Why this is comparable and informative
+- The only removed component is hierarchy-specific pretraining and the global transformer. Inputs, tokenizer, segmentation, objectives, and evaluation scripts remain unchanged.
+- ZP-Mean provides a parameter-free control that isolates the value of hierarchical pretraining and global modeling. ZP-Attn adds minimal capacity to check whether a tiny, supervised-only aggregator closes the gap.
+- Reporting paired deltas with CIs and length-binned analyses shows whether any observed gap is due to lack of hierarchical pretraining or to capacity/latency changes.
+
+Common pitfalls and mitigations
+- Hidden capacity changes: report and match parameter counts; optionally add a “Small-Global-Tx” control (1 light global layer) to separate capacity from pretraining.
+- Training instability when unfreezing: use two-stage training (head first, then partial unfreeze) and smaller LR on the encoder.
+- Zero-shot template bias: pre-register label prompts; if you tune templates, do it on dev only and report both untuned and tuned results.
+
+Deliverables
+- Configs: baseline vs zp_mean vs zp_attn yaml files differing only in global_agg, LR heads, and unfreeze settings.
+- Logs: seeds, params, FLOPs, latency, metrics with CIs; length-binned tables.
+- Code: minimal aggregator module, zero-shot NLI scorer, and a switch in the eval loop.

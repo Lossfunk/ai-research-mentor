@@ -27,7 +27,7 @@ ANNOTATOR_EXPERT="${ANNOTATOR_EXPERT:-expert_judge_upgrade}"
 ANNOTATOR_STUDENT="${ANNOTATOR_STUDENT:-student_judge_upgrade}"
 
 JUDGES=(
-  "openrouter:google/gemini-2.5-pro"
+  "openrouter:qwen/qwen3-max"
   "openrouter:deepseek/deepseek-v3.2-exp"
   "openrouter:x-ai/grok-4-fast"
 )

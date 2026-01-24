@@ -1,0 +1,102 @@
+This is a comprehensive research plan for advancing sea ice forecasting using Graph Neural Networks (GNNs), designed to bridge the gap between current grid-based deep learning (e.g., IceNet) and next-generation mesh-based physics solvers.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Current state-of-the-art sea ice forecasting models (e.g., IceNet) rely on Convolutional Neural Networks (CNNs) operating on projected grids (e.g., Polar Stereographic). This approach introduces significant geometric distortion near the poles, struggles to handle the "pole hole" (missing satellite data), and fails to efficiently capture long-range teleconnections or the irregular, fracture-dominated dynamics of sea ice (leads and ridges) which are naturally unstructured.
+
+**Research Goal:**
+Develop a **Mesh-based Physics-Informed GNN** for Sea Ice Concentration (SIC) and Thickness (SIT) forecasting that outperforms CNN baselines on polar-specific metrics. The model will operate on a geodesic or unstructured mesh to respect spherical geometry and enforce physical conservation laws (mass/momentum) within the message-passing mechanism.
+
+**Core Objectives:**
+1.  **Geometric Fidelity:** Eliminate projection artifacts by modeling ice on a spherical mesh (e.g., icosahedral or variable-resolution Voronoi).
+2.  **Physics Consistency:** Integrate conservation laws (specifically the continuity equation for ice mass) directly into the GNN architecture or loss function.
+3.  **Efficiency:** Demonstrate higher parameter efficiency compared to U-Net architectures for equivalent spatial resolutions.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The Geometric Benchmarking (Grid vs. Mesh)
+**Hypothesis:** A GNN operating on a spherical mesh will outperform a U-Net operating on a projected grid, particularly in regions of high projection distortion and near the "pole hole."
+*   **Setup:**
+    *   **Data:** ERA5 (atmospheric forcings) and ORAS5/NSIDC (sea ice concentration/thickness) regridded to:
+        *   *Baseline:* 25km Polar Stereographic grid.
+        *   *Treatment:* Icosahedral mesh with equivalent node count (~25km spacing).
+    *   **Model:** Compare a standard U-Net (IceNet architecture) vs. a Processor-style GNN (e.g., GraphCast or MeshGraphNet blocks).
+    *   **Task:** Next-frame prediction (lead time: 1 day, 3 days, 7 days).
+*   **Baselines:** Persistence, Climatology, U-Net (IceNet reproduction).
+*   **Evaluation Metrics:** RMSE, IIEE (Integrated Ice Edge Error), and Brier Score for ice presence.
+*   **Expected Outcome:** GNN achieves lower IIEE at the ice edge and significantly lower RMSE near the pole; GNN generalizes better to rotation (rotational equivariance).
+
+#### Experiment 2: Physics-Informed Constraints (IceGAT Replication & Extension)
+**Hypothesis:** Constraining the GNN with a differentiable mass-conservation loss reduces physical hallucinations (e.g., ice appearing/disappearing without transport or thermodynamic cause).
+*   **Setup:**
+    *   **Architecture:** Implement an "IceGAT" style architecture [4] with attention mechanisms.
+    *   **Loss Function:** $L_{total} = L_{MSE} + \lambda L_{phys}$.
+    *   $L_{phys}$ penalizes violations of $\frac{\partial h}{\partial t} + \nabla \cdot (h\mathbf{u}) = S$, where $h$ is thickness, $\mathbf{u}$ is drift velocity, and $S$ is thermodynamic source/sink.
+*   **Baselines:** Unconstrained GNN (from Exp 1), Pure Physics Solver (e.g., neXtSIM or CICE low-res run).
+*   **Evaluation Metrics:** Mass budget residual error, Physical consistency score (percentage of predictions violating conservation > threshold).
+*   **Expected Outcome:** Slight trade-off in raw RMSE for significantly improved physical consistency; better performance on long-lead forecasts (>10 days) where unconstrained models drift.
+
+#### Experiment 3: Multi-Scale Dynamics (Marginal Ice Zone Focus)
+**Hypothesis:** A hierarchical GNN (multi-mesh) captures both basin-scale drift and fine-scale fracturing in the Marginal Ice Zone (MIZ) better than single-scale models.
+*   **Setup:**
+    *   **Graph Construction:** Use a multi-scale graph where edges exist between fine-scale nodes (MIZ) and coarse-scale nodes (pack ice/atmosphere).
+    *   **Task:** Predict high-frequency changes in SIC specifically in the MIZ.
+*   **Baselines:** Single-scale GNN, ConvLSTM.
+*   **Evaluation Metrics:** MIZ-specific RMSE, Binary classification accuracy for "Rapid Ice Loss Events" (RILEs).
+*   **Expected Outcome:** Superior detection of rapid opening/closing of leads compared to smoothed CNN outputs.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Data Pipeline & Graph Construction** | Preprocessing ERA5/NSIDC data; Code to generate static meshes (Dual-polyhedron or Delaunay); Dataloaders for PyG/DGL. |
+| **Month 2** | **Baseline Reproduction** | Training U-Net (IceNet) and establishing Persistence/Climatology scores. Initial GNN implementation (Vanilla GCN/GAT). |
+| **Month 3** | **Experiment 1 (Geometry)** | Full training of Mesh GNN vs Grid CNN. Hyperparameter tuning. Preliminary results on IIEE. |
+| **Month 4** | **Physics Integration (Exp 2)** | Implementation of differentiable conservation loss. Debugging gradient stability (often unstable with physics losses). |
+| **Month 5** | **Long-term & Ablation** | Running 7-14 day forecasts. Ablation studies (With/Without Attention, With/Without Physics Loss). |
+| **Month 6** | **Paper Writing & Visualization** | Drafting paper. Creating visualizations of error maps (Polar projection) and attention weights (interpreting teleconnections). |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 4x A100 (80GB) or 8x V100 GPUs. GNNs on large meshes (10k-50k nodes) are memory intensive during training.
+*   **Storage:** ~10TB for ERA5/ORAS5 reanalysis data (1979-2023) and graph structures.
+
+**Tools & Libraries:**
+*   **Frameworks:** PyTorch Geometric (PyG) or JAX (DeepMind's GraphCast codebase is JAX-based and highly relevant).
+*   **Domain Tools:** `icenet` (Python library for baselines), `CDO`/`NCO` for netCDF processing.
+*   **Meshing:** `Trimesh` or `PyMesh` for geodesic grid generation.
+
+**Datasets:**
+*   **Inputs:** ERA5 (Atmosphere: 2m Temp, Winds, MSLP), ORAS5 (Ocean: SST, Salinity, Currents).
+*   **Targets:** NSIDC Sea Ice Concentration (CDR), CryoSat-2/SMOS (Ice Thickness - sparse, for validation).
+*   **Graph Structure:** Static geodesic mesh (Level 5-6 icosahedron) or dynamic mesh based on ice presence (advanced).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Oversmoothing** | GNNs may predict "blurry" ice edges, failing to resolve leads. | Use Graph Attention Networks (GATs) or Multi-scale Message Passing to preserve high-frequency signals. |
+| **Training Instability** | Physics-loss ($L_{phys}$) gradients can conflict with MSE, causing divergence. | Use "Warm-start": Train on MSE first, then introduce $L_{phys}$ gradually (Curriculum Learning). |
+| **Data Sparsity (SIT)** | Sea Ice Thickness data is sparse/noisy (satellites don't see thin ice well). | Pre-train on climate model output (e.g., CMIP6 or CICE runs) where ground truth is perfect, then fine-tune on observation data. |
+| **Computational Cost** | Message passing on dense graphs is slower than CNN convolution. | Use "interaction networks" on sparse graphs (connect only k-nearest neighbors) rather than fully connected layers. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Lagrangian GNN:** Instead of a fixed mesh, let the graph nodes *move* with the ice drift (Lagrangian reference frame). This naturally handles advection, a dominant term in sea ice physics.
+*   **Radar-GNN Fusion:** Integrate raw Swath Radar data (e.g., Sentinel-1) directly into the graph nodes (as per [3]) to predict ice type classification alongside concentration.
+*   **Teleconnection Analysis:** Analyze the learned attention weights to discover new atmospheric teleconnections driving Arctic ice loss (e.g., how Pacific heat anomalies propagate via the graph edges).
+
+**Optional next step:**
+Review the **IceGAT** architecture code (if available) or the **GraphCast** repository to select your starting codebase, as building a sphere-based GNN from scratch is error-prone.

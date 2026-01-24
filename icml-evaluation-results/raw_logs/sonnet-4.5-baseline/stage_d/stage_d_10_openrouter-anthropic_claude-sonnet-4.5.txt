@@ -1,0 +1,455 @@
+# **Privacy-Constrained Hierarchical Transformer: Verification Failure Analysis**
+
+## **PART 1: PRIVACY/GOVERNANCE CONSTRAINTS**
+
+### **1.1 Constraint Definitions**
+
+#### **A. Privacy Constraint Types**
+```python
+class PrivacyGovernanceConstraints:
+    """
+    Define privacy/governance constraints for Hierarchical Transformers
+    
+    Focus: Offline inference (no external API calls, local computation only)
+    """
+    
+    def __init__(self):
+        self.constraints = self.define_constraints()
+    
+    def define_constraints(self):
+        """
+        Define specific privacy/governance constraints
+        """
+        constraints = {
+            # Primary Constraint: Offline Inference
+            'offline_inference': {
+                'description': 'All inference must run locally, no external calls',
+                'requirements': [
+                    'No internet connectivity during inference',
+                    'No external API calls (OpenAI, Cohere, etc.)',
+                    'No cloud services',
+                    'All models stored locally',
+                    'No telemetry or logging to external servers',
+                ],
+                'use_cases': [
+                    'Healthcare (HIPAA compliance)',
+                    'Finance (regulatory compliance)',
+                    'Government (classified data)',
+                    'Legal (attorney-client privilege)',
+                ],
+                'implementation': 'Fully local model execution',
+            },
+            
+            # Secondary Constraints
+            'model_size_limit': {
+                'description': 'Model must fit in limited compute environment',
+                'limits': {
+                    'parameters': '< 500M',  # Fit on single GPU
+                    'memory': '< 16GB RAM',
+                    'disk': '< 5GB storage',
+                },
+                'rationale': 'Edge deployment, air-gapped systems',
+            },
+            
+            'inference_latency': {
+                'description': 'Real-time or near-real-time inference required',
+                'limits': {
+                    'per_sample': '< 500ms',
+                    'batch': '< 5s for 32 samples',
+                },
+                'rationale': 'Interactive applications, production SLAs',
+            },
+            
+            'differential_privacy': {
+                'description': 'Training with formal privacy guarantees',
+                'requirements': [
+                    'DP-SGD training',
+                    'Privacy budget ε < 8',
+                    'Per-example gradient clipping',
+                ],
+                'rationale': 'Protect training data privacy',
+            },
+            
+            'model_compression': {
+                'description': 'Reduce model size for deployment',
+                'techniques': [
+                    'Quantization (INT8, INT4)',
+                    'Pruning (structured/unstructured)',
+                    'Knowledge distillation',
+                    'Low-rank factorization',
+                ],
+                'rationale': 'Meet size/latency constraints',
+            },
+            
+            'no_pretrained_models': {
+                'description': 'Cannot use external pretrained models',
+                'rationale': 'IP concerns, supply chain security',
+                'requirement': 'Train from scratch on approved data',
+            },
+        }
+        
+        return constraints
+    
+    def create_constraint_profiles(self):
+        """
+        Create realistic constraint profiles for different scenarios
+        """
+        profiles = {
+            # Profile 1: Healthcare Deployment
+            'healthcare_hipaa': {
+                'constraints': [
+                    'offline_inference',
+                    'model_size_limit',
+                    'inference_latency',
+                ],
+                'limits': {
+                    'max_parameters': 350_000_000,  # ~350M
+                    'max_memory_gb': 12,
+                    'max_latency_ms': 300,
+                    'no_internet': True,
+                },
+                'scenario': 'Clinical decision support in hospital',
+            },
+            
+            # Profile 2: Financial Compliance
+            'financial_sox': {
+                'constraints': [
+                    'offline_inference',
+                    'differential_privacy',
+                    'no_pretrained_models',
+                ],
+                'limits': {
+                    'privacy_epsilon': 6.0,
+                    'no_internet': True,
+                    'audit_trail': True,
+                },
+                'scenario': 'Fraud detection in banking',
+            },
+            
+            # Profile 3: Government Classified
+            'government_classified': {
+                'constraints': [
+                    'offline_inference',
+                    'model_size_limit',
+                    'no_pretrained_models',
+                ],
+                'limits': {
+                    'max_parameters': 200_000_000,
+                    'air_gapped': True,
+                    'no_external_data': True,
+                },
+                'scenario': 'Intelligence analysis',
+            },
+            
+            # Profile 4: Edge Device
+            'edge_deployment': {
+                'constraints': [
+                    'model_size_limit',
+                    'inference_latency',
+                    'model_compression',
+                ],
+                'limits': {
+                    'max_parameters': 100_000_000,
+                    'max_memory_gb': 4,
+                    'max_latency_ms': 100,
+                    'quantization': 'INT8',
+                },
+                'scenario': 'Mobile device deployment',
+            },
+        }
+        
+        return profiles
+```
+
+---
+
+### **1.2 Verification-Like Tasks**
+
+#### **A. Verification Task Definition**
+```python
+class VerificationTaskDesign:
+    """
+    Design verification tasks to measure failure rates
+    
+    Verification: Tasks requiring factual correctness, logical consistency,
+    or faithful information extraction (not creative generation)
+    """
+    
+    def __init__(self):
+        self.verification_tasks = self.define_verification_tasks()
+    
+    def define_verification_tasks(self):
+        """
+        Define verification-like tasks for hierarchical transformers
+        """
+        tasks = {
+            # 1. Factual Verification
+            'fact_verification': {
+                'description': 'Verify if statement is supported by document',
+                'input': 'Long document + claim',
+                'output': 'Supported / Refuted / Not Enough Info',
+                'datasets': ['FEVER', 'VitaminC', 'SciFact'],
+                'failure_types': [
+                    'False positive (claim not supported)',
+                    'False negative (miss supporting evidence)',
+                    'Hallucination (fabricate evidence)',
+                ],
+                'metrics': ['Accuracy', 'F1', 'Label-specific F1'],
+            },
+            
+            # 2. Textual Entailment (Long Context)
+            'long_context_nli': {
+                'description': 'Determine if hypothesis follows from premise',
+                'input': 'Long premise (1K-10K tokens) + hypothesis',
+                'output': 'Entailment / Contradiction / Neutral',
+                'datasets': ['MultiNLI', 'ANLI', 'ContractNLI'],
+                'failure_types': [
+                    'Miss contradiction in distant context',
+                    'False entailment from spurious correlation',
+                ],
+                'metrics': ['Accuracy', 'Consistency score'],
+            },
+            
+            # 3. Information Extraction
+            'long_doc_extraction': {
+                'description': 'Extract specific information from long documents',
+                'input': 'Long document + extraction query',
+                'output': 'Extracted spans or structured data',
+                'datasets': ['DocRED', 'SciREX', 'Contract Understanding'],
+                'failure_types': [
+                    'Extract wrong information',
+                    'Miss relevant information',
+                    'Hallucinate non-existent information',
+                ],
+                'metrics': ['Exact Match', 'F1', 'Partial Match'],
+            },
+            
+            # 4. Logical Consistency
+            'consistency_verification': {
+                'description': 'Detect logical inconsistencies in document',
+                'input': 'Long document (potentially inconsistent)',
+                'output': 'Inconsistency locations and types',
+                'datasets': ['SummEval (consistency)', 'QAG-Consistency'],
+                'failure_types': [
+                    'Miss inconsistency',
+                    'False positive inconsistency',
+                ],
+                'metrics': ['Precision', 'Recall', 'F1'],
+            },
+            
+            # 5. Question Answering (Extractive)
+            'extractive_qa': {
+                'description': 'Answer questions from long documents',
+                'input': 'Long document + question',
+                'output': 'Answer span from document',
+                'datasets': ['NarrativeQA', 'QuAC', 'QMSum'],
+                'failure_types': [
+                    'Wrong answer span',
+                    'Unanswerable treated as answerable',
+                    'Hallucinated answer not in text',
+                ],
+                'metrics': ['EM', 'F1', 'Unanswerable F1'],
+            },
+            
+            # 6. Summarization Faithfulness
+            'faithful_summarization': {
+                'description': 'Generate summary faithful to source',
+                'input': 'Long document',
+                'output': 'Summary',
+                'datasets': ['XSum', 'CNN/DailyMail', 'GovReport'],
+                'failure_types': [
+                    'Hallucinated facts not in source',
+                    'Contradictions with source',
+                    'Omit critical information',
+                ],
+                'metrics': ['Factual Consistency', 'QA-based eval', 'NLI-based eval'],
+            },
+            
+            # 7. Claim Detection
+            'claim_detection': {
+                'description': 'Identify verifiable claims in document',
+                'input': 'Long document',
+                'output': 'List of claims with evidence spans',
+                'datasets': ['ClaimBuster', 'MultiFC'],
+                'failure_types': [
+                    'Miss verifiable claims',
+                    'False positive on opinions',
+                    'Incorrect evidence linking',
+                ],
+                'metrics': ['Precision', 'Recall', 'F1'],
+            },
+        }
+        
+        return tasks
+    
+    def create_failure_taxonomy(self):
+        """
+        Comprehensive taxonomy of verification failures
+        """
+        taxonomy = {
+            # Type 1: Factual Errors
+            'factual_errors': {
+                'hallucination': 'Generate information not in source',
+                'fabrication': 'Invent plausible but false facts',
+                'misattribution': 'Attribute fact to wrong source/entity',
+                'temporal_error': 'Wrong temporal ordering or dates',
+            },
+            
+            # Type 2: Logical Errors
+            'logical_errors': {
+                'contradiction': 'Output contradicts source',
+                'invalid_inference': 'Draw unsupported conclusion',
+                'missing_context': 'Ignore relevant context',
+                'spurious_correlation': 'Rely on surface patterns',
+            },
+            
+            # Type 3: Extraction Errors
+            'extraction_errors': {
+                'wrong_span': 'Extract incorrect text span',
+                'incomplete_extraction': 'Extract partial information',
+                'out_of_scope': 'Extract from wrong context',
+                'boundary_error': 'Incorrect span boundaries',
+            },
+            
+            # Type 4: Coverage Errors
+            'coverage_errors': {
+                'omission': 'Miss relevant information',
+                'over_generation': 'Include irrelevant information',
+                'imbalanced_coverage': 'Uneven coverage of topics',
+            },
+            
+            # Type 5: Long-Range Errors
+            'long_range_errors': {
+                'recency_bias': 'Favor recent context over distant',
+                'attention_decay': 'Miss information far from query',
+                'coreference_failure': 'Fail to resolve distant references',
+                'cross_segment_failure': 'Miss cross-segment dependencies',
+            },
+        }
+        
+        return taxonomy
+```
+
+---
+
+## **PART 2: EXPERIMENTAL DESIGN**
+
+### **2.1 Baseline Selection**
+
+#### **A. Baseline Models**
+```python
+class BaselineSelection:
+    """
+    Select appropriate baselines for comparison
+    """
+    
+    def __init__(self):
+        self.baselines = self.define_baselines()
+    
+    def define_baselines(self):
+        """
+        Define baseline models for comparison
+        """
+        baselines = {
+            # Original: Unconstrained Hierarchical Transformer
+            'original_hierarchical': {
+                'description': 'Original Hierarchical Transformer (no constraints)',
+                'constraints': None,
+                'parameters': '110M (example)',
+                'inference': 'Standard (GPU, no constraints)',
+                'role': 'Upper bound performance',
+            },
+            
+            # Constrained: Offline Hierarchical Transformer
+            'offline_hierarchical': {
+                'description': 'Hierarchical Transformer with offline constraint',
+                'constraints': ['offline_inference', 'model_size_limit'],
+                'parameters': '110M',
+                'inference': 'Offline only (no external calls)',
+                'modifications': [
+                    'Remove any online components',
+                    'Ensure full local execution',
+                    'Add size/latency optimizations',
+                ],
+                'role': 'Primary comparison target',
+            },
+            
+            # Compressed: Quantized/Pruned Version
+            'compressed_hierarchical': {
+                'description': 'Compressed Hierarchical Transformer',
+                'constraints': ['offline_inference', 'model_compression'],
+                'parameters': '55M (50% compressed)',
+                'techniques': ['INT8 quantization', '50% pruning'],
+                'inference': 'Offline, optimized',
+                'role': 'Test compression impact',
+            },
+            
+            # Standard Transformers (Non-Hierarchical)
+            'longformer_baseline': {
+                'description': 'Longformer (efficient long-context baseline)',
+                'constraints': None,
+                'parameters': '149M',
+                'inference': 'Standard',
+                'role': 'Non-hierarchical comparison',
+            },
+            
+            'longformer_offline': {
+                'description': 'Longformer with offline constraint',
+                'constraints': ['offline_inference'],
+                'parameters': '149M',
+                'inference': 'Offline only',
+                'role': 'Non-hierarchical offline comparison',
+            },
+            
+            # Small Models
+            'distilbert_baseline': {
+                'description': 'DistilBERT (small model baseline)',
+                'constraints': None,
+                'parameters': '66M',
+                'inference': 'Standard',
+                'role': 'Small model comparison',
+            },
+            
+            # DP-Trained Models
+            'dp_hierarchical': {
+                'description': 'Hierarchical Transformer trained with DP-SGD',
+                'constraints': ['differential_privacy', 'offline_inference'],
+                'parameters': '110M',
+                'privacy_epsilon': 6.0,
+                'inference': 'Offline',
+                'role': 'Test privacy training impact',
+            },
+            
+            # Retrieval-Augmented (Cannot Use Offline)
+            'rag_baseline': {
+                'description': 'Retrieval-Augmented Generation',
+                'constraints': None,  # Requires online retrieval
+                'parameters': '110M + retriever',
+                'inference': 'Online (external retrieval)',
+                'role': 'Upper bound with external knowledge',
+                'note': 'Cannot satisfy offline constraint',
+            },
+        }
+        
+        return baselines
+    
+    def create_comparison_matrix(self):
+        """
+        Create comparison matrix for baselines
+        """
+        import pandas as pd
+        
+        matrix = pd.DataFrame({
+            'Model': [
+                'Original Hierarchical',
+                'Offline Hierarchical',
+                'Compressed Hierarchical',
+                'Longformer',
+                'Longformer Offline',
+                'DP Hierarchical',
+                'RAG (online only)',
+            ],
+            'Parameters': ['110M', '110M', '55M', '149M', '149M', '110M', '110M+'],
+            'Offline': [False, True, True, False, True, True, False],
+            'Compressed': [False, False, True, False, False, False, False],
+            'DP-

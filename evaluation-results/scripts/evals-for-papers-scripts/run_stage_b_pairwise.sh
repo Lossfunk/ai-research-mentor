@@ -10,9 +10,9 @@ uv run python -m evaluation.scripts.run_single_turn_batch \
   --systems mentor_manual openrouter:openai/gpt-5 \
   --skip-generation \
   --pairwise-only \
-  --judge openrouter:google/gemini-2.5-pro \
+  --judge openrouter:qwen/qwen3-max \
   --output-label ${STAGE}_pairwise_mentor_vs_gpt5_oct21 \
-  --pairwise-judge openrouter:google/gemini-2.5-pro \
+  --pairwise-judge openrouter:qwen/qwen3-max \
   --pairwise-judge openrouter:deepseek/deepseek-v3.2-exp \
   --pairwise-judge openrouter:x-ai/grok-4-fast
 
@@ -23,8 +23,8 @@ uv run python -m evaluation.scripts.run_single_turn_batch \
   --systems mentor_manual openrouter:anthropic/claude-sonnet-4.5 \
   --skip-generation \
   --pairwise-only \
-  --judge openrouter:google/gemini-2.5-pro \
+  --judge openrouter:qwen/qwen3-max \
   --output-label ${STAGE}_pairwise_mentor_vs_claude_oct21 \
-  --pairwise-judge openrouter:google/gemini-2.5-pro \
+  --pairwise-judge openrouter:qwen/qwen3-max \
   --pairwise-judge openrouter:deepseek/deepseek-v3.2-exp \
   --pairwise-judge openrouter:x-ai/grok-4-fast

@@ -1,0 +1,170 @@
+<thinking>
+Experienced ML researcher. Limited GPU access constrains training; benchmarking/eval is right. Key risk: multilingual fact-checking datasets are noisy and label-inconsistent; need tight task definition and sanity checks to avoid spurious conclusions. Lead with that. </thinking>
+
+**Blunt assessment:**  
+This is a solid, publishable direction **if** you narrowly define “fact-checking,” control for translation leakage, and emphasize **evaluation rigor over model size**. With limited GPUs, do **inference-only benchmarking**, careful prompting, and ablations. Anything that looks like training new models or loose claims about “truth” will fail.
+
+---
+
+## 1. Problem framing and goals
+
+**Problem.**  
+Open-weight LLMs are increasingly used for fact-checking across languages, but benchmarks are fragmented, English-centric, and often confound **retrieval, reasoning, and generation**. Results are hard to compare and frequently contaminated by translation artifacts.
+
+**Goal.**  
+Provide a **compute-light, rigorous benchmark** of open-weight LLMs on **multilingual fact-checking**, isolating:
+- claim verification vs explanation quality,
+- multilingual robustness vs English transfer,
+- calibration and abstention behavior.
+
+**Scope (explicit).**  
+- Inference-only evaluation of open-weight LLMs (no finetuning).  
+- Fact-checking defined as **verdict selection** (SUPPORTED / REFUTED / NOT ENOUGH INFO) with optional rationale.
+
+---
+
+## 2. Experiments
+
+### Experiment 1: Multilingual claim verification (core benchmark)
+
+**Hypothesis.**  
+Open-weight LLMs show large performance gaps across languages that are masked by English-only evaluation.
+
+**Setup.**  
+- Select multilingual fact-checking datasets or translated claim sets with verified labels.  
+- Prompt models to output a discrete verdict (+ short justification).  
+- Use identical prompts across languages (carefully localized, not auto-translated at runtime).
+
+**Baselines.**  
+- Majority-class baseline  
+- English-only evaluation (upper bound proxy)  
+- Simple entailment model (if available)
+
+**Evaluation metrics.**  
+Accuracy / macro-F1 per language, confusion matrices.
+
+**Expected outcomes.**  
+Clear language-dependent degradation patterns; some models fail catastrophically in low-resource languages.
+
+**Sanity checks.**  
+- Label-shuffled evaluation (should drop to chance).  
+- Claims translated *back* to English to check if errors persist.
+
+---
+
+### Experiment 2: Translation vs native-language reasoning
+
+**Hypothesis.**  
+“Translate-to-English then fact-check” pipelines outperform native multilingual reasoning—but introduce systematic biases.
+
+**Setup.**  
+- Compare two pipelines:  
+  (A) Native-language prompting  
+  (B) Translate → English fact-check → verdict mapping  
+- Use the same underlying LLM where possible.
+
+**Baselines.**  
+- Human-verified English claims  
+- Translation-only heuristics
+
+**Evaluation metrics.**  
+Accuracy delta, error overlap, language-specific bias indicators.
+
+**Expected outcomes.**  
+Translation helps accuracy but distorts culturally or locally grounded claims.
+
+**Sanity checks.**  
+- Translation consistency checks (round-trip BLEU/COMET).  
+- Claims with no named entities (should not benefit as much).
+
+---
+
+### Experiment 3: Calibration and abstention behavior
+
+**Hypothesis.**  
+LLMs are overconfident on multilingual fact-checking, especially when evidence is missing.
+
+**Setup.**  
+- Require models to output confidence scores or allow abstention.  
+- Evaluate on NOT ENOUGH INFO cases explicitly.
+
+**Baselines.**  
+- Always-answer baseline  
+- Random confidence assignment
+
+**Evaluation metrics.**  
+ECE/Brier score, abstention accuracy tradeoff.
+
+**Expected outcomes.**  
+Poor calibration; some models never abstain even when evidence is absent.
+
+**Sanity checks.**  
+- Synthetic NEI claims (nonsense or unverifiable).  
+- Confidence collapse under adversarial paraphrases.
+
+---
+
+## 3. Timeline (6 months)
+
+**Month 1:**  
+Task definition, dataset curation, language selection, prompt locking.
+
+**Month 2:**  
+Inference pipeline setup; pilot runs on 1–2 models.
+
+**Month 3:**  
+Full multilingual benchmarking (Experiment 1).
+
+**Month 4:**  
+Translation vs native analysis (Experiment 2).
+
+**Month 5:**  
+Calibration and abstention studies (Experiment 3); error analysis.
+
+**Month 6:**  
+Paper writing, tables, sanity-check appendix, release code.
+
+---
+
+## 4. Resources
+
+**Compute.**  
+- 1–2 modest GPUs or CPU inference with quantized models; batch inference prioritized.
+
+**Tools.**  
+- Hugging Face Transformers  
+- Prompting/eval harness (custom, lightweight)  
+- Basic translation tools (open-source)
+
+**Datasets.**  
+- Public fact-checking datasets with multilingual variants or curated translations.
+
+**Evidence note.**  
+High-quality **multilingual** fact-checking datasets are scarce and noisy. Be explicit about label provenance. If reviewers push, include a small **human validation subset** to bound noise.
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Dataset noise | Weak conclusions | Human-validated subset |
+| Translation leakage | Inflated scores | Separate pipelines |
+| Prompt sensitivity | Instability | Prompt locking + ablations |
+| Overclaiming | Rejection | Restrict to benchmarking |
+
+---
+
+## 6. Stretch ideas / follow-up directions
+
+- Evidence retrieval ablations (with/without search)  
+- Cross-lingual consistency metrics (same claim, different languages)  
+- Lightweight finetuning with LoRA (if compute improves)
+
+---
+
+**Bottom line:**  
+Your contribution is **measurement discipline**, not bigger models. If your tables make people uncomfortable about current claims, you’ve succeeded.
+
+**Optional next step:**  
+Draft the **exact output schema** (verdict, confidence, rationale) and refuse to change it mid-project.

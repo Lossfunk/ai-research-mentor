@@ -1,0 +1,247 @@
+The searches yielded relevant sources on multimodal misinformation detection [1,2,3,4,5,6] and edge deployment approaches [7,8,9,10]. I'll construct a resource-constrained plan optimized for low-bandwidth deployment.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Multimodal misinformation (image-text pairs, manipulated videos, out-of-context images) spreads rapidly in low-bandwidth regions (Sub-Saharan Africa, rural South Asia, Pacific islands) where:
+
+1. **Infrastructure constraints:** 2G/3G networks (256kbps-2Mbps), expensive data ($5-15/GB), intermittent connectivity (30-60% uptime)
+2. **Device limitations:** Entry-level smartphones (<2GB RAM), limited storage (<16GB), older Android versions
+3. **Content characteristics:** WhatsApp/Facebook-native formats (compressed images, short videos), local languages (Swahili, Hindi, Tagalog), region-specific narratives
+4. **Existing solutions fail:** Cloud-based fact-checkers (Snopes, AFP) require reliable internet; large vision-language models [1] (10-70B params) are infeasible on-device
+
+Recent work demonstrates edge-based deployment [10] and synthetic data augmentation [3,5], but lacks comprehensive frameworks for extreme resource constraints in Global South contexts.
+
+**Core Hypothesis:**  
+Lightweight multimodal misinformation detectors (<100MB models, <500ms inference on entry-level devices) using knowledge distillation, efficient fusion architectures, and offline evidence retrieval can achieve >80% F1 score while operating in low-bandwidth environments with <10MB/day data usage.
+
+**Primary Goals (6-month horizon):**
+- Develop compressed multimodal models (<100MB) achieving >80% F1 on misinformation detection
+- Deploy on Android devices (2GB RAM, Snapdragon 400-series) with <500ms latency
+- Enable offline operation for 7+ days with pre-cached evidence database
+- Field test with 100-200 users across 3 low-bandwidth regions (Kenya, rural India, Philippines)
+- Open-source toolkit: mobile app + model zoo + evidence database
+
+**Secondary Goals:**
+- Multilingual support (English, Swahili, Hindi, Tagalog) with shared representations
+- Explainability: Show users why content is flagged (visual + textual evidence)
+- Community feedback loop: Crowdsource labels for continuous model improvement
+- Data efficiency: <10MB/day bandwidth usage for evidence updates
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Lightweight Multimodal Fusion Architecture**
+
+**Hypothesis:** Knowledge distillation from large vision-language models [1] to efficient dual-encoder architectures (CLIP-based) with cross-modal attention can achieve >80% F1 on multimodal fact verification while reducing model size by 50-100× (from 5-10GB to <100MB).
+
+**Setup:**
+- **Teacher models:**
+  - LVLM4FV [1] (large vision-language model for fact verification)
+  - BLIP-2 (13B params, strong image-text understanding)
+  - GPT-4V (via API for data labeling, not deployment)
+- **Student architectures:**
+  1. **Dual-encoder:** CLIP-ViT-B/32 (image) + DistilBERT (text) with cross-attention fusion (total: 150M params → quantize to 40-80MB)
+  2. **Efficient transformer:** MobileBERT (text) + EfficientNet-Lite (image) with late fusion (80-100M params)
+  3. **Graph-based [2]:** Evidence graph with lightweight GNN (30-50M params)
+- **Distillation strategy:**
+  - Soft targets from teacher (temperature=3-5)
+  - Feature matching on intermediate layers
+  - Multi-task: Misinformation classification + evidence retrieval + claim verification
+- **Compression:**
+  - Quantization: INT8 post-training quantization (PTQ) via TensorFlow Lite
+  - Pruning: Structured pruning (remove 30-50% of attention heads)
+  - Vocabulary reduction: 50k → 16k tokens for text encoder (focus on common words + domain-specific terms)
+- **Datasets:**
+  - **Primary:** MOCHEG (multimodal out-of-context, 12k image-text pairs) [similar to 4]
+  - **Supplementary:** Fakeddit (1M Reddit posts, multi-class), COSMOS (160k fact-checked claims)
+  - **Regional:** Collect 2k-5k WhatsApp/Facebook posts from Kenya, India, Philippines (partner with local fact-checkers)
+  - **Synthetic augmentation [3,5]:** Generate 10k-20k synthetic misinformation examples using GPT-4V + DALL-E
+
+**Baselines:**
+1. Full-size LVLM4FV [1] (cloud-based, upper bound)
+2. Text-only: DistilBERT on claim text
+3. Image-only: EfficientNet on image
+4. Simple concatenation: No cross-modal fusion
+5. FakeZero [10] (67.6MB DistilBERT-Quant, text-only)
+
+**Evaluation Metrics:**
+1. **Detection performance:**
+   - F1, precision, recall (macro-averaged across classes: true, false, unverifiable)
+   - Per-modality ablation: Performance with image-only, text-only, both
+2. **Efficiency:**
+   - Model size (MB), parameters (M)
+   - Inference latency (ms) on target devices (Samsung Galaxy A03, Tecno Spark 7)
+   - Memory footprint (peak RAM during inference)
+   - Energy consumption (mAh per 100 inferences)
+3. **Robustness:**
+   - Accuracy on out-of-distribution data (different regions, languages)
+   - Performance on compressed images (WhatsApp compression, JPEG quality 60-80%)
+   - Adversarial robustness (minor perturbations)
+4. **Explainability:**
+   - Attention visualization quality (do highlighted regions align with manipulations?)
+   - Evidence retrieval relevance (top-3 retrieved evidence accuracy)
+
+**Expected Outcomes:**
+- Dual-encoder + distillation: 82-86% F1 (vs. 88-92% for teacher), 60-80MB quantized model
+- Cross-attention fusion improves over late fusion by 4-7% F1
+- Inference: 300-500ms on Snapdragon 600-series, 150-250ms on 700-series
+- Synthetic data augmentation [3,5] improves F1 by 3-5% (especially for rare misinformation types)
+- Identifies challenging cases: Subtle manipulations (face swaps, text overlay), culturally-specific narratives
+
+**Ablations:**
+- Distillation temperature: {2, 3, 5, 10}
+- Fusion strategy: Early vs. intermediate vs. late fusion
+- Quantization: FP32 vs. FP16 vs. INT8
+- Vocabulary size: {8k, 16k, 32k, 50k}
+- Synthetic data ratio: {0%, 25%, 50%, 75%} synthetic examples
+
+---
+
+### **Experiment 2: Offline Evidence Retrieval with Compressed Knowledge Base**
+
+**Hypothesis:** Locally-cached evidence database with semantic hashing and efficient retrieval (FAISS, ScaNN) can provide relevant fact-checking context (<500KB per query) without internet access, improving detection F1 by 10-15% vs. no evidence.
+
+**Setup:**
+- **Evidence sources:**
+  - Fact-checking databases: Snopes, AFP Fact Check, Africa Check, Alt News India (crawl 50k-100k verified claims)
+  - Reverse image search: Pre-compute embeddings for 1M+ images from news outlets, government sources
+  - Wikipedia: Extract 100k articles on common misinformation topics (health, politics, disasters)
+- **Compression strategy:**
+  - **Text:** Store only claim + verdict + short explanation (avg 200 bytes/claim)
+  - **Images:** Store CLIP embeddings (512-dim float16 = 1KB) instead of raw images
+  - **Total target:** 50-200MB evidence database (fits on device storage)
+- **Retrieval architecture [2]:**
+  - **Indexing:** FAISS (Facebook AI Similarity Search) with IVF (inverted file index) + PQ (product quantization)
+  - **Query:** Embed input image/text with same CLIP encoder, retrieve top-k (k=3-10) nearest neighbors
+  - **Re-ranking:** Lightweight cross-encoder (DistilBERT, 20M params) to re-rank top-k candidates
+- **Update mechanism:**
+  - Weekly evidence database updates (download 5-10MB delta when WiFi available)
+  - Incremental indexing (add new claims without rebuilding entire index)
+- **Graph-based evidence [2]:**
+  - Construct evidence graph: nodes = claims/images, edges = semantic similarity
+  - Graph neural network (GCN, 10-20M params) for evidence aggregation
+
+**Baselines:**
+1. No evidence retrieval (classification only)
+2. Full internet-based retrieval (Google reverse image search, fact-checking APIs)
+3. Random evidence selection (sanity check)
+4. TF-IDF keyword matching (classical IR)
+
+**Evaluation Metrics:**
+1. **Retrieval quality:**
+   - Recall@k: % of queries where relevant evidence is in top-k
+   - MRR (Mean Reciprocal Rank): Position of first relevant result
+   - Evidence relevance: Human judges rate top-3 results (1-5 scale)
+2. **Detection improvement:**
+   - ΔF1: Improvement when using retrieved evidence vs. no evidence
+   - Ablation: Performance with top-1, top-3, top-5, top-10 evidence
+3. **Efficiency:**
+   - Retrieval latency (ms) for top-k search
+   - Database size (MB), compression ratio
+   - Update cost: MB downloaded per week
+4. **Offline capability:**
+   - % queries answerable without internet (evidence in local DB)
+   - Staleness: Accuracy on recent claims (0-7 days old, 7-30 days, >30 days)
+
+**Expected Outcomes:**
+- FAISS + PQ: 200MB evidence DB covers 70-80% of common misinformation themes
+- Retrieval: Recall@3 of 65-75%, MRR 0.55-0.65
+- Detection improvement: +12-18% F1 when using top-3 evidence vs. no evidence
+- Latency: 50-100ms for top-10 retrieval on-device
+- Graph-based evidence [2] improves by 3-5% over independent retrieval (captures claim relationships)
+- Weekly updates: 5-8MB download (acceptable on WiFi)
+
+**Ablations:**
+- Database size: {50MB, 100MB, 200MB, 500MB}
+- Retrieval k: {1, 3, 5, 10, 20}
+- Embedding dimension: {128, 256, 512, 768}
+- Index type: FAISS IVF vs. ScaNN vs. HNSW
+- Evidence modality: Text-only vs. image-only vs. multimodal
+
+---
+
+### **Experiment 3: Multilingual Low-Resource Adaptation**
+
+**Hypothesis:** Cross-lingual transfer from English models + few-shot learning (100-500 examples per language) can achieve >75% F1 on low-resource languages (Swahili, Hindi, Tagalog) for misinformation detection, enabling deployment across diverse regions.
+
+**Setup:**
+- **Target languages:**
+  - **Swahili:** Kenya, Tanzania (60M speakers, limited labeled data)
+  - **Hindi:** India (600M speakers, moderate data availability)
+  - **Tagalog:** Philippines (28M speakers, limited labeled data)
+- **Multilingual models:**
+  - mBERT (multilingual BERT, 110M params)
+  - XLM-RoBERTa (270M params → distill to 80-100M)
+  - LaBSE (Language-agnostic BERT Sentence Embeddings, 470M → distill)
+- **Adaptation strategies:**
+  1. **Zero-shot:** Train on English, test on target languages (no target-language data)
+  2. **Few-shot:** Fine-tune with 100-500 labeled examples per language
+  3. **Translate-train:** Machine-translate English data to target languages (Google Translate), train on synthetic data
+  4. **Translate-test:** Translate target-language inputs to English, use English model
+  5. **Code-switching:** Handle mixed-language posts (common on WhatsApp)
+- **Data collection:**
+  - Partner with local fact-checkers (Africa Check, Alt News, Vera Files) for 500-2k labeled examples per language
+  - Crowdsource via Appen/Toloka (budget: $2k-5k for 1k labels per language)
+  - Synthetic generation: GPT-4 to generate plausible misinformation in target languages
+- **Cultural adaptation:**
+  - Region-specific misinformation themes (e.g., Kenya: election fraud, India: religious tensions, Philippines: disaster relief scams)
+  - Local imagery: African/Asian faces, landmarks, clothing (avoid Western-centric bias)
+
+**Baselines:**
+1. English-only model (no multilingual support)
+2. Language-specific models (train separate model per language)
+3. Google Translate + English model
+4. Majority-class baseline per language
+
+**Evaluation Metrics:**
+1. **Cross-lingual performance:**
+   - F1 per language (Swahili, Hindi, Tagalog)
+   - Zero-shot gap: F1 drop from English to target language
+   - Few-shot improvement: ΔF1 with 100, 500 labeled examples
+2. **Transfer efficiency:**
+   - Data efficiency: F1 vs. number of target-language examples
+   - Language similarity: Does Hindi (Indo-European) transfer better from English than Swahili (Bantu)?
+3. **Code-switching:**
+   - F1 on mixed-language posts (e.g., Swahili-English)
+   - % of real-world posts that are code-switched (from field data)
+4. **Cultural relevance:**
+   - Human evaluation: Do explanations make sense in local context? (survey with 20-30 local users)
+
+**Expected Outcomes:**
+- XLM-RoBERTa zero-shot: 68-75% F1 on Swahili/Tagalog (vs. 85% English)
+- Few-shot (500 examples): 75-82% F1(closes 40-60% of zero-shot gap)
+- Translate-train: 72-78% F1, but introduces translation artifacts
+- mBERT (distilled to 80MB): 70-76% F1, faster inference than XLM-R
+- Code-switching: 15-25% of real-world posts are mixed-language; performance drops 5-8%
+- Cultural adaptation improves user trust (85% vs. 65% for generic explanations)
+
+**Ablations:**
+- Model architecture: mBERT vs. XLM-R vs. LaBSE
+- Training data: English-only vs. multilingual vs. translate-train
+- Few-shot size: {50, 100, 200, 500, 1000} examples
+- Prompt engineering: For GPT-4 synthetic data generation
+- Vocabulary: Shared vs. language-specific tokenizers
+
+---
+
+### **Experiment 4: On-Device Deployment and Field Testing**
+
+**Hypothesis:** Android app with on-device inference, offline evidence retrieval, and bandwidth-adaptive updates can operate effectively in low-bandwidth regions (<10MB/day data usage) with >75% user retention over 4 weeks.
+
+**Setup:**
+- **Target devices:**
+  - Entry-level: Samsung Galaxy A03 (2GB RAM, Snapdragon 429), Tecno Spark 7 (2GB RAM)
+  - Mid-range: Redmi 9 (4GB RAM, Helio G80)
+- **App features:**
+  1. **Real-time scanning:** Analyze WhatsApp/Facebook images before sharing
+  2. **Gallery analysis:** Batch process existing photos
+  3. **Explainability:** Show flagged regions (saliency maps), retrieved evidence, confidence score
+  4. **Feedback:** Users can report false positives/negatives (crowdsourced labels)
+  5. **Offline mode:** Full functionality without internet for 7+ days
+  6. **Adaptive updates:** Download evidence deltas only on WiFi; compress updates based on network speed
+- **Deployment locations:**
+  - **Kenya

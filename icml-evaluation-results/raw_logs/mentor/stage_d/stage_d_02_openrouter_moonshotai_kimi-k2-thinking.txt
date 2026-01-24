@@ -1,0 +1,53 @@
+<thinking>
+Experienced user. They want an experimental intervention design. Honest take: flat mean pooling is a weak substitute; risk is confounding capacity vs hierarchy. I should flag that, then design a clean ablation with tight controls, metrics, stats. Keep lists compact but clear. 150–300 words.
+</thinking>
+
+**Blunt assessment:** Replacing hierarchical pooling with flat mean pooling is a *strong negative control*, not a fair alternative. If you don’t aggressively control capacity and rollout cost, reviewers will dismiss any gap as trivial. The intervention only works if you isolate *hierarchy vs aggregation*, not hierarchy vs “worse model”.
+
+Here’s a design that would survive review.
+
+---
+
+## Intervention definition
+Replace the multi-level token hierarchy with a **single-level transformer** where all encoded tokens are aggregated via **mean pooling over fixed windows** (same temporal spans as the hierarchical levels). No token dropping, no level-specific persistence—just averaged representations passed forward.
+
+---
+
+## Baselines (minimum set)
+- **Original Hierarchical Transformer** (as in the paper, unchanged).
+- **Flat mean-pooling variant** (your intervention).
+- **Flat no-pooling transformer** with matched parameter count (capacity control).
+
+Do *not* add clever pooling variants; that muddies the claim.
+
+---
+
+## Datasets
+Use exactly the same offline dataset(s) as the paper, with identical train/val/test splits. If multiple domains are reported, pick **one** (the most stable) and go deep rather than shallow breadth.
+
+---
+
+## Metrics
+**Primary**
+- Downstream task return / success rate.
+- World-model rollout error over horizon (same horizon across models).
+
+**Secondary**
+- Rollout FLOPs or wall-clock cost.
+- Token count per timestep (to show efficiency tradeoff).
+- Variance across seeds (mean pooling often looks “okay” but unstable).
+
+---
+
+## Statistical comparison
+- Train each variant with ≥5 random seeds.
+- Use **paired comparisons** per seed where possible.
+- Primary metric: two-sided paired *t*-test if normality holds; otherwise Wilcoxon signed-rank.
+- Report effect size; p-values alone won’t save a weak result.
+
+---
+
+## Critical caveat you must address
+Mean pooling destroys temporal persistence. If performance collapses, that’s expected—not evidence that hierarchy is “better”, only that *information persistence matters*. Make that explicit, or reviewers will.
+
+If you want, I can help you tighten this into a one-paragraph “Experimental Setup” section that anticipates reviewer objections.

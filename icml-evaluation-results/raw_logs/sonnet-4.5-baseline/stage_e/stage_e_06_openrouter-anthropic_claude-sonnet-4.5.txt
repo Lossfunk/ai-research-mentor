@@ -1,0 +1,384 @@
+## Articulating the "Newer Venues" Limitation
+
+Here's a comprehensive framework for addressing this critical validity threat:
+
+---
+
+## **PART 1: Clear Problem Statement**
+
+### **The Core Issue**
+
+```
+Our dataset exhibits temporal and venue maturity bias: established venues 
+(ACL, NeurIPS) with long publication histories are overrepresented, while 
+newer venues (ICLR post-2017, *ACL workshops, emerging ML conferences) 
+are underrepresented or absent. This creates several threats to validity:
+
+1. **Temporal Bias**: Older venues dominate our training data, potentially 
+   learning outdated review conventions
+   
+2. **Establishment Bias**: Mature venues have crystallized review standards; 
+   newer venues may have evolving or different conventions
+   
+3. **Cold-Start Problem**: Our models cannot be evaluated on venues that 
+   didn't exist during data collection
+   
+4. **Selection Bias**: Newer venues may attract different paper types 
+   (more interdisciplinary, more applied, more open-access oriented)
+```
+
+---
+
+## **PART 2: Quantifying the Problem**
+
+### **Analysis 1: Dataset Composition by Venue Age**
+
+```python
+# Characterize temporal distribution
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# Compute venue establishment year and data coverage
+venue_stats = []
+for venue in venues:
+    venue_papers = data[data['venue'] == venue]
+    
+    stats = {
+        'venue': venue,
+        'first_year_established': VENUE_FOUNDING_YEARS[venue],
+        'first_year_in_dataset': venue_papers['year'].min(),
+        'last_year_in_dataset': venue_papers['year'].max(),
+        'years_of_history': datetime.now().year - VENUE_FOUNDING_YEARS[venue],
+        'years_in_dataset': venue_papers['year'].max() - venue_papers['year'].min() + 1,
+        'n_papers': len(venue_papers),
+        'coverage_ratio': (venue_papers['year'].max() - venue_papers['year'].min() + 1) / 
+                          (datetime.now().year - VENUE_FOUNDING_YEARS[venue])
+    }
+    venue_stats.append(stats)
+
+venue_df = pd.DataFrame(venue_stats)
+
+# Categorize venues by maturity
+venue_df['maturity_category'] = pd.cut(
+    venue_df['years_of_history'],
+    bins=[0, 5, 15, 50],
+    labels=['New (0-5yr)', 'Emerging (5-15yr)', 'Established (15+yr)']
+)
+
+# Analyze representation
+print(venue_df.groupby('maturity_category').agg({
+    'n_papers': ['sum', 'mean'],
+    'coverage_ratio': 'mean'
+}))
+```
+
+**Expected Results Table:**
+
+```
+Table X: Dataset Composition by Venue Maturity
+
+Venue Maturity    | N Venues | N Papers | % Dataset | Avg Coverage | Mean Years
+                  |          |          |           | Ratio        | History
+------------------|----------|----------|-----------|--------------|------------
+Established (15+) | 4        | 8,234    | 68.2%     | 0.82         | 28.5
+Emerging (5-15)   | 3        | 2,891    | 23.9%     | 0.61         | 9.3
+New (0-5)         | 2        | 945      | 7.8%      | 0.38         | 3.2
+------------------|----------|----------|-----------|--------------|------------
+Total             | 9        | 12,070   | 100%      | 0.68         | 18.7
+
+Examples by category:
+- Established: ACL (1963), NeurIPS (1987), CVPR (1985)
+- Emerging: ICLR (2013), CoRL (2017)
+- New: NeurIPS Datasets Track (2021), EMNLP Industry Track (2020)
+
+Key findings:
+- Established venues represent 68.2% of data despite being 44% of venues
+- New venues have 38% coverage ratio (missing 62% of their short history)
+- Papers per venue decreases with venue age: 2,059 (established) vs. 
+  473 (new)
+```
+
+**Interpretation to Include:**
+
+```
+Our dataset is heavily skewed toward established venues (68.2% of papers), 
+which may have different review cultures than newer venues. Critically, 
+newer venues show lower coverage ratios (0.38 vs. 0.82), meaning we 
+capture less of their review history. This creates two risks: (1) models 
+may learn conventions specific to mature venues that don't transfer to 
+newer venues, and (2) we cannot validate performance on emerging venues 
+that represent the field's future direction.
+```
+
+---
+
+### **Analysis 2: Temporal Drift in Review Conventions**
+
+```python
+# Test whether review patterns change over time
+# even within the same venue
+
+temporal_analysis = []
+for venue in venues:
+    venue_papers = data[data['venue'] == venue].sort_values('year')
+    
+    if len(venue_papers) < 100 or venue_papers['year'].nunique() < 5:
+        continue  # Skip venues with insufficient temporal coverage
+    
+    # Split into early vs. late periods
+    median_year = venue_papers['year'].median()
+    early_papers = venue_papers[venue_papers['year'] < median_year]
+    late_papers = venue_papers[venue_papers['year'] >= median_year]
+    
+    # Compare review characteristics
+    comparison = {
+        'venue': venue,
+        'early_period': f"{early_papers['year'].min()}-{early_papers['year'].max()}",
+        'late_period': f"{late_papers['year'].min()}-{late_papers['year'].max()}",
+        
+        # Average review length
+        'early_review_length': early_papers['review_text'].str.len().mean(),
+        'late_review_length': late_papers['review_text'].str.len().mean(),
+        'length_change': late_papers['review_text'].str.len().mean() - 
+                        early_papers['review_text'].str.len().mean(),
+        
+        # Score distributions
+        'early_mean_score': early_papers['overall_score'].mean(),
+        'late_mean_score': late_papers['overall_score'].mean(),
+        'score_drift': late_papers['overall_score'].mean() - 
+                      early_papers['overall_score'].mean(),
+        
+        # Acceptance rates
+        'early_accept_rate': early_papers['accepted'].mean(),
+        'late_accept_rate': late_papers['accepted'].mean(),
+        'accept_rate_change': late_papers['accepted'].mean() - 
+                             early_papers['accepted'].mean(),
+        
+        # Aspect score availability
+        'early_aspect_completeness': early_papers['aspect_scores'].notna().mean(),
+        'late_aspect_completeness': late_papers['aspect_scores'].notna().mean(),
+        
+        # Statistical significance
+        'score_drift_pval': ttest_ind(
+            early_papers['overall_score'].dropna(),
+            late_papers['overall_score'].dropna()
+        )[1]
+    }
+    
+    temporal_analysis.append(comparison)
+
+temporal_df = pd.DataFrame(temporal_analysis)
+
+# Test: Train on early period, test on late period
+temporal_transfer = {}
+for venue in venues:
+    venue_papers = data[data['venue'] == venue]
+    median_year = venue_papers['year'].median()
+    
+    train_data = venue_papers[venue_papers['year'] < median_year]
+    test_data = venue_papers[venue_papers['year'] >= median_year]
+    
+    # Train model on early period
+    model = train_model(train_data)
+    
+    # Evaluate on late period
+    late_performance = evaluate(model, test_data)
+    
+    # Compare to in-period performance
+    early_model = train_model(train_data)
+    early_performance = evaluate(early_model, train_data)  # Overly optimistic
+    
+    # Better: train/test split within early period
+    early_train, early_test = train_test_split(train_data)
+    early_model = train_model(early_train)
+    early_performance_fair = evaluate(early_model, early_test)
+    
+    temporal_transfer[venue] = {
+        'early_performance': early_performance_fair,
+        'late_performance': late_performance,
+        'temporal_gap': early_performance_fair - late_performance
+    }
+```
+
+**Expected Results:**
+
+```
+Table X: Temporal Drift in Review Conventions
+
+Venue   | Period Split | Review Length | Mean Score  | Accept Rate | Temporal
+        |              | Change        | Drift       | Change      | Gap (Δr)
+--------|--------------|---------------|-------------|-------------|----------
+ACL     | 2010-2015 vs | +287 chars    | -0.12*      | -0.08*      | -0.09
+        | 2016-2021    | (+18%)        |             |             |
+--------|--------------|---------------|-------------|-------------|----------
+NeurIPS | 2010-2015 vs | +412 chars    | -0.23**     | -0.12**     | -0.11
+        | 2016-2021    | (+24%)        |             |             |
+--------|--------------|---------------|-------------|-------------|----------
+ICLR    | 2014-2017 vs | +523 chars    | +0.05       | -0.03       | -0.15**
+        | 2018-2021    | (+31%)        |             |             |
+--------|--------------|---------------|-------------|-------------|----------
+CVPR    | 2010-2015 vs | +198 chars    | -0.08       | -0.05       | -0.06
+        | 2016-2021    | (+12%)        |             |             |
+
+Mean temporal gap: -0.10 (SD = 0.04)
+* p < 0.05, ** p < 0.01
+
+Key findings:
+- All venues show increasing review length over time (mean +18%)
+- Most venues show declining mean scores (mean drift = -0.12)
+- Newer venue (ICLR) shows largest temporal gap (-0.15)
+- Models trained on early data show degraded performance on later data
+```
+
+**Critical Interpretation:**
+
+```
+Significant temporal drift exists even within established venues, with 
+models trained on early periods showing performance degradation on later 
+periods (mean Δr = -0.10). This drift is most pronounced for newer venues 
+(ICLR: Δr = -0.15), suggesting that rapidly evolving venues pose greater 
+challenges. The consistent increase in review length (+18% on average) 
+and declining mean scores (-0.12) indicate systematic changes in review 
+culture that our models must account for. This temporal instability 
+compounds the newer venue problem: not only do we have less data for 
+newer venues, but their conventions are still evolving.
+```
+
+---
+
+## **PART 3: Articulating Impact on Generalizability**
+
+### **Discussion Section Text**
+
+```markdown
+### 4.X Limitation: Newer Venue Underrepresentation
+
+Our dataset exhibits significant temporal bias, with established venues 
+(15+ years old) comprising 68.2% of papers despite representing 44% of 
+venues. This creates three threats to generalizability:
+
+**1. Cold-Start Problem for Emerging Venues**
+We cannot evaluate our models on venues that emerged after data collection 
+or have insufficient review data. This is particularly problematic as 
+newer venues often pioneer different review formats (e.g., ICLR's open 
+review, NeurIPS Datasets Track's reproducibility focus, TMLR's rolling 
+review). Our models may fail on exactly the venues driving methodological 
+innovation in peer review.
+
+**2. Temporal Concept Drift**
+Even within established venues, review conventions evolve. Models trained 
+on early periods (2010-2015) show performance degradation on later periods 
+(2016-2021), with a mean temporal gap of Δr = -0.10. This drift is most 
+severe for newer venues (ICLR: Δr = -0.15), suggesting that rapidly 
+evolving venues are poorly served by historical training data.
+
+**3. Selection Bias in Review Culture**
+Newer venues may systematically differ from established venues in ways 
+our models cannot capture:
+- **Open vs. traditional review**: ICLR's public reviews may elicit 
+  different reviewer behavior than traditional blind review
+- **Interdisciplinary focus**: Newer venues often bridge fields (e.g., 
+  CoRL spanning robotics and ML), requiring different evaluation criteria
+- **Democratization**: Newer venues may have more diverse reviewer pools 
+  with less consensus on quality standards
+
+Our temporal drift analysis (Table X) shows that review length increased 
+18% and mean scores declined 0.12 points over the study period, indicating 
+systematic evolution that models trained on historical data may not capture.
+
+**Implications for Deployment**
+These limitations suggest our models are most reliable for:
+- Established venues with stable review conventions
+- Retrospective analysis rather than prospective deployment
+- Venues similar to those in our training data
+
+For newer or rapidly evolving venues, we recommend:
+- Collecting venue-specific validation data before deployment
+- Implementing continuous model updating as new reviews arrive
+- Using domain adaptation techniques (Section X.X)
+- Maintaining human oversight for high-stakes decisions
+```
+
+---
+
+## **PART 4: Concrete Follow-Up Experiment**
+
+### **Proposed Experiment: "Newer Venue Generalization Study"**
+
+**Objective:** Demonstrate that models can generalize to newer venues with appropriate methodology.
+
+---
+
+#### **Experiment Design**
+
+```python
+# PHASE 1: Simulate newer venue emergence
+# ========================================
+
+# Treat recent venues/tracks as "newer venues" for validation
+newer_venues = [
+    'ICLR_2020-2022',  # Recent ICLR years
+    'NeurIPS_Datasets_2021-2022',  # New track
+    'EMNLP_Industry_2020-2022',  # New track
+    'CoRL_2020-2022',  # Relatively new venue
+    'TMLR_2022'  # Very new venue
+]
+
+established_venues = [
+    'ACL_2010-2019',
+    'NeurIPS_Main_2010-2019',
+    'CVPR_2010-2019',
+    'ICML_2010-2019'
+]
+
+# Research Question 1: Can we predict performance on newer venues?
+# ================================================================
+
+baseline_results = {}
+for newer_venue in newer_venues:
+    # Baseline: Train only on established venues
+    train_data = data[data['venue'].isin(established_venues)]
+    test_data = data[data['venue'] == newer_venue]
+    
+    model = train_model(train_data)
+    baseline_perf = evaluate(model, test_data)
+    
+    baseline_results[newer_venue] = baseline_perf
+
+# Research Question 2: How much newer venue data is needed?
+# ==========================================================
+
+few_shot_results = {}
+sample_sizes = [10, 25, 50, 100, 250, 500]
+
+for newer_venue in newer_venues:
+    newer_venue_data = data[data['venue'] == newer_venue]
+    
+    # Split newer venue: adaptation set + test set
+    adapt_data, test_data = train_test_split(
+        newer_venue_data, 
+        test_size=0.5,
+        stratify=newer_venue_data['accepted']
+    )
+    
+    venue_results = {}
+    for n_samples in sample_sizes:
+        if n_samples > len(adapt_data):
+            continue
+            
+        # Sample n papers from newer venue
+        adapt_sample = adapt_data.sample(n=n_samples, random_state=42)
+        
+        # Strategy 1: Fine-tune on newer venue data
+        pretrained_model = train_model(data[data['venue'].isin(established_venues)])
+        finetuned_model = fine_tune(pretrained_model, adapt_sample)
+        finetune_perf = evaluate(finetuned_model, test_data)
+        
+        # Strategy 2: Add newer venue to training data
+        augmented_train = pd.concat([
+            data[data['venue'].isin(established_venues)],
+            adapt_sample
+        ])
+        augmented_model = train_model(augmented_train)
+        augmente

@@ -14,7 +14,7 @@ from academic_research_mentor.cli.session import load_env_file
 from academic_research_mentor.core.bootstrap import bootstrap_registry_if_enabled
 from academic_research_mentor.guidelines_engine import create_guidelines_injector
 from academic_research_mentor.prompts_loader import load_instructions_from_prompt_md
-from academic_research_mentor.runtime import build_agent
+from academic_research_mentor.runtime.context import prepare_agent as runtime_prepare_agent
 from academic_research_mentor.core.transparency import get_transparency_store, ToolRun, ToolEvent
 from academic_research_mentor.rich_formatter import print_info, print_error
 
@@ -183,7 +183,7 @@ def load_prompt_records(stage_letter: str, prompt_ids: Optional[Sequence[str]] =
     return records
 
 
-def prepare_agent() -> Tuple[Any, str]:
+def prepare_eval_agent() -> Tuple[Any, str]:
     load_env_file()
     bootstrap_registry_if_enabled()
 
@@ -220,9 +220,18 @@ def prepare_agent() -> Tuple[Any, str]:
     except Exception:
         pass
 
-    agent, reason = build_agent(effective_instructions)
+    prep = runtime_prepare_agent(prompt_arg=prompt_variant, ascii_override=ascii_normalize)
+    agent = prep.agent
     if agent is None:
-        raise StageRunError(reason or "Agent initialization failed; ensure API keys are configured")
+        raise StageRunError(prep.offline_reason or "Agent initialization failed; ensure API keys are configured")
+
+    # Ensure the evaluation-specific directives are applied to the live agent.
+    inner_agent = getattr(agent, "_agent", agent)
+    try:
+        inner_agent.system_prompt = effective_instructions
+    except Exception:
+        pass
+
     return agent, str(loaded_variant)
 
 
@@ -415,7 +424,7 @@ def run_stage(
             print_error("Attachments support not available; skipping PDF attach")
     except Exception as exc:  # noqa: BLE001
         print_error(f"Failed to attach PDFs: {exc}")
-    agent, loaded_variant = prepare_agent()
+    agent, loaded_variant = prepare_eval_agent()
     raw_dir, analysis_dir, _ = ensure_stage_directories(stage_folder)
 
     run_started = datetime.utcnow().isoformat() + "Z"

@@ -1,0 +1,60 @@
+<thinking>
+Experienced user. They want an evaluation extension + analysis plan. Key is preserving comparability and avoiding confounds. I should lead with the core risk, then propose a tight measurement protocol and a clean way to show separation (Pareto, paired tests). Keep lists compact.
+</thinking>
+
+**Blunt assessment:** Adding efficiency metrics will *invalidate* the original comparison unless you freeze the evaluation harness. Most papers get this wrong by changing batch sizes, hardware, or rollout policy. If you don’t lock those down, accuracy–efficiency trade‑offs are meaningless.
+
+Here’s a plan that preserves comparability and still shows separation.
+
+---
+
+## Efficiency metrics (measured without touching accuracy eval)
+
+**Latency**
+- End-to-end per-step inference latency during rollout (p50, p95).
+- Measured with identical batch size (=1 if original eval is online), same horizon, same sparsification policy.
+
+**Memory**
+- Peak GPU memory during rollout (not training).
+- Report both model weights and activation peak; hierarchy mainly affects activations.
+
+**Throughput**
+- Tokens processed per second *and* environment steps per second.
+- Tokens/sec alone is misleading for hierarchical models.
+
+All metrics collected on the *same hardware*, same precision, same compilation settings.
+
+---
+
+## Protocol to preserve comparability
+- Use the **exact pretrained checkpoints** from the original evaluation.
+- Do **not** change rollout length, observation preprocessing, or token dropping.
+- Warm up the model before measurement; exclude compilation and I/O.
+- Interleave runs across variants to avoid thermal or system drift.
+
+If you retrain anything, reviewers will discount the efficiency results.
+
+---
+
+## Analysis plan: separating accuracy from efficiency
+
+**Primary view**
+- Plot **Pareto fronts**: task performance vs latency and vs memory.
+- Each point = mean over seeds; error bars = ±1 std.
+
+**Statistical separation**
+- Use **paired tests across seeds** comparing models at matched rollout horizons.
+- Test accuracy differences and efficiency differences *separately* (paired t-test or Wilcoxon).
+- Report cases where efficiency improves with *no statistically significant accuracy loss*.
+
+**Key sanity check**
+- Normalize efficiency by achieved performance (e.g., latency per success point). This prevents “fast but useless” models from looking good.
+
+---
+
+## What this will show (if the paper’s claims hold)
+- Hierarchy dominates flat models on the Pareto front.
+- Gains come from activation sparsity, not parameter count.
+- Accuracy and efficiency improvements are not perfectly coupled.
+
+If you want, tell me the target hardware and batch regime—those choices matter more here than architecture details.

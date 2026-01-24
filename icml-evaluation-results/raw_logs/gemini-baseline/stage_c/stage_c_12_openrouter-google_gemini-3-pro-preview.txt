@@ -1,0 +1,100 @@
+This research plan addresses the **Multilingual Verification Gap**. While open-weight models (e.g., Llama-3, Mistral) rival proprietary models in English, their ability to hallucinate less and verify facts in low-resource languages under constrained compute is unproven.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Automated fact-checking relies heavily on English-centric resources. When applied to languages like Hindi, Swahili, or Arabic, LLMs suffer from two failures: **Knowledge Deficits** (training data lacked local context) and **Safety Refusals** (models are over-tuned to refuse non-English queries as "unsupported"). Furthermore, running massive 70B+ parameter models for verification is inaccessible for researchers with limited GPU resources (e.g., a single consumer card).
+
+**Research Goal:**
+Establish a **Resource-Efficient Multilingual Truthfulness Leaderboard**. The study will benchmark 7B-8B parameter models (quantized) on their ability to identify misinformation across diverse language families, determining whether **Retrieval-Augmented Generation (RAG)** closes the gap between English and low-resource performance better than model scaling.
+
+**Core Objectives:**
+1.  **Quantization Benchmarking:** Prove that 4-bit quantized models retain sufficient reasoning ability for multilingual fact-checking (vs. 16-bit baselines).
+2.  **RAG Efficacy:** Quantify the "Context Gain"—how much does providing external evidence (via search/retrieval) reduce hallucination in non-English languages?
+3.  **Cross-Lingual Transfer:** Test if translating claims to English for verification (Translate-Test) outperforms native language verification for small models.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "Internal Knowledge" Baseline (Zero-Shot)
+**Hypothesis:** Without external evidence, 7B models will show a strong correlation between language representation in pre-training data and verification accuracy, failing catastrophically (<50% accuracy) on low-resource languages.
+*   **Setup:**
+    *   **Dataset:** **X-FACT** (Multilingual fact-checking dataset covering 25 languages).
+    *   **Models:** Llama-3-8B-Instruct, Mistral-7B-v0.3, Gemma-7B (all loaded in **4-bit** via `bitsandbytes`).
+    *   **Task:** Multi-class classification: {True, False, Not Enough Info}.
+    *   **Sanity Check:** Run on English `TruthfulQA` first. If accuracy is <40%, the quantization or prompt template is broken.
+*   **Baselines:** Random Guessing (33%), Majority Class Vote.
+*   **Evaluation Metrics:** Macro-F1 Score, "Refusal Rate" (how often the model says "I cannot answer").
+*   **Expected Outcome:** High performance on English/Spanish; near-random performance on Tamil/Swahili due to lack of cultural knowledge in weights.
+
+#### Experiment 2: RAG-Enhanced Verification (The "Context" Fix)
+**Hypothesis:** Providing retrieved evidence in the native language significantly boosts performance for low-resource languages, narrowing the gap with English.
+*   **Setup:**
+    *   **Retriever:** **BGE-M3** (Multilingual, lightweight embedding model).
+    *   **Method:** For each claim in X-FACT, retrieve top-3 relevant snippets from the provided dataset evidence (Gold Evidence) or Wikipedia dump.
+    *   **Prompt:** "Based *only* on the following context, determine if the claim is True or False."
+    *   **Sanity Check:** "Distraction Test"—Inject obviously irrelevant context. The model should switch to "Not Enough Info."
+*   **Baselines:** The Zero-Shot results from Exp 1.
+*   **Evaluation Metrics:** Accuracy gain ($\Delta$ Acc) from Zero-Shot to RAG.
+*   **Expected Outcome:** A massive boost (+20-30%) for mid-resource languages. However, smaller models might suffer from "Context Ignoring" (hallucinating despite evidence) in complex languages.
+
+#### Experiment 3: The "English Pivot" vs. Native Reasoning
+**Hypothesis:** For small models (7B), translating the claim to English, verifying it, and translating the label back is more accurate than processing in the native language, despite translation errors.
+*   **Setup:**
+    *   **Pipeline A (Native):** Prompt in Hindi $\rightarrow$ Output in Hindi.
+    *   **Pipeline B (Pivot):** Translate Hindi Claim to English (using **NLLB-200-Distilled**) $\rightarrow$ Prompt in English $\rightarrow$ Output label.
+*   **Evaluation Metrics:** Accuracy comparison between Pipeline A and B.
+*   **Expected Outcome:** Pipeline B (Pivot) will outperform Native reasoning for 7B models, suggesting that "reasoning capabilities" are multilingual but "instruction following" is English-biased in small models.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Infrastructure & Data** | Set up `vLLM` or `llama.cpp` for efficient inference. Download X-FACT and clean the dataset (remove dead links/missing evidence). |
+| **Month 2** | **Exp 1 (Zero-Shot)** | Run internal knowledge benchmarks. Debug prompt templates (crucial for chat models). |
+| **Month 3** | **Retriever Setup** | Implement the RAG pipeline with BGE-M3. Index the evidence snippets. |
+| **Month 4** | **Exp 2 (RAG)** | Run the RAG benchmarks. Analyze "Hallucination Rate" (when model ignores context). |
+| **Month 5** | **Exp 3 (Pivot)** | Implement the Translation pipeline. Perform error analysis (did the model fail because of bad translation or bad reasoning?). |
+| **Month 6** | **Analysis & Writing** | Generate "Accuracy vs. Resource Level" plots. Draft paper for ACL/EMNLP. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 1x NVIDIA RTX 3090/4090 (24GB VRAM) or A10G (Cloud).
+    *   *Why:* 24GB is enough to run Llama-3-8B in 4-bit (~6GB VRAM) + BGE-M3 Retriever (~2GB) + Batching overhead.
+*   **Optimization:** Use **vLLM** for high-throughput inference or **llama.cpp** if using Apple Silicon/CPU offloading.
+
+**Tools:**
+*   **Inference:** `vLLM`, `bitsandbytes` (for quantization).
+*   **Orchestration:** `LangChain` or simple Python scripts (preferred for control).
+*   **Translation:** `Facebook/nllb-200-distilled-600M` (runs locally, fast).
+
+**Datasets:**
+*   **X-FACT:** Large-scale multilingual fact-checking (Hugging Face: `x-fact`).
+*   **mFACT:** (Optional) if X-FACT coverage is insufficient.
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Format Non-Compliance** | The model outputs a paragraph instead of "True/False", breaking the eval script. | **Constrained Decoding:** Use `guidance` or `outlines` libraries (or regex constraints in vLLM) to force the output to be exactly one of the allowed labels. |
+| **Data Contamination** | The model has seen the X-FACT claims during pre-training (web scrape). | **Temporal Split:** Filter the dataset for claims dated *after* the model's training cutoff (e.g., post-2023 for older models) or use a "Private Test Set" from a local NGO if possible. |
+| **Quantization Degradation** | 4-bit quantization destroys the model's ability to understand complex non-English scripts (e.g., Arabic). | **Sanity Check:** Compare 4-bit vs. 16-bit on a small subset (N=100). If drop >5%, switch to 8-bit quantization or a smaller model (e.g., Qwen-7B, which handles multilingual better). |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Self-Correction:** Can the model correct its own hallucination if you prompt it: "Are you sure? Review the evidence again."?
+*   **Source Bias:** Does the model trust a "Western" source (BBC) more than a local source (e.g., Times of India) even if the local source is the ground truth evidence?
+*   **Multimodal Extension:** Many fact-checks involve images. Use **Llava-v1.6** (also runs on 24GB) to verify claims based on image evidence.
+
+**Optional next step:**
+Run a "Hello World" test with **Llama-3-8B-Instruct (4-bit)** using the `transformers` library to verify it fits in your VRAM and can correctly classify a simple English claim ("The earth is flat") before building the full pipeline.

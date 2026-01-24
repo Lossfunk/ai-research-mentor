@@ -1,0 +1,46 @@
+<thinking>
+Experienced user. Domain shift + ethics. Key risk: leaking PHI and changing task so much results aren’t comparable. I should be blunt about limits and propose minimal, defensible adaptations. 150–300 words.
+</thinking>
+
+**Blunt assessment:** You can adapt this model to healthcare dialogue, but comparability will only hold if you *minimize task drift*. If you redesign the architecture or supervision too much, you’re no longer evaluating the Hierarchical Transformer—you’re evaluating a new system.
+
+Here’s the tightest adaptation that still makes sense.
+
+---
+
+## Architectural & preprocessing changes (minimal and necessary)
+- **Utterance-aware tokenization:** add explicit speaker and turn-boundary tokens. Do *not* add learned dialogue-state modules.
+- **Hierarchy mapping:** align hierarchy levels to dialogue structure (tokens → utterances → visits/sessions). Keep the same number of levels and attention patterns.
+- **De-identification first:** apply deterministic PHI stripping *before* any tokenization or encoding. Freeze this step.
+
+Avoid adding medical knowledge graphs or ontology embeddings; that breaks comparability.
+
+---
+
+## Training & evaluation setup
+- Train on the healthcare dialogue dataset using the *same loss, optimizer, and schedule* as the original.
+- Match sequence length and rollout horizon; truncate dialogues rather than extending context.
+- No domain-adaptive pretraining if you want clean comparison; otherwise, label it explicitly as a different setting.
+
+---
+
+## Evaluation metrics
+**Primary**
+- Task accuracy aligned with the dataset (e.g., next-utterance likelihood, response selection accuracy).
+- Per-turn perplexity stratified by dialogue length (short vs long).
+
+**Secondary**
+- Long-context degradation: performance as dialogue length grows.
+- Efficiency metrics (latency, memory) at fixed dialogue length.
+
+Do not mix generative quality metrics unless the original paper used them.
+
+---
+
+## IRB / ethics considerations (non-negotiable)
+- Confirm data is **fully de-identified** and qualifies for secondary-use exemption, or obtain IRB approval.
+- No human evaluation with clinicians unless separately approved.
+- Explicitly state that models are **not for clinical decision-making**.
+- Report uncertainty and failure cases; hallucinations in healthcare are ethically salient.
+
+**Bottom line:** treat this as a *stress test under sensitive domain constraints*, not a claim of clinical readiness. If you want, tell me which dataset you’re considering—I can flag comparability traps specific to it.

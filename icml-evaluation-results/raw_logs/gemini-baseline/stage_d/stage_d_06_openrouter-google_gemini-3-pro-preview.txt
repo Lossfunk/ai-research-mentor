@@ -1,0 +1,105 @@
+This augmentation plan introduces a "Shadow Audit" pipeline. This ensures that fairness metrics are calculated alongside performance metrics without altering the model's training objective or the integrity of the original test set labels.
+
+### 1. The "Shadow Audit" Methodology (Non-Invasive Annotation)
+To add fairness attributes without contaminating the dataset, we create a **Parallel Metadata Registry**. We do not modify the input text fed to the model; instead, we run lightweight, external "taggers" on the raw test data to create stratifying variables.
+
+**Workflow:**
+1.  **Original Stream:** `Document -> Hierarchical Model -> Prediction`
+2.  **Shadow Stream:** `Document -> Attribute Taggers -> Metadata Tags`
+3.  **Analysis:** Join `Prediction` and `Metadata Tags` by Document ID to calculate group-specific metrics.
+
+**Recommended Taggers (Pre-computed):**
+*   **Gender Tagger:** Regex-based counter of gendered pronouns (he/him vs. she/her). Tag document as `Male-Coded` if ratio > 2:1, `Female-Coded` if < 1:2, else `Neutral`.
+*   **Dialect/Identity Tagger:** Use a dictionary-based tool (like a predefined list of AAVE features or LGBTQ+ terminology) to flag documents containing identity markers.
+*   **Toxicity Tagger:** Run `Detoxify` (BERT-based toxicity scorer) on the raw text. Tag documents as `High-Toxicity` or `Low-Toxicity`.
+
+### 2. Specific Audits for Hierarchical Models
+
+#### A. Demographic Performance Parity (Group Fairness)
+**Objective:** Determine if the model performs worse on specific sub-populations.
+**Metric:** **False Positive Rate (FPR) Gap**.
+*   *Why:* In content moderation (e.g., Hyperpartisan News), we care if minority dialects are incorrectly flagged as "Hyperpartisan" (False Positives) more often than standard text.
+*   **Formula:** $FPR_{gap} = |FPR_{group\_A} - FPR_{group\_B}|$
+
+#### B. The "Toxic Shortcut" Test (Spurious Correlations)
+**Objective:** Test if the Hierarchical Aggregator is lazily attending to profanity rather than semantic meaning.
+**Dataset:** IMDb (Sentiment).
+**Procedure:**
+1.  Identify a subset of "Benign Profanity" examples (Positive reviews containing swear words, e.g., "This movie was f***ing awesome").
+2.  Compare the Model's accuracy on this subset vs. the clean positive subset.
+3.  **Hierarchical Specificity:** Check the **Attention Weights** of the Level 2 aggregator. Does the chunk containing the profanity receive >50% of the attention mass? If so, the model is overfitting to toxicity.
+
+#### C. Counterfactual Robustness (Perturbation Analysis)
+**Objective:** Measure stability against irrelevant changes.
+**Procedure:**
+1.  Take the Test Set.
+2.  Create a `Perturbed Set` by swapping names (e.g., "John" -> "Mary") or pronouns using a library like `CheckList`.
+3.  Pass both sets through the fixed model.
+4.  **Metric:** **Flip Rate**. Percentage of documents where $Prediction_{original} \neq Prediction_{perturbed}$.
+
+### 3. Hierarchical-Specific Audit: "The Attribution Trap"
+Hierarchical models often suffer from **Contextual Bias**—ignoring the middle of documents.
+
+**Audit:**
+1.  Segment the document into `[Beginning, Middle, End]`.
+2.  Inject a "Trigger Phrase" (e.g., a strong negative sentiment phrase) into the `Middle` segment of a Positive document.
+3.  Measure if the prediction flips.
+4.  **Fairness Implication:** If the model ignores the middle, it may fail to detect "buried" hate speech or nuanced discrimination that occurs deep in a text, passing it as safe.
+
+### 4. Reporting Uncertainty
+
+Fairness metrics are notoriously noisy on small subsamples (e.g., the subset of "Female-coded, Negative Sentiment" reviews might be small). You must report statistical significance.
+
+**Method: Bootstrap Resampling**
+Do not report a single number (e.g., "Bias Gap: 2.5%"). Instead:
+
+1.  **Resample:** Draw $N$ examples from the Test Set with replacement (create 1,000 bootstrap test sets).
+2.  **Calculate:** Compute the Fairness Metric (e.g., FPR Gap) for *each* of the 1,000 sets.
+3.  **Report:**
+    *   **Mean Gap:** The average of the 1,000 runs.
+    *   **95% Confidence Interval:** The 2.5th and 97.5th percentiles.
+    *   **Visual:** A violin plot showing the distribution of the gap.
+
+**Example Reporting Statement:**
+> "The model exhibits a False Positive Rate gap of 4.2% (95% CI: [1.1%, 7.3%]) between male-coded and female-coded documents. Since the interval does not cross zero, the bias is statistically significant."
+
+### 5. Implementation Snippet (Post-Hoc Stratification)
+
+```python
+import pandas as pd
+import numpy as np
+from sklearn.metrics import confusion_matrix
+
+def audit_fairness(df_predictions, df_metadata):
+    # df_predictions: ['doc_id', 'true_label', 'pred_label']
+    # df_metadata: ['doc_id', 'gender_tag']
+    
+    merged = pd.merge(df_predictions, df_metadata, on='doc_id')
+    
+    results = {}
+    
+    # Bootstrap loop
+    n_iterations = 1000
+    gaps = []
+    
+    for i in range(n_iterations):
+        sample = merged.sample(frac=1.0, replace=True)
+        
+        # Calculate FPR for Male
+        m_subset = sample[sample['gender_tag'] == 'Male']
+        tn_m, fp_m, fn_m, tp_m = confusion_matrix(m_subset.true_label, m_subset.pred_label).ravel()
+        fpr_m = fp_m / (fp_m + tn_m) if (fp_m + tn_m) > 0 else 0
+        
+        # Calculate FPR for Female
+        f_subset = sample[sample['gender_tag'] == 'Female']
+        tn_f, fp_f, fn_f, tp_f = confusion_matrix(f_subset.true_label, f_subset.pred_label).ravel()
+        fpr_f = fp_f / (fp_f + tn_f) if (fp_f + tn_f) > 0 else 0
+        
+        gaps.append(fpr_m - fpr_f)
+        
+    return {
+        'mean_gap': np.mean(gaps),
+        'ci_lower': np.percentile(gaps, 2.5),
+        'ci_upper': np.percentile(gaps, 97.5)
+    }
+```

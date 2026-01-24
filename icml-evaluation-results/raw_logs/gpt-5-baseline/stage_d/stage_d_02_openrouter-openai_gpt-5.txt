@@ -1,0 +1,31 @@
+Below is a plug-in intervention you can drop into a typical Hierarchical Transformer without changing tokenization, encoders, or training schedule, plus a concrete evaluation plan.
+
+Intervention: replace hierarchical pooling with flat mean pooling
+- Scope
+  - Replace the learned pooling at both levels with masked, length-normalized mean pooling.
+  - Two levers: token→segment pooling and segment→document pooling.
+- Masked mean formulation
+  - Token→segment: s_i = sum_j m_ij h_ij / max(1, sum_j m_ij), where h_ij is token embedding j in segment i and m_ij is the token mask (1 for real tokens, 0 for padding).
+  - Segment→document: d = sum_i n_i s_i / max(1, sum_i n_i), where n_i is 1 for a non-empty segment, else 0.
+  - Optional stabilization: apply LayerNorm to h_ij before segment means and to s_i before document mean; add a scalar learnable scale α and bias β after each mean (equivalent parameter count to an affine layer).
+- Drop-in details
+  - Keep all attention masks, position embeddings, and encoders unchanged.
+  - Preserve dimensionality by optionally adding a 1×1 linear projection after each mean (weights initialized to identity) so parameter counts are comparable to attention-pooling heads.
+  - Apply dropout to s_i before document mean to match regularization used in the original pooling.
+  - For multi-label heads, keep the same classifier; for extractive QA, do not replace token-level representations used by span heads—only replace the global summary used by classification/auxiliary losses.
+- Variants to compare
+  - HPool (paper baseline): original hierarchical pooling (e.g., attention-based segment pooling and global pooling).
+  - FlatMean-Doc: only replace segment→document pooling with masked mean; keep token→segment pooling as in baseline.
+  - FlatMean-Both: replace both token→segment and segment→document pooling with masked means.
+  - CLS: replace pooling with [CLS]-token at each level (first-token) as a sanity baseline.
+  - MaxPool (optional): masked max at each level to bracket the design space.
+
+Baselines
+- Primary baseline: the paper’s Hierarchical Transformer with its original pooling (HPool).
+- External non-hierarchical baseline (optional, for context): a flat long-context encoder (e.g., Longformer/BigBird/LED) trained with standard [CLS] or mean pooling on the same data and schedule. This is not needed to test the intervention but helps interpret absolute performance.
+
+Datasets
+Choose at least one long-document classification dataset and one long-context QA or summarization dataset; add a mid-length classification set to probe length effects. Example suite:
+- Long-document classification
+  - Hyperpartisan News (PAN19; binary, imbalanced; long articles). Primary metric: macro-F1.
+ 

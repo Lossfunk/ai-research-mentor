@@ -1,0 +1,76 @@
+1. Problem framing and goals
+
+Context and challenge
+- Low-resource country (LRC) settings face intermittent connectivity, power instability, heterogeneous devices (Android phones, low-end PCs), limited GPU access, small clinical/agricultural institutions, and strong privacy/regulatory constraints across borders. These conditions stress standard federated learning (FL) assumptions (stable networks, synchronous rounds, homogeneous clients, abundant labels).
+- Cross-silo FL (few institutions with richer data) and cross-device FL (many thin clients) both arise: hospitals/NGOs (cross-silo) and community health workers or smallholder farmers using smartphones (cross-device).
+
+Why FL and adjacent paradigms
+- FL enables collaborative model training without sharing raw data, supporting privacy and data residency requirements. Robust algorithms for heterogeneity (FedProx [1], SCAFFOLD [2]), asynchronous participation/partial training under intermittent links (TimelyFL [3], JSTSP 2023 on intermittent availability [4]), and communication efficiency surveys [5–6] offer a technical base.
+- Healthcare field deployments (OpenFL across 59–71 institutions) suggest feasibility of multi-site collaborations even with diverse infrastructure [7–8].
+- Governance and ethics should follow WHO guidance for AI in health (six principles and implementation recommendations) [9].
+
+Six-month goals (measurable)
+- G1: Build and open-source a deployment-ready FL toolkit tailored to LRC constraints (asynchronous rounds, bandwidth caps, client dropout), with recipes for health and agriculture use cases; demonstrate end-to-end reproducibility.
+- G2: In simulation and a small real-world pilot (3–5 sites), achieve within 1–3% of centralized model accuracy while reducing upstream communication by ≥10× via quantization/sparsification, and tolerating ≥30% client dropout without divergence.
+- G3: Demonstrate improved worst-group performance via personalization/fairness-aware objectives (Ditto [10], q-FFL [11]); report subgroup and site-wise metrics.
+- G4: Integrate privacy and security baselines (secure aggregation + per-round DP) with quantified privacy-utility trade-offs; document governance aligned with WHO principles [9].
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment 1: Robust FL under intermittent connectivity and heterogeneous clients
+- Hypothesis: Asynchronous/straggler-tolerant training with heterogeneity-aware solvers (FedProx, SCAFFOLD) converges faster and more reliably than synchronous FedAvg when client availability and compute vary widely.
+- Setup:
+  - Data/tasks (proxy public datasets; later swap to local data in pilot): 
+    - Health: TB detection on chest X-rays; if local data are unavailable initially, use public TB CXR datasets as proxies (limitation: we could not retrieve authoritative TB-LMIC datasets via the tool; search terms: “Shenzhen TB Chest X-ray dataset,” “Montgomery County TB X-ray NIH,” “VinDr-CXR Vietnam dataset”).
+    - Agriculture: Cassava leaf disease classification (PlantVillage/Cassava Kaggle).
+  - Federation emulator: Simulate N=100–1000 clients with power/network churn using Linux tc/netem profiles reflecting 2G/3G/unstable broadband; impose device-specific FLOP limits.
+  - Algorithms: FedAvg, FedProx [1], SCAFFOLD [2], and an asynchronous method (TimelyFL [3]; intermittent availability scheduling [4]).
+- Baselines: Centralized training (upper bound), synchronous FedAvg.
+- Metrics: Final accuracy/AUROC; convergence speed (rounds and wall-clock), bytes uploaded/downloaded per client, participation rate, tolerance to dropout (% of missed rounds without divergence), fairness (variance/WG-avg across clients).
+- Expected outcomes: FedProx/SCAFFOLD and asynchronous regimes match centralized within 1–3% while cutting wall-clock time under churn and improving participation [1–4].
+
+Experiment 2: Communication-efficient FL (quantization, sparsification, update frequency)
+- Hypothesis: Gradient/model compression (8-bit/4-bit quantization, top-k sparsification) with error feedback reduces bandwidth ≥10× without significant performance loss, especially combined with adaptive participation.
+- Setup:
+  - Methods: Per-layer 8-bit quantization of updates; 1%–10% top-k sparsification with error-feedback; periodic aggregation (every k local steps).
+  - Networking: Evaluate under uplink caps 64–512 kbps and 1–5% packet loss.
+- Baselines: Uncompressed FedAvg/FedProx.
+- Metrics: Bytes per round, total bytes to reach target accuracy, final model quality, energy per client epoch (measured via Android BatteryManager or on-device power logs), time-to-accuracy.
+- Expected outcomes: ≥10× reduction in bytes with ≤1–2% accuracy drop; stable training under lossy links. Supported by communication-efficiency surveys [5–6].
+
+Experiment 3: Personalization and fairness in non-IID federations
+- Hypothesis: Personalized FL (Ditto) and fairness-aware objectives (q-FFL) improve worst-group and per-site performance versus a single global model.
+- Setup:
+  - Methods: Ditto (personalized regularization around global model) [10], q-FFL fairness objective [11]; simple local adapters (last-layer finetuning).
+  - Non-IID splits: Dirichlet α∈{0.1, 0.3} across clients; site-level label shift.
+- Baselines: Global FedProx model; local-only models (no federation).
+- Metrics: Macro/micro AUC/accuracy; worst-10% client performance; Jain’s fairness index; subgroup performance (site, language, device class).
+- Expected outcomes: +2–5 points worst-client improvement; narrowed inter-site variance with minimal average performance loss [10–11].
+
+Experiment 4: Split learning vs FL for thin clients
+- Hypothesis: Split learning (SL) reduces on-device compute and can outperform FL on extremely weak clients or when uplink dominates, at comparable privacy with proper defenses.
+- Setup:
+  - Methods: SplitNN/SL variants with early-layer on device, mid/backbone on server [12–13]; hybrid SL+FL across silos.
+  - Profiles: Emulate ultra-low-end devices (single-core ARM, 1–2 GB RAM).
+- Baselines: FedProx on-device; centralized (upper bound).
+- Metrics: Client compute time, bytes per step, accuracy/AUROC, server load, privacy attack surface (see Exp 5).
+- Expected outcomes: SL reduces client compute ≥50% at similar accuracy; hybrid SL+FL viable for sites with very weak hardware [12–13].
+
+Experiment 5: Privacy and security baselines under realistic constraints
+- Hypothesis: Secure aggregation plus moderate DP-SGD noise can deliver meaningful privacy protection at small accuracy cost; Trusted Execution Environments (TEEs) add defense-in-depth with tolerable overhead in cross-silo LRC settings.
+- Setup:
+  - Secure aggregation: Implement cryptographic secure aggregation at the coordinator (limitation: the tool did not retrieve the canonical CCS 2017 reference; search “Bonawitz secure aggregation CCS 2017 arXiv” and cite that work).
+  - Differential privacy: Client-side DP-SGD with per-round noise; privacy accounting (ε, δ).
+  - TEEs: Evaluate feasibility on commodity cloud (Intel SGX or AMD SEV) for coordinator; measure overhead (limitation: no tool-sourced TEE+FL benchmark; query “OpenFL SGX confidential compute healthcare”).
+  - Attacks: Simulate membership inference on held-out shadow data; label-flipping and backdoor poisoning by a fraction of clients.
+- Baselines: No DP, no secure aggregation.
+- Metrics: Accuracy vs ε; secure aggregation overhead (latency, CPU), TEE overhead (%); attack success rates; privacy-utility curves.
+- Expected outcomes: Secure aggregation with ≤10% round-time overhead; DP with ε≈3–8 causing ≤2–4% accuracy degradation; significant reduction in attack success rates.
+
+Experiment 6: Small-scale real-world pilot (3–5 sites in an LRC region)
+- Hypothesis: With governance and lightweight ops, cross-silo FL can be run across clinics or cooperatives over commodity broadband/4G, with monitoring and recovery from outages.
+- Setup:
+  - Partners: 3–5 clinics (health) or co-ops (agriculture). Data residency and consent per site; WHO ethics guidance compliance [9].
+  - Infrastructure: One small cloud coordinator (2–8 vCPU, 8–32 GB RAM); clients run in Docker/Podman on local PCs or Android via lightweight app; nightly training windows to align with off-peak hours/power availability; offline caching and resumable uploads.
+  - Protocol: Asynchronous FedProx

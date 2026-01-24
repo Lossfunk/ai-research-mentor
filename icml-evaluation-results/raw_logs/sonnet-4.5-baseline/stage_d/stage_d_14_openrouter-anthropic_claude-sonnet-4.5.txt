@@ -1,0 +1,460 @@
+# **Rule-Based Hierarchical Approximation: Parity Analysis Framework**
+
+## **PART 1: RULE-BASED HEURISTICS DESIGN**
+
+### **1.1 Hierarchical Cue Detection**
+
+#### **A. Comprehensive Rule-Based System**
+```python
+class RuleBasedHierarchicalParser:
+    """
+    Rule-based system to detect hierarchical structure using linguistic cues
+    
+    Goal: Approximate Hierarchical Transformer's structure detection
+    without neural model inference
+    
+    Advantages:
+    - Fast (no model inference)
+    - Interpretable (explicit rules)
+    - No training data required
+    - Deterministic
+    
+    Use Cases:
+    - Preprocessing for model
+    - Baseline comparison
+    - Fallback when model unavailable
+    - Hybrid system (rules + model)
+    """
+    
+    def __init__(self, config=None):
+        self.config = config or self.default_config()
+        
+        # Load rule sets
+        self.section_rules = self.define_section_rules()
+        self.discourse_rules = self.define_discourse_rules()
+        self.formatting_rules = self.define_formatting_rules()
+        self.linguistic_rules = self.define_linguistic_rules()
+        
+        # Initialize components
+        self.tokenizer = self.load_tokenizer()
+        self.pos_tagger = self.load_pos_tagger()
+        self.sentence_splitter = self.load_sentence_splitter()
+    
+    def default_config(self):
+        """Default configuration"""
+        return {
+            'max_depth': 5,  # Maximum hierarchical depth
+            'confidence_threshold': 0.5,
+            'enable_formatting': True,
+            'enable_discourse': True,
+            'enable_linguistic': True,
+        }
+    
+    def define_section_rules(self):
+        """
+        Rules for detecting section headers
+        """
+        rules = {
+            # Rule 1: Numbered sections
+            'numbered_sections': {
+                'patterns': [
+                    r'^(\d+\.)+\s+[A-Z]',  # "1.2.3 Introduction"
+                    r'^[IVX]+\.\s+[A-Z]',  # "IV. Methods"
+                    r'^Chapter\s+\d+',  # "Chapter 5"
+                    r'^Section\s+\d+',  # "Section 3"
+                    r'^\d+\)\s+[A-Z]',  # "1) Background"
+                    r'^[A-Z]\.\s+[A-Z]',  # "A. Overview"
+                ],
+                'level_extraction': self.extract_numbering_level,
+                'confidence': 0.95,
+                'examples': [
+                    "1. Introduction",
+                    "2.1 Background",
+                    "3.2.1 Methodology",
+                ],
+            },
+            
+            # Rule 2: Formatted headers
+            'formatted_headers': {
+                'patterns': [
+                    r'^[A-Z][A-Z\s]+$',  # "INTRODUCTION" (all caps)
+                    r'^[A-Z][a-z]+(\s+[A-Z][a-z]+)*$',  # "Title Case Header"
+                ],
+                'conditions': [
+                    'line_length < 80',
+                    'followed_by_newline',
+                    'no_terminal_punctuation',
+                ],
+                'confidence': 0.8,
+                'level_heuristic': 'font_size_or_position',
+            },
+            
+            # Rule 3: Keyword-based headers
+            'keyword_headers': {
+                'keywords': {
+                    'level_1': [
+                        'abstract', 'introduction', 'background', 'methods',
+                        'methodology', 'results', 'discussion', 'conclusion',
+                        'references', 'appendix', 'acknowledgments',
+                    ],
+                    'level_2': [
+                        'overview', 'related work', 'literature review',
+                        'experimental setup', 'data collection', 'analysis',
+                        'evaluation', 'limitations', 'future work',
+                    ],
+                    'level_3': [
+                        'participants', 'materials', 'procedure',
+                        'statistical analysis', 'qualitative analysis',
+                    ],
+                },
+                'confidence': 0.7,
+                'case_insensitive': True,
+            },
+            
+            # Rule 4: Markdown/LaTeX headers
+            'markup_headers': {
+                'patterns': [
+                    r'^#{1,6}\s+',  # Markdown: # Header
+                    r'^\\section\{',  # LaTeX: \section{Title}
+                    r'^\\subsection\{',  # LaTeX: \subsection{Title}
+                    r'^<h[1-6]>',  # HTML: <h1>Header</h1>
+                ],
+                'level_extraction': self.extract_markup_level,
+                'confidence': 0.99,
+            },
+        }
+        
+        return rules
+    
+    def define_discourse_rules(self):
+        """
+        Rules for detecting discourse markers and transitions
+        """
+        rules = {
+            # Topic introduction
+            'topic_introduction': {
+                'markers': [
+                    'first', 'firstly', 'to begin with', 'initially',
+                    'in this section', 'we now turn to', 'let us consider',
+                    'this section discusses', 'we present', 'we describe',
+                ],
+                'position': 'sentence_start',
+                'indicates': 'new_topic',
+                'confidence': 0.6,
+            },
+            
+            # Topic continuation
+            'topic_continuation': {
+                'markers': [
+                    'furthermore', 'moreover', 'additionally', 'in addition',
+                    'similarly', 'likewise', 'also', 'next', 'then',
+                ],
+                'indicates': 'same_topic',
+                'confidence': 0.5,
+            },
+            
+            # Topic shift
+            'topic_shift': {
+                'markers': [
+                    'however', 'on the other hand', 'in contrast',
+                    'conversely', 'alternatively', 'meanwhile',
+                    'turning to', 'moving on', 'now consider',
+                ],
+                'indicates': 'topic_shift',
+                'confidence': 0.7,
+            },
+            
+            # Enumeration
+            'enumeration': {
+                'markers': [
+                    'first', 'second', 'third', 'finally',
+                    'firstly', 'secondly', 'thirdly', 'lastly',
+                    'to begin', 'next', 'in addition', 'last',
+                ],
+                'pattern': 'sequential',
+                'indicates': 'list_structure',
+                'confidence': 0.8,
+            },
+            
+            # Conclusion/Summary
+            'conclusion': {
+                'markers': [
+                    'in conclusion', 'to conclude', 'in summary',
+                    'to summarize', 'overall', 'in short', 'finally',
+                    'thus', 'therefore', 'hence', 'consequently',
+                ],
+                'indicates': 'section_end',
+                'confidence': 0.7,
+            },
+            
+            # Elaboration
+            'elaboration': {
+                'markers': [
+                    'for example', 'for instance', 'specifically',
+                    'in particular', 'namely', 'that is', 'i.e.',
+                    'such as', 'including',
+                ],
+                'indicates': 'subsection',
+                'confidence': 0.6,
+            },
+            
+            # Causation
+            'causation': {
+                'markers': [
+                    'because', 'since', 'as', 'due to', 'owing to',
+                    'as a result', 'consequently', 'therefore', 'thus',
+                ],
+                'indicates': 'reasoning_chain',
+                'confidence': 0.5,
+            },
+        }
+        
+        return rules
+    
+    def define_formatting_rules(self):
+        """
+        Rules based on formatting and layout
+        """
+        rules = {
+            # Whitespace patterns
+            'whitespace': {
+                'paragraph_break': {
+                    'pattern': r'\n\s*\n',
+                    'indicates': 'paragraph_boundary',
+                    'confidence': 0.95,
+                },
+                'indentation': {
+                    'pattern': r'^\s{4,}',
+                    'indicates': 'subsection_or_quote',
+                    'confidence': 0.6,
+                },
+            },
+            
+            # Line length
+            'line_length': {
+                'short_line': {
+                    'threshold': 80,
+                    'followed_by': 'paragraph',
+                    'indicates': 'potential_header',
+                    'confidence': 0.5,
+                },
+            },
+            
+            # Bullet points and lists
+            'lists': {
+                'patterns': [
+                    r'^\s*[\-\*\+]\s+',  # Markdown bullets
+                    r'^\s*\d+[\.\)]\s+',  # Numbered lists
+                    r'^\s*[a-z][\.\)]\s+',  # Lettered lists
+                    r'^\s*[IVX]+[\.\)]\s+',  # Roman numerals
+                ],
+                'indicates': 'list_item',
+                'confidence': 0.9,
+            },
+            
+            # Emphasis markers
+            'emphasis': {
+                'patterns': [
+                    r'\*\*(.+?)\*\*',  # **bold**
+                    r'__(.+?)__',  # __bold__
+                    r'\*(.+?)\*',  # *italic*
+                    r'_(.+?)_',  # _italic_
+                ],
+                'indicates': 'emphasis',
+                'confidence': 0.7,
+            },
+        }
+        
+        return rules
+    
+    def define_linguistic_rules(self):
+        """
+        Rules based on linguistic features
+        """
+        rules = {
+            # Sentence complexity
+            'sentence_complexity': {
+                'simple_sentences': {
+                    'max_clauses': 2,
+                    'indicates': 'introduction_or_summary',
+                    'confidence': 0.4,
+                },
+                'complex_sentences': {
+                    'min_clauses': 3,
+                    'indicates': 'detailed_content',
+                    'confidence': 0.4,
+                },
+            },
+            
+            # Tense patterns
+            'tense_patterns': {
+                'present_tense': {
+                    'indicates': 'general_statements',
+                    'confidence': 0.3,
+                },
+                'past_tense': {
+                    'indicates': 'narrative_or_methods',
+                    'confidence': 0.3,
+                },
+            },
+            
+            # Vocabulary shifts
+            'vocabulary_shift': {
+                'technical_terms': {
+                    'threshold': 0.3,  # 30% technical terms
+                    'indicates': 'technical_section',
+                    'confidence': 0.5,
+                },
+                'common_words': {
+                    'threshold': 0.8,  # 80% common words
+                    'indicates': 'introduction_or_summary',
+                    'confidence': 0.4,
+                },
+            },
+            
+            # Coreference patterns
+            'coreference': {
+                'high_pronoun_use': {
+                    'threshold': 0.15,  # 15% pronouns
+                    'indicates': 'continuation',
+                    'confidence': 0.5,
+                },
+                'low_pronoun_use': {
+                    'threshold': 0.05,  # 5% pronouns
+                    'indicates': 'new_topic',
+                    'confidence': 0.5,
+                },
+            },
+            
+            # Question patterns
+            'questions': {
+                'research_questions': {
+                    'pattern': r'[Ww]h(?:at|ere|en|y|o|ich)\s+.*\?',
+                    'indicates': 'problem_statement',
+                    'confidence': 0.6,
+                },
+            },
+        }
+        
+        return rules
+    
+    def parse_document(self, text):
+        """
+        Parse document and extract hierarchical structure
+        
+        Returns:
+            Hierarchical structure with confidence scores
+        """
+        # Initialize structure
+        structure = {
+            'document': text,
+            'hierarchy': [],
+            'metadata': {},
+        }
+        
+        # Split into lines
+        lines = text.split('\n')
+        
+        # Parse line by line
+        current_position = 0
+        for line_idx, line in enumerate(lines):
+            # Skip empty lines
+            if not line.strip():
+                current_position += len(line) + 1
+                continue
+            
+            # Apply all rules
+            section_results = self.apply_section_rules(line, line_idx, lines)
+            discourse_results = self.apply_discourse_rules(line, line_idx, lines)
+            formatting_results = self.apply_formatting_rules(line, line_idx, lines)
+            
+            # Combine results
+            combined = self.combine_rule_results(
+                section_results,
+                discourse_results,
+                formatting_results
+            )
+            
+            # If boundary detected, add to hierarchy
+            if combined['is_boundary']:
+                structure['hierarchy'].append({
+                    'position': current_position,
+                    'line_idx': line_idx,
+                    'text': line.strip(),
+                    'level': combined['level'],
+                    'type': combined['type'],
+                    'confidence': combined['confidence'],
+                    'evidence': combined['evidence'],
+                })
+            
+            current_position += len(line) + 1
+        
+        # Post-process hierarchy
+        structure = self.post_process_hierarchy(structure)
+        
+        return structure
+    
+    def apply_section_rules(self, line, line_idx, lines):
+        """
+        Apply section header detection rules
+        """
+        results = []
+        
+        # Check numbered sections
+        for pattern in self.section_rules['numbered_sections']['patterns']:
+            match = re.match(pattern, line.strip())
+            if match:
+                level = self.extract_numbering_level(match.group(0))
+                results.append({
+                    'rule': 'numbered_section',
+                    'level': level,
+                    'confidence': 0.95,
+                    'evidence': f'Matched pattern: {pattern}',
+                })
+        
+        # Check formatted headers
+        if len(line.strip()) < 80 and line.strip().isupper():
+            results.append({
+                'rule': 'formatted_header',
+                'level': 1,  # Assume top-level for all-caps
+                'confidence': 0.8,
+                'evidence': 'All uppercase, short line',
+            })
+        
+        # Check keyword headers
+        line_lower = line.strip().lower()
+        for level, keywords in self.section_rules['keyword_headers']['keywords'].items():
+            for keyword in keywords:
+                if line_lower == keyword or line_lower.startswith(keyword):
+                    level_num = int(level.split('_')[1])
+                    results.append({
+                        'rule': 'keyword_header',
+                        'level': level_num,
+                        'confidence': 0.7,
+                        'evidence': f'Keyword match: {keyword}',
+                    })
+        
+        # Check markup headers
+        for pattern in self.section_rules['markup_headers']['patterns']:
+            match = re.match(pattern, line.strip())
+            if match:
+                level = self.extract_markup_level(match.group(0))
+                results.append({
+                    'rule': 'markup_header',
+                    'level': level,
+                    'confidence': 0.99,
+                    'evidence': f'Markup pattern: {pattern}',
+                })
+        
+        return results
+    
+    def apply_discourse_rules(self, line, line_idx, lines):
+        """
+        Apply discourse marker detection rules
+        """
+        results = []
+        
+        line_lower = line.strip().lower()
+        
+        # Check each discourse marker category
+        for category, config in self.discourse_rules

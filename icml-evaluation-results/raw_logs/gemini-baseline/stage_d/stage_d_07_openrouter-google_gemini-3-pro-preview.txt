@@ -1,0 +1,69 @@
+This stress-testing plan evaluates the **structural rigidity** of the Hierarchical Transformer. Standard hierarchical models (splitting text into fixed 512-token windows) assume documents are linear and narrative. "Collaborative code" (e.g., Git diffs, PR discussions) and "Long Dialogues" (e.g., meeting transcripts) violate these assumptions due to non-linearity and high noise.
+
+### 1. Target Domains & Datasets (Out-of-Domain)
+
+To test the architecture, we move away from standard NLP (IMDb/ArXiv) to domains where "chunking" breaks semantic boundaries.
+
+*   **Domain A: Collaborative Code (Vulnerability Detection)**
+    *   **Dataset:** **Devign** or **CodeXGLUE** (Defect Detection).
+    *   **The Stress:** Code dependencies (variables, function calls) are non-local. A variable defined in Chunk 1 might be used in Chunk 10. The 512-token window arbitrarily slices these dependencies.
+*   **Domain B: Multi-Party Dialogue (Meeting Summarization/Action Item)**
+    *   **Dataset:** **AMI Corpus** or **ICSI Meeting Corpus**.
+    *   **The Stress:** "Collaborative" speech is interrupted and overlapping. Ground truth often relies on connecting a statement in Chunk 1 ("I'll do the UI") to a confirmation in Chunk 5 ("Okay, approved").
+
+### 2. Synthetic Perturbations (The "Stress")
+
+We introduce perturbations designed to exploit the weaknesses of the **Fixed-Window Chunking** and **Level 2 Aggregation**.
+
+#### A. The "Padding Attack" (Code-Specific)
+*   **Method:** Inject `N` lines of comments (e.g., `// TODO: Refactor`) at random intervals.
+*   **Hypothesis:** This pushes a critical function definition from the middle of Chunk $K$ to the boundary of Chunk $K+1$.
+*   **Failure Mode:** If the model relies on local attention (Level 1) to resolve syntax, shifting the syntax across the "blind spot" (chunk boundary) should cause performance collapse.
+
+#### B. The "Speaker Shuffle" (Dialogue-Specific)
+*   **Method:** Randomly shuffle the order of input chunks at the Document Level (Level 2).
+*   **Hypothesis:**
+    *   If the Level 2 encoder (LSTM/Transformer) is actually learning *narrative flow*, performance should drop significantly.
+    *   If performance remains stable, the model is acting as a "Bag of Chunks," proving it fails to model long-range causality.
+
+#### C. "Needle in a Haystack" Dilution
+*   **Method:** Take a document with a known label. Append 10 chunks of "Lorem Ipsum" or random code snippets from other files to the end.
+*   **Hypothesis:** Tests the **Pooling Bottleneck**. Can the Level 2 aggregator maintain the signal of the original text, or does the mean/attention pooling get washed out by the noise?
+
+### 3. Evaluation Metrics
+
+Do not just report F1. We need to quantify the *decay*.
+
+1.  **Robustness Gap ($R_G$):**
+    $$R_G = \text{Score}_{\text{Clean}} - \text{Score}_{\text{Perturbed}}$$
+    *   *Target:* We want $R_G \approx 0$.
+2.  **Boundary Sensitivity ($S_B$):**
+    *   Specifically for the "Padding Attack."
+    *   Measure the probability flip rate when a specific keyword (e.g., "vulnerable_function") moves from index 250 (center of chunk) to index 510 (edge of chunk).
+3.  **Attention Entropy Collapse:**
+    *   Measure the entropy of the Level 2 Attention weights.
+    *   *Failure Signal:* If Entropy spikes on perturbed data, the model is "panicking" and attending to everything equally (uniform distribution).
+
+### 4. Statistical Analysis Plan
+
+To prove the Hierarchical Transformer is less robust on Code than on Text, we use a **Difference-in-Differences (DiD)** framework.
+
+**Setup:**
+*   **Control Group:** IMDb (Standard Narrative).
+*   **Treatment Group:** Devign (Code).
+*   **Intervention:** "Padding Attack" (Injecting noise).
+
+**The Test:**
+We fit a linear mixed-effects model or perform a regression analysis:
+$$Y = \beta_0 + \beta_1(\text{Domain}) + \beta_2(\text{Perturbation}) + \beta_3(\text{Domain} \times \text{Perturbation}) + \epsilon$$
+
+*   $Y$: Model Accuracy.
+*   $\text{Domain}$: 0 for IMDb, 1 for Code.
+*   $\text{Perturbation}$: 0 for Clean, 1 for Attack.
+*   **Key Statistic:** $\beta_3$ (The Interaction Term).
+    *   **Hypothesis:** $\beta_3$ will be negative and statistically significant ($p < 0.05$).
+    *   **Interpretation:** "The performance drop caused by perturbation is significantly *worse* in the Code domain than in the Narrative domain."
+
+### 5. Implementation Note: Vocabulary Alignment
+*   **Critical Risk:** If you use standard `bert-base-uncased` on Code, the tokenization will be so fragmented (unknown tokens) that the stress test is invalid.
+*   **Requirement:** You must initialize the Hierarchical Model's Level 1 encoder with a domain-appropriate checkpoint (e.g., `microsoft/codebert-base` for Code, `roberta-base` for Dialogue) while keeping the **Hierarchical Architecture (Level 2)** identical. This isolates the *architectural* failure from the *vocabulary* failure.

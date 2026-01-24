@@ -1,0 +1,224 @@
+The searches yielded relevant sources on fairness-aware recommendation systems [1,2,3,5] and challenges for SMEs in emerging markets [1,2], though limited specific evidence on emerging market contexts. I'll construct a rigorous plan drawing on these sources and domain knowledge, noting gaps where authoritative references should be obtained.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Small e-commerce stores in emerging markets (Sub-Saharan Africa, Southeast Asia, Latin America) face unique challenges when deploying recommendation systems:
+
+1. **Data scarcity:** New stores have <1,000 transactions, 50-500 products, sparse user-item interactions (cold-start problem)
+2. **Fairness concerns:** Popularity bias [3,5] disproportionately recommends best-sellers, marginalizing niche products critical for small inventory diversification. Gender/demographic biases [1] may alienate underserved customer segments
+3. **Resource constraints:** Limited compute, no ML expertise, <$100/month budget for cloud services [2]
+4. **Market dynamics:** High customer churn (60-80%), mobile-first access (2G/3G), price sensitivity, trust barriers
+5. **Evaluation gaps:** Existing fairness metrics [3,5] (Gini index, catalog coverage) developed for large platforms (Amazon, Netflix) may not apply to small inventories
+
+Recent work demonstrates fairness-aware algorithms [2,5,6] but lacks validation in resource-constrained, data-scarce emerging market contexts where provider fairness (equal exposure for all products) conflicts with accuracy.
+
+**Core Hypothesis:**  
+Fairness-aware recommendation algorithms (re-ranking, calibration, multi-stakeholder optimization [6]) can improve provider fairness (catalog coverage >60%, Gini index <0.5) and long-tail product exposure (+30-50% vs. popularity-based) for small e-commerce stores while maintaining acceptable accuracy (≥85% of baseline relevance) and operating within resource constraints (<100ms latency, <50MB model size).
+
+**Primary Goals (6-month horizon):**
+- **Algorithm evaluation:** Compare 5-7 fairness-aware methods (re-ranking, calibration, multi-objective optimization) vs. baselines on 3-5 small e-commerce datasets
+- **Fairness-accuracy trade-offs:** Quantify provider fairness (catalog coverage, Gini, long-tail exposure) vs. consumer utility (accuracy, diversity, novelty)
+- **Resource feasibility:** Validate deployment on low-cost infrastructure (single CPU, <2GB RAM, <$50/month)
+- **Field validation:** Partner with 10-20 small stores (Kenya, Nigeria, Indonesia, Brazil) for 8-week A/B tests
+- **Toolkit release:** Open-source library + deployment guide for small business owners (non-technical)
+
+**Secondary Goals:**
+- Multi-stakeholder fairness: Balance consumer, provider (seller), and platform objectives [6]
+- Cold-start strategies: Fairness-aware recommendations for new products/users
+- Explainability: Show store owners why products are/aren't recommended
+- Cultural adaptation: Localized fairness definitions (e.g., gender norms vary by region)
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Fairness Audit of Standard Recommendation Algorithms**
+
+**Hypothesis:** Standard collaborative filtering and popularity-based algorithms exhibit severe popularity bias (Gini >0.7, catalog coverage <40%) on small e-commerce datasets, disproportionately recommending top 10-20% of products while marginalizing 50-70% of inventory [3,5].
+
+**Setup:**
+- **Algorithms (5 baselines):**
+  1. **Popularity-based:** Recommend top-N most-purchased items (simple, widely used by small stores)
+  2. **Collaborative filtering (CF):** User-based CF, item-based CF (Surprise library)
+  3. **Matrix factorization:** SVD, ALS (implicit feedback for view/click data)
+  4. **Content-based:** TF-IDF on product descriptions + cosine similarity
+  5. **Hybrid:** Weighted combination of CF + content-based
+- **Datasets (3-5, simulate small e-commerce):**
+  1. **Real-world:** Partner with 3-5 small stores (Kenya, Indonesia, Brazil) for anonymized transaction logs (target: 500-2,000 transactions, 100-500 products, 50-300 users)
+  2. **Synthetic:** Subsample large datasets to simulate small-store conditions:
+     - **Amazon Reviews:** Sample 500 products, 300 users from Electronics/Fashion categories
+     - **Retailrocket:** E-commerce clickstream (sample small merchant subset)
+     - **Rees46:** E-commerce dataset with item metadata
+  3. **Emerging market:** Jumia (African e-commerce) public datasets if available, else web scraping (ethically, with permission)
+- **Data characteristics:**
+  - Sparsity: >95% (typical for small stores)
+  - Long-tail distribution: 80/20 rule (20% products account for 80% sales)
+  - Cold-start: 30-50% products with <5 interactions
+- **Evaluation period:** Train on first 80% of temporal data, test on last 20%
+
+**Baselines:**
+1. Random recommendations (sanity check)
+2. Most-popular items (industry standard for small stores)
+3. Reported results from RecSys papers [3,5] (though on larger datasets)
+
+**Evaluation Metrics:**
+1. **Accuracy (consumer utility):**
+   - Precision@K, Recall@K, NDCG@K (K=5, 10, 20)
+   - Hit Rate (% users with ≥1 relevant item in top-K)
+   - Mean Reciprocal Rank (MRR)
+2. **Provider fairness [3,5]:**
+   - **Catalog coverage:** % of products recommended at least once
+   - **Gini index:** Inequality in recommendation distribution (0=perfect equality, 1=maximum inequality)
+   - **Long-tail coverage:** % of recommendations from bottom 50% of products by popularity
+   - **Exposure distribution:** Mean/std of recommendation frequency per product
+3. **Diversity:**
+   - Intra-list diversity (ILD): Dissimilarity within top-K recommendations
+   - Aggregate diversity: Total unique items recommended across all users
+4. **Novelty:**
+   - Mean popularity rank of recommended items (lower=more novel)
+   - % recommendations outside user's historical purchases
+
+**Expected Outcomes:**
+- **Popularity-based:** Highest accuracy (Precision@10: 0.15-0.25) but worst fairness (Gini: 0.75-0.85, coverage: 25-35%)
+- **Collaborative filtering:** Moderate accuracy (Precision@10: 0.12-0.20), moderate fairness (Gini: 0.60-0.75, coverage: 35-50%)
+- **Content-based:** Lower accuracy (Precision@10: 0.08-0.15) but better diversity (ILD: +15-25% vs. CF)
+- **Hybrid:** Best accuracy (Precision@10: 0.18-0.28) but still poor fairness (Gini: 0.65-0.80)
+- **Long-tail marginalization:** Bottom 50% of products receive <10% of recommendations across all baselines
+- **Cold-start failure:** Products with <5 interactions rarely recommended (<5% coverage)
+
+**Ablations:**
+- Dataset size: {100, 300, 500, 1000} products to study scaling effects
+- Sparsity: {90%, 95%, 98%, 99%} to simulate varying data scarcity
+- Temporal dynamics: Performance degradation over time (concept drift)
+
+---
+
+### **Experiment 2: Fairness-Aware Re-Ranking Algorithms**
+
+**Hypothesis:** Post-processing re-ranking methods (xQuAD, Calibrated Recommendations, MMR) can improve provider fairness by 30-50% (catalog coverage >60%, Gini <0.55) with <15% accuracy loss vs. baselines, providing practical fairness-accuracy trade-offs for small stores.
+
+**Setup:**
+- **Re-ranking algorithms (4-5 methods):**
+  1. **xQuAD (eXplicit Query Aspect Diversification):** Diversify recommendations to cover different product categories/attributes
+  2. **Calibrated Recommendations [2]:** Match recommendation distribution to user preference distribution
+  3. **MMR (Maximal Marginal Relevance):** Balance relevance and diversity via greedy re-ranking
+  4. **FairRec:** Explicitly optimize for catalog coverage + accuracy
+  5. **Provider-side fairness [5]:** Ensure minimum exposure for each product (e.g., ≥1% of total recommendations)
+- **Base ranker:** Use best-performing baseline from Exp 1 (likely hybrid CF+content)
+- **Re-ranking parameters:**
+  - Diversity weight λ ∈ {0.1, 0.3, 0.5, 0.7, 0.9} (trade-off accuracy vs. fairness)
+  - Minimum exposure threshold: {0.5%, 1%, 2%, 5%} per product
+  - Re-ranking depth: Top-K candidates {20, 50, 100} before re-ranking to top-10
+- **Implementation:** Python, scikit-learn, Surprise, custom re-ranking modules
+
+**Baselines:**
+1. Unranked baseline (best model from Exp 1)
+2. Random re-ranking (sanity check)
+3. Category-based diversification (simple heuristic: ensure ≥1 item per category)
+
+**Evaluation Metrics:**
+- Same as Exp 1 (accuracy + fairness + diversity)
+- **Trade-off analysis:**
+  - Pareto frontier: Plot accuracy vs. fairness (identify non-dominated solutions)
+  - Fairness cost: % accuracy loss per unit fairness gain
+  - Calibration error: KL divergence between user preferences and recommendations
+- **Business metrics:**
+  - Revenue impact: Estimated sales change (assume conversion rate proportional to relevance)
+  - Inventory turnover: % of products sold at least once (proxy for fairness)
+
+**Expected Outcomes:**
+- **xQuAD (λ=0.5):** +35-45% catalog coverage, Gini reduction to 0.50-0.60, -10-15% Precision@10
+- **Calibrated Recommendations:** Best calibration (KL divergence <0.1), +30-40% coverage, -8-12% accuracy
+- **MMR:** Moderate fairness gains (+25-35% coverage), smallest accuracy loss (-5-10%)
+- **FairRec:** Highest fairness (coverage >65%, Gini <0.50) but largest accuracy loss (-15-20%)
+- **Optimal λ:** 0.3-0.5 balances fairness and accuracy for most stores
+- **Long-tail boost:** Bottom 50% of products receive 20-30% of recommendations (vs. <10% baseline)
+- **Pareto frontier:** Identifies 3-5 non-dominated configurations for different business priorities
+
+**Ablations:**
+- Re-ranking depth: Deeper candidate sets (K=50 vs. 20) improve fairness with minimal accuracy loss
+- Category constraints: Hard constraints (≥1 item per category) vs. soft (preference weighting)
+- Temporal re-ranking: Update re-ranking weights weekly based on sales data
+
+---
+
+### **Experiment 3: Multi-Objective Optimization for Multi-Stakeholder Fairness**
+
+**Hypothesis:** Multi-objective optimization frameworks [6] (Pareto-efficient group recommendations, social choice methods) can simultaneously optimize consumer utility, provider fairness, and platform revenue with <10% accuracy loss vs. single-objective baselines, enabling customizable trade-offs for different business models.
+
+**Setup:**
+- **Stakeholders:**
+  1. **Consumers:** Want accurate, diverse, novel recommendations
+  2. **Providers (sellers):** Want fair exposure, especially for new/long-tail products
+  3. **Platform (store owner):** Wants revenue, customer satisfaction, inventory turnover
+- **Multi-objective methods (3-4):**
+  1. **Weighted sum:** Combine objectives with weights (α·accuracy + β·fairness + γ·revenue)
+  2. **Pareto optimization [4]:** Find non-dominated solutions (no objective can improve without worsening another)
+  3. **Nash bargaining:** Game-theoretic solution balancing stakeholder utilities
+  4. **Social choice [6]:** Aggregate stakeholder preferences using voting mechanisms
+- **Objective functions:**
+  - **Consumer:** NDCG@10 (relevance) + ILD (diversity) + novelty
+  - **Provider:** Catalog coverage + inverse Gini + long-tail exposure
+  - **Platform:** Estimated revenue (price × predicted conversion) + customer lifetime value
+- **Optimization:** 
+  - NSGA-II (Non-dominated Sorting Genetic Algorithm) for Pareto optimization
+  - Grid search for weighted sum (α, β, γ ∈ {0, 0.25, 0.5, 0.75, 1.0})
+  - Alternating optimization for Nash bargaining
+- **Datasets:** Same as Exp 1-2, plus price/revenue metadata
+
+**Baselines:**
+1. Single-objective (accuracy-only, from Exp 1)
+2. Fairness-only (maximize coverage, ignore accuracy)
+3. Revenue-only (recommend highest-margin products)
+
+**Evaluation Metrics:**
+- **Pareto frontier:** 3D plot (accuracy, fairness, revenue)
+- **Stakeholder satisfaction:** Survey 10-20 store owners on preferred trade-offs
+- **Business impact simulation:**
+  - Revenue change (vs. baseline)
+  - Customer churn (proxy: diversity/novelty)
+  - Inventory turnover (% products sold)
+- **Fairness across stakeholders:** 
+  - Consumer fairness [1]: Recommendation quality variance across user demographics
+  - Provider fairness: Exposure variance across product categories/price tiers
+
+**Expected Outcomes:**
+- **Weighted sum (α=0.5, β=0.3, γ=0.2):** Balanced solution with -8-12% accuracy, +40-50% fairness, +5-10% revenue
+- **Pareto optimization:** Identifies 5-10 non-dominated solutions spanning trade-off space
+- **Nash bargaining:** Achieves "fair" compromise (no stakeholder worse off by >15% vs. single-objective)
+- **Social choice [6]:** Stakeholder voting selects λ=0.4 re-ranking as preferred solution
+- **Consumer fairness [1]:** Multi-objective reduces gender bias (recommendation quality gap) by 20-30%
+- **Platform adoption:** 70-80% of store owners prefer multi-objective (survey) over accuracy-only
+
+**Ablations:**
+- Objective weights: Sensitivity analysis (how does solution change with α, β, γ?)
+- Stakeholder priorities: Different stores have different priorities (luxury vs. discount)
+- Dynamic weights: Adjust weights over time (new store: prioritize fairness → mature: prioritize accuracy)
+
+---
+
+### **Experiment 4: Resource-Constrained Deployment and Field Validation**
+
+**Hypothesis:** Fairness-aware algorithms can deploy on low-cost infrastructure (single CPU, <2GB RAM, <$50/month cloud) with <100ms latency and operate effectively in emerging market conditions (intermittent connectivity, mobile-first access), achieving measurable business impact (+10-20% inventory turnover, +5-15% revenue) in 8-week field tests.
+
+**Setup:**
+- **Deployment platforms:**
+  1. **Cloud:** AWS t3.micro ($10/month), Google Cloud e2-micro (free tier), DigitalOcean droplet ($6/month)
+  2. **On-premise:** Raspberry Pi 4 (8GB, $75 one-time), local server
+  3. **Mobile-first:** Progressive Web App (PWA) with client-side inference (TensorFlow.js, <50MB model)
+- **Algorithm selection:** Best-performing method from Exp 2-3 (likely calibrated re-ranking or weighted multi-objective)
+- **Optimization:**
+  - Model compression: Quantization (FP32→INT8), pruning, distillation
+  - Caching: Pre-compute recommendations daily, serve from cache
+  - Batch processing: Update recommendations nightly (not real-time)
+  - Offline-first: Store recommendations locally, sync when connectivity available
+- **Field partners:** 10-20 small e-commerce stores across 3-4 countries
+  - **Kenya:** 3-5 stores (Nairobi, Mombasa)
+  - **Indonesia:** 3-5 stores (Jakarta, Surabaya)
+  - **Brazil:** 3-5 stores (São Paulo, Rio)
+  - **Nigeria:** 2-4 stores (Lagos, Abuja)
+- **A/B test design:**
+  - **Control:** Current

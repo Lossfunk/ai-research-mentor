@@ -28,7 +28,7 @@ from academic_research_mentor.rich_formatter import print_error, print_info, pri
 from .config_loader import compute_file_digest, load_metrics_config
 from .judge_utils import build_judge_clients
 from .run_judge_scores import run_judges
-from .run_manual_stage import ensure_stage_directories, normalize_stage
+from .stage_utils import ensure_stage_directories, normalize_stage
 from .single_turn_orchestrator import SingleTurnOrchestrator
 
 try:

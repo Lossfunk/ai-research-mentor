@@ -1,0 +1,62 @@
+The PeerRead dataset is a foundational resource, but its data collection methodology relies on several proxies that rigorous reviewers may flag as confounding variables. The most critical threats revolve around **data leakage through versioning** and **selection bias**.
+
+Here are the three most critical threats to validity and the specific analyses you should run to preempt them.
+
+---
+
+### Threat 1: The "Camera-Ready" Confounder (Data Leakage)
+**The Issue:** The most dangerous threat in PeerRead is the potential mismatch in paper versions.
+*   **Accepted Papers:** Often sourced from the final *proceedings* or the final arXiv version (v2, v3, etc.) updated *after* peer review.
+*   **Probably-Rejected Papers:** Sourced from the initial arXiv snapshot (v1) submitted during the conference window.
+
+**Why it matters:** If your model sees the *camera-ready* version of accepted papers, it is not learning "quality"; it is learning to detect **post-acceptance polish**. It might detect features like:
+*   Added experiments requested by reviewers.
+*   More cohesive writing (post-proofreading).
+*   Specific LaTeX templates used only for strict camera-ready guidelines.
+*   The presence of an "Acknowledgments" section (often added only after acceptance).
+
+#### **Preemptive Analysis to Run:**
+1.  **The "Version Control" Audit:**
+    *   Explicitly check the arXiv version history for the "Accepted" class.
+    *   **Action:** Filter the dataset to ensure you are using **v1** (or the version closest to the submission deadline) for the accepted papers, not the final version.
+    *   **Report:** "We restricted our training data to the initial arXiv versions (v1) for both classes to ensure the model predicts acceptance based on the submission state, not the camera-ready state."
+2.  **The "Leakage" Classifier:**
+    *   Train a simple classifier to distinguish between *v1* and *v-final* of the **same** accepted papers.
+    *   **Argument:** If this classifier performs highly, it proves that "post-review changes" are a strong signal. You can then use this to argue that your main model (which predicts Accept vs. Reject) is *not* relying on these features if you have properly controlled for versioning.
+
+---
+
+### Threat 2: The "Opt-In" Bias (Selection Bias)
+**The Issue:** For the ACL subset of PeerRead, the reviews and acceptance labels come from authors who *opted in* to share their data, or from OpenReview (ICLR) which represents a specific sub-culture of ML.
+*   **Self-Selection:** Authors who opt in are likely more confident, have higher-quality papers, or come from institutions that encourage open science.
+*   **Survivorship Bias:** Badly written papers or papers with harsh rejections are less likely to be voluntarily shared.
+
+**Why it matters:** The dataset may lack the "true negatives"—the poorly written, incoherent, or off-topic papers that make up the bottom 20% of a conference stack. Your model might be training on a distribution of "Good" vs. "Excellent," rather than "Bad" vs. "Good."
+
+#### **Preemptive Analysis to Run:**
+1.  **Topic/Lexical Distribution Comparison:**
+    *   Compare the topic distribution (using LDA or embeddings) of the PeerRead accepted papers against the *entire* proceedings of that year's conference.
+    *   **Report:** "We computed the KL-divergence between the topic distributions of the PeerRead subset and the full conference proceedings. The low divergence ($D_{KL} < \epsilon$) suggests the PeerRead sample is representative of the broader conference content."
+2.  **Readability/Complexity Check:**
+    *   Compare readability scores (e.g., Flesch-Kincaid) of the "Probably Rejected" class vs. the "Accepted" class.
+    *   **Argument:** If the scores are similar, acknowledge that the dataset represents a "hard" classification task among competitive papers, rather than a filter for low-quality spam.
+
+---
+
+### Threat 3: The "ArXiv" Bias (Institutional Bias)
+**The Issue:** The "Probably Rejected" class is defined as papers on arXiv during the submission window that didn't appear in the conference.
+*   **The Bias:** Not everyone posts to arXiv. Large, prestigious labs (Google, FAIR, MIT) are culturally more likely to preprint than smaller labs or different sub-fields.
+*   **The Confounder:** The model might learn to associate "High-Resource Institution Writing Style" with the "Rejected" class if the rejected set is dominated by big labs who preprint everything, while the accepted set includes a wider variety of authors.
+
+#### **Preemptive Analysis to Run:**
+1.  **The "Institution Blindness" Test:**
+    *   If you have metadata, check the overlap of author affiliations between classes.
+    *   **Experiment:** Run a "Adversarial Validation." Train a classifier to predict *only* the institution/affiliation from the text (after anonymization).
+    *   **Argument:** If the model cannot predict the institution better than random chance, or if the performance drops when you control for it, you can argue that your main results are not driven by institutional writing styles.
+2.  **The "Submission Window" Sensitivity Analysis:**
+    *   The heuristic assumes papers uploaded within a 1-month window of the deadline were intended for that conference.
+    *   **Action:** Retrain your model using a tighter window (e.g., 1 week) vs. a looser window (e.g., 2 months).
+    *   **Report:** "Our results remain stable regardless of the time-window heuristic used to define the negative class, suggesting the signal is robust to the specific matching criteria."
+
+### Summary of Contingency Plan
+If you include a **"Data Validity and Robustness"** subsection in your Experiments or Discussion, and include the results of the **Version Control Audit** (Threat 1) and the **Topic Distribution Comparison** (Threat 2), you will neutralize 90% of the methodological critiques related to the PeerRead dataset.

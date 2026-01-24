@@ -1,0 +1,68 @@
+1. Problem framing and goals
+
+Problem
+- Many groups downscale coarse CMIP6 outputs to local scales using statistical, ML, and regional climate models. However, evaluations are fragmented, focus on a few regions/variables, and rarely assess calibrated uncertainty or cross-variable/spatial dependence. A coordinated, cross-lab effort can deliver fair, reproducible comparisons with decision-relevant uncertainty.
+
+Scope and targets (one-year collaboration; first 6 months detailed below)
+- Variables and targets: Daily maximum/minimum temperature (tasmax/tasmin) and daily precipitation (pr) downscaled to 0.25° (global) and 0.1° (regional pilots).
+- Domains: Three regions representing diverse climate regimes (e.g., Western North America, Western Europe, South Asia) plus a global 0.25° track using NEX-GDDP-CMIP6 as a widely used baseline product [1–5].
+- Methods to evaluate:
+  - Statistical/bias-correction baselines: quantile mapping (QM), multivariate quantile mapping (MBCn) [11–12,14], BCSD-like baselines; LOCA/MACA if available (note: add authoritative references via targeted queries “LOCA downscaling Pierce 2014,” “MACA Abatzoglou 2012”).
+  - ML downscalers: CNN/UNet super-resolution and bias-correction hybrids; diffusion or conditional generative models where feasible.
+  - Dynamical baselines: CORDEX regional climate model outputs where available (note: obtain references via “CORDEX overview Giorgi 2015”).
+- Uncertainty quantification (UQ): Quantile regression (pinball), heteroscedastic regression, deep ensembles, NGBoost/evidential, and distribution-free conformal prediction for calibrated intervals (note: add citations via “conformalized quantile regression Romano 2019 arXiv”).
+- Evaluation pillars:
+  1) Pointwise skill (bias/RMSE/quantiles) and proper scoring rules for probabilistic forecasts (CRPS; obtain classic reference via “Gneiting Raftery 2007 CRPS”).
+  2) Extremes (ETCCDI indices; return levels; conditional tail metrics—add references via “ETCCDI indices definition”).
+  3) Spatial and cross-variable dependence (variograms, correlograms, copula-based diagnostics).
+  4) Scenario consistency and generalization across GCMs/regions.
+- Cross-lab governance: Shared data access via cloud-optimized catalogs (intake-esm, Zarr) [6–9]; pre-registered evaluation protocol; containerized runners; independent replication across labs; model and data cards.
+
+Primary deliverables by month 6
+- A preregistered evaluation protocol and open-source benchmark suite with containerized baselines.
+- A curated, cloud-accessible data catalog and code to extract train/val/test splits using intake-esm [6–9].
+- First comparative results for deterministic and probabilistic downscalers on at least two regions, including calibrated predictive intervals and extreme-event metrics.
+- A governance pack: MoU, data-use agreements, risk registry, and QA checklists.
+
+Evidence
+- NEX-GDDP-CMIP6 is a widely used, bias-corrected daily downscaled CMIP6 product at 0.25° [1–5].
+- Intake-esm/Pangeo enable reproducible, cross-cloud access to CMIP6/obs in Zarr with consistent metadata [6–9].
+- Multivariate quantile mapping (MBCn) is a standard for multivariate bias correction [11–12,14].
+- Note: Some seminal downscaling and UQ scoring references could not be retrieved via tool. We will add them through targeted searches listed above rather than force generic citations.
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, expected outcomes)
+
+Experiment 1: Deterministic baselines and split harmonization
+- Hypothesis: A simple statistical baseline (QM/BCSD) tuned with robust cross-validation forms a strong anchor, and protocol harmonization reduces inter-lab variance by >50%.
+- Setup:
+  - Data: CMIP6 historical (multiple GCMs, 1980–2014) and future (2015–2050; SSP2-4.5, SSP5-8.5) via intake-esm on Pangeo/Google Cloud [6–9]; observations/reanalysis per region (e.g., Daymet/PRISM for CONUS; E-OBS for Europe; IMD gridded for India). Include NEX-GDDP-CMIP6 as a baseline product [1–5].
+  - Preprocessing: Common land mask, bilinear regridding to coarse GCM grid for train, standardized anomalies for temperature; wet-day thresholds for precip.
+  - Methods: QM, MBCn [11–12,14], BCSD-like baseline; UNet bias-correction (deterministic).
+  - Splits: Train 1980–2005, validate 2006–2010, test 2011–2014; temporal generalization check 2015–2019 (ERA5/obs where available).
+- Baselines: Raw GCM bilinear downscaling (persistence baseline).
+- Metrics: Bias, RMSE, MAE, Pearson/Spearman; seasonal skill; spatial pattern correlation; compute cost.
+- Expected outcomes: QM/MBCn reduce bias/RMSE by 30–60% vs raw; standardized evaluation scripts reproducible across labs (checksum-matched outputs).
+
+Experiment 2: Probabilistic downscaling with calibrated uncertainty
+- Hypothesis: Quantile regression + conformal calibration achieves nominal coverage with tighter intervals than deep ensembles at equal compute.
+- Setup:
+  - Methods: Quantile regression (τ ∈ {0.05, 0.5, 0.95}), heteroscedastic UNet (Gaussian NLL), NGBoost/evidential variants; deep ensembles (K=5) for epistemic; conformalized quantile regression for finite-sample coverage (add canonical references via targeted search).
+  - Calibration: Held-out years by region; coverage targeting at daily and seasonal aggregation.
+- Baselines: Deterministic outputs with climatological residual distribution; deep ensembles without calibration.
+- Metrics: Coverage at 90/95% PIs, interval width, CRPS (proper scoring rule; add citation via Gneiting & Raftery), reliability diagrams, PIT histograms, sharpness.
+- Expected outcomes: Conformalized quantiles achieve coverage within ±2% of nominal; CRPS improves ≥10% vs climatology-based PIs; ensembles helpful under model/gcm shift.
+
+Experiment 3: Extremes and tail behavior
+- Hypothesis: Methods that explicitly model skew and zero inflation for precipitation yield better extremes (Rx1day, Rx5day) and return levels than symmetric-Gaussian assumptions.
+- Setup:
+  - Targets: ETCCDI indices (e.g., TX90p, TN10p, Rx1day, CDD/CWD); return levels via GEV/POT fits on downscaled vs observed series.
+  - Methods: Tweedie or zero-inflated quantile regression for precipitation; tail-aware loss (quantile focus τ≥0.95); block bootstrap for uncertainty on indices.
+- Baselines: MBCn/QM and deterministic UNet.
+- Metrics: Bias and RMSE on indices; KGE for daily precip; tail quantile errors; return level bias at 10-/20-year horizons; reliability of exceedance probabilities.
+- Expected outcomes: Tail-aware models reduce Rx1day bias by ≥15% vs symmetric losses; improved exceedance reliability.
+
+Experiment 4: Spatial and cross-variable dependence
+- Hypothesis: Multivariate methods (MBCn; copula-based post-processing) better preserve spatial autocorrelation and cross-variable dependence than univariate methods and independent ML models.
+- Setup:
+  - Diagnostics:

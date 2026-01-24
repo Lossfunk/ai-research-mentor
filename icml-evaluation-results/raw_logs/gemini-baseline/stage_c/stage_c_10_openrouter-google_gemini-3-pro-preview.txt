@@ -1,0 +1,108 @@
+This research plan addresses the **"WhatsApp Gap" in Misinformation Detection**: the failure of state-of-the-art (SOTA) models when applied to highly compressed, low-resolution, and culturally specific content prevalent in the Global South (e.g., India, Brazil, Nigeria), where data is expensive and devices are low-end.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Current multimodal misinformation detection models (e.g., CLIP-based architectures) rely on high-resolution imagery and heavy compute. They fail in "low-bandwidth" ecosystems where:
+1.  **Compression Artifacts:** Images are re-compressed dozens of times (via WhatsApp/Telegram), destroying the fine-grained visual features SOTA models rely on.
+2.  **Modality Shift:** Misinformation often takes the form of "cheapfakes"—text screenshots, memes, or out-of-context low-res photos—rather than deepfakes.
+3.  **Compute Constraints:** Solutions must run on edge devices or low-cost servers, precluding large Vision Transformers (ViT-L).
+
+**Research Goal:**
+Develop **"Lite-Verify,"** a robust, lightweight multimodal framework that maintains >90% of SOTA accuracy while reducing parameter count by 10x and showing resilience to heavy JPEG compression and resizing.
+
+**Core Objectives:**
+1.  **Compression Robustness:** Quantify and mitigate the performance drop of detection models on "WhatsApp-grade" image quality.
+2.  **Efficient Fusion:** Demonstrate that simple "Late Fusion" of lightweight encoders (MobileNet + DistilBERT) is sufficient for cheapfake detection, negating the need for massive cross-modal attention layers.
+3.  **OCR-Guided Verification:** Prove that extracting text embedded *within* images (memes/screenshots) provides a higher signal-to-compute ratio than visual feature analysis for this specific domain.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "WhatsApp Effect" (Robustness Benchmarking)
+**Hypothesis:** SOTA models (e.g., ViT+BERT) suffer a >15% accuracy drop when tested on highly compressed data, whereas a lightweight model trained *on* compressed augmentations will retain performance.
+*   **Setup:**
+    *   **Dataset:** **Fakeddit** (multimodal benchmark) and **NewsCLIPpings**.
+    *   **Data Augmentation:** Create a "Low-Bandwidth" test set by applying aggressive JPEG compression (Quality < 10), downscaling (to 224x224), and "screenshotting" simulation.
+    *   **Models:**
+        *   *Heavy Baseline:* CLIP-ViT-L/14.
+        *   *Lite Treatment:* **MobileNetV3** (Vision) + **mDistilBERT** (Text).
+    *   **Training:** Train the Lite model using "Compression Augmentation" (random quality degradation during training).
+*   **Evaluation Metrics:** F1-Score vs. Compression Level (Bitrate); Inference Latency (ms).
+*   **Expected Outcome:** The Heavy Baseline collapses on low-quality images. The Lite model, while starting with lower raw accuracy, outperforms the Heavy model on the "Low-Bandwidth" set and runs 20x faster.
+
+#### Experiment 2: OCR-Consistency Check (The "Screenshot" Hypothesis)
+**Hypothesis:** For "cheapfakes" (memes/screenshots), checking the consistency between the *caption* and the *embedded text* (OCR) is more effective than analyzing visual scene features.
+*   **Setup:**
+    *   **Method:**
+        1.  Extract text from image using **EasyOCR** (lightweight).
+        2.  Compute Semantic Similarity (Cosine Similarity of embeddings) between Caption and OCR-Text.
+        3.  Feed this single scalar feature + visual features into the classifier.
+    *   **Ablation:** Compare [Image + Caption] vs. [Image + Caption + OCR].
+*   **Baselines:** Standard Multimodal fusion (without explicit OCR).
+*   **Evaluation Metrics:** Accuracy on the "Meme/Screenshot" subset of the dataset.
+*   **Expected Outcome:** Adding the OCR-consistency feature boosts accuracy by >10% on meme-style misinformation, which is the dominant vector in low-resource regions.
+
+#### Experiment 3: Knowledge Distillation for Edge Deployment
+**Hypothesis:** A student model (MobileNet+TinyBERT) can learn to mimic the "reasoning" of a teacher model (CLIP) regarding image-text contradictions without inheriting the computational cost.
+*   **Setup:**
+    *   **Teacher:** CLIP (frozen).
+    *   **Student:** MobileNetV3 + TinyBERT.
+    *   **Loss Function:** $L_{total} = L_{task} + \alpha L_{distill}$ (minimizing KL-divergence between Teacher and Student logits).
+    *   **Constraint:** Student must be <50MB total size.
+*   **Evaluation Metrics:** Model Size (MB), FLOPS, Accuracy retention relative to Teacher.
+*   **Expected Outcome:** The student model achieves 95% of the teacher's performance but fits within the memory constraints of a standard Android smartphone (APK size < 100MB).
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Data Prep & Degradation** | Download Fakeddit. Build the "WhatsApp Simulator" script (ffmpeg/PIL) to generate the low-bandwidth dataset. |
+| **Month 2** | **Baseline Analysis** | Run heavy baselines (CLIP) on degraded data to establish the "Performance Gap." (Exp 1 part A). |
+| **Month 3** | **Lite Architecture** | Implement and train MobileNet+DistilBERT fusion. Run Exp 1 (Robustness). |
+| **Month 4** | **OCR Integration** | Integrate EasyOCR pipeline. Run Exp 2 (OCR consistency). Analyze failure cases on non-English text. |
+| **Month 5** | **Distillation & Optimization** | Perform Knowledge Distillation (Exp 3). Quantize the final model to INT8 (TFLite). |
+| **Month 6** | **Writing & Release** | Draft paper. Publish the "Low-Bandwidth Misinfo" dataset variant and the TFLite model weights. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** **Google Colab (Free Tier)** is sufficient for MobileNet/DistilBERT training.
+*   **Optional:** Colab Pro ($10/mo) if training runs exceed 12 hours.
+*   **Hardware:** No local GPU required. Final testing on a mid-range Android phone (e.g., Samsung A-series) is recommended for "Edge" validation.
+
+**Tools & Libraries:**
+*   **Framework:** PyTorch or TensorFlow Lite.
+*   **OCR:** `EasyOCR` or `PaddleOCR` (both have lightweight versions).
+*   **Models:** Hugging Face `transformers` (`distilbert-base-multilingual-cased` for language support), `timm` (for MobileNet).
+
+**Datasets:**
+*   **Fakeddit:** Large-scale multimodal dataset.
+*   **NewsCLIPpings:** Specifically for "mismatched" image-caption pairs.
+*   **Memotion:** For meme-specific analysis (optional).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **OCR Failure** | OCR fails on blurry/low-res images, breaking Exp 2. | **Fallback Mechanism:** If OCR confidence is low, zero out the OCR vector and rely solely on visual features (Input Dropout during training). |
+| **Language Bias** | Models trained on English data fail on Hindi/Swahili. | **Multilingual Encoder:** Use `mDistilBERT` or `XLM-R-Small` instead of English BERT. Test on a small subset of non-English samples (zero-shot transfer). |
+| **Context Nuance** | Model flags true news as fake because of low-quality images. | **Uncertainty Calibration:** Instead of a binary "Fake/Real," output an "Uncertainty Score" based on image quality. If too blurry, flag for human review rather than guessing. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Audio Transcription:** WhatsApp misinformation is increasingly audio-based (Voice Notes). Integrate `Whisper-Tiny` to transcribe audio and feed it into the text analyzer.
+*   **Federated Learning:** Design the system so that the model updates locally on user phones without sending private messages to a central server (Privacy-Preserving).
+*   **Cross-Platform App:** Wrap the TFLite model in a simple React Native app that allows users to "Share to Verify" directly from WhatsApp.
+
+**Optional next step:**
+Search for the **"Fakeddit"** dataset paper and GitHub repository. Download a small 1GB sample to verify you can load the images and captions successfully in a Colab notebook before committing to the full download.

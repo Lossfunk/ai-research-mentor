@@ -1,0 +1,117 @@
+Below is a compact, drop-in plan to extend your Hierarchical Transformer evaluation with efficiency metrics while keeping results comparable to the original accuracy-only evaluation. It assumes you already have the baseline (original hierarchical pooling) and at least one intervention (e.g., FlatMean-Doc or FlatMean-Both) trained with the same schedule.
+
+A. Comparability invariants (must hold for accuracy and efficiency)
+- Data and preprocessing: identical datasets, splits, tokenization, sentence/segmenting, sliding-window stride, truncation/max segments.
+- Model I/O and decoding: same max tokens/segments at test; same special tokens; same attention masks; same generation settings if any (beam, length penalty).
+- Checkpoint selection: choose checkpoints by the same dev metric/criterion used in the original paper; do not pick best by efficiency.
+- Software/hardware: fix and report GPU model(s), driver, CUDA/cuDNN, framework/version, tensor core/TF32 settings, AMP/bfloat16 policy, deterministic flags, and random seeds.
+- Precision and memory features: keep automatic mixed precision, gradient checkpointing (if any during training-only), and cudnn.benchmark settings constant across variants.
+- Batching and padding: replicate the paper’s inference windowing and padding policy. For batched throughput runs, enforce the same padding-to-max policy across models.
+
+B. Efficiency metrics to add
+Report both per-dataset and pooled across datasets.
+
+1) Latency (inference)
+- Per-document latency (ms): wall-clock forward-pass time for one document, batch size = 1, measured after a warmup.
+- Distributional stats: median (p50), p90, p99, and mean; also length-normalized latency (ms per 1k input tokens) to control for length variation.
+- Cold vs warm: report warm latencies (after compiling/caching) as primary; optionally add cold-start cost once.
+
+2) Throughput (inference)
+- Tokens/sec and docs/sec at:
+  - Fixed batch size(s): e.g., 1, 4, 8.
+  - Near-max-throughput: search batch size under a fixed memory cap (e.g., 80% of GPU memory or a set VRAM budget).
+- Length-binned throughput: short, medium, long bins based on effective input tokens (after chunking).
+
+3) Memory
+- Peak allocated and reserved GPU memory (MiB), measured during inference on:
+  - Batch size 1 (latency scenario).
+  - Max-throughput batch size under the same memory cap.
+- Model footprint: parameters (M) and activation footprint proxy (peak activation bytes per forward).
+
+4) Optional but recommended
+- Energy per document (J): integrate GPU power via nvidia-smi dmon or NVML sampled at 10–20 Hz; report J/doc at batch size 1.
+- FLOPs estimate: analytical estimate per forward (tokens, segments, layers); useful as hardware-agnostic proxy.
+
+C. Measurement protocol
+1) Warmup and synchronization
+- Run 20–50 dummy forwards to warm kernels/caches. If using torch.compile or XLA, include graph compilation in warmup but exclude from timed trials.
+- Use CUDA events for device-side timing and torch.cuda.synchronize() around timers. For end-to-end latency, include CPU preprocessing if the paper’s original evaluation did; otherwise exclude and state that timing is model-only.
+
+2) Repeats and sampling
+- Latency: measure each test document once per variant after warmup (paired by document). Repeat the entire pass 3 times to capture runtime variance; average within variant × document.
+- Throughput: for each batch size, run N batches (e.g., 200) with randomly sampled documents; discard first 10 batches as warmup; compute steady-state tokens/sec. Repeat 3 times.
+- Memory: reset and record torch.cuda.reset_peak_memory_stats() and torch.cuda.max_memory_allocated() per run.
+
+3) Length control
+- Record effective token count per example (sum of real tokens across segments). Use it to:
+  - Produce length-binned results.
+  - Fit latency/throughput regressions adjusted for length.
+
+4) Environment control
+- Fix power mode (e.g., nvidia-smi -pm 1; persistent mode). Disable other workloads on the GPU. Pin CPU threads and set OMP_NUM_THREADS consistently.
+- Keep dataloader off the critical path for model-only metrics, or else standardize num_workers and prefetch. Prefer a synthetic in-memory dataloader for throughput microbenchmarks.
+
+D. Accuracy metrics (unchanged)
+- Use the paper’s primary metrics for each task (e.g., macro-F1 for classification, EM/F1 for QA, ROUGE for summarization), same casing/normalization and evaluation scripts.
+- Run at least 3–5 seeds per variant to estimate accuracy variance; select checkpoints by dev as in the original.
+
+E. Analysis plan to show statistical separation of accuracy–efficiency trade-offs
+1) Paired hypothesis tests (per document or per example)
+- Accuracy (classification): McNemar’s test on per-example predictions between variants; also report difference in macro-F1 with a paired bootstrap (10k resamples stratified by class and length).
+- Accuracy (span/sequence): paired bootstrap over test examples for EM/F1 or ROUGE; report 95% CIs for deltas.
+- Latency: test per-document latency deltas using Wilcoxon signed-rank (nonparametric, handles skew). Also test log-latency with a paired t-test as a robustness check.
+- Throughput: for each batch size, treat each repeated run’s tokens/sec as an observation; compare means via two-sample t-test, and report percent change with 95% CI via bootstrap.
+- Memory: if identical inputs and code paths yield stable peaks, report deterministic values; otherwise take the max over 3 repeats and compare directly.
+
+2) Length-adjusted modeling
+- Fit mixed-effects regressions to isolate model effects from length:
+  - Latency model: log(latency_ms) ~ model_variant + log(tokens) + (1 | dataset) + (1 | doc_id) for paired data.
+  - Accuracy model: accuracy_indicator (per example) ~ model_variant + log(tokens) + (1 | dataset); for continuous metrics (e.g., per-example F1), use linear mixed model.
+- Report the coefficient for model_variant with 95% CI; significant negative coefficient for latency plus non-negative for accuracy indicates an efficiency win without accuracy loss.
+
+3) Pareto analysis and dominance
+- Plot accuracy vs latency (p50 and p90) and accuracy vs tokens/sec with 95% CIs.
+- Compute Pareto frontiers per dataset. A variant is Pareto-dominant if its CI box lies strictly up-and-left (higher accuracy, lower latency) or up-and-right for throughput.
+- Hypervolume improvement: compute the hypervolume indicator relative to a reference (e.g., worst accuracy and lowest throughput among variants). Bootstrap over examples/runs to obtain CI for hypervolume delta.
+
+4) Trade-off curves and iso-constraints
+- Iso-latency accuracy: for each variant, interpolate accuracy at a fixed median latency target (e.g., baseline p50). Compare deltas with bootstrap CIs.
+- Iso-accuracy throughput: match accuracy to baseline (via dev thresholding or ensemble averaging across seeds) and compare throughput. This isolates efficiency at equal accuracy.
+
+5) Multiple comparisons control
+- If comparing more than two variants (e.g., HPool, FlatMean-Doc, FlatMean-Both, CLS), adjust p-values using Holm–Bonferroni for families of hypotheses within each metric.
+
+F. Reporting template
+- For each dataset:
+  - Accuracy: mean ± SD across seeds; paired delta vs baseline with 95% CI; McNemar p-value or bootstrap p-value.
+  - Latency (batch=1): p50/p90/p99 with 95% CIs across documents; paired Wilcoxon p-value on per-doc deltas; ms per 1k tokens.
+  - Throughput: tokens/sec at batch sizes {1, 4, 8, max}; 95% CI across runs; percent change vs baseline.
+  - Memory: peak allocated/reserved at batch=1 and at max-throughput batch size; parameter count; activation peak proxy.
+  - Optional energy: J/doc at batch=1 with CI across documents.
+- Global:
+  - Pareto plots per dataset and pooled.
+  - Length-binned boxplots for latency and throughput with overlaid accuracy deltas.
+
+G. Minimal instrumentation (PyTorch, inference)
+- Timing:
+  - torch.cuda.synchronize(); start = torch.cuda.Event(enable_timing=True); end = torch.cuda.Event(enable_timing=True)
+  - start.record(); output = model(inputs); end.record(); torch.cuda.synchronize(); ms = start.elapsed_time(end)
+- Peak memory:
+  - torch.cuda.reset_peak_memory_stats(); run forward; peak_bytes = torch.cuda.max_memory_allocated()
+- Warmup:
+  - Run 20–50 forwards before measuring; discard first N batches in throughput loops.
+
+H. Suggested scenarios to run
+- Online latency: batch=1 over full test set; warm; record per-doc ms and tokens.
+- Max-throughput: sweep batch size to the largest that avoids OOM and yields max tokens/sec under a fixed VRAM cap.
+- Length sensitivity: evaluate latency/throughput in 3–5 quantile bins by tokens/document to show scaling differences across variants.
+- Seed robustness: 3–5 seeds per model for accuracy; reuse the same seed order for efficiency runs where possible (weights fixed, efficiency variance is runtime-related).
+
+I. Interpreting results
+- Declare a variant as a clear win if:
+  - Accuracy: delta ≥ 0 with 95% CI not below 0 (non-inferior) and
+  - Efficiency: latency p50 decreases with 95% CI below 0 and/or throughput increases with 95% CI above 0,
+  - And the variant lies on or strictly improves the Pareto frontier relative to baseline across at least two datasets.
+- If accuracy slightly drops, quantify exchange rate: percent latency reduction per 1-point accuracy loss; report whether this exchange is statistically stable across datasets and lengths.
+
+This plan preserves the original evaluation’s comparability while adding rigorous, statistically grounded efficiency measurements and a clear framework to reason about accuracy–efficiency trade-offs.

@@ -1,0 +1,126 @@
+Below is a compact plan to prototype rule-based heuristics that approximate hierarchical cues before model inference, plus an evaluation to measure their parity with the Hierarchical Transformer (HT).
+
+Goals and use modes
+- What to approximate: section boundaries, section roles, discourse transitions, and segment importance.
+- Use before inference in two ways:
+  1) Sidecar only: compute heuristic cues and log alignment vs HT without affecting inference (pure parity check).
+  2) Pre-select/reweight: use cues to select, order, or allocate tokens-to-sections for the HT; measure task impact, agreement, and regressions.
+
+Heuristic pipeline (no learned components; fast, deterministic)
+1) Section header detection
+- Cues:
+  - Formatting: all-caps lines, Title Case lines, trailing colon, blank-line padding.
+  - Numbered/roman headings: “1”, “1.”, “1.1”, “I.”, “A)”, “(a)”.
+  - Markdown/HTML: “#”, “##”, “<h1>…</h1>”.
+  - Canonical labels (domain lexicons):
+    - Scientific: Abstract, Introduction, Background, Related Work, Methods/Method/Experimental Setup, Results, Discussion, Conclusion, References, Appendix, Acknowledgments.
+    - Legal: Recitals, Definitions, Terms, Warranties, Covenants, Indemnification, Termination, Governing Law, Schedules.
+    - News/Reports: Executive Summary, Overview, Findings, Recommendations.
+- Rules:
+  - Heading = line that matches any heading regex and is short (≤12 tokens), high capital ratio, ends with colon, or preceded/followed by blank line.
+  - Merge consecutive heading-like lines to one header; map to a section role via keyword dictionary with priority rules.
+
+2) Topic/section boundary induction (when headers are missing or to refine)
+- TextTiling-like cohesion:
+  - Tokenize paragraphs; compute cosine similarity of adjacent paragraph tf–idf vectors (stopword-removed). Mark local minima below a document-adaptive threshold as candidate boundaries.
+- Discourse markers:
+  - Paragraph-initial markers list (lexicon from PDTB-style connectives): however, therefore, in contrast, first/second/finally, in conclusion, importantly, notably, we propose, we show, we find.
+  - Promote boundaries where strong shift markers occur or where “in conclusion/finally” begins and distance to previous boundary ≥ min span.
+- Lists/enumerations:
+  - Detect enumerated lists (1), 2), a), b), bullet lines) and treat starts as sub-section boundaries.
+
+3) Rhetorical role tagging (rule-based)
+- Map detected (or inferred) sections to coarse roles:
+  - Intro/Background, Methods/Procedure, Results/Findings, Discussion/Analysis, Conclusion/Recommendation, Boilerplate/References.
+- If no explicit header: infer by lexical cues (e.g., “we present/introduce” → Intro; “we collected/experiment/setup” → Methods; “we observe/result/figure shows” → Results; “implication/limitation” → Discussion; “in conclusion/in summary” → Conclusion; “et al./doi/References” → References). Use priority and proximity to document start/end.
+
+4) Segment importance scoring (per paragraph/segment)
+- Components (z-score each, then weighted sum):
+  - Positional: lead bias (earlier higher), decay with depth within section (smaller decay for Results/Conclusion).
+  - Heading strength: exact match to canonical header (+), inferred header (+), boilerplate (−).
+  - Discourse salience: presence of “we propose/conclude/our contribution” (+); hedges (“might/may”) (−) for evidence-seeking tasks.
+  - Cohesion centrality: degree centrality of segment in cosine similarity graph (top-quantile gets +).
+  - Numeric/evidence density: counts of numerals, tables/figures refs (+) for results-heavy tasks; citation density (−) for relevance (to de-emphasize references).
+- Final score = w_pos*pos + w_head*head + w_disc*disc + w_cent*cent + w_num*num − w_ref*ref; choose default weights per domain; expose as config.
+
+5) Query-aware evidence heuristics (for QA)
+- Sentence-level scoring = lexical overlap with question (idf-weighted), plus boosts if in Results/Conclusion roles and if contains answer-type pattern (dates, numbers, entities).
+- Answer span heuristics:
+  - If question asks for a number/date/entity, extract matching spans from top sentences using regex/NER and pick the highest-overlap sentence.
+
+6) Token budget allocation and ordering (optional pre-selection)
+- Allocate the model’s max tokens across detected sections by role:
+  - Example: Intro 15%, Methods 20%, Results 35%, Discussion 20%, Conclusion 10%; re-normalize to present sections.
+- Within each section, keep paragraphs in order and take top-k by importance if over budget.
+- Always reserve a small wildcard quota (e.g., 10%) for high-centrality segments regardless of role to hedge against misclassification.
+
+Instrumentation and integration
+- Sidecar outputs per segment: section_id, role, is_header, boundary_score, importance_score, discourse_markers[], centrality, token_count.
+- Deterministic content hash so sidecar can be cached and joined at eval time.
+- Toggle:
+  - heuristics_mode = {off, sidecar_only, preselect_reweight}
+  - allocation_profile = {domain_default | custom}
+  - qa_query_aware = {on|off}
+
+Evaluation plan: parity with HT’s hierarchical cues
+A) Alignment to HT internal signals (no label contamination)
+- Signals to extract from frozen HT:
+  - Segment saliency: attention from global summary tokens, gradient×input on the task logit, or layerwise relevance propagation aggregated per segment.
+  - Boundary strength: cosine distance between adjacent segment embeddings; attention distribution change.
+  - Induced structure: agglomerative clustering of segment embeddings into k groups.
+- Metrics (per document; report mean with 95% CIs):
+  - Importance alignment: Spearman correlation between heuristic importance and HT saliency; top-k overlap@k (Jaccard) for k in {3, 5, 10}; AUPRC for predicting “HT-top” segments (top 20% saliency).
+  - Boundary alignment: F1 with ±1 segment tolerance at B boundaries (B = #heuristic or #HT max), AUPRC over boundary score.
+  - Structure alignment: ARI/NMI between heuristic section groups and HT clusters (cut to same k).
+
+B) End-task impact (optional, when using preselect/reweight)
+- Keep the HT architecture, tokenizer, segmentation length/stride identical; change only the ordering/selection of segments fed to the global encoder.
+- Tasks/datasets:
+  - Long classification: Hyperpartisan, LEDGAR (macro-F1).
+  - Long QA: Qasper (EM/F1; evidence F1), HotpotQA (supporting facts F1).
+  - Long summarization: PubMed/arXiv (ROUGE-1/2/L; factuality proxy).
+- Metrics:
+  - Primary task metric vs baseline HT (sidecar_only).
+  - Evidence recall@token budget: fraction of gold evidence tokens/sentences included by heuristic preselection vs HT default inclusion.
+  - Efficiency: tokens processed, latency p50/p90 at batch=1; cache hit rate if sidecar re-used.
+
+C) Agreement and regressions vs baseline HT outputs
+- Agreement: percent same predictions; Cohen’s κ; per-example probability JS divergence (classification/QA).
+- Regressions: negative flip rate (baseline correct, heuristic-preselect wrong), positive flip rate, net gain; stratify by section roles present and document length.
+
+Statistical analysis
+- Paired design: evaluate the same documents under sidecar_only and preselect_reweight; also compute HT signals on the same inputs.
+- Tests:
+  - Alignment metrics: paired Wilcoxon on per-doc Spearman/ARI/NMI; bootstrap 95% CIs.
+  - Task metrics: paired bootstrap (10k) for deltas; McNemar’s test on correctness flips (classification/QA).
+  - Evidence recall@budget: paired Wilcoxon across docs.
+- Non-inferiority for preselection: choose ε (e.g., 0.5 macro-F1, 1.0 F1 for QA, 0.5 ROUGE-L). Declare parity if lower CI bound ≥ −ε.
+- Multiple comparisons: Holm–Bonferroni across datasets and alignment families.
+
+Error analysis (identify where rules diverge from HT)
+- Stratify by:
+  - Header availability (explicit vs none), OCR noise rate, domain, length quartile, table density, reference density.
+- Failure subtypes:
+  - False headers (formatting artifacts mis-tagged), missed headers (non-canonical synonyms), boundary false positives from lists/enumerations, discourse marker ambiguity, over–lead bias, over-penalizing references in citation-heavy introductions, role misclassification (e.g., “Results” phrased as “Findings”).
+- Diagnostics to log per doc:
+  - Coverage heatmap: heuristic vs HT saliency over segment index.
+  - Boundary confusion matrix: heuristic vs HT boundary positions (±1 tolerance).
+  - Role confusion counts versus a small human-labeled subset (if available).
+  - Cases where evidence recall@budget dropped; inspect whether gold sits in sections deprioritized by rules.
+- Targeted fixes:
+  - Extend lexicons with synonyms spotted in errors; adjust allocation profiles per domain; add guardrails (e.g., minimum quota for every contiguous unselected span to avoid missing late evidence).
+
+Sample size and power
+- Alignment-only (no task execution): 100 documents per dataset typically yields tight CIs for Spearman/ARI/NMI and boundary F1; more for highly variable corpora.
+- Task impact (preselection): use full test sets when possible; otherwise ≥200 docs (classification), ≥500 Qs (QA), ≥100 docs (summarization). Expect SD of paired deltas ≈ 0.5–1.5 points; powered to detect ≥0.5–1.0 point non-inferiority margins.
+
+Implementation sketch
+- Header regex library with domain profiles; unit tests with positive/negative examples.
+- TextTiling-lite boundary detector (tf–idf cos dips); parameters auto-tuned per doc via median/median absolute deviation.
+- Discourse marker lexicons (PDTB-style) with paragraph-initial emphasis.
+- Role tagger: priority rules mapping headers and cue phrases to roles.
+- Importance scorer: composable feature weights with defaults per domain; expose as config.
+- Sidecar JSONL per document:
+  - segment_id, section_id, role, is_header, boundary_score, importance_score, markers[], token_count
+- Preselection module: takes sidecar + token budget; returns ordered segment indices.
+- Eval scripts: compute alignment metrics

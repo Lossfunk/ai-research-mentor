@@ -1,0 +1,377 @@
+Based on the PeerRead paper's approach to acceptance classification with hand-engineered features, here are the critical ablations and error analyses reviewers will expect:
+
+## **TIER 1: Essential Feature Ablations**
+
+### 1. **Feature Category Ablations**
+
+**Expected Analysis:**
+Reviewers will want to see the marginal contribution of each feature group.
+
+```python
+# Standard feature groups in PeerRead-style work:
+feature_groups = {
+    'structural': [
+        'num_sections', 'num_figures', 'num_tables', 'num_equations',
+        'num_references', 'paper_length', 'abstract_length',
+        'intro_length', 'conclusion_length', 'section_balance'
+    ],
+    'linguistic': [
+        'avg_sentence_length', 'vocab_diversity', 'readability_scores',
+        'passive_voice_ratio', 'hedging_words', 'certainty_markers',
+        'technical_term_density', 'citation_density'
+    ],
+    'content_based': [
+        'topic_distribution', 'tfidf_features', 'word2vec_embeddings',
+        'section_topics', 'abstract_similarity_to_body'
+    ],
+    'meta_features': [
+        'num_authors', 'author_h_index', 'author_prior_pubs',
+        'institutional_prestige', 'author_seniority'
+    ],
+    'review_based': [  # If using reviews as features
+        'avg_review_score', 'review_variance', 'num_reviews',
+        'review_sentiment', 'review_length'
+    ]
+}
+
+# Ablation study
+results = {}
+baseline_features = all_features
+
+for group_name, group_features in feature_groups.items():
+    # Remove this group
+    ablated_features = [f for f in baseline_features 
+                        if f not in group_features]
+    
+    model = train_model(ablated_features)
+    performance = evaluate(model)
+    
+    results[f'without_{group_name}'] = {
+        'accuracy': performance['accuracy'],
+        'f1': performance['f1'],
+        'drop_from_baseline': baseline_perf - performance
+    }
+    
+# Also test each group in isolation
+for group_name, group_features in feature_groups.items():
+    model = train_model(group_features)  # Only this group
+    performance = evaluate(model)
+    
+    results[f'only_{group_name}'] = performance
+```
+
+**Expected Table:**
+```
+Table X: Feature Ablation Results
+
+Feature Group          | Accuracy | F1    | Δ Acc | Δ F1
+--------------------- |----------|-------|-------|------
+All features (baseline)| 76.3%    | 0.745 |   -   |  -
+w/o structural         | 75.1%    | 0.732 | -1.2% | -0.013
+w/o linguistic         | 74.8%    | 0.728 | -1.5% | -0.017
+w/o content-based      | 68.2%    | 0.665 | -8.1% | -0.080**
+w/o meta features      | 76.0%    | 0.742 | -0.3% | -0.003
+--------------------- |----------|-------|-------|------
+Only structural        | 62.3%    | 0.601 |   -   |  -
+Only linguistic        | 64.1%    | 0.623 |   -   |  -
+Only content-based     | 71.5%    | 0.698 |   -   |  -
+Only meta features     | 58.7%    | 0.562 |   -   |  -
+
+** p < 0.01
+```
+
+**Interpretation to Include:**
+```
+Content-based features contribute most to performance (8.1% accuracy 
+drop when removed), while meta-features contribute minimally (0.3% drop). 
+Notably, content-based features alone achieve 71.5% accuracy, suggesting 
+they capture most of the signal. The combination of all feature groups 
+yields 4.8% improvement over content-based alone, indicating complementary 
+information.
+```
+
+---
+
+### 2. **Granular Feature Importance Analysis**
+
+**Expected Analysis:**
+Reviewers want to see which specific features matter, not just categories.
+
+```python
+# Method 1: Model-based feature importance
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
+
+# Train model
+rf = RandomForestClassifier(n_estimators=100)
+rf.fit(X_train, y_train)
+
+# Get importances
+importance_df = pd.DataFrame({
+    'feature': feature_names,
+    'importance': rf.feature_importances_,
+    'category': [get_category(f) for f in feature_names]
+}).sort_values('importance', ascending=False)
+
+# Method 2: Permutation importance (more reliable)
+perm_importance = permutation_importance(
+    rf, X_test, y_test, n_repeats=10, random_state=42
+)
+
+importance_df['perm_importance'] = perm_importance.importances_mean
+importance_df['perm_std'] = perm_importance.importances_std
+
+# Method 3: Univariate analysis
+from scipy.stats import pointbiserialr
+
+for feature in feature_names:
+    corr, pval = pointbiserialr(y, X[feature])
+    importance_df.loc[importance_df['feature']==feature, 'correlation'] = corr
+    importance_df.loc[importance_df['feature']==feature, 'p_value'] = pval
+
+# Report top features
+print(importance_df.head(20))
+```
+
+**Expected Visualization:**
+```
+Figure X: Top 20 Most Important Features
+
+[Horizontal bar chart showing:]
+- num_references          ████████████████ 0.082
+- abstract_clarity_score  ███████████████  0.076
+- related_work_length     ██████████████   0.071
+- technical_term_density  █████████████    0.068
+- num_equations          ████████████     0.065
+...
+
+With error bars showing permutation importance std dev
+Color-coded by feature category
+```
+
+**Expected Discussion:**
+```
+The most predictive features are num_references (importance=0.082), 
+abstract_clarity_score (0.076), and related_work_length (0.071). 
+Surprisingly, author-based meta-features rank low (h_index: 0.012), 
+suggesting review decisions are primarily content-driven in our dataset. 
+Structural features dominate the top 10, indicating that paper organization 
+and completeness strongly signal quality.
+```
+
+---
+
+### 3. **Deep Learning vs. Hand-Engineered Features**
+
+**Critical Comparison:**
+Reviewers will question why hand-engineered features are needed when deep learning exists.
+
+```python
+# Baseline models to compare:
+models = {
+    'hand_engineered': {
+        'features': engineered_features,
+        'model': LogisticRegression()
+    },
+    'bow': {
+        'features': bag_of_words,
+        'model': LogisticRegression()
+    },
+    'tfidf': {
+        'features': tfidf_features,
+        'model': LogisticRegression()
+    },
+    'word2vec': {
+        'features': word2vec_avg,
+        'model': LogisticRegression()
+    },
+    'bert': {
+        'features': bert_embeddings,
+        'model': LogisticRegression()
+    },
+    'cnn': {
+        'model': TextCNN()
+    },
+    'lstm': {
+        'model': BiLSTM()
+    },
+    'bert_finetuned': {
+        'model': BertForSequenceClassification()
+    },
+    'combined': {
+        'features': engineered_features + bert_embeddings,
+        'model': LogisticRegression()
+    }
+}
+
+# Compare performance
+results_table = compare_models(models)
+```
+
+**Expected Results Table:**
+```
+Table X: Comparison of Feature Representations
+
+Model                    | Accuracy | F1    | Precision | Recall | Train Time
+------------------------|----------|-------|-----------|--------|------------
+Hand-engineered features | 76.3%    | 0.745 | 0.758     | 0.732  | 2.3s
+Bag-of-words            | 71.2%    | 0.698 | 0.705     | 0.691  | 5.1s
+TF-IDF                  | 72.8%    | 0.715 | 0.721     | 0.709  | 5.8s
+Word2Vec (avg)          | 73.5%    | 0.722 | 0.729     | 0.715  | 8.2s
+BERT embeddings (frozen)| 75.1%    | 0.738 | 0.745     | 0.731  | 45.3s
+CNN                     | 74.2%    | 0.728 | 0.736     | 0.720  | 312s
+BiLSTM                  | 74.8%    | 0.734 | 0.741     | 0.727  | 428s
+BERT (fine-tuned)       | 77.1%    | 0.756 | 0.763     | 0.749  | 2847s
+**Combined (hand + BERT)**| **78.4%** | **0.772** | **0.779** | **0.765** | 48.1s
+
+Best result in bold
+```
+
+**Critical Interpretation:**
+```
+Hand-engineered features outperform pure text embeddings (TF-IDF, Word2Vec) 
+and match BERT embeddings, while being 20× faster. Fine-tuned BERT achieves 
+the best single-model performance (77.1%), but combining hand-engineered 
+features with BERT embeddings yields the strongest results (78.4%), 
+suggesting complementary information. The 1.3% improvement from adding 
+hand-engineered features to BERT (77.1% → 78.4%) is statistically 
+significant (p=0.003, McNemar's test), justifying their inclusion despite 
+added complexity.
+```
+
+---
+
+## **TIER 2: Error Analysis**
+
+### 4. **Confusion Matrix and Error Characterization**
+
+**Expected Analysis:**
+
+```python
+# Generate predictions
+y_pred = model.predict(X_test)
+y_true = y_test
+
+# Confusion matrix
+from sklearn.metrics import confusion_matrix, classification_report
+
+cm = confusion_matrix(y_true, y_pred)
+print(classification_report(y_true, y_pred, 
+                           target_names=['Rejected', 'Accepted']))
+
+# Identify error cases
+false_positives = (y_true == 0) & (y_pred == 1)  # Predicted accept, actually rejected
+false_negatives = (y_true == 1) & (y_pred == 0)  # Predicted reject, actually accepted
+
+fp_papers = papers[false_positives]
+fn_papers = papers[false_negatives]
+```
+
+**Expected Table:**
+```
+Table X: Classification Performance by Class
+
+              | Precision | Recall | F1-Score | Support
+------------- |-----------|--------|----------|--------
+Rejected      | 0.742     | 0.718  | 0.730    | 1,247
+Accepted      | 0.774     | 0.795  | 0.784    | 1,583
+------------- |-----------|--------|----------|--------
+Macro avg     | 0.758     | 0.757  | 0.757    | 2,830
+Weighted avg  | 0.760     | 0.763  | 0.761    | 2,830
+
+Confusion Matrix:
+                Predicted
+              | Rej  | Acc
+Actual  Rej   | 895  | 352  (28.2% FP rate)
+        Acc   | 325  | 1258 (20.5% FN rate)
+```
+
+---
+
+### 5. **Stratified Error Analysis**
+
+**Critical Breakdown:**
+Reviewers want to know where the model fails.
+
+```python
+# Error analysis by venue
+error_by_venue = papers.groupby('venue').apply(
+    lambda x: {
+        'accuracy': accuracy_score(x['true_label'], x['pred_label']),
+        'n_papers': len(x),
+        'accept_rate': x['true_label'].mean()
+    }
+).reset_index()
+
+# Error analysis by score range (if available)
+papers['avg_score'] = papers['review_scores'].apply(np.mean)
+papers['score_bin'] = pd.cut(papers['avg_score'], bins=[0, 3, 5, 7, 10])
+
+error_by_score = papers.groupby('score_bin').apply(
+    lambda x: {
+        'accuracy': accuracy_score(x['true_label'], x['pred_label']),
+        'fp_rate': ((x['true_label']==0) & (x['pred_label']==1)).mean(),
+        'fn_rate': ((x['true_label']==1) & (x['pred_label']==0)).mean()
+    }
+)
+
+# Error analysis by paper characteristics
+for characteristic in ['length', 'num_authors', 'num_references']:
+    papers[f'{characteristic}_quartile'] = pd.qcut(
+        papers[characteristic], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4']
+    )
+    
+    error_by_char = papers.groupby(f'{characteristic}_quartile').apply(
+        lambda x: accuracy_score(x['true_label'], x['pred_label'])
+    )
+    
+    print(f"Accuracy by {characteristic}:\n{error_by_char}\n")
+```
+
+**Expected Results:**
+```
+Table X: Performance Stratification
+
+A. By Venue:
+Venue    | Accuracy | FP Rate | FN Rate | Accept Rate | N
+---------|----------|---------|---------|-------------|----
+ICLR     | 79.2%    | 18.3%   | 22.5%   | 0.48        | 523
+ACL      | 74.1%    | 24.7%   | 26.2%   | 0.35        | 612
+NeurIPS  | 81.5%    | 15.2%   | 19.3%   | 0.21        | 891
+NAACL    | 72.8%    | 28.1%   | 24.4%   | 0.42        | 387
+
+B. By Review Score Range (borderline cases harder):
+Score Range | Accuracy | FP Rate | FN Rate | N
+------------|----------|---------|---------|----
+1-3 (weak)  | 88.3%    | 8.2%    | 15.5%   | 412
+3-5 (border)| 61.7%    | 42.1%   | 34.2%   | 1,245**
+5-7 (good)  | 73.2%    | 22.8%   | 29.1%   | 892
+7-10 (strong)| 91.5%   | 5.3%    | 11.8%   | 281
+
+** Borderline papers (score 3-5) show significantly lower accuracy
+
+C. By Paper Length:
+Length Quartile | Accuracy | Mean Length
+----------------|----------|-------------
+Q1 (shortest)   | 69.2%    | 4.2 pages
+Q2              | 75.8%    | 6.7 pages
+Q3              | 78.1%    | 8.9 pages
+Q4 (longest)    | 77.3%    | 12.3 pages
+```
+
+**Expected Interpretation:**
+```
+Performance varies significantly by venue (72.8%-81.5%), with NeurIPS 
+showing highest accuracy, possibly due to lower acceptance rate (0.21) 
+creating clearer separation. Borderline papers (score 3-5) are 
+substantially harder to classify (61.7% accuracy vs. 88.3% for extreme 
+scores), accounting for 44% of all errors despite being 44% of the 
+dataset. Very short papers (<5 pages) show degraded performance (69.2%), 
+likely due to insufficient signal.
+```
+
+---
+
+### 6. **Qualitative Error Analysis**
+
+**

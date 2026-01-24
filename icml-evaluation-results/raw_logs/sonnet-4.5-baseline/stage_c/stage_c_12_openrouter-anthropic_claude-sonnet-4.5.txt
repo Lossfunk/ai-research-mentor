@@ -1,0 +1,235 @@
+The searches yielded highly relevant sources on multilingual fact-checking benchmarks [1,2,3,4] and LLM evaluation [5,6]. The third search failed, but I have sufficient evidence on efficient inference from domain knowledge. I'll construct a rigorous plan optimized for limited GPU access.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Multilingual fact-checking requires models that can verify claims across diverse languages, scripts, and cultural contexts. While large proprietary LLMs (GPT-4, Claude) show strong performance, open-weight alternatives (Llama, Mistral, Qwen) offer transparency and deployment flexibility. However, systematic evaluation faces challenges:
+
+1. **Resource constraints:** Limited GPU access prevents exhaustive evaluation of 7B-70B parameter models
+2. **Dataset fragmentation:** Multiple benchmarks (X-FACT [1], MultiClaim [2], XFacta [3]) with different veracity labels, languages, and collection methods
+3. **Surprising findings:** Recent work [5] shows smaller multilingual models (XLM-R, 270M) outperform larger LLMs (7-12B) on X-FACT, suggesting scale ≠ multilingual capability
+4. **Script/language bias:** Performance varies dramatically by script system (Latin vs. Cyrillic vs. Arabic) [6], with low-resource languages underperforming
+5. **Evaluation gaps:** Most studies focus on classification accuracy, ignoring calibration, reasoning transparency, and cross-lingual transfer
+
+**Core Hypothesis:**  
+Open-weight LLMs (7B-13B) with efficient inference (quantization, LoRA adapters) can achieve competitive multilingual fact-checking performance (within 5-10% of GPT-4 [4]) on standardized benchmarks while revealing systematic biases across languages, scripts, and claim types that inform model selection for specific deployment contexts.
+
+**Primary Goals (6-month horizon with limited GPU):**
+- **Benchmark evaluation:** Assess 5-7 open-weight LLMs (Llama 3.1, Mistral, Qwen 2.5, Aya, mT0, BLOOMZ, XLM-R [5]) across 3 multilingual fact-checking datasets (X-FACT [1], MultiClaim [2], XFacta [3])
+- **Efficiency optimization:** Use 4-bit quantization, prompt caching, batch inference to fit within 1-2 consumer GPUs (RTX 4090, 24GB)
+- **Systematic analysis:** Identify performance patterns by language family, script, resource level, claim type
+- **Reproducibility:** Open-source evaluation harness, prompts, results dashboard
+- **Publication:** Workshop paper (EMNLP Findings, *SEM, or NLP4ConvAI) documenting findings + public leaderboard
+
+**Secondary Goals:**
+- Cross-lingual transfer: Zero-shot, few-shot (5-10 examples), translate-test strategies
+- Calibration analysis: Confidence scores vs. accuracy (ECE, Brier score)
+- Error analysis: Qualitative review of 100-200 failures per model
+- Sanity checks: Negation robustness, label consistency, random baseline comparison
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Evaluation on X-FACT (25 Languages, 7 Veracity Classes)**
+
+**Hypothesis:** Open-weight LLMs (7B-13B) achieve 55-70% macro-F1 on X-FACT [1] with significant variance across languages (70-80% for high-resource Latin-script languages, 40-55% for low-resource non-Latin scripts), comparable to recent findings [5,6].
+
+**Setup:**
+- **Models (5-7, prioritized by efficiency):**
+  1. **Llama 3.1-8B-Instruct** (strong instruction-following, 4-bit quantized to ~5GB)
+  2. **Mistral-7B-Instruct-v0.3** (efficient architecture, good multilingual performance)
+  3. **Qwen 2.5-7B-Instruct** (strong on Asian languages [6])
+  4. **Aya-23-8B** (multilingual-focused, 23 languages)
+  5. **XLM-RoBERTa-large** (270M, baseline from [5], surprisingly strong)
+  6. **mT0-XXL** (13B, multilingual T5, if GPU allows)
+  7. **BLOOMZ-7B** (multilingual, 46 languages)
+- **Dataset:** X-FACT [1]
+  - 31,189 non-English claims in 25 languages
+  - 7 veracity labels: True, Mostly True, Half True, Mostly False, False, Unverifiable, Other
+  - Languages: Arabic, Bulgarian, Dutch, Farsi, French, German, Hindi, Indonesian, Italian, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Turkish, etc.
+  - Split: Use official train/dev/test (if available), else 70/15/15 stratified by language
+- **Inference setup:**
+  - **Quantization:** 4-bit GPTQ/AWQ (reduces 7B model from 14GB to ~4-5GB)
+  - **Batch size:** 8-16 (depending on GPU memory)
+  - **Prompt template:** Zero-shot chain-of-thought (see below)
+  - **Hardware:** Single RTX 4090 (24GB) or A100 (40GB) if available
+  - **Caching:** Prompt caching to reuse common prefixes
+- **Prompt design (zero-shot):**
+  ```
+  You are an expert fact-checker. Analyze the following claim and classify its veracity.
+  
+  Claim: [CLAIM TEXT]
+  Language: [LANGUAGE CODE]
+  
+  Veracity categories:
+  - True: The claim is accurate
+  - Mostly True: The claim is largely accurate with minor inaccuracies
+  - Half True: The claim contains both accurate and inaccurate information
+  - Mostly False: The claim is largely inaccurate with some truth
+  - False: The claim is entirely inaccurate
+  - Unverifiable: Cannot be verified with available evidence
+  - Other: Does not fit the above categories
+  
+  Provide your reasoning step-by-step, then output the final verdict as: VERDICT: [category]
+  ```
+
+**Baselines:**
+1. **Random baseline:** Uniform distribution over 7 classes (macro-F1 ~14%)
+2. **Majority class:** Predict most frequent label per language
+3. **mBERT fine-tuned:** From X-FACT paper [1] (if results available)
+4. **GPT-4 with web search:** From [4] (upper bound, if budget allows for 100-sample validation)
+5. **XLM-R-large:** From [5] (reported as surprisingly strong)
+
+**Evaluation Metrics:**
+1. **Classification performance:**
+   - Macro-F1 (average F1 across 7 classes, handles class imbalance)
+   - Accuracy (overall correctness)
+   - Per-class precision/recall
+   - Confusion matrix (identify systematic misclassifications)
+2. **Cross-lingual analysis:**
+   - Performance by language (identify high/low performers)
+   - Performance by script (Latin, Cyrillic, Arabic, Devanagari, etc.)
+   - Performance by resource level (high: English/Spanish/French, mid: Polish/Turkish, low: Farsi/Hindi)
+3. **Calibration:**
+   - Expected Calibration Error (ECE): Binned accuracy vs. confidence
+   - Brier score (for probabilistic predictions)
+   - Reliability diagrams
+4. **Efficiency:**
+   - Inference time (seconds per claim)
+   - GPU memory usage (GB)
+   - Throughput (claims/hour)
+
+**Expected Outcomes:**
+- **Overall:** Llama 3.1/Qwen 2.5: 60-68% macro-F1, Mistral: 58-65%, XLM-R: 62-70% [5]
+- **Language variation:** 25-35% gap between best (Spanish, French: 75-80%) and worst (Hindi, Farsi: 45-55%)
+- **Script bias:** Latin scripts outperform by 10-20% [6]
+- **Calibration:** Models overconfident (ECE 15-25%), especially on low-resource languages
+- **Efficiency:** 4-bit models process 50-100 claims/hour on single GPU
+- **Sanity checks:**
+  - Models beat random baseline by >40% (else prompt/implementation error)
+  - Performance on high-resource languages >65% (else model selection issue)
+  - Confusion matrix shows interpretable patterns (e.g., "Mostly True" vs. "True" often confused)
+
+**Ablations:**
+- Prompt variations: Zero-shot vs. few-shot (5 examples) vs. chain-of-thought
+- Language of prompt: English vs. native language instructions
+- Output format: Structured JSON vs. free-text
+- Quantization: 4-bit vs. 8-bit vs. FP16 (if GPU allows)
+
+---
+
+### **Experiment 2: Cross-Dataset Generalization (MultiClaim, XFacta)**
+
+**Hypothesis:** Models trained/prompted on X-FACT show 10-20% performance degradation on out-of-distribution datasets (MultiClaim [2], XFacta [3]) due to domain shift (social media vs. fact-checker databases), temporal drift (2024-2025 claims in XFacta [3]), and label schema differences.
+
+**Setup:**
+- **Datasets:**
+  1. **MultiClaim [2]:** 28k posts (27 languages), 206k fact-checks (39 languages), social media origin
+  2. **XFacta [3]:** 2,400 claims (1,200 real, 1,200 fake) from Snopes (July 2024-2025), binary labels, more recent
+  3. **X-FACT [1]:** Source dataset for comparison
+- **Evaluation strategy:**
+  - Train prompts/few-shot examples on X-FACT
+  - Zero-shot transfer to MultiClaim, XFacta
+  - Analyze performance drop and failure modes
+- **Label mapping:**
+  - X-FACT (7 classes) → MultiClaim/XFacta (binary or 3-class): Map "True/Mostly True" → True, "False/Mostly False" → False, etc.
+  - Document mapping decisions for reproducibility
+- **Models:** Top 3 from Experiment 1 (likely Llama 3.1, Qwen 2.5, XLM-R)
+
+**Baselines:**
+1. Random baseline (adjusted for target dataset label distribution)
+2. Dataset-specific few-shot (5-10 examples from target dataset)
+3. Reported results from dataset papers [2,3] (if available)
+
+**Evaluation Metrics:**
+1. **Transfer performance:**
+   - Macro-F1 on MultiClaim, XFacta
+   - Performance drop vs. X-FACT (ΔF1)
+2. **Domain analysis:**
+   - Performance on social media (MultiClaim) vs. fact-checker text (X-FACT, XFacta)
+   - Temporal analysis: 2024-2025 claims (XFacta) vs. older claims
+3. **Error analysis:**
+   - Manual review of 50-100 failures per dataset
+   - Categorize errors: Linguistic (mistranslation, idioms), factual (outdated knowledge), reasoning (logical fallacies)
+
+**Expected Outcomes:**
+- **MultiClaim:** 15-25% F1 drop due to noisy social media text, informal language
+- **XFacta:** 5-15% F1 drop due to recency (claims post-LLM knowledge cutoff)
+- **Few-shot adaptation:** 5-10% F1 recovery with 5-10 target-domain examples
+- **Failure modes:** Models struggle with sarcasm, cultural references, emerging topics (2024-2025 events)
+
+**Ablations:**
+- Few-shot size: {0, 3, 5, 10} examples from target dataset
+- Example selection: Random vs. diverse (stratified by language/label)
+- Prompt adaptation: Generic vs. dataset-specific instructions
+
+---
+
+### **Experiment 3: Few-Shot Learning and Cross-Lingual Transfer**
+
+**Hypothesis:** Few-shot learning (5-10 examples) improves performance by 8-15% macro-F1, with diminishing returns beyond 10 examples. Cross-lingual transfer (train on high-resource, test on low-resource) achieves 70-85% of in-language performance, with related languages (e.g., Spanish → Portuguese) transferring better than distant languages (e.g., English → Hindi).
+
+**Setup:**
+- **Few-shot configurations:**
+  - **0-shot:** No examples (baseline)
+  - **3-shot:** 3 examples per veracity class (21 total for X-FACT)
+  - **5-shot:** 5 examples per class (35 total)
+  - **10-shot:** 10 examples per class (70 total)
+  - **Example selection:** Stratified by veracity class, diverse claim types
+- **Cross-lingual transfer:**
+  - **Source languages:** High-resource (English, Spanish, French)
+  - **Target languages:** Low-resource (Hindi, Farsi, Bulgarian)
+  - **Transfer strategies:**
+    1. **Zero-shot:** Prompt in English, claim in target language
+    2. **Translate-test:** Translate claim to English, evaluate
+    3. **Few-shot native:** 5 examples in target language
+    4. **Few-shot mixed:** 3 English + 2 target language examples
+- **Models:** Top 2 from Experiment 1 (likely Llama 3.1, Qwen 2.5)
+
+**Baselines:**
+1. Zero-shot (from Experiment 1)
+2. Fully supervised (fine-tune on full training set, if GPU allows)
+3. Random few-shot examples (vs. stratified selection)
+
+**Evaluation Metrics:**
+1. **Few-shot learning curves:**
+   - Macro-F1 vs. number of examples (0, 3, 5, 10, 20)
+   - Efficiency: F1 gain per example
+2. **Cross-lingual transfer:**
+   - Transfer ratio: F1(target, few-shot English) / F1(target, few-shot native)
+   - Language similarity correlation: Performance vs. linguistic distance (e.g., URIEL database)
+3. **Example quality:**
+   - Performance with diverse vs. similar examples
+   - Ablation: Remove one example at a time, measure impact
+
+**Expected Outcomes:**
+- **Few-shot:** 3-shot: +5-8% F1, 5-shot: +8-12% F1, 10-shot: +10-15% F1 (diminishing returns)
+- **Cross-lingual:** Related languages (Spanish→Portuguese): 80-90% transfer, distant (English→Hindi): 60-70%
+- **Translate-test:** Comparable to few-shot native for high-quality translation (Google Translate), but loses cultural nuance
+- **Optimal strategy:** 5-shot native examples (best cost-benefit for limited annotation budget)
+
+**Ablations:**
+- Example diversity: High-diversity (different topics) vs. low-diversity (similar topics)
+- Source language: English vs. typologically similar language (e.g., French for Spanish)
+- Translation quality: Google Translate vs. NLLB vs. manual translation (100-sample validation)
+
+---
+
+### **Experiment 4: Sanity Checks and Robustness Testing**
+
+**Hypothesis:** LLMs exhibit systematic biases and failure modes (label bias, negation insensitivity, length bias) that can be detected via adversarial perturbations and control experiments, revealing 15-30% performance degradation on perturbed inputs.
+
+**Setup:**
+- **Sanity checks:**
+  1. **Random baseline:** Models must beat uniform random by >40% (else broken)
+  2. **Input-free baseline:** Predict without seeing claim (use only language/metadata) → should perform poorly (<25% F1)
+  3. **Label consistency:** Same claim repeated 5 times → should give same verdict >90% of time
+  4. **Length bias:** Shuffle words in claim → performance should drop significantly (>20%)
+- **Robustness tests:**
+  1. **Negation:** Add/remove "not" (e.g., "The vaccine is safe" → "The vaccine is not safe") → verdict should flip
+  2. **Paraphrasing:** Rephrase claim (GPT-4 or back-translation) → verdict should stay consistent
+  3. **Typos/noise:** Add 1-3 typos per claim → performance should degrade <10%
+  4. **Counterfactual:**

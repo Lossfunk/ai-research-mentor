@@ -1,0 +1,101 @@
+This plan targets the intersection of **Privacy-Enhancing Technologies (PETs)** and **Clinical NLP**. It moves beyond simple "offline" chatbots by rigorously testing whether open-source Large Language Models (LLMs) can be fine-tuned on sensitive data without memorizing it, and run efficiently on consumer hardware to guarantee zero data egress.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Mental health support requires high trust and confidentiality. Cloud-based LLMs (e.g., GPT-4) pose unacceptable privacy risks: data egress to third-party servers, potential training on user prompts, and lack of auditability. Conversely, "out-of-the-box" local models (e.g., Llama-3, Mistral) lack the specific empathetic alignment and safety guardrails required for therapeutic interaction, often defaulting to generic or dismissive responses.
+
+**Research Goal:**
+Develop **"PrivaMind,"** a privacy-preserving, clinically aligned LLM framework that runs entirely locally. The project will benchmark the trade-off between **Differential Privacy (DP)** guarantees and **Therapeutic Utility** (empathy/safety) on consumer-grade hardware.
+
+**Core Objectives:**
+1.  **Local Alignment:** Fine-tune open-weights models (7B-8B parameters) on counseling datasets to improve empathy scores over base models.
+2.  **Privacy Guarantee:** Implement Differentially Private Fine-Tuning (DP-LoRA) to mathematically limit the model's ability to memorize specific training examples.
+3.  **Edge Feasibility:** Demonstrate that the final model can run on a standard laptop (Apple Silicon or NVIDIA consumer GPU) via quantization without catastrophic performance loss.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The Privacy-Utility Trade-off (DP-LoRA)
+**Hypothesis:** Applying Differential Privacy (DP) noise during Low-Rank Adaptation (LoRA) training will reduce the model's susceptibility to "Membership Inference Attacks" (identifying if a specific patient record was in the training set) but will degrade linguistic fluency.
+*   **Setup:**
+    *   **Model:** Llama-3-8B-Instruct (or Mistral-7B-v0.3).
+    *   **Method:** Train three variants:
+        1.  **SFT (Standard):** Standard Supervised Fine-Tuning on counseling data.
+        2.  **DP-SFT ($\epsilon=8$):** High privacy budget (less noise).
+        3.  **DP-SFT ($\epsilon=3$):** Strict privacy budget (high noise) using **Opacus** library.
+    *   **Attack:** Run a "Canary Extraction" attack (inserting unique random secrets into training data and trying to prompt the model to reveal them).
+*   **Baselines:** Base Llama-3 (Zero-shot).
+*   **Evaluation Metrics:** Perplexity (Fluency), Canary Exposure Rate (Privacy), ROUGE-L (Content preservation).
+*   **Expected Outcome:** $\epsilon=8$ offers the optimal Pareto frontier—near-zero canary extraction with manageable perplexity increase. $\epsilon=3$ will likely produce incoherent text.
+
+#### Experiment 2: Clinical Safety & Empathy Benchmarking
+**Hypothesis:** Generic instruction-tuned models fail to exhibit "Reflective Listening" (a core therapeutic technique) and may trigger safety violations (e.g., agreeing with self-harm ideation) unless explicitly aligned via DPO (Direct Preference Optimization).
+*   **Setup:**
+    *   **Data:** **AIRC** (Augmenting NLP for Psychotherapy) and synthetic safety datasets.
+    *   **Method:** Apply DPO using a "Safety Reward Model" (a local BERT classifier trained to downrank toxic/unsafe responses).
+    *   **Evaluation:**
+        1.  **Safety:** "Do Not Answer" benchmark (harmful prompts).
+        2.  **Empathy:** Use a larger local model (e.g., Mixtral-8x7B) as a "Judge" to score responses on the **EPITOME** empathy scale.
+*   **Baselines:** Unaligned SFT model from Exp 1.
+*   **Expected Outcome:** The DPO-aligned model will show a >20% increase in empathy scores and a >90% refusal rate for harmful instructions compared to the SFT baseline.
+
+#### Experiment 3: Quantization and PII Scrubbing (The "Laptop" Test)
+**Hypothesis:** 4-bit quantization (GGUF format) combined with regex-based PII (Personally Identifiable Information) scrubbing allows valid inference on <16GB RAM machines.
+*   **Setup:**
+    *   **Pipeline:** Input $\rightarrow$ **Microsoft Presidio** (Local PII Scrubber) $\rightarrow$ **Llama.cpp** (Quantized Model) $\rightarrow$ Output.
+    *   **Hardware:** Test on MacBook Air (M1/M2) and Consumer PC (RTX 3060).
+    *   **Metric:** Tokens per second (TPS), Memory Footprint (GB), Latency.
+*   **Expected Outcome:** 4-bit quantization yields >20 TPS (real-time chat feel) on 16GB RAM devices, with PII scrubbing adding <100ms latency.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Infrastructure & Data** | Set up local training env (Unsloth/Axolotl). Clean datasets: AIRC, Mental Health FAQ. Implement Presidio PII scrubbing pipeline. |
+| **Month 2** | **Baseline Training** | Train Standard SFT models. Establish baseline empathy/safety scores. |
+| **Month 3** | **Privacy Injection (Exp 1)** | Implement DP-LoRA using Opacus. Debug convergence issues (common with DP). Run Canary attacks. |
+| **Month 4** | **Safety Optimization (Exp 2)** | Run DPO alignment. Focus on "Refusal" behaviors for self-harm prompts. |
+| **Month 5** | **Edge Deployment (Exp 3)** | Convert models to GGUF. Build a simple terminal UI for the "Laptop Test." Measure inference speed. |
+| **Month 6** | **Analysis & Writing** | Compile results. Draft paper for *EMNLP* (Clinical NLP workshop) or *PETs* (Privacy Enhancing Technologies). |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Training:** 1x NVIDIA A6000 or 2x RTX 3090/4090 (24GB VRAM each). *Note: DP training requires more memory than standard training due to per-sample gradient computation.*
+*   **Inference:** Standard laptop (16GB RAM) for Exp 3 testing.
+
+**Tools (All Open Source):**
+*   **Training:** `Unsloth` (for efficient LoRA), `Axolotl` (config-based training), `Opacus` (PyTorch Differential Privacy).
+*   **Inference:** `llama.cpp` (Quantization), `Ollama`.
+*   **Sanitization:** `Microsoft Presidio` (PII detection/redaction).
+
+**Datasets:**
+*   **HuggingFace:** `mpow/mental-health-chatbot-dataset`, `alexandreteles/mental-health-conversational-data`.
+*   **Academic:** **CounselChat** or **EmpatheticDialogues** (check licenses for research use).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Convergence Failure** | DP-SGD adds noise to gradients; models often fail to learn or produce gibberish. | **Pre-training:** Do not train from scratch. Use a strong base (Llama-3) and apply DP only to the LoRA adapter layers, not the full model. |
+| **Harmful Outputs** | Model encourages self-harm or gives medical advice. | **Hard-Coded Guardrails:** Implement a post-processing "watchdog" (regex keywords) that intercepts dangerous output *before* it reaches the user and replaces it with helpline numbers. |
+| **Data Scarcity** | High-quality, long-form therapy transcripts are rare/private. | **Synthetic Data:** Use a large model (e.g., Llama-3-70B) to generate synthetic therapy dialogues, then filter them for quality to augment the training set. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **RAG for Resources:** Instead of relying on model knowledge, implement a local Retrieval-Augmented Generation (RAG) system using `LangChain` + `ChromaDB` to fetch verified CBT (Cognitive Behavioral Therapy) worksheets or local emergency contacts.
+*   **Federated Learning:** If you have access to multiple devices, simulate a Federated Learning setup where the model updates are averaged across "hospitals" (laptops) without sharing data.
+*   **Voice Interface:** Integrate `Whisper.cpp` (Speech-to-Text) and a local TTS engine to make the chatbot accessible via voice, running entirely offline.
+
+**Optional next step:**
+Clone the **Unsloth** repository (`github.com/unslothai/unsloth`); it is currently the fastest open-source tool for fine-tuning Llama-3 and includes specific notebooks for "Privacy" and "DP-LoRA" that will save you weeks of setup time.

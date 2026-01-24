@@ -1,0 +1,213 @@
+<thinking>
+Experienced researcher. This is a hard, failure-prone topic: federated RL + smart grids + privacy. Main risk is underspecified ablations and fake “privacy by decentralization.” Need a hard-nosed roadmap with explicit reliability and privacy falsification checks. Timeline must be 9 months despite template saying 6—user explicitly asked. </thinking>
+
+**Blunt assessment:**  
+Federated RL for smart grids is **high-risk but publishable** only if you (1) aggressively ablate assumptions, (2) treat **grid reliability as a non‑negotiable constraint**, and (3) **attack your own privacy claims**. Many papers fail because they show learning curves but never prove safety or privacy under realistic failures. This roadmap is built to prevent that.
+
+---
+
+## 1. Problem framing and goals
+
+**Problem.**  
+Smart grids increasingly rely on distributed control (demand response, voltage regulation, storage dispatch). Federated reinforcement learning (FRL) promises privacy-preserving coordination across grid nodes, but:
+- convergence is fragile under non-stationarity,
+- reliability constraints are often violated during learning,
+- privacy claims are rarely validated against real attacks.
+
+**Goal.**  
+Produce a **systematic ablation-driven evaluation** of FRL methods for smart grid control that answers:
+- *When does FRL actually help vs hurt grid reliability?*
+- *Which components are necessary for stability?*
+- *What privacy guarantees survive adversarial scrutiny?*
+
+**Scope (locked).**  
+One grid control task (e.g., demand response or voltage control), one simulator, one FRL family (e.g., FedAvg-style policy learning).
+
+---
+
+## 2. Experiments (ablation-centric)
+
+### Experiment 1: Centralized vs decentralized vs federated RL (foundational)
+
+**Hypothesis.**  
+FRL only outperforms centralized or local RL under specific heterogeneity and communication regimes.
+
+**Setup.**  
+- Compare centralized RL, local independent RL, and FRL with identical policy classes.
+- Fixed reward and constraint formulation.
+
+**Baselines.**  
+- Rule-based grid controller  
+- Centralized RL (upper bound)
+
+**Evaluation metrics.**  
+Cumulative reward, constraint violations (voltage/frequency), convergence time.
+
+**Expected outcomes.**  
+FRL shows benefits only in limited regimes; otherwise adds instability.
+
+---
+
+### Experiment 2: Core FRL mechanism ablations
+
+**Hypothesis.**  
+Most FRL performance comes from a small subset of design choices.
+
+**Setup.**  
+Ablate one at a time:
+- aggregation frequency  
+- client participation rate  
+- policy vs value-function sharing  
+- synchronous vs asynchronous updates
+
+**Baselines.**  
+- Full FRL configuration  
+- Randomized aggregation
+
+**Evaluation metrics.**  
+Learning stability, variance across seeds, worst-case node performance.
+
+**Expected outcomes.**  
+Identification of *necessary* vs *decorative* FRL components.
+
+---
+
+### Experiment 3: Reliability stress tests (non-negotiable)
+
+**Hypothesis.**  
+FRL policies that look good on average fail under rare but realistic grid events.
+
+**Setup.**  
+- Inject load spikes, renewable intermittency, communication delays.  
+- Evaluate during both training and deployment phases.
+
+**Baselines.**  
+- Conservative rule-based controller  
+- Centralized RL with safety constraints
+
+**Evaluation metrics.**  
+Violation frequency, recovery time, maximum deviation from safe bounds.
+
+**Expected outcomes.**  
+Many FRL variants fail reliability tests; a small subset survives.
+
+---
+
+### Experiment 4: Privacy attack ablations
+
+**Hypothesis.**  
+Vanilla FRL leaks sensitive local information through gradients or policies.
+
+**Setup.**  
+- Perform gradient inversion, membership inference, and property inference attacks.  
+- Compare with and without DP noise, secure aggregation, or partial sharing.
+
+**Baselines.**  
+- No-privacy FRL  
+- Local-only RL (privacy upper bound)
+
+**Evaluation metrics.**  
+Attack success rate, privacy–performance tradeoff curves.
+
+**Expected outcomes.**  
+Quantified privacy leakage; DP/secure aggregation impose real performance costs.
+
+---
+
+### Experiment 5: Joint privacy–reliability trade-off
+
+**Hypothesis.**  
+Some privacy mechanisms catastrophically degrade grid reliability.
+
+**Setup.**  
+- Combine best-performing FRL variants with privacy defenses.  
+- Re-run reliability stress tests.
+
+**Baselines.**  
+- Best non-private FRL  
+- Conservative controller
+
+**Evaluation metrics.**  
+Reliability under privacy constraints, Pareto frontier analysis.
+
+**Expected outcomes.**  
+Clear limits on “acceptable” privacy in safety-critical grids.
+
+---
+
+## 3. Timeline (9 months)
+
+**Month 1:**  
+Task selection, simulator setup, reliability constraints finalized.
+
+**Month 2:**  
+Centralized vs local vs FRL baselines (Experiment 1).
+
+**Month 3:**  
+Core FRL mechanism ablations (Experiment 2).
+
+**Month 4:**  
+Extended convergence and seed-variance analysis.
+
+**Month 5:**  
+Reliability stress testing (Experiment 3).
+
+**Month 6:**  
+Privacy attack implementation (Experiment 4).
+
+**Month 7:**  
+Privacy defense integration and re-evaluation.
+
+**Month 8:**  
+Joint privacy–reliability trade-off study (Experiment 5).
+
+**Month 9:**  
+Synthesis, negative results consolidation, paper writing.
+
+**Hard kill criteria:**  
+If no FRL variant beats the rule-based controller *without violating constraints*, the paper pivots to a **failure analysis** contribution.
+
+---
+
+## 4. Resources
+
+**Compute.**  
+- Moderate CPU/GPU; simulation dominates, not model size.
+
+**Tools.**  
+- Power grid simulators (e.g., open-source distribution grid simulators)  
+- RL frameworks (PyTorch-based)  
+- Secure aggregation / DP libraries
+
+**Datasets.**  
+- Synthetic or public grid load and generation profiles.
+
+**Evidence note.**  
+There is no standardized benchmark for FRL in smart grids with privacy attacks. This work’s value is the **ablation rigor**, not raw performance.
+
+---
+
+## 5. Risks and mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Unstable learning | Non-publishable | Embrace failure analysis |
+| Fake privacy claims | Reviewer rejection | Explicit attack evaluations |
+| Overfitting simulator | Weak relevance | Stress-test parameters |
+| Scope creep | Miss deadlines | Lock task early |
+
+---
+
+## 6. Stretch ideas or follow-up directions
+
+- Formal safety guarantees for FRL  
+- Human-in-the-loop grid oversight  
+- Regulatory implications of privacy–reliability trade-offs
+
+---
+
+**Bottom line:**  
+If your results don’t make FRL look *uncomfortable*, you didn’t ablate hard enough.
+
+**Optional next step:**  
+Write a one-page **reliability charter** stating which grid violations are absolutely unacceptable—and fail any method that breaks it.

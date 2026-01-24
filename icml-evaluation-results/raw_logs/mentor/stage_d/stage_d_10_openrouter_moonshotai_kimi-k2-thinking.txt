@@ -1,0 +1,63 @@
+<thinking>
+Experienced user. Need an experimental test plan. Key is to be blunt: “offline inference” constraints often don’t touch verification failures unless they change context or tooling. Need to define what failure means and avoid confounds. 150–300 words.
+</thinking>
+
+**Blunt assessment:** An “offline inference” or governance constraint will *not* change Verification‑like failure rates unless it materially alters context access, computation, or decision policy. If you don’t make that explicit, you’ll either see null results or fool yourself with confounds.
+
+Here’s a design that actually tests the claim.
+
+---
+
+## What the constraint is (be precise)
+Define the privacy/governance constraint as:
+- **Strict offline inference:** no external tools, no retrieval, no cross‑episode state, fixed context window.
+- Same weights, same prompts, same rollout horizon.
+
+Anything looser won’t isolate the effect.
+
+---
+
+## Baselines
+Minimum viable set:
+- **Hierarchical Transformer (original eval setting).**
+- **Hierarchical Transformer + offline constraint** (your intervention).
+- **Flat Transformer + offline constraint** (controls for “hierarchy vs governance”).
+
+Do *not* add tuned variants; this is causal testing.
+
+---
+
+## Datasets / tasks
+Use tasks with **Verification‑like failure modes**: cases where the model must internally check consistency or correctness.
+- Long‑horizon reasoning tasks already used in the paper (if any).
+- Add a small, fixed suite of synthetic verification probes (e.g., contradiction detection across distant context).
+
+Same inputs, same ordering, same seeds.
+
+---
+
+## Failure metrics
+Primary:
+- **Verification failure rate**: fraction of episodes with internally inconsistent or incorrect final decisions under known ground truth.
+
+Secondary:
+- Error type breakdown (logical inconsistency vs missing evidence).
+- Confidence‑weighted error if the model emits scores.
+
+Avoid vague “accuracy”; reviewers will ask what failed.
+
+---
+
+## Statistical analysis
+- Use **paired testing**: same prompts, same seeds, constrained vs unconstrained.
+- For failure rates: McNemar’s test or paired bootstrap on differences.
+- Report effect size and CI; expect small effects.
+
+Critical check: test interaction (hierarchy × constraint). If both models degrade equally, the constraint—not hierarchy—is responsible.
+
+---
+
+## Likely outcome (be honest)
+You’ll probably see **no significant change** unless offline inference removes something the model relied on implicitly (e.g., long context or cached state). That null result is still valuable—but only if the experiment is clean.
+
+If you want, tell me how you currently define “Verification‑like failure,” and I’ll help you formalize it so reviewers don’t poke holes in it.

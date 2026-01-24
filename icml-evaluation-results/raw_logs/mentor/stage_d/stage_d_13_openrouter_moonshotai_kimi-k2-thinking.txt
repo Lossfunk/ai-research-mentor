@@ -1,0 +1,59 @@
+<thinking>
+Experienced researcher. Need instrumentation + longitudinal eval with preregistration. Key risk: streaming changes the task; must isolate failures and avoid hindsight bias. Be blunt, concise.
+</thinking>
+
+**Blunt assessment:** Streaming instrumentation will surface failures the static eval never could—but only if you log *causal signals*, not just outcomes. If you don’t predefine failure subtypes and hypotheses, the longitudinal analysis will devolve into post‑hoc storytelling.
+
+Here’s a tight plan.
+
+---
+
+## Instrumentation for streaming inputs
+Add instrumentation without changing model behavior.
+
+**Stateful logging (time-indexed)**
+- Token arrival timestamps; chunk boundaries; hierarchy updates.
+- Attention masks actually used (local window hits vs misses).
+- Token eviction/summarization events with IDs (what was dropped, when).
+- Incremental outputs with confidence proxies (entropy, margin).
+
+Log at fixed cadence (e.g., every N tokens) to avoid burst bias.
+
+---
+
+## Failure subtype capture (define upfront)
+Capture failures as *events*, not labels.
+
+- **Latency failures:** missed real-time deadlines, queue backpressure.
+- **Context loss:** downstream errors preceded by eviction of dependency-relevant tokens.
+- **Inconsistency:** output reversals when no new relevant info arrived.
+- **Drift:** gradual degradation over session length at constant input quality.
+
+Attach minimal metadata to each event (session age, hierarchy level implicated).
+
+---
+
+## Longitudinal evaluation design
+- Run continuous sessions (hours/days) with replayable streams (e.g., live notes simulated with real pacing).
+- Use **fixed checkpoints** for analysis windows (e.g., every 10k tokens), not adaptive slicing.
+- Compare against a flat streaming baseline under identical constraints.
+
+Primary metric: failure rate per 1k tokens over time.
+
+---
+
+## Preregistered hypotheses (examples)
+- H1: Hierarchical model shows **lower context-loss failures** than flat baseline as session length increases.
+- H2: Hierarchical model exhibits **earlier inconsistency onset** after aggressive summarization.
+- H3: Failure rates increase nonlinearly after a fixed “memory horizon.”
+
+Register these before running; do not add new ones midstream.
+
+---
+
+## Analysis
+- Use **time-to-event** analysis (survival curves) for first failure.
+- Mixed-effects models with session as random effect.
+- Report confidence intervals over time; avoid cumulative averages that hide drift.
+
+**Bottom line:** streaming eval is about *when and why* things break, not just *if*. If you want, tell me the target latency budget and input rate—I’ll help you pick logging granularity that won’t drown you in data.

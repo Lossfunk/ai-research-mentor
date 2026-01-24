@@ -1,0 +1,58 @@
+This is a common methodological critique when using the PeerRead dataset (Kang et al., 2018). Because PeerRead relies on a heuristic to generate negative samples for conferences like ACL and NeurIPS (matching arXiv submissions by date that do not appear in the proceedings), the labels are "noisy silver labels" rather than "gold labels."
+
+Here is a breakdown of the specific concerns reviewers are likely to raise, followed by strategies and text you can use in your discussion section to mitigate them.
+
+---
+
+### Part 1: Anticipated Reviewer Concerns
+
+#### 1. The "Non-Submission" Problem (False Negatives)
+**Concern:** Just because a paper was uploaded to arXiv during the submission window does not mean it was submitted to that specific conference. The authors might have been targeting a different venue (e.g., submitting to AAAI instead of NeurIPS) or simply soliciting community feedback without intent to submit immediately.
+**Impact:** Your model might be learning to distinguish "papers targeted at Conference X" vs. "papers targeted at Conference Y," rather than "accepted" vs. "rejected."
+
+#### 2. The "Eventually Accepted" Problem
+**Concern:** A paper labeled "probably rejected" might have been rejected from the target conference but accepted later at a venue of equal or higher prestige.
+**Impact:** If the paper is of high quality but was rejected due to fit or reviewer variance, labeling it as a "negative" sample confuses the model regarding paper quality.
+
+#### 3. Distributional Shift (Formatting and Anonymity)
+**Concern:** arXiv papers often retain author names, acknowledgments, and different formatting/templates compared to the blind submission versions used in the "Accepted" class.
+**Impact:** The classifier might learn trivial shortcuts (e.g., detecting the presence of an acknowledgment section or specific LaTeX templates) rather than semantic quality.
+
+#### 4. Selection Bias of arXiv
+**Concern:** Not all researchers post to arXiv before acceptance. There is a known bias where researchers from higher-prestige institutions or those who are more confident in their work are more likely to preprint.
+**Impact:** The "probably rejected" class might actually have a higher average quality than the true distribution of rejected papers, making the classification task artificially harder or unrepresentative of the real review pile.
+
+---
+
+### Part 2: Proposed Mitigations for the Discussion Section
+
+To address these, you do not need to prove the dataset is perfect. You need to acknowledge the limitations and argue that the **signal-to-noise ratio** is still high enough to draw valid conclusions.
+
+#### Mitigation Strategy A: Redefine the Task
+Reframing the classification task slightly can bypass the validity argument.
+*   **Argument:** "We are not predicting 'paper quality' in a vacuum; we are predicting 'acceptance at venue $V$ within time window $T$'. Under this definition, a paper that was submitted elsewhere or accepted a year later is correctly labeled as a negative instance for *this specific prediction task*."
+
+#### Mitigation Strategy B: Cite Robustness to Label Noise
+Deep learning models are often robust to a certain percentage of label noise.
+*   **Argument:** "Previous work (Rolnick et al., 2017) suggests deep learning models are robust to label noise. Even if 10-20% of the arXiv set were not actually rejected, the model learns from the dominant signal of the remaining 80%."
+
+#### Mitigation Strategy C: The "Upper Bound" Argument
+*   **Argument:** "Because the 'probably-rejected' set likely contains some high-quality papers (false negatives), our reported performance metrics are likely conservative estimates (lower bounds). If the model can distinguish accepted papers from a pool containing both rejected papers *and* competitive papers submitted elsewhere, the signal is robust."
+
+#### Mitigation Strategy D: Addressing Formatting Shortcuts
+*   **Argument:** Explicitly state that you stripped metadata, acknowledgments, and standard headers/footers during preprocessing to prevent the model from learning formatting shortcuts.
+
+---
+
+### Part 3: Example Text for Your Discussion Section
+
+Here are three snippets you can adapt and insert directly into your paper:
+
+**Option 1: The "Conservative Lower Bound" Defense (Best for Performance Papers)**
+> "We acknowledge that the 'probably-rejected' labels in PeerRead are heuristic, relying on arXiv timestamps rather than confirmed rejection notifications. Consequently, this class likely contains 'false negatives'—papers that were either never submitted to the target venue or were eventually accepted at comparable venues. However, this label noise implies that our classification task is harder than a standard 'good vs. bad' distinction. By training against a negative class that includes high-quality, publishable work, our model must learn finer-grained semantic distinctions. Therefore, our results should be interpreted as a conservative lower bound on the model's ability to identify acceptance-worthy features."
+
+**Option 2: The "Distributional Shift" Defense (Best for Linguistic Analysis Papers)**
+> "A potential concern with using arXiv drafts as a proxy for rejected papers is the potential for distributional shift regarding formatting and anonymity. To mitigate this, we aggressively preprocessed the corpus to remove non-content cues (e.g., author blocks, acknowledgments, and preprint watermarks). Furthermore, while the 'probably-rejected' set is not a perfect gold standard, Kang et al. (2018) validated this heuristic, finding that a significant majority of these papers did not appear in top-tier venues within the subsequent year, suggesting the heuristic provides a sufficiently strong signal for learning acceptance criteria."
+
+**Option 3: The "Scope of Prediction" Defense (Safest approach)**
+> "It is important to note that our labels represent 'acceptance at [Conference Name]' rather than an absolute measure of scientific validity. A 'probably-rejected' paper may have been submitted to a different venue or accepted in a later cycle. However, in the context of assisting area chairs or predicting conference outcomes, this distinction is moot: a paper not accepted at the target conference is strictly a negative instance for that specific venue's cycle. Thus, the noise in the PeerRead labels does not invalidate the model's utility for venue-specific outcome prediction."

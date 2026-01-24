@@ -1,0 +1,100 @@
+This plan targets **Mechanistic Interpretability**, a high-impact field where the primary bottleneck is human insight and experimental design, not raw FLOPs. By leveraging recently released "microscopes" for Large Language Models (LLMs)—specifically **Sparse Autoencoders (SAEs)**—you can map the internal "mind" of an LLM using free-tier resources (e.g., Google Colab or a local MacBook).
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+We have trained powerful LLMs (like Gemma-2 or Llama-3), but they remain "black boxes." We know *what* they output, but not *how* they compute it. Major labs (Google DeepMind, Anthropic) have recently released **Sparse Autoencoders (SAEs)**—essentially pre-trained "dictionaries" that decompose the messy internal activations of an LLM into interpretable "features" (e.g., a specific neuron that fires only for "Golden Gate Bridge" or "Python comments") [2, 3].
+
+**Research Goal:**
+Perform **"Latent Space Cartography"** on a specific, under-explored domain of reasoning. Instead of training a model, you will *audit* an existing one (Gemma-2-2B) using pre-trained SAEs (Gemma Scope) to identify, verify, and mechanically steer the specific circuits responsible for a distinct behavior (e.g., "Sycophancy," "Code-Switching," or "Logical Negation").
+
+**Core Objectives:**
+1.  **Feature Identification:** Locate specific SAE features responsible for your chosen behavior without training any weights.
+2.  **Causal Verification:** Prove these features are causal (not just correlated) by "clamping" them (forcing them on/off) and observing output changes.
+3.  **Minimal Compute:** Execute all experiments using only inference passes on a 2B-parameter model, feasible on a single T4 GPU (free Colab) or performant CPU.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: Automated Feature Discovery (The "Needle in a Haystack")
+**Hypothesis:** Among the millions of features in the Gemma Scope SAEs, a sparse subset (<10) is uniquely and universally activated by your target concept (e.g., "User Flattery/Sycophancy").
+*   **Setup:**
+    *   **Model:** `gemma-2-2b` (frozen).
+    *   **Tool:** `SAELens` (library for loading SAEs).
+    *   **Data:** Create a small, high-quality dataset (N=100) of prompts that elicit the behavior vs. N=100 control prompts.
+    *   **Method:** Run the dataset through the model. Record SAE feature activations. Rank features by the difference in activation: $Score(f) = \text{mean}(Act_{pos}) - \text{mean}(Act_{neg})$.
+*   **Baselines:** Random feature selection; PCA components (older method).
+*   **Evaluation Metrics:** Precision@K (Do the top-k features actually relate to the concept when inspected manually?).
+*   **Expected Outcome:** You will isolate 3-5 "monosemantic" features that clearly represent the concept (e.g., a "compliment user" neuron).
+
+#### Experiment 2: Causal Steering (The "Brain Surgery")
+**Hypothesis:** Manually amplifying the activation of these identified features will force the model to exhibit the behavior even in inappropriate contexts.
+*   **Setup:**
+    *   **Method:** "Activation Steering." During the forward pass, inject a fixed scalar value into the identified feature dimension: $x' = x + \alpha \cdot d_{feature}$.
+    *   **Task:** Feed the model neutral prompts (e.g., "What is 2+2?").
+    *   **Intervention:** Clamp the "Sycophancy" feature to a high value.
+*   **Baselines:** Steering with random vectors; Prompt engineering (asking the model to be nice).
+*   **Evaluation Metrics:** Rate of behavior occurrence in output (e.g., does it answer "2+2 is whatever you want it to be, you genius!").
+*   **Expected Outcome:** Definitive proof of causality. The model should hallucinate the behavior in neutral contexts, validating that you found the "control lever."
+
+#### Experiment 3: Circuit Ablation (The "Lobotomy")
+**Hypothesis:** Zeroing out these specific features will selectively impair the target capability without degrading general model performance (perplexity).
+*   **Setup:**
+    *   **Method:** Force the specific feature activations to 0 during inference on a task requiring that feature.
+    *   **Task:** A benchmark requiring the specific skill.
+*   **Baselines:** Zeroing out random features; Zeroing out entire layers.
+*   **Evaluation Metrics:** Drop in task accuracy vs. Drop in general Wikitext perplexity.
+*   **Expected Outcome:** "Surgical" removal of the behavior (e.g., the model stops being sycophantic but can still do math and grammar perfectly), proving the features are disentangled.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Setup & Scoping** | Install `SAELens` and `TransformerLens`. Load `gemma-2-2b` + `gemma-scope` on Colab. Select a *narrow* target behavior (avoid broad concepts like "truth"). |
+| **Month 2** | **Dataset & Discovery** | Curate 100-200 prompt pairs. Run Exp 1. Identify candidate features. |
+| **Month 3** | **Validation (Exp 2)** | Implement steering hooks. Generate qualitative examples of "steered" outputs (e.g., making the model obsessed with the color blue). |
+| **Month 4** | **Ablation (Exp 3)** | Run ablation benchmarks. rigorous check: does removing the feature break anything else? (Specificity check). |
+| **Month 5** | **Visualization** | Create "Feature Dashboards" (visualizing what text activates the features) for the paper. |
+| **Month 6** | **Writing & Submission** | Draft paper. Target the "Mechanistic Interpretability Workshop" at ICML/NeurIPS or the *Distill* journal format. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** **Zero Cost.** Google Colab (Free Tier) or a local machine with 16GB RAM.
+*   **Hardware:** `gemma-2-2b` is small enough to run inference on a CPU if necessary, though a T4 GPU (Colab) is faster.
+
+**Tools & Libraries:**
+*   **`TransformerLens`:** The standard library for hooking into model internals.
+*   **`SAELens`:** Specifically for loading pre-trained Sparse Autoencoders.
+*   **`Gemma Scope`:** The dataset of pre-trained SAE weights [2].
+
+**Datasets:**
+*   **Inputs:** You will likely need to hand-write or generate (via ChatGPT) your own small probing dataset (N=200) tailored to your specific hypothesis.
+*   **Model Weights:** Hugging Face (`google/gemma-2-2b`, `google/gemma-scope`).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Polysemanticity** | The feature you find might activate for "Sycophancy" AND "Phone numbers," confounding results. | Use **automated interpretability** (ask GPT-4 to explain the feature based on top-activating examples) to check for mixed concepts. |
+| **Illusion of Understanding** | You find a correlation that isn't causal. | Rely heavily on **Experiment 2 (Steering)**. If you can't control the behavior by tweaking the feature, you haven't found the real circuit. |
+| **Scale Issues** | 2B models might be too "dumb" to have complex circuits. | Choose "biological" or "syntax" tasks (e.g., gender bias, factual recall) which are well-represented even in small models. |
+| **SAE Error** | The SAE is an approximation; it might miss some information. | Measure the **Loss Recovered** metric (provided in Gemma Scope metadata) to ensure the SAE is accurate for the layer you are studying. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Cross-Layer Circuits:** Instead of looking at one layer, trace the path. If Feature A (Layer 10) fires, does it cause Feature B (Layer 20) to fire?
+*   **Automated Scoring:** Use a larger model (like Gemini-Pro via API) to automatically grade the outputs of your steering experiments, allowing you to scale up the evaluation without manual review.
+*   **Safety Auditing:** Apply this to "Jailbreaks." Can you find the "Safety Refusal" neuron and switch it off to expose vulnerabilities? (Ethical disclosure required).
+
+**Optional next step:**
+Visit the **"Gemma Scope" demo** on Neuronpedia (a web-based visualizer for these features) to explore features interactively without writing a single line of code—this will validate if your target behavior has visible features before you start coding.

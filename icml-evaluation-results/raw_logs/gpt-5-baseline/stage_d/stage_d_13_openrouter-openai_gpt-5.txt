@@ -1,0 +1,127 @@
+Below is a practical plan to instrument your Hierarchical Transformer for real-time/streaming inputs (e.g., live note-taking), with concrete logging, failure subtype capture, and a preregistered longitudinal evaluation.
+
+1) Streaming adaptation (minimal code changes)
+- Incremental API
+  - Add process_delta(session_id, delta) → {prediction, confidence, metadata}
+  - Maintain session state: cached segment encodings, global encoder cache, last prediction, last context hash.
+- Segmentation policy
+  - Incremental segmenter that emits segments on:
+    - Hard boundaries: newline, sentence end, or punctuation + pause > τ (e.g., 500 ms).
+    - Soft flush timer: emit partial segment every T seconds (e.g., 2 s) to guarantee freshness.
+  - Do not exceed original max tokens/segment; sub-split overflow; reuse original stride/max segments and sliding window rules.
+- Caching
+  - Cache local encoder outputs per segment using content hash (xxhash of normalized text) to avoid recomputation on small edits.
+  - Global encoder incremental update:
+    - Recompute only affected segment embeddings and global layers; for simple global transformers, re-run with cached segment embeddings; for very long contexts, optionally maintain a rolling window with overlap identical to batch mode.
+- Any-time output policy
+  - Early decisions allowed once min_context tokens/segments observed (pre-register a value per task).
+  - Stability guard: withhold updates if argmax unchanged and entropy change < ε to reduce UI flicker.
+- Determinism and comparability
+  - Freeze decoding/beam settings, seeds, precision. When full context stabilizes, the final pass must match batch-mode evaluation bit-for-bit.
+
+2) Structured logging (privacy-safe)
+- Transport and format
+  - Emit JSONL events (or OTLP/OpenTelemetry) with per-event and per-session keys. No raw text by default; store only hashes and lengths unless explicitly whitelisted in a sandbox.
+- Event schema (per tick)
+  - run_id, session_id, user_id_hash (optional), model_version, config_hash
+  - timestamps: t_ingest, t_start, t_end; latency_ms = t_end − t_start
+  - input: delta_chars, delta_tokens, total_tokens, new_segments, edited_segments, dropped_segments
+  - caches: reused_local_segments, recomputed_local_segments, reused_global, recomputed_global_layers
+  - windowing: max_segments_allowed, segments_in_window, truncation_flag (bool), stride
+  - outputs: task_type, pred, topk, logits_or_probs (summaries: hash + length), entropy, margin, calibration_temp (if used)
+  - comparisons: pred_changed (bool), prev_pred, flip_type (TP→FP etc.; see failure subtypes), edit_distance_outputs (for text), stability_counter
+  - quality proxies: perplexity_of_delta, OOV_rate, language_id, toxicity_score (if allowed), pii_flag (if on-device filter used)
+  - hardware: gpu_util, peak_mem_mb, reserved_mem_mb, num_streams, oom_flag
+  - errors: exception_type, stack_hash
+- Aggregates (per session; emit on close)
+  - num_ticks, time_to_first_decision (TTFD), time_to_stable_decision (TTSD), num_flips, last_value_metric (if label available post hoc), AUTC/AUAC (area under metric vs time/coverage), max_context_seen, num_truncations.
+
+3) Failure subtype taxonomy and automatic capture
+- Streaming-specific failures (attach subtype tag and detection rule)
+  - Boundary jitter: consecutive ticks move a boundary by ±1–2 segments frequently. Detector: boundary_index variance > θ per 10 ticks.
+  - Early overcommit: early tick high-confidence wrong prediction flips later. Detector: pred_changed=1 and prev_conf>τ_high and final label correct.
+  - Late correction failure: final tick still wrong though sufficient evidence seen earlier. Detector: oracle_window_hit=1 at t < T_final − δ and last_value wrong.
+  - Truncation loss: gold/evidence outside active window. Detector: truncation_flag=1 and gold_offset ∉ window_range (requires sidecar with gold offsets).
+  - Cache staleness: reused cache despite edit collision. Detector: segment_hash_mismatch after reuse → force recompute and log incident.
+  - Backpressure/latency spikes: latency_ms > p95_by_length_bin; co-log queue_depth, dropped_tick (if shedding).
+  - Oscillation: >K flips without net improvement. Detector: flip_count/window > γ and no monotone entropy decrease.
+  - Long-context degradation: error rate increases with total_tokens quantile. Detector: online metric by length bin vs batch baseline.
+- Cross-cutting failures
+  - Miscalibration drift: ECE increases over session time; detector: ECE_t − ECE_0 > ε.
+  - Hallucination (gen): QAFactEval/SummaC drop on later ticks; detector: factuality<τ on any tick where earlier tick was ≥τ.
+
+4) Synthetic streaming harness (offline evaluation)
+- Convert static corpora into streams
+  - Replay documents as keystroke-like deltas: sentence-by-sentence or fixed-token chunks at 3–6 chars/sec; inject realistic pauses (Poisson with mean 2–5 s).
+  - Datasets: reuse your long-doc tasks (e.g., Hyperpartisan, LEDGAR, Qasper, PubMed/arXiv) so final, stabilized outputs are directly comparable to original metrics.
+- Ground truth alignment
+  - For QA with evidence, map gold spans to character offsets; track whether/when they enter the window.
+  - For classification, define oracle_at_t: the batch-mode prediction using only the first t tokens; use it to compute streaming regret.
+
+5) Streaming metrics
+- Timeliness and stability
+  - TTFD: time to first valid prediction; TTSD: time until last flip (or when conf > τ and monotone for M ticks).
+  - Flip count/rate; oscillation score; edit distance between consecutive summaries per minute.
+- Accuracy over time
+  - Accuracy/EM/F1 vs time/coverage curve; AUTC (higher better) over session duration; Regret(t) = metric_oracle(t) − metric_stream(t).
+  - Verified/attributable rate over time for evidence-requiring tasks.
+- Efficiency
+  - Latency per tick (p50/p90) by delta size and total_tokens; cache hit rate; tokens/sec processed.
+- Calibration
+  - ECE, Brier vs time; risk–coverage curves at fixed τ; selective accuracy at 70/90% coverage.
+
+6) Preregistered hypotheses (with planned tests)
+- H1 (Monotonic improvement): AUTC_stream ≥ AUTC_baseline−ε, and d/dt Accuracy(t) ≥ 0 in expectation after the first decision.
+  - Test: paired bootstrap of AUTC deltas across sessions; monotonicity via Mann–Kendall on per-session accuracy(t).
+- H2 (Stability with context): Flip rate decreases with cumulative tokens; median TTSD scales sublinearly with document length.
+  - Test: mixed-effects model TTSD ~ log(tokens_final) + (1|doc), slope < 0.5; Wilcoxon on flip rate between first and last quartile of time.
+- H3 (Caching helps without accuracy loss): Enabling cache reduces median latency ≥20% with non-inferior AUTC (ε_acc=0.5 F1 or equivalent).
+  - Test: paired Wilcoxon on latency; non-inferiority test on AUTC.
+- H4 (No regression at final state): Final streaming prediction equals batch-mode prediction ≥ 99% of sessions (classification/QA) or ROUGE drop ≤ 0.2 for summarization.
+  - Test: McNemar on equality; paired bootstrap on ROUGE deltas.
+- H5 (Truncation harms are rare and detectable): When truncation_flag=0, error rate matches batch-mode within ε; when truncation_flag=1, error odds increase (OR>2).
+  - Test: logistic regression correct ~ truncation_flag + log(tokens) + (1|doc).
+- H6 (Latency spikes correlate with errors): Tick-level error probability increases during p95 latency spikes.
+  - Test: mixed-effects correct ~ spike_flag + delta_tokens + (1|session).
+
+7) Sample size and power
+- Unit of analysis: session (one document replay). Aggregate tick-level to session-level metrics to reduce autocorrelation.
+- Power assumptions (pilot to refine)
+  - Expect SD of AUTC deltas ≈ 0.05–0.08; to detect δ=0.02 at α=0.05, 80% power needs n ≈ ((1.96+0.84)*SD/δ)^2 ≈ 62–125 sessions.
+  - Latency reduction effects are larger; with paired SD ≈ 10–20%, n=30–50 sessions typically suffices.
+- Recommendation: 100 sessions per dataset × 2–3 datasets; 3 seeds for model stochasticity. For summarization (costly), 50 sessions.
+
+8) Statistical analysis plan
+- Paired comparisons against batch-mode (final) and variant toggles (cache on/off; different flush timers).
+  - Accuracy/EM/F1/AUTC: paired bootstrap (10k) over sessions; report 95% CIs; McNemar for final equality.
+  - Latency: paired Wilcoxon on per-session medians; report p50/p90 with CIs via BCa bootstrap.
+  - Calibration: bootstrap ECE/Brier deltas; reliability curves over time.
+- Time-to-event
+  - TTSD/TTFD: Kaplan–Meier curves; compare settings via log-rank test; Cox model with covariates (log(tokens), delta size).
+- Mixed-effects (length, domain, seed)
+  - correct_ijt ~ time_bin + setting + time_bin×setting + log(tokens) + (1|session) + (1|seed). Interaction < 0 indicates steeper degradation under a setting.
+- Multiple comparisons: Holm–Bonferroni per dataset across hypotheses H1–H6.
+
+9) Operational safeguards and dashboards
+- Real-time alerts
+  - Trigger on spike in flip rate, truncation_flag rate, or latency p95; auto-capture last N events and model inputs with redaction.
+- Dashboards (per model_version)
+  - AUTC and final accuracy vs previous version; TTSD distribution; flip rate by length; cache hit rate; truncation incidents; error taxonomy counts.
+- Privacy/governance
+  - Default: no raw text in logs; only lengths, hashes, and derived features. If PHI possible, run on-device PII scrubbing before any logging; maintain DLP allowlist.
+  - Rotate run_id/session_id; encrypt logs at rest; access via RBAC; retain only aggregates for long-term longitudinal studies.
+
+10) Implementation checklist
+- Add SegmentCache with content-hash keys; unit tests for cache correctness on edits/rollbacks.
+- Add StreamingRunner with flush timer and boundary detector; deterministic RNG seeds for reproducibility.
+- Instrument timing with CUDA events around local and global stages; synchronize before reading.
+- Build LogEmitter with schema validation; backpressure-safe async writes.
+- Build OfflineStreamer to replay datasets into ticks; record tick metadata and produce paired batch-mode outputs.
+- Add FailureClassifier to tag events with subtype labels using the rules above.
+
+Deliverables
+- Configs: streaming vs batch; cache on/off; flush timers; min_context thresholds.
+- Code: process_delta API, caching, logging, offline streamer, failure classifier.
+- Reports: preregistration doc with H1–H6, metrics, thresholds, and analysis scripts; longitudinal dashboards and per-dataset summaries with CIs.
+
+This plan lets you run your existing model unchanged at final convergence while adding a robust, privacy-aware streaming layer, precise telemetry, and a preregistered longitudinal framework to quantify how real-time constraints affect accuracy, stability, and failure modes.

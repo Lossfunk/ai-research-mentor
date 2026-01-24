@@ -1,0 +1,112 @@
+Happy to do a targeted ethics/compliance pass. Here’s a concise, LLM-compression–focused audit checklist plus concrete fixes you can apply now.
+
+What I need from you for a precise review
+- List of all datasets and models used (pretraining, finetuning, evaluation), with URLs and stated licenses.
+- Whether any human subjects/annotations were collected (and how).
+- Your release plan (code, weights, data; gated or open).
+- Compute details (hardware, hours, regions, frameworks, seeds).
+- Draft ethics/limitations sections and any license/attribution appendix.
+
+Rapid self-audit checklist and fixes
+
+A) Dataset licensing and provenance
+- Risk: License mismatch or unclear rights (e.g., CC BY-SA sources, GPL code, site TOS violations, derivative redistribution limits).
+  - Fixes:
+    - Create a per-asset provenance table listing: name, source URL, original license, permitted uses (research/commercial), redistribution allowed (Y/N), modification allowed (Y/N), special terms/DUA.
+    - Replace or segregate assets with share-alike or no-derivatives licenses if your release can’t comply; provide attribution where required.
+    - If web-scraped, document robots.txt/TOS compliance and why usage is lawful; state takedown procedure.
+    - For composite corpora (C4, The Pile, GitHub code): acknowledge mixed licensing and exclude copyleft or incompatible subsets if you intend to redistribute.
+- Risk: Using model outputs or datasets whose TOS forbids training/distillation.
+  - Fixes:
+    - Confirm provider terms explicitly permit training on outputs; if not, remove or get permission. Document in the appendix.
+- Risk: Evaluation benchmarks with restricted redistribution.
+  - Fixes:
+    - Cite and link to official download; don’t mirror restricted data. State that users must accept original licenses.
+
+B) Human data, privacy, and sensitive content
+- Risk: PII/sensitive data in training/eval sets; KV-cache logs accidentally containing user text during eval.
+  - Fixes:
+    - Describe PII filtering, de-identification, and residual risk. Commit to takedown on request.
+    - Ensure eval logs exclude or redact user content; avoid releasing raw prompts unless consented.
+- Risk: Human annotation without ethics approval or fair compensation.
+  - Fixes:
+    - State IRB/ethics board status (approved/exempt/Not Human Subjects Research) and rationale. Include consent procedure, pay rates, demographics handling, and harm mitigation.
+- If claiming privacy guarantees (e.g., differential privacy), include formal parameters and empirical privacy tests (membership inference, canary exposure).
+
+C) Third-party model licenses and derivative weights
+- Risk: Redistributing compressed/quantized derivatives in violation of base model license.
+  - Fixes:
+    - For each base model (e.g., Llama, Mistral, Qwen, Falcon), list the exact license and whether redistribution of modified weights is allowed; comply with any acceptable-use policies or gating requirements. If unclear, release recipes/checkpoints that require users to apply deltas to obtain weights from the original.
+    - If base weights are non-redistributable, release code, configs, and patch/delta files only, with instructions to reproduce locally from the original source.
+- Risk: Distilling from proprietary APIs with restricted use.
+  - Fixes:
+    - Verify API terms allow training/distillation on outputs; if disallowed, remove distilled data or secure permission and disclose.
+
+D) Compute, energy, and environment
+- Risk: Undisclosed or non-reproducible compute; no environmental accounting.
+  - Fixes:
+    - Report hardware types/counts, accelerator memory, interconnect, software versions, precision, batch sizes, training/eval hours, seeds.
+    - Provide compute accounting: total accelerator-hours per experiment, and energy/CO2 estimates (e.g., via CodeCarbon or regional intensity factors). Include region and emission factors.
+    - State efficiency measures (mixed precision, sparsity, quantization-aware training) and their impact.
+
+E) Safety, dual-use, and misuse
+- Risk: Compressed models reduce safety alignment, ease misuse, or amplify bias.
+  - Fixes:
+    - Evaluate safety/bias before/after compression (toxicity, stereotyping, jailbreak robustness) and report regressions.
+    - Choose a release strategy: full weights, gated access, or evaluation-only. Justify with risk assessment; include a model card and usage policy.
+    - If releasing, apply a license/policy reflecting acceptable use; document refusal behaviors and known failure modes.
+
+F) Fairness and representation
+- Risk: Performance drops disproportionately across groups or languages after compression.
+  - Fixes:
+    - Include group-wise metrics where applicable; note trade-offs and mitigations (e.g., group-aware calibration, targeted finetuning).
+
+G) Reproducibility and artifacts
+- Risk: Missing details required by venue reproducibility checklists.
+  - Fixes:
+    - Provide full hyperparameters, seeds, data splits, exact preprocessing/tokenizers, commit hashes, and scripts.
+    - Release inference kernels for quantized ops, calibration data, and accuracy-vs-latency measurements on stated hardware.
+    - If possible, enter artifact evaluation (e.g., MLSys/NeurIPS AE) and provide a Docker/Conda environment.
+
+H) Security and IP hygiene
+- Risk: License contamination (e.g., GPL code) or insecure dependencies.
+  - Fixes:
+    - Include a dependency and license inventory; replace incompatible licenses; generate an SBOM if feasible.
+    - Document model robustness to bit-flips/faults if you claim safety in low-bit regimes; disclose known vulnerabilities.
+
+I) Accessibility and transparency
+- Fixes:
+    - Provide model and data cards; clear README; changelog; citation and attribution statements.
+    - Add a limitations section that candidly states failure modes, populations not tested, and non-goals.
+
+Venue-specific must-haves (adapt as needed)
+- NeurIPS/ICML: Reproducibility checklist; ethics statement if applicable; negative societal impact discussion when relevant; code/data plan.
+- ICLR: Mandatory Limitations section; reproducibility checklist; code link expected by camera-ready.
+- MLSys: Strong systems methodology; hardware specs; latency/throughput/energy; artifact badge encouraged.
+- ACL/EMNLP: Ethics statement; data and software availability statements; dataset/annotation documentation.
+
+Templates you can drop in (edit to fit)
+- Ethics statement scaffold:
+  - Data provenance and licensing: “We list all datasets, sources, and licenses in Appendix X and confirm our use complies with redistribution and derivative-work terms. We exclude sources with incompatible terms.”
+  - Human data and privacy: “No new human data were collected” or “We obtained informed consent, with IRB protocol #, fair compensation, and privacy safeguards; PII was removed and residual risk is discussed.”
+  - Safety/misuse: “Compression can reduce safety margins. We evaluate toxicity/jailbreak robustness pre/post compression and release under [license/policy], with gating for high-risk weights.”
+  - Environmental impact: “Training consumed N GPU-hours (~E kWh, ~C kgCO2e based on region R); we used mixed precision/low-bit inference to reduce energy.”
+- License appendix scaffold (one line per asset):
+  - Asset name; URL; License; Permitted uses; Redistribution allowed; Modifications allowed; Special terms/DUA; Notes on compliance.
+
+Common gotchas in compressible LLM papers
+- Redistributing quantized derivatives of closed or community-licensed models without checking redistribution clauses.
+- Using StackOverflow/CC BY-SA content without triggering share-alike obligations.
+- GitHub code pretraining without filtering copyleft licenses.
+- KV-cache or activation logs containing user or proprietary text in released artifacts.
+- Missing latency/energy metrics to justify “efficient.”
+
+Action plan you can implement this week
+1) Build the provenance/license appendix and replace or gate any problematic assets.
+2) Decide the release mode (weights vs. deltas vs. code-only) consistent with upstream licenses and risk.
+3) Add compute/energy disclosure and satisfy the target venue’s checklist.
+4) Run and report safety/bias regressions post-compression; adjust release accordingly.
+5) Write the ethics/limitations sections using the scaffold above.
+6) Prepare artifact packaging (env, scripts, seeds) and optional artifact evaluation.
+
+If you paste your sections (or share a link), I’ll mark specific red flags, propose compliant wording, and suggest minimal changes to make the paper camera-ready for your target venues.

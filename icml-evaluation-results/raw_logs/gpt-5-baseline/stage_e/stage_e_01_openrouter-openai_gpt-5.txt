@@ -1,0 +1,82 @@
+Below are likely reviewer concerns about the validity of the “probably-rejected” arXiv labels in PeerRead, paired with concrete mitigations you can commit to in the discussion section.
+
+Core construct validity concerns
+- Conflation of constructs: “Probably-rejected” conflates multiple states (never submitted, withdrawn, desk-rejected, under review elsewhere, accepted later to another venue). It is not equivalent to “rejected by the target venue.”
+  - Mitigations:
+    - Reframe the label as “not matched to an accepted paper at venue-year X at time T” and avoid interpreting it as true rejection or paper quality.
+    - Use positive–unlabeled (PU) learning framing: “accepted” = positive, “probably-rejected” = unlabeled. Apply PU estimators (e.g., class prior estimation and nnPU/unbiased risk estimators) and report results both under standard and PU assumptions.
+    - Reserve “true rejected” only for venues with public reviews (e.g., ICLR/OpenReview) and use that subset for evaluation.
+
+Label noise and matching errors
+- Incorrect negatives from title/author changes, resubmissions across years, or acceptance at other venues after a delay.
+  - Mitigations:
+    - Expand and document the matching pipeline: fuzzy title matching, author disambiguation, DOIs, Semantic Scholar/OpenAlex/DBLP/Crossref linkage, and multi-year windows (e.g., ±2 years). Provide a per-paper matching confidence score.
+    - Exclude ambiguous cases below a confidence threshold and report how many are removed.
+    - Conduct a manual audit on a stratified sample to estimate false-negative and false-positive rates; report these noise rates and use them in sensitivity analyses (e.g., noise-aware performance bounds).
+
+Temporal/version confounds and leakage
+- Using arXiv versions posted after notification (or including “to appear in X” in the text/metadata) can leak the ground truth. Conversely, early versions may precede mature final papers.
+  - Mitigations:
+    - Freeze each record to the first arXiv version timestamped before the venue’s notification date. Exclude later versions for feature extraction.
+    - Strip boilerplate lines that mention submission/acceptance status or venue names from titles/abstracts/metadata to avoid trivial leakage.
+    - Report robustness when including vs excluding post-notification versions to show the effect size of leakage control.
+
+Coverage and selection bias
+- ArXiv usage varies by subfield, geography, seniority, and over time; “probably-rejected” prevalence may not be missing at random.
+  - Mitigations:
+    - Stratify analyses by subfield/topic, year, and venue; include year and subfield fixed effects.
+    - Report results separately for high-arXiv vs low-arXiv subareas and pre/post specific policy shifts.
+    - Where feasible, reweight or match on observable covariates (topic, length, author count, institution region) to reduce confounding; report balanced and unbalanced results.
+
+Evaluation bias
+- If “probably-rejected” is used in test sets, evaluation may reflect label noise rather than true performance.
+  - Mitigations:
+    - Use gold labels for evaluation whenever possible (e.g., OpenReview rejections/acceptances). Restrict “probably-rejected” to training as weak negatives.
+    - Provide sensitivity analyses where test labels are perturbed according to estimated noise rates; report noise-adjusted confidence intervals.
+    - Replicate key findings on multiple held-out cohorts (different years/venues).
+
+Longitudinal outcomes and delayed acceptance
+- Many “probably-rejected” papers are accepted later (different venue/year), invalidating the negative label ex post.
+  - Mitigations:
+    - Track outcomes over a 1–2 year horizon and reclassify “later-accepted” cases; either exclude them or annotate them separately. Report the fraction and its effect on results.
+    - Present main results with a fixed censoring window (e.g., 18 months after arXiv posting) and a robustness check with 12/24 months.
+
+Ambiguity of submission status
+- Some arXiv papers were never submitted to the target venue; labeling them as rejected is misleading.
+  - Mitigations:
+    - For venues with public submission lists (e.g., OpenReview), restrict the “negative” pool to known submissions that were not accepted.
+    - Elsewhere, treat the arXiv pool as unlabeled; avoid the term “rejected” and use “non-matched” or “unverified-negative.”
+
+Systematic errors by topic/style
+- Matching errors are more likely for papers with generic titles or heavy title changes; certain topics have higher rename/resubmit rates.
+  - Mitigations:
+    - Report per-topic matching quality and error rates from the manual audit.
+    - Down-weight or exclude topics with high estimated noise, and show robustness with/without those topics.
+
+Modeling choices under label noise
+- Standard supervised learners can overfit noisy negatives.
+  - Mitigations:
+    - Use noise-robust training (PU learning, co-teaching, loss correction, label smoothing, early stopping).
+    - Calibrate thresholds using clean validation sets; report performance gaps vs. naive baselines to show the value of noise-robust methods.
+
+Data processing transparency and reproducibility
+- Reviewers may question reproducibility of the label construction.
+  - Mitigations:
+    - Release code and deterministic pipelines for matching, with versioned sources and timestamps; provide per-instance evidence trails (matched venue entry, similarity scores, and timestamps).
+    - Provide a datasheet/data statement documenting label definitions, known failure modes, and recommended use cases.
+
+Ethical and interpretive caution
+- Risk of stigmatizing individual papers/authors with “rejected” labels.
+  - Mitigations:
+    - Avoid releasing paper-level “rejection” flags publicly; if sharing, provide only aggregate statistics or anonymized identifiers, and use the neutral “non-matched” terminology.
+    - Emphasize that labels are weak proxies for venue-year outcomes, not quality judgments.
+
+What to add to the discussion section
+- Clarify construct: “We treat arXiv ‘non-matched’ papers as unlabeled rather than true negatives and use PU learning. All evaluations use gold labels where available.”
+- Quantify noise: “A stratified manual audit of N papers estimates x–y% false negatives and a–b% false positives; we propagate these rates in sensitivity analyses.”
+- Document pipeline: “We restrict to v1 pre-notification versions, strip venue-status strings, and use multi-source fuzzy matching with a confidence threshold; low-confidence cases are excluded.”
+- Robustness: “Findings replicate across years/venues and remain consistent under alternative censoring windows (12/18/24 months) and after excluding high-noise topics.”
+- Limitations: “ArXiv uptake and submission practices vary; results should not be interpreted as causal or as measuring intrinsic quality.”
+- Ethics: “We avoid paper-level ‘rejection’ disclosures and release code and aggregate statistics to support reproducibility without stigmatization.”
+
+These changes both acknowledge the limitations of the “probably-rejected” label and make the empirical conclusions more defensible through design choices, transparency, and robustness checks.

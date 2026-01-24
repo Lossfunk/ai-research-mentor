@@ -1,0 +1,49 @@
+Short answer: As a broad idea, no—GANs in NLP (including poetry) have been explored, mostly for generation and style transfer. Using GANs specifically for “poetry analysis” is underexplored, so it can be novel if you define a clear analysis task and show that the adversarial component beats strong non‑GAN baselines.
+
+What already exists (relevant)
+- GANs for text generation: SeqGAN, MaliGAN, RankGAN, RelGAN, Gumbel‑Softmax variants; some attempts at poem generation and style transfer.
+- Adversarial training for NLP classification: GAN‑BERT (semi‑supervised), domain‑adversarial training (DANN) for style/topic invariance.
+- Poetry analysis without GANs: meter/scansion, rhyme detection, authorship/style classification using CRFs, CNN/RNN, and especially Transformers.
+
+Where novelty could be
+- Adversarial representation learning for prosody: Learn embeddings that capture meter/rhyme while being invariant to topic/semantics; discriminator tries to recover topic, encoder tries to hide it.
+- GAN‑based data augmentation for low‑resource poetry tasks: Use a text GAN or ARAE to synthesize lines conditioned on meter/rhyme scheme to boost scansion or rhyme‑scheme classifiers; show real F1 gains in low‑data regimes.
+- Cycle/contrastive style transfer for analysis: Learn mappings between meters (e.g., iambic↔trochaic) or eras (Romantic↔Modernist) and use the learned latent factors to explain or classify style; emphasize interpretability, not generation quality.
+- Disentanglement of content vs poetic style: InfoGAN/ARAE‑style latent codes for meter, rhyme density, line length; evaluate whether codes align with human‑annotated features.
+- Adversarial probes: Train a generator that perturbs text minimally to flip an analysis label (e.g., predicted meter); use resulting perturbations to audit and improve robustness of standard analyzers.
+
+Practical guidance
+- Avoid token‑level GANs unless necessary; discrete text makes GANs unstable. Prefer adversarial objectives in continuous spaces:
+  - Encode text with a pretrained LM (e.g., RoBERTa) plus explicit prosody features (syllable counts, stress patterns, rhyme embeddings from CMUdict phonemes).
+  - Apply GAN/InfoGAN/WGAN‑GP on these continuous representations.
+- If generation is required, consider policy‑gradient (SeqGAN‑style) or use a strong LM for generation and keep GANs for representation/adaptation.
+
+Datasets to consider
+- Gutenberg Poetry Corpus (large, English).
+- Poetry Foundation (poet labels, eras; common on Kaggle).
+- CMU Pronouncing Dictionary to derive phoneme/rhyme, stress features.
+- Existing scansion datasets (English/Spanish) from prior shared tasks; or build weak labels via rule‑based scansion to bootstrap.
+
+Baselines you must beat
+- Fine‑tuned Transformer classifiers (RoBERTa/Longformer) on your task.
+- Simpler prosody‑aware models: CRF/RNN with syllable/stress features.
+- Non‑GAN semi‑supervised alternatives (consistency/contrastive learning) if you claim low‑data gains.
+
+Tests to run
+- Task metrics
+  - Scansion/meter classification: accuracy/F1 vs baselines; performance in low‑label regimes (1%, 5%, 10% labeled).
+  - Rhyme scheme detection: F1/sequence accuracy.
+  - Authorship/era/style classification: accuracy, calibration.
+- Ablations
+  - Remove adversarial loss; swap GAN for VAE or contrastive objective; remove prosody features. Quantify each component’s contribution.
+- Disentanglement/interpretability
+  - Mutual information between learned latent codes and known prosody features (syllables per line, stress patterns, rhyme density).
+  - Correlate latent dimensions with human annotations; visualize clusters by meter/era.
+- Robustness
+  - Adversarial or noise perturbations (shuffle punctuation, synonym swaps, line‑break changes, rhyme‑preserving paraphrases); measure stability of predictions.
+- Data augmentation benefit
+  - Train with and without GAN‑generated samples; show consistent gains on held‑out poets/eras without distribution drift.
+- Generalization
+  - Train on one era/poet set, test on another; domain adaptation claims should show clear cross‑domain improvements.
+
+If you want a crisp, defensible contribution: “Adversarial prosody‑aware representation learning for poetry analysis.” Build a prosody‑rich encoder, add an adversarial head to remove topical information, and show consistent gains on scansion and authorship with very limited labels—plus clear interpretability of the learned prosodic factors.

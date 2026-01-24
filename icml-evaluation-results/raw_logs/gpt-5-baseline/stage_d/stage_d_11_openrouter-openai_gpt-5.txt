@@ -1,0 +1,110 @@
+Below is a compact, paper-agnostic user-study plan to test whether a Hierarchical Transformer’s internal representations align with human-perceived structure in long documents. It preserves comparability to your original evaluation by freezing the model, tokenizer, and segmentation used in the paper, and only adds human judgments post hoc.
+
+Objectives and hypotheses
+- Goal: quantify alignment between model-induced hierarchy (token→segment→document) and human-perceived structure.
+- H1 (saliency): Model’s segment-level saliency correlates with human-perceived importance.
+- H2 (boundaries): Model’s signals predict human section/paragraph-group boundaries better than chance and simple baselines.
+- H3 (hierarchy): Model’s induced cluster/tree over segments is closer to human groupings than non-hierarchical baselines.
+
+Stimuli and datasets
+- Use two long-document corpora the paper already evaluates or close analogs (e.g., arXiv/PubMed long papers; GovReport/Long News for reports/articles).
+- Document sampling: 60 documents total, stratified by length quartiles and domain (30 per domain). Exclude any documents used in model training if applicable.
+- Segmentation for study: use the exact segment boundaries fed to the model (e.g., paragraph- or fixed-length segments). If paper uses fixed-length tokens per segment, map back to nearest paragraph boundaries and expose paragraph text; keep a bijection to segment IDs.
+
+Participants and sample size
+- Annotators: fluent readers; for scientific papers, recruit graduate-level or domain-familiar readers; for news/reports, general adult readers.
+- Per-document redundancy: 3 annotators per document to estimate reliability.
+- Power (target effects and counts):
+  - H1: detect mean Spearman ρ≈0.15–0.20 (model vs human importance) with SD≈0.20 across documents at 80% power, α=0.05 → n≈30–50 docs; we use 60 to cover multiple tests and sub-analyses.
+  - H2: boundary AUPRC improvement of ≥0.10 over random/TF‑IDF novelty with per-doc SD≈0.20 → 50–60 docs give >80% power on paired deltas.
+  - H3: ARI difference ≥0.10 vs baselines with SD≈0.15 → 40+ docs suffice; 60 gives margin for multiple comparisons.
+- Total judgments budget (per doc):
+  - Importance: rate 30–40 segments (sampled uniformly over positions) on 5-point scale.
+  - Boundaries: mark up to 10 boundaries (max depth-2 outline).
+  - Grouping: cluster 20 segments into 4–8 groups via drag-and-drop (two-level outline).
+  - Estimated time ≈20–25 minutes/doc/annotator; compensate to fair-wage standards.
+
+Instruments (annotation tasks)
+- T1: Segment importance
+  - Show 30–40 segments in document order. Prompt: “How important is this segment to the document’s main purpose?” Likert 1–5; allow “header/boilerplate” flag.
+  - Periodic attention checks (e.g., “Select 5 for this instructional segment”).
+- T2: Boundary marking (depth ≤ 2)
+  - Show full document outline with paragraph snippets. Annotators click between segments to place section/subsection boundaries; can adjust positions, with a tolerance of ±1 segment encouraged.
+- T3: Grouping (two-level hierarchy)
+  - Present 20 representative segments; annotator assigns them into 4–8 topical groups that would form an outline; optional short labels for groups.
+- Optional light relation tagging
+  - For 10 adjacent pairs, pick a simple relation: continues/new topic/contrast/background.
+
+Extracting model signals (frozen model; no retraining)
+- Segment saliency
+  - Global-attention saliency: mean attention from global summary token(s) to each segment, normalized.
+  - Gradient-based: integrated gradients or gradient×input on the task logit w.r.t. segment embeddings; normalize per document.
+  - Aggregate to a single saliency score per segment (z-score each method, average or treat as separate predictors).
+- Boundary scores
+  - Embedding shift: cosine distance between consecutive segment embeddings.
+  - Attention-change: KL divergence between global attention distributions at i vs i+1.
+  - Peak-picking over these signals yields top-M boundary candidates.
+- Hierarchical structure
+  - Inter-segment similarity: 1 − cosine distance on segment embeddings.
+  - Induced tree: agglomerative clustering (Ward or average linkage); cut at k groups (k taken from each annotator’s chosen group count for paired comparison).
+
+Baselines for alignment
+- Random: uniform saliency; random boundaries with same count; random clustering with matched k.
+- Heuristic text saliency: TextRank/position (lead bias), TF‑IDF novelty for boundaries.
+- Non-hierarchical model: flat long-context encoder (e.g., Longformer/BigBird) embeddings and attentions processed with the same pipeline.
+
+Procedure
+- Freeze the evaluated checkpoint, tokenizer, segmenter, and inference settings (identical to paper).
+- Precompute model signals per segment per document.
+- Run the user study on a hosted annotation tool (custom or platforms like Prolific/Qualtrics with a drag-and-drop widget).
+- Quality control: tutorial + quiz; interspersed gold checks; track time-on-task; exclude outliers via pre-registered rules.
+- Inter-annotator reliability: Krippendorff’s α for importance (interval), boundary marking (unitized α; allow ±1 tolerance), and ARI between groupings.
+
+Primary metrics
+- Importance alignment
+  - Per document: Spearman ρ between model saliency and mean human importance; also AUPRC@top‑k to predict “key” segments (Likert ≥4).
+- Boundary alignment
+  - Per document: Precision/Recall/F1 at top‑B boundaries (B = human count), with ±1 segment tolerance; AUPRC over boundary scores; average maximum IoU between model and human boundaries.
+- Hierarchy alignment
+  - Clustering: Adjusted Rand Index (ARI) and Normalized Mutual Information (NMI) between model clusters (cut to k) and each annotator’s groups; average over annotators.
+  - Tree similarity (optional): tree edit distance between human two-level outline and model dendrogram pruned to depth 2; report normalized TED.
+
+Statistical analysis
+- Per-document paired tests (model vs baseline signals)
+  - H1: one-sample Wilcoxon signed-rank on per-doc ρ against 0; paired Wilcoxon comparing model ρ vs heuristic ρ. Bootstrap 95% CIs for means/medians across docs.
+  - H2: paired bootstrap (10k) for ΔAUPRC and ΔF1 (model − baseline) on boundaries; also Wilcoxon on per-doc deltas.
+  - H3: paired Wilcoxon on per-doc ARI/NMI deltas vs baselines; bootstrap CIs.
+- Mixed-effects models (control for document length and domain)
+  - Importance: Fisher‑z(ρ_doc) ~ 1 + log(tokens) + domain + (1|document).
+  - Boundaries: F1_doc ~ 1 + log(tokens) + domain + (1|document).
+  - Clustering: ARI_doc ~ 1 + log(tokens) + domain + (1|document).
+- Multiple comparisons: Holm–Bonferroni across H1–H3 per dataset. Pre-register ε for non-inferiority where applicable (e.g., model ≥ heuristic − 0.05 ARI).
+- Reliability handling: repeat analyses using each annotator individually and using adjudicated means; report sensitivity.
+
+Maintaining comparability to original results
+- Use the same model checkpoint, tokenizer, segment length/stride/max segments, and masks.
+- Do not modify training or inference; only analyze internal signals post hoc.
+- Report parameter counts, FLOPs, and latency exactly as in original; note that user study introduces no model-side changes.
+- If the original dataset has gold section labels (e.g., scientific sections), include them as an external validation layer but keep them separate from human annotations.
+
+Ethics/IRB
+- Human-subjects review: obtain IRB or ethics board exemption/approval; informed consent with purpose, procedures, risks, compensation, and data handling.
+- Data handling: present only de-identified, license-compliant text excerpts; no PHI or sensitive content. Store only anonymized annotator IDs; no model training on annotations.
+- Compensation: pre-specify fair hourly rates; allow withdrawal without penalty.
+- Debriefing: brief participants on study goals post-task; provide contact for questions.
+
+Implementation checklist
+- Build an annotator UI with:
+  - Segment viewer with Likert ratings (T1).
+  - Boundary marker timeline with snap-to-boundary hints (T2).
+  - Drag-and-drop grouping canvas with auto-layout (T3).
+- Export JSONL per example with segment IDs, ratings, boundaries, groups, timestamps.
+- Compute model signals offline; create per-document analysis artifacts (heatmaps, dendrograms).
+- CI scripts to compute all alignment metrics, bootstraps, and mixed-effects models; produce per-doc and aggregate reports.
+
+Reporting
+- Tables: mean/median ρ, AUPRC/F1 for boundaries, ARI/NMI for clustering, each with 95% CIs and paired deltas vs baselines; reliability stats (α/ARI among annotators).
+- Plots: alignment heatmaps (human vs model saliency), boundary precision–recall curves, dendrograms with human groups overlaid, effect sizes vs document length.
+- Conclusion criteria: hierarchical representations align if model significantly outperforms baselines on at least two alignment families (H1–H3) with consistent effects across domains and length bins.
+
+This study directly tests whether the model’s hierarchical representations reflect human-perceived document structure, uses multiple complementary instruments to reduce task bias, and provides powered, statistically principled analyses while keeping the original modeling pipeline unchanged.

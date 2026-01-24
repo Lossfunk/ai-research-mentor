@@ -33,7 +33,7 @@ from .judge_utils import (
     truncate_text,
     upsert_annotation,
 )
-from .run_manual_stage import ensure_stage_directories, normalize_stage
+from .stage_utils import ensure_stage_directories, normalize_stage
 
 
 ABSOLUTE_PROMPT_PATH = Path("evaluation/judges/single_turn_absolute_prompt.md")
@@ -99,7 +99,13 @@ def evaluate_metric(
                     except ValueError:
                         score = None
             if isinstance(score, (int, float)):
-                entry["score"] = float(score)
+                # Validate score is within the expected range
+                if not (spec.min_score <= score <= spec.max_score):
+                    entry["error"] = f"out_of_range_{score}_expected_{spec.min_score}_to_{spec.max_score}"
+                    entry["score"] = None
+                    entry["raw_score"] = float(score)
+                else:
+                    entry["score"] = float(score)
             else:
                 entry["error"] = "missing_score"
             judge_outputs.append(entry)
@@ -139,6 +145,9 @@ def run_judges(
     force: bool,
     output_label: Optional[str],
     system_filter: Optional[str] = None,
+    extra_metrics: Optional[Sequence[str]] = None,
+    results_root: Optional[str] = None,
+    system_subdir: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not judge_specs:
         raise ValueError("At least one --judge is required")
@@ -154,7 +163,9 @@ def run_judges(
             }
         )
     stage_letter, stage_folder = normalize_stage(stage)
-    _, analysis_dir, _ = ensure_stage_directories(stage_folder)
+    _, analysis_dir, _ = ensure_stage_directories(
+        stage_folder, results_root=results_root, system_subdir=system_subdir
+    )
     label = _derive_label(judge_specs, output_label)
     output_dir = analysis_dir / label
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -201,6 +212,11 @@ def run_judges(
         tool_runs_str = truncate_text(json.dumps(tool_runs, ensure_ascii=False, indent=2))
 
         expected_checks = list(meta.get("expected_checks") or [])
+        # Inject extra metrics from CLI without modifying meta files
+        if extra_metrics:
+            for m in extra_metrics:
+                if m not in expected_checks:
+                    expected_checks.append(m)
         metadata = dict(meta.get("metadata") or {})
         context = build_context(
             meta,
@@ -216,6 +232,11 @@ def run_judges(
 
         if "tool_routing" in expected_checks:
             expected_tools = list(metadata.get("expected_tools", []))
+            if meta.get("baseline_mode"):
+                # Baseline mode disables guidelines/tooling beyond web/attachments,
+                # so only score routing against the tools that are actually available.
+                baseline_tools = {"web_search", "attachments_search"}
+                expected_tools = [t for t in expected_tools if t in baseline_tools]
             if expected_tools:
                 routing = aggregate_tool_routing(expected_tools, tool_runs)
                 metric_scores["tool_routing"] = routing.get("score")
@@ -262,10 +283,16 @@ def run_judges(
             metric_digests[metric_key] = metric_prompt_digest(spec)
 
         if metric_scores.get("citation_validity") is not None:
-            evidence_metric = apply_evidence_integrity(metric_scores, metric_results)
+            evidence_metric, score_updates = apply_evidence_integrity(metric_scores, metric_results)
             metric_results["evidence_integrity"] = evidence_metric
             metric_scores["evidence_integrity"] = evidence_metric.get("score")
             metric_digests["evidence_integrity"] = None
+
+            # Apply score updates (e.g., zero out citation scores when invalid)
+            for key, value in score_updates.items():
+                if key in metric_results:
+                    metric_results[key]["score"] = value
+                metric_scores[key] = value
 
         timestamp = iso_timestamp()
         upsert_annotation(
@@ -341,6 +368,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing annotator rows")
     parser.add_argument("--system", dest="system_filter", help="Optional system identifier to filter meta files")
+    parser.add_argument(
+        "--metric",
+        dest="extra_metrics",
+        action="append",
+        help="Additional metric to evaluate (repeatable). Injects into expected_checks without modifying meta files.",
+    )
+    parser.add_argument(
+        "--results-root",
+        dest="results_root",
+        help="Root directory for results (default: icml-evaluation-results)",
+    )
+    parser.add_argument(
+        "--system-subdir",
+        dest="system_subdir",
+        help="System subdirectory under raw_logs/analysis_reports (e.g., 'mentor', 'gpt-5-baseline')",
+    )
     return parser.parse_args(argv)
 
 
@@ -356,6 +399,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             force=args.force,
             output_label=args.label,
             system_filter=args.system_filter,
+            extra_metrics=args.extra_metrics,
+            results_root=args.results_root,
+            system_subdir=args.system_subdir,
         )
     except Exception as exc:  # noqa: BLE001
         print_error(f"Judge run failed: {exc}")

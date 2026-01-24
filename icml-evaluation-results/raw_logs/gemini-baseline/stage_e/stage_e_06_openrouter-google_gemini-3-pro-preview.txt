@@ -1,0 +1,44 @@
+This is a highly relevant concern given the shift in publication culture since PeerRead was published (2018). The rise of **OpenReview**, **ACL Rolling Review (ARR)**, and the explosion of arXiv submissions means the original "date-matching" heuristic is likely losing precision.
+
+Here is how to articulate this limitation regarding generalizability and a concrete experiment to validate the heuristic using modern "Gold Standard" data.
+
+---
+
+### Part 1: Articulating the Limitation (The "Diagnosis")
+
+You need to explain that the "Probably Rejected" label is suffering from **concept drift** and **label dilution**.
+
+**Draft Text for Limitations Section:**
+> "A significant threat to the generalizability of our model is the evolving nature of the 'Preprint-First' culture. The PeerRead labeling heuristic assumes that papers uploaded to arXiv within a conference deadline window but missing from the proceedings were rejected. However, in newer venues and recent years, this assumption faces two specific challenges:
+>
+> 1.  **The 'Workshop Dilution' Effect:** As conferences grow, many papers 'rejected' from the main track are accepted to non-archival workshops. These appear in our dataset as 'Probably Rejected,' yet they often possess higher quality than true rejections, potentially confusing the model's decision boundary.
+> 2.  **The 'Rolling Review' Shift:** With the advent of ACL Rolling Review (ARR) and TMLR, the temporal link between an arXiv upload date and a specific conference deadline has severed. Consequently, the original date-matching heuristic is likely underpowered for modern, continuous-submission venues, limiting the model's deployment to traditional fixed-deadline conferences."
+
+---
+
+### Part 2: The Concrete Follow-Up Experiment (The "Calibration Study")
+
+To reassure reviewers, you do not need to fix the whole dataset. You need to **quantify the error rate** of the heuristic using a venue where you *do* have the truth.
+
+**The Proposal: The "OpenReview Calibration" Test**
+Since venues like ICLR and NeurIPS now conduct reviews publicly on OpenReview, we have "Gold Labels" (confirmed rejections). You can use this to audit the PeerRead "Silver Labels" (arXiv heuristic).
+
+**The Experimental Protocol:**
+1.  **Select a Calibration Set:** Take the ICLR 2023 (or latest available) dataset from OpenReview. We know exactly which papers were Accepted and Rejected.
+2.  **Apply the Heuristic:** Pretend we don't know the outcomes. Apply the PeerRead methodology (match arXiv uploads within the ICLR deadline window to the accepted proceedings).
+3.  **Calculate the Delta:** Compare the **Heuristic Labels** vs. the **True OpenReview Labels**.
+    *   *False Negatives:* Papers the heuristic called "Rejected" that were actually accepted (perhaps under a different title).
+    *   *False Positives:* Papers the heuristic called "Rejected" that were actually withdrawn or never submitted (true noise).
+4.  **The Metric:** Report the **Precision and Recall of the Labeling Heuristic itself**.
+
+**How to Pitch this to Reviewers:**
+> "To validate the robustness of our labeling heuristic against these modern shifts, we propose a 'Calibration Study' using ICLR data from OpenReview. By comparing our arXiv-based 'silver labels' against the confirmed 'gold labels' of the OpenReview platform, we can calculate the precise noise rate of our heuristic.
+>
+> If the heuristic maintains a high overlap (e.g., >85%) with true rejections even in the OpenReview era, we can claim the PeerRead methodology remains valid. If the overlap is low, we can use the calculated error rate to calibrate our model's confidence intervals or re-weight the loss function to account for the estimated label noise."
+
+---
+
+### Part 3: Why this works
+*   **It turns a weakness into a math problem.** Instead of vague hand-wringing about "noise," you are proposing to measure it.
+*   **It leverages new data without discarding old data.** You validate the *process*, allowing you to keep using the large PeerRead corpus.
+*   **It addresses the "Rolling Review" issue.** If the heuristic fails on rolling deadlines, this experiment will prove it, allowing you to scope your claims properly (i.e., "This model is valid for fixed-deadline conferences only").

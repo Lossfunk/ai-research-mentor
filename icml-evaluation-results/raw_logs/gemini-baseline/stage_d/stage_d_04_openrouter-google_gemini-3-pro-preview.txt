@@ -1,0 +1,70 @@
+I have designed this ablation plan based on the standard Hierarchical Transformer architecture (e.g., Hi-BERT). This plan tests the trade-off between **Local Context Granularity** (how much text the BERT-level encoder sees at once) and **Global Sequence Length** (how many chunks the document-level encoder must aggregate).
+
+### 1. Benchmark Suite Recommendation
+To stress-test the window size, you need datasets where dependencies span across chunk boundaries.
+
+*   **Primary (Narrative Coherence): BookSum (Chapter Level) or IMDb (Long)**
+    *   *Why:* Narrative tasks suffer most when you slice sentences in half. Reducing window size increases the probability of splitting key adjective-noun pairs or subject-verb dependencies across chunks.
+*   **Secondary (Keyword Spotting): EUR-LEX (Legal) or MIMIC-III (Medical)**
+    *   *Why:* These often rely on specific keywords (e.g., "statute 504", "cardiac arrest"). They should be robust to smaller windows, serving as a control group.
+
+### 2. Minimal Code Changes
+You generally do not need to change the model architecture, only the **Data Loader** and **Config**.
+
+**A. Configuration Variables**
+Define the ablation range for `window_size` ($W$): `[128, 256, 512]`.
+*   *Note:* Standard BERT/RoBERTa cannot easily handle $W > 512$ without architectural changes (like Longformer), so we ablate downwards.
+
+**B. Data Preprocessing (The "Stride" Logic)**
+You must adjust the `max_chunks` ($K$) inversely to the window size to ensure the model sees the *same total amount of text*. If the baseline is 512 tokens $\times$ 32 chunks (16k tokens total), the ablation must maintain this coverage.
+
+```python
+# Pseudo-code for Preprocessing Adjustment
+def get_chunk_config(ablation_w):
+    # Baseline: W=512, K=32 -> Total Coverage = 16,384 tokens
+    TOTAL_COVERAGE = 16384 
+    
+    window_size = ablation_w
+    # Calculate new max_chunks to maintain total coverage
+    max_chunks = TOTAL_COVERAGE // window_size 
+    
+    # Stride is usually window_size - overlap (e.g., 20% overlap)
+    stride = int(window_size * 0.8) 
+    
+    return window_size, max_chunks, stride
+```
+
+**C. Model Initialization**
+Ensure your Level 2 Encoder (e.g., Transformer/LSTM) can handle the increased sequence length.
+*   *If using Positional Embeddings in Level 2:* You must resize the position embedding layer to accommodate the larger `max_chunks` count when $W=128$.
+
+### 3. Compute Budget Estimation
+Assuming a dataset of ~30k documents (e.g., IMDb) and a standard GPU (NVIDIA A100 or V100):
+
+*   **W=512 (Baseline):**
+    *   *Compute:* High local cost ($512^2$ attention), Low global cost (few chunks).
+    *   *Est. Time:* ~1.5 hours per epoch.
+*   **W=128 (Small Window):**
+    *   *Compute:* Low local cost ($128^2$ is $16\times$ cheaper), High global cost (4x more chunks).
+    *   *Net Effect:* Usually **faster** overall (approx 0.8 hours per epoch) because the $O(N^2)$ savings in the local BERT dominate, *unless* the Level 2 encoder is very heavy.
+*   **Total Budget:**
+    *   3 settings ($W \in \{128, 256, 512\}$) $\times$ 5 epochs $\times$ 3 random seeds.
+    *   **Estimate:** ~25-30 GPU-hours.
+
+### 4. Failure Modes to Monitor
+
+**A. The "Boundary Effect" (Context Degradation)**
+*   *Risk:* With $W=128$, you are $4\times$ more likely to split a phrase like "not [SPLIT] guilty" across two chunks.
+*   *Monitor:* Track performance specifically on examples containing negation or co-reference resolution. If accuracy drops significantly at $W=128$, the model is losing local semantic coherence.
+
+**B. Global Vanishing Gradient**
+*   *Risk:* If your Level 2 encoder is an **LSTM**, increasing the sequence length from 32 chunks ($W=512$) to 128 chunks ($W=128$) may cause gradients to vanish, making the model forget the beginning of the document.
+*   *Monitor:* Check the gradient norms of the first layer of the Local Encoder. If they approach zero for $W=128$, the signal isn't propagating back from the end of the document.
+
+**C. Padding Efficiency (Throughput Trap)**
+*   *Risk:* With small windows ($W=128$), the final chunk of a document is more likely to be mostly padding (e.g., a document of length 130 becomes one full chunk of 128 and one chunk of 2 tokens + 126 padding).
+*   *Monitor:* Calculate the ratio of padding tokens to real tokens in your batches. If this ratio spikes, you are wasting compute on zeros.
+
+**D. Position Embedding Shift**
+*   *Risk:* Pre-trained BERT expects inputs up to position 512. If you only ever feed it sequences of length 128, you are only utilizing the position embeddings for indices 0-128. This distribution shift can sometimes degrade pre-trained performance.
+*   *Monitor:* Compare training loss curves in the first 100 steps. If $W=128$ starts with much higher loss than $W=512$, the distribution shift is hurting initialization.

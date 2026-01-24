@@ -1,0 +1,65 @@
+Papers at the intersection of **Climate Change and AI** face a "Double Jeopardy": they are scrutinized by ML reviewers for technical novelty and by domain experts (Climate Scientists/Physicists) for scientific validity.
+
+Here are the major risks and a mitigation checklist to bulletproof your submission.
+
+### **1. Major Reviewer-Facing Risks**
+
+#### **A. The "Physics Violation" Risk**
+*   **The Critique:** "The model achieves high accuracy (MSE) but predicts physically impossible states (e.g., negative precipitation, temperatures below absolute zero, or energy not conserved)."
+*   **The Reviewer:** Usually a domain expert. They don't care about your F1-score if your model violates the First Law of Thermodynamics.
+
+#### **B. The "Strawman Baseline" Risk**
+*   **The Critique:** "The authors compare their Deep Learning model to a Random Forest, but fail to compare it to **Climatology** (historical averages) or **Persistence** (predicting tomorrow = today)."
+*   **The Reality:** In climate science, simple statistical baselines are incredibly hard to beat. If you don't beat "Persistence," your model is useless.
+
+#### **C. The "Spatiotemporal Leakage" Risk**
+*   **The Critique:** "The authors used random `train_test_split`. Since weather is spatially and temporally correlated, the model simply memorized the neighbors."
+*   **The Fix:** You *must* use block-wise splitting (e.g., Train: 1980–2010, Test: 2011–2020).
+
+#### **D. The "Solutionism" Risk**
+*   **The Critique:** "This paper solves a problem that doesn't exist (e.g., downscaling data that is already available at high res) or ignores the deployment reality (e.g., requires more compute than the simulation it replaces)."
+
+---
+
+### **2. Mitigation Checklist: The Final Submission Package**
+
+Use this checklist to audit your paper, code, and appendix before the deadline.
+
+#### **Phase 1: The "Reality" Check (Paper Content)**
+*   **[ ] The "Persistence" Check:**
+    *   Have you included a table row for "Persistence" (predicting $t$ based on $t-1$) and "Climatology" (predicting the 30-year average)? If your model loses to these, do not submit.
+*   **[ ] Physical Sanity Check:**
+    *   Explicitly state: "We verified that output variables remain within physical bounds (e.g., humidity $\in [0, 100]$)."
+    *   Better yet, add a **"Physics Metric"** column (e.g., Mass Conservation Error) alongside RMSE.
+*   **[ ] The "Surrogate" Speed-up:**
+    *   If proposing an AI surrogate for a physical simulation, you must report the **Wall-clock Speed-up** (including data loading). Don't just say "1000x faster inference" if data pre-processing takes 2 hours.
+
+#### **Phase 2: Data & Artifacts (Reproducibility)**
+*   **[ ] Data Manifest & Licensing:**
+    *   Climate data (ECMWF/ERA5) often has strict non-commercial licenses.
+    *   *Action:* Include a `DATA_LICENSE.md`. Explicitly state: "We use ERA5 data (License: CC-BY 4.0) and CMIP6 data (License: various)."
+*   **[ ] The "Download" Script:**
+    *   Climate datasets are massive (Petabytes). Don't ask reviewers to download them.
+    *   *Action:* Provide a `download_subset.py` that fetches a small, manageable slice (e.g., 1 year of data, 1 region) so they can run the code.
+*   **[ ] Pre-trained Surrogates:**
+    *   Upload the weights. Training climate models is energy-intensive; forcing reviewers to retrain is bad form.
+
+#### **Phase 3: Ethics & Impact (The "Green" Audit)**
+*   **[ ] Carbon Accounting:**
+    *   *Mandatory:* Report the CO2e cost of your research.
+    *   *Tool:* Use **CodeCarbon** or **ML CO2 Impact**.
+    *   *Statement:* "Training required 500 GPU-hours on A100s, emitting approx. X kg CO2eq. This is offset by the potential to reduce simulation costs by Y%."
+*   **[ ] Jevons Paradox / Rebound Effect:**
+    *   Address this in the Broader Impact: "Making oil exploration AI more efficient could increase extraction. We focus on renewable integration to mitigate this risk."
+
+### **3. Simulated "Broader Impact" Statement**
+*Draft this into your paper to appease the Ethics Reviewer:*
+
+> "While this work utilizes deep learning to improve climate forecasting, we acknowledge the computational cost of training (approx. 50 kg CO2eq). To ensure net-positive impact, we release pre-trained weights to prevent redundant training. Furthermore, we explicitly focus on [Application, e.g., Solar Forecasting] to accelerate the energy transition, rather than applications that might optimize fossil fuel extraction."
+
+### **4. Visual "Sanity" Check**
+**Figure 1** should not just be a neural network architecture. It should be a **System Diagram** showing:
+1.  The Physical Input (Satellite/Simulation).
+2.  The AI Model.
+3.  The Physical Output (with error bars).
+4.  **The Difference Map:** A heatmap showing (Prediction - Ground Truth). Climate reviewers trust error maps more than aggregate metrics.

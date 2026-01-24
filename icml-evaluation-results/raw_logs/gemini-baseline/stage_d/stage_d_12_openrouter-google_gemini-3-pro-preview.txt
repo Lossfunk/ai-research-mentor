@@ -1,0 +1,83 @@
+This experimental design replaces the monolithic Level 1 Encoder (e.g., `bert-base`) with a **Heterogeneous Committee of Small Models**. The goal is to test if ensemble diversity yields higher robustness and coverage than a single large backbone, without necessarily increasing parameter count.
+
+### 1. Intervention: The "Committee of Encoders" Architecture
+
+**Concept:** Instead of one 110M parameter model processing chunks, we use $N$ smaller models (approx. 20M-60M params each) running in parallel. Their outputs are fused before the Level 2 Aggregator.
+
+**The Committee Members ($C_1, C_2, C_3$):**
+To ensure diversity (low correlation of errors), select models with different inductive biases or pre-training objectives:
+1.  **The Semantic Expert:** `MiniLM-L6` (Distilled for sentence similarity).
+2.  **The Structural Expert:** `DistilRoBERTa` (Robust optimization).
+3.  **The Token Expert:** `ELECTRA-Small` (Discriminator objective, good at detecting replaced tokens).
+
+**Fusion Mechanism (The "Boardroom"):**
+*   **Input:** Chunk $x_i$.
+*   **Process:** Each committee member outputs a vector $v_k = C_k(x_i)$.
+*   **Aggregation:** Concatenate and Project.
+    $$h_i = W_{proj} \cdot [v_1 \oplus v_2 \oplus v_3]$$
+    *   *Note:* $W_{proj}$ projects the combined dimension (e.g., $384+768+256$) back to the dimension expected by the Level 2 Transformer (e.g., 768).
+
+### 2. Evaluation Metrics
+
+We need specific metrics to characterize *why* the committee works (or fails), beyond just accuracy.
+
+#### A. Agreement (Diversity Metric)
+**Goal:** Measure if the committee members are actually learning different things. If they all agree, the committee is redundant.
+**Protocol:**
+1.  Freeze the committee members.
+2.  Attach a temporary linear classifier to *each* member individually.
+3.  Fine-tune on the dataset.
+4.  **Metric:** **Pairwise Cohen’s Kappa ($\kappa$)**.
+    *   Calculate $\kappa$ between the predictions of Member A and Member B.
+    *   *Target:* We want **Moderate Agreement** ($0.4 < \kappa < 0.7$). Too high means redundancy; too low means one model is likely random noise.
+
+#### B. Coverage (The "Oracle" Potential)
+**Goal:** Determine the theoretical ceiling of the committee.
+**Metric:** **Oracle Accuracy ($Acc_{oracle}$)**.
+*   For a given document $D$, if *any* of the 3 committee members (individually) classifies it correctly, count it as a success.
+*   *Comparison:* Compare $Acc_{oracle}$ of the Committee vs. the Accuracy of the Original Baseline.
+*   *Interpretation:* If $Acc_{oracle} \gg Acc_{Baseline}$ but the Fused Committee performs poorly, the failure lies in the **Fusion Layer** (Level 2), not the encoders.
+
+#### C. Regressions (The "Negative Flip")
+**Goal:** Identify cases where the Baseline was right, but the Committee is wrong.
+**Metric:** **Negative Flip Rate (NFR)**.
+$$NFR = \frac{\text{Count}(Baseline=\text{Correct} \cap Committee=\text{Wrong})}{\text{Total Samples}}$$
+*   *Context:* In production, a high NFR is unacceptable even if overall accuracy improves, as it erodes user trust ("It used to know this!").
+
+### 3. Statistical Analysis Plan
+
+To validate the Committee against the Baseline, we analyze the **Error Overlap**.
+
+**Method: McNemar’s Test of Symmetry**
+We compare the discordance between the two systems.
+*   Construct a Contingency Table:
+    *   $n_{00}$: Both wrong.
+    *   $n_{11}$: Both right.
+    *   $n_{10}$: Baseline right, Committee wrong (Regression).
+    *   $n_{01}$: Baseline wrong, Committee right (Improvement).
+*   **Statistic:** $\chi^2 = \frac{(n_{01} - n_{10})^2}{n_{01} + n_{10}}$
+*   **Hypothesis:** If $p < 0.05$, the improvement (or regression) is structurally significant and not due to random batch shuffling.
+
+**Method: The "Hardness" Stratification**
+1.  Bin the test set by **Agreement Level** (e.g., Easy = All 3 members agree; Hard = Disagreement).
+2.  Plot the Baseline vs. Committee accuracy per bin.
+3.  **Success Criteria:** The Committee should show the largest delta ($\Delta$) in the "Hard" bin. If it only improves on "Easy" samples, it is not adding value.
+
+### 4. Implementation Details (Resource Control)
+
+To make this a fair comparison, you must control for **Inference Budget**.
+
+*   **Parameter Match:**
+    *   *Baseline:* BERT-Base (~110M params).
+    *   *Committee:* Ensure $\sum Params(C_i) + Params(W_{proj}) \approx 110M$.
+    *   *Adjustment:* If the Committee is larger, you must penalize its score or use a smaller Baseline (e.g., BERT-Small) for the control.
+*   **Latency Check:**
+    *   Even if parameter counts match, 3 forward passes (Committee) might be slower than 1 pass (Baseline) due to kernel launch overhead.
+    *   *Report:* **Throughput-Normalized Accuracy**. Plot Accuracy (Y) vs. Samples/Sec (X).
+
+### 5. Summary of Deliverables
+
+1.  **Table 1: Performance.** Columns: Accuracy, F1, NFR (Negative Flip Rate).
+2.  **Table 2: Diversity.** Pairwise Kappa matrix for the committee members.
+3.  **Plot:** Venn Diagram of correct predictions for Member 1, Member 2, Member 3, and Baseline.
+4.  **Analysis:** A specific section discussing "Regressions"—qualitatively analyzing 5 examples where the Baseline succeeded but the Committee failed (e.g., "Did the smaller models miss a complex syntactic dependency?").

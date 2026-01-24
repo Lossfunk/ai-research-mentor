@@ -1,0 +1,107 @@
+1. Problem framing and goals
+
+Constraint: You want to do meaningful, publication-grade AI research without writing Python.
+
+Opportunity: Focus on research that is (a) no-code or low-code via visual builders and SQL, (b) evaluation- and data-centric, and (c) reproducible and standards-compliant. Center the work around three pillars:
+- Rigorous evaluation of LLM systems with no-code/GUI tooling and structured CSV/YAML inputs.
+- No-code RAG system design using visual orchestration tools to study grounding, citations, and user trust.
+- SQL-based machine learning on tabular data to produce interpretable baselines and reproducible analyses.
+
+Six-month success criteria
+- Release a public, reproducible benchmark suite and dataset for grounded QA with full annotation protocol and inter-annotator agreement.
+- Demonstrate a no-code RAG system that improves groundedness and factual accuracy over direct prompting by ≥10–20 points on curated tasks, with statistically significant user study results.
+- Publish a methods/evaluation paper comparing prompt templates and retrieval configurations across hosted LLMs, with transparent, versioned logs and a documented rubric.
+- Deliver a SQL-only baseline study using BigQuery ML (logistic/DNN/k-means) with best practices for tabular ML and interpretability, showing parity with common baselines on public datasets [1–5].
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+
+Experiment 1: No-code RAG pipeline design and evaluation
+- Hypothesis: A carefully configured RAG pipeline assembled in a visual builder (Langflow) can significantly improve groundedness and factual accuracy over direct LLM prompting on encyclopedic and domain PDFs, without any model fine-tuning.
+- Setup:
+  - Build: Use Langflow to compose LLM node + retrieval node + chunker + reranker + citation enforcer prompts. Integrate web/Wikipedia REST API and simple document loaders; export flows and parameters for reproducibility [6–9].
+  - Datasets: 
+    - Wikipedia subsets (biographies/events) and a small domain corpus (e.g., 50–100 PDFs with permissive licenses).
+    - Create a 500–1,000 question set with references via Label Studio for annotation (gold answers with supporting quotes) [19–20].
+  - Evaluation: 
+    - If available, use a hosted evaluation UI (Vertex AI’s GenAI Eval service) to score groundedness, citation validity, and instruction following with rubric templates [24–27].
+    - Alternatively, create CSV-based rubrics and apply a consistent manual/LLM-assisted judging protocol; store logs.
+- Baselines: Direct prompting (“answer without browsing”), “cite-your-sources” prompting without retrieval, and a naive RAG (no reranker, large chunks).
+- Metrics: Exact/semantic answer accuracy, groundedness (claim-support overlap), citation validity (URL resolves + quoted span overlap), response latency, cost per query.
+- Expected outcomes: +10–20 point groundedness improvement and +5–10 point accuracy vs direct prompting at comparable latency/cost; ablations showing optimal chunk size, top-k, and reranker use.
+
+Experiment 2: Prompt-template ablations across providers
+- Hypothesis: Systematic prompt engineering (structured templates, step-by-step, self-consistency) yields measurable, reproducible gains across tasks, and effects vary across providers/models.
+- Setup:
+  - Tasks: Instruction following (constraint satisfaction), classification with rationale, and summarization with salience constraints (300–500 items each).
+  - Pipeline: Use an evaluation framework that accepts CSV/JSONL and minimal configuration. Options:
+    - OpenAI Evals (registry-based, YAML/JSONL configs; minimal scripting via CLI) [11,15].
+    - Vertex AI eval GUI for rubric-based metrics if on GCP [24–27].
+  - Templates: Baseline, CoT-on-demand, self-consistency (n=5), structured JSON outputs, few-shot vs zero-shot.
+- Baselines: Provider default templates; single-shot direct prompts.
+- Metrics: Task-specific accuracy/F1, instruction-following rubric score, output validity (JSON schema pass rate), cost/time per 100 prompts.
+- Expected outcomes: Identify robust template gains (e.g., +3–8 points) and provider-specific differences; publish a prompt-template card with do/don’t patterns and replication package.
+
+Experiment 3: SQL-only tabular ML with BigQuery ML
+- Hypothesis: SQL-based ML (logistic regression, DNN, k-means) achieves strong, transparent baselines on common tabular problems with full reproducibility and model governance using only SQL.
+- Setup:
+  - Data: Public datasets (e.g., UCI Adult income, bank marketing, NYC taxi) loaded into BigQuery public datasets.
+  - Modeling: Use CREATE MODEL for GLM (logistic), DNN, and K-means via pure SQL; run feature transformations with SQL views; perform hyperparameter sweeps with procedural SQL or simple UI [1–5].
+  - Interpretability: Export feature weights, partial dependence via SQL, and calibration plots using BI tools (Looker Studio).
+- Baselines: Train/test splits with holdout; compare GLM vs DNN; optionally compare to a cloud AutoML GUI if available (documented as no-code).
+- Metrics: AUC/PR-AUC, log loss, calibration (Brier, reliability curves), fairness slices (by gender/age if ethically appropriate), inference latency/cost.
+- Expected outcomes: GLM parity with literature baselines on Adult; DNN small gains; a reproducible, SQL-only pipeline and best practices guide.
+
+Experiment 4: Benchmark creation and annotation protocol
+- Hypothesis: A rigorously designed, multi-annotator benchmark for grounded QA reduces evaluation variance and enables fair comparisons of no-code RAG systems.
+- Setup:
+  - Use Label Studio to create labeling projects, guidelines, and consensus workflows (3 annotators + adjudicator) [19–20].
+  - Provide evidence snippets; require quote-level support; track disagreement and difficulty tags.
+  - Release dataset, annotation manual, and quality stats.
+- Baselines: Compare with a popular QA dataset for overlap and difficulty distribution; run a subset through providers to estimate ceiling performance.
+- Metrics: Inter-annotator agreement (Cohen’s/Fleiss’ κ), label distribution stability, task difficulty calibration, annotator time per item.
+- Expected outcomes: Public benchmark (CC BY-SA or similar) with strong documentation, used in Experiments 1–2.
+
+Experiment 5: Human-centered evaluation of trust and usability
+- Hypothesis: RAG with citations and uncertainty cues increases user trust and task success compared to direct answers.
+- Setup:
+  - Participants: 20–30 users via internal pilot or online panel; IRB/exemption as needed.
+  - Conditions: A/B between direct LLM vs RAG with citations and source previews.
+  - Measures: Task success, time-on-task, SUS/UMUX usability scores, trust questionnaire; qualitative feedback.
+- Baselines: Direct LLM interface without retrieval; optional “citations only” prompt without retrieval.
+- Metrics: Differences in task success/time, SUS scores, and perceived trust; statistical tests with preregistered analysis.
+- Expected outcomes: Significant improvements for RAG; qualitative insights informing prompt and UI tweaks in Langflow.
+
+Notes on evidence: 
+- Langflow is a low-code/visual framework for LLM and RAG systems [6–9].
+- BigQuery ML supports CREATE MODEL via SQL for GLM, DNNs, and K-means [1–5].
+- OpenAI Evals provides a registry and framework for structured evals; you can use ready-made evals and JSONL configuration with minimal coding [11,15].
+- Vertex AI’s GenAI Evaluation provides rubric templates and GUI-driven eval flows if you use GCP [24–27].
+- Label Studio enables multi-annotator, web-based labeling with export to standard formats [19–20].
+Limitations: We could not retrieve authoritative links for “Hugging Face AutoTrain (no-code)” and “RAGAS” within this environment. To add them, search “Hugging Face AutoTrain no-code” and “RAGAS evaluation arXiv GitHub” and cite their official docs and arXiv/project pages.
+
+
+3. Timeline for the next 6 months with milestones
+
+Month 1
+- Select domain and scope (e.g., encyclopedic + one domain corpus).
+- Stand up Langflow workspace; draft RAG v0 flow.
+- Draft annotation guidelines; pilot 50 items in Label Studio; compute κ.
+- Set up evaluation stack: choose Vertex AI eval or Evals registry; define metrics and rubrics [11,24–27].
+Milestones: RAG v0; annotation manual v1; eval rubric v1.
+
+Month 2
+- Build benchmark v1 (500–800 items) with triple annotation and adjudication.
+- Implement prompt templates and RAG ablations in Langflow (chunk size, top-k, reranker).
+- Set up BigQuery project; ingest tabular dataset; run baseline GLM via SQL [1–3].
+Milestones: Benchmark v1; RAG ablation plan; BigQuery ML GLM baseline.
+
+Month 3
+- Run Experiment 1 full evaluation; log all configs and costs.
+- Run Experiment 2 prompt-template sweep across 2–3 providers using the eval framework [11,15,24–27].
+- Extend BigQuery ML to DNN and K-means; generate interpretability outputs [4–5].
+Milestones: RAG eval report v1; prompt ablation report v1; SQL ML report v1.
+
+Month 4
+- Refine dataset (add 200–300 harder items); finalize benchmark v2.
+- Conduct human study (Experiment 5) with IRB/consent;

@@ -1,0 +1,89 @@
+This design converts the Hierarchical Transformer from a **Batch Processor** (wait for full document $\to$ predict) to a **Streaming State-Machine** (update prediction after every chunk). This allows for applications like live clinical decision support or real-time moderation.
+
+### 1. Architectural Adaptation: The "Stateful" Harness
+
+To handle streaming without re-computing the entire history for every new token, we must modify the Level 2 Aggregator to be **Causal** and **Cache-Aware**.
+
+*   **The "Frozen Past" Protocol:**
+    *   **Level 1 (Local):** As Chunk $K$ arrives, encode it immediately. Cache the resulting embedding $h_K$.
+    *   **Level 2 (Global):**
+        *   *If Transformer:* Use a **Causal Mask** (cannot attend to future chunks) and **KV-Caching**. The model attends to cached keys/values of chunks $1..K-1$ and the new query from Chunk $K$.
+        *   *If LSTM:* Maintain the hidden state $S_{K-1}$ in memory. Update to $S_K$ upon processing Chunk $K$.
+*   **Trigger Mechanism:**
+    *   Inference is triggered only when the current chunk buffer is full (e.g., 512 tokens) or a "Session End" signal is received.
+
+### 2. Logging Specification: The "Flight Recorder"
+
+Standard accuracy logs are useless here. We need **Trajectory Logging**. Use a structured JSONL format that captures the *evolution* of the prediction.
+
+**Log Schema:**
+```json
+{
+  "session_id": "doc_12345",
+  "step_id": 3,
+  "timestamp_ms": 1698765432,
+  "chunk_content_hash": "a1b2...",
+  "input_length_tokens": 1536,
+  "prediction_state": {
+    "logits": [-0.5, 2.1, 0.3],
+    "predicted_class": "Urgent",
+    "confidence": 0.88
+  },
+  "system_metrics": {
+    "inference_latency_ms": 45,
+    "gpu_memory_mb": 1200
+  },
+  "stability_metrics": {
+    "flipped_from_prev_step": false,
+    "cumulative_entropy": 0.45
+  }
+}
+```
+
+### 3. Failure Subtype Capture
+
+In a streaming context, a "failure" is complex. We classify errors into three dynamic subtypes to monitor during longitudinal evaluation:
+
+#### A. The "Flicker" Failure (Instability)
+*   **Definition:** The model predicts Class A at Step $T$, Class B at $T+1$, and Class A at $T+2$.
+*   **Metric:** **Flicker Rate (FR)**.
+    $$FR = \frac{\sum_{t=1}^{K-1} \mathbb{I}(y_t \neq y_{t+1})}{K}$$
+*   **Impact:** High flicker erodes user trust. A doctor will turn off a system that changes its mind every 10 seconds.
+
+#### B. The "Anchoring" Failure (Inertia)
+*   **Definition:** The model forms a strong opinion in the first 2 chunks and fails to update it despite contradictory evidence appearing in Chunk 10.
+*   **Metric:** **Late-Evidence Sensitivity**.
+    *   *Test:* Inject a "trigger phrase" (that should flip the label) in the final chunk. If the confidence score changes by $<\epsilon$, the model has "anchored" too early.
+
+#### C. The "Premature Closure" Failure (Hallucination)
+*   **Definition:** The model outputs High Confidence (>95%) at Step 1 (5% of document observed).
+*   **Metric:** **Early-Stage Calibration Error**.
+    *   Compare accuracy of predictions made at 10% document completion vs. 100% completion.
+
+### 4. Preregistered Hypotheses (Longitudinal Study)
+
+To rigorously evaluate the streaming adaptation, preregister these hypotheses before running the full benchmark.
+
+**H1: The "Monotonic Confidence" Hypothesis**
+*   *Statement:* "Model confidence should correlate positively with the percentage of the document observed ($r > 0.8$)."
+*   *Failure:* If correlation is near 0, the model is treating every chunk as an independent document rather than accumulating evidence.
+
+**H2: The "Correction" Hypothesis**
+*   *Statement:* "The probability of the Ground Truth label being in the Top-K predictions should increase monotonically over time."
+*   *Metric:* **Time-to-First-Correct (TTFC)**. The average number of chunks processed before the correct label first appears in the Top-1 slot.
+
+**H3: The "Latency-Context" Trade-off**
+*   *Statement:* "Inference latency will scale linearly with context length ($O(N)$) for Causal Transformers due to attention overhead, but remain constant ($O(1)$) for LSTM aggregators."
+*   *Purpose:* Validates the efficiency choice for the Level 2 aggregator.
+
+### 5. Evaluation Metrics for Streaming
+
+Do not report a single F1 score. Report:
+
+1.  **Average Precision over Time (APoT):**
+    The area under the accuracy curve as the document progresses.
+    $$APoT = \frac{1}{K} \sum_{t=1}^{K} \text{Accuracy}_t$$
+2.  **Information Gain at Step $T$:**
+    How much does Chunk $T$ reduce the entropy of the prediction distribution compared to Chunk $T-1$?
+3.  **Finality Latency:**
+    The timestamp where the prediction stabilizes and never changes again for the remainder of the session.

@@ -1,0 +1,53 @@
+Below is concise, discussion-ready language plus a concrete follow-up experiment to reassure reviewers about generalizability to newer venues.
+
+How the underpowered labeling for newer venues affects generalizability
+- Uncertain estimates and wide CIs: With few labels, performance estimates for newer venues have high variance; apparent gains/losses may be sampling noise.
+- Bias toward legacy venues: Models are dominated by older, well-labeled venues and may encode their rubric, topic mix, and formatting norms; effects may not transfer to newer venues with different scopes or review practices.
+- Scale/rubric drift: Sparse labels prevent reliable calibration of venue-specific severity and scale differences, inflating error for subjective aspects (e.g., originality, impact).
+- Hidden topic/style confounding: Small n increases the chance that spurious proxies (length, sectioning) appear predictive, masking true content-based signal.
+- Limited claims: Without adequate labels, we cannot make strong out-of-domain claims for newer venues; at best we can provide uncertainty-aware, provisional results.
+
+What to add to the paper now
+- “We caution that labels for newer venues are sparse, leading to wide confidence intervals and potential rubric drift. We therefore report reliability-adjusted performance with uncertainty, avoid strong claims for these venues, and treat any positive/negative results as provisional.”
+
+Concrete follow-up experiment to reassure reviewers
+Goal: Quantify true transfer to a newer venue and the small-sample adaptation cost, using a preregistered, leakage-free protocol.
+
+Design
+- Venues: Select 1–2 newer venues/years with public decisions/reviews (e.g., OpenReview-hosted tracks). Treat them as fully held-out targets.
+- Training sources: Train on legacy venues/years only. No target labels are used except in the few-shot adaptation step.
+- Protocols:
+  1) Zero-shot OOD: Evaluate the frozen model on the newer venue with no target labels.
+  2) Few-shot adaptation: Fine-tune/calibrate with k ∈ {10, 25, 50, 100} labeled target papers; keep a disjoint target test set.
+  3) Prospective preregistration (if timing permits): Time-stamp predictions on incoming submissions before decisions; release hash commitments, then evaluate after notifications.
+- Harmonization: Standardize scores within venue-year and/or use a hierarchical ordinal head with venue random effects; compare to plain ERM.
+
+Metrics and reporting
+- Primary: Kendall’s τ or Spearman’s ρ (ordinal), ECE/coverage (calibration), and reliability-adjusted performance (fraction of inter-rater reliability ceiling).
+- Uncertainty: Bootstrap CIs; plot learning curves of performance vs k to show sample complexity.
+- Shift quantification: Report source–target divergence (topic embedding distance) and correlate with OOD performance.
+- Slice analysis: Break out results by topic, length quintiles, and parse quality; include high-confidence error audits (top false positives/negatives).
+- Sanity checks: v1-only features, leakage stripping, and negative-control baselines (length-only, refs-only) to show the model beats trivial proxies.
+
+Targeted ablations to include
+- Venue-effects modeling: Compare ERM vs hierarchical/venue-random-effects vs domain-adversarial training; report OOD deltas.
+- Feature reliance: Remove formatting/count features; show whether zero-/few-shot performance depends on proxies in the new venue.
+- Calibration cost: Show τ/ECE before vs after temperature scaling using only the k-shot set.
+
+Sample size and power
+- Compute and report MDES for τ (or AUC if using acceptance) given the newer-venue test set size; justify k values that yield ≥80% power to detect Δτ ≈ 0.05–0.07.
+
+Decision criteria and interpretation
+- Success if zero-shot retains ≥50–60% of the venue-specific reliability ceiling, and k = 50 closes ≥70–80% of the gap with well-calibrated uncertainty (ECE ≤ 0.10).
+- If performance remains low, state that newer venues require light-weight, few-shot calibration and deploy with abstention under high shift.
+
+Why this reassures reviewers
+- It provides a transparent, reliability-adjusted OOD test on the exact population of concern.
+- It quantifies the minimal label budget needed for acceptable performance.
+- It rules out leakage and trivial proxies, and it shows whether venue-aware modeling meaningfully improves transfer.
+
+Optional augmentation
+- Targeted label expansion: Use OpenReview APIs to collect an additional N = 200–500 labeled papers for each newer venue and re-run the above protocol.
+- IRT alignment: Fit a simple rater/venue-severity model to map scores to a shared latent scale and repeat the OOD evaluation.
+
+This plan both acknowledges the limitation and offers a rigorous, precommitted evaluation that demonstrates current transferability and the small, concrete steps needed to make the models reliable for newer venues.

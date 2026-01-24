@@ -1,0 +1,143 @@
+Below is a drop-in plan to add fairness/ethics audits to the existing Hierarchical Transformer evaluation without altering original labels, splits, or training. It focuses on disaggregated performance, content-harm audits, and transparent uncertainty reporting.
+
+Scope and invariants
+- Do not change: datasets/splits, preprocessing, tokenizer, segmenting/windowing, training schedule, checkpoint selection, inference settings, or primary accuracy metrics.
+- Audits are post hoc: run only after models are trained and checkpoints are fixed; do not use audit signals for tuning, early stopping, or error analysis that feeds back into training.
+- Storage: keep all new annotations in a separate, read-only “sidecar” file keyed by document/question ID. Never overwrite source data.
+
+A) Audit schema: what to measure per task
+1) Disaggregated performance (fairness-of-outcome)
+- Classification (e.g., Hyperpartisan, LEDGAR):
+  - Group metrics: accuracy, macro-F1, TPR, FPR, PPV per subgroup.
+  - Gap metrics: max group gap (worst − best), worst-group performance, equalized odds gap (|TPR gap| and |FPR gap|), demographic parity gap (rate differences where appropriate).
+- QA (Qasper, QuALITY):
+  - Group EM/F1 or accuracy; calibration per group (ECE/MCE), coverage at fixed confidence thresholds.
+- Summarization (PubMed/arXiv):
+  - Group ROUGE-1/2/Lsum; factuality proxy (if available, e.g., QAFactEval/SummaC) by group.
+- Length/complexity fairness (applies to all):
+  - Bins by effective tokens/document (e.g., quartiles) and readability (FKGL), to detect long-context or complexity harms.
+
+2) Content harm audits (fairness-of-content)
+- Toxicity/insult/profanity in generated summaries (and any generated rationales):
+  - Use two independent detectors (e.g., Detoxify and Perspective API); report both and an ensemble view. Calibrate thresholds on a small, manually labeled sample.
+- Stereotype/bias signals:
+  - Lexical counters for gendered terms, identity mentions; occupation–gender co-occurrence bias (simple association tests); named-entity sentiment by identity group (if sentiment labels exist).
+- PII leakage in outputs (summarization/QA):
+  - Regex+NER heuristics for emails, phone numbers, addresses, SSNs; manual spot checks on a sample.
+- Hallucination risk (summarization):
+  - Faithfulness score via QAFactEval/SummaC plus a small human audit with a checklist (factual errors, unsupported claims).
+
+3) Robustness and distributional fairness
+- Source/domain: outlet/source for news; contract type for LEDGAR; field/journal for Qasper/PubMed.
+- Time: publication year bins (pre/post cutoff) to uncover temporal bias.
+- Language variety: simple proxies (lexical diversity, dialect tokens) if ethically appropriate and validated.
+
+B) Adding annotations without contaminating original labels
+1) Sidecar design
+- File format: JSONL/CSV keyed by unique doc_id (and question_id for QA).
+- Columns: {doc_id, attribute_name, attribute_value, source (human|auto), annotator_id or model_name, timestamp, confidence ∈ [0,1], notes}.
+- Versioning: semver with changelog; include hashing of the original text to detect drift.
+
+2) Human annotations (preferred for sensitive attributes)
+- Governance: obtain IRB/ethics approval if annotating sensitive attributes; minimize collection; avoid inferring protected classes from names unless explicitly justified and approved.
+- Protocol:
+  - Write a concise guideline with examples and decision rules.
+  - Sample: stratified by dataset and length; target ≥200–500 items per attribute to enable subgroup estimates; oversample rare groups if feasible.
+  - Redundancy: double-annotate 20–30% of items; compute inter-annotator agreement (Cohen’s κ or Krippendorff’s α). Adjudicate disagreements; retain both raw and adjudicated labels.
+- Contamination control:
+  - Store annotations separately; never alter ground-truth task labels.
+  - Annotators are blind to model predictions and true task labels.
+
+3) Automated annotations (use with caution)
+- Use external classifiers only if trained on disjoint corpora; document their training data/time cutoffs and reported error rates.
+- Calibrate: validate on a small, domain-matched human-labeled subset; estimate false positive/negative rates and keep them with the sidecar as measurement-error parameters.
+- Treat outputs as probabilistic: keep continuous scores; avoid hard-thresholding unless needed, and if so, report sensitivity to thresholds.
+
+4) Join strategy
+- Join sidecar attributes to examples at evaluation time only.
+- Do not stratify sampling, batching, or training on these attributes.
+- For sliding-window inference, assign attributes at the document level and propagate to all windows; ensure all windows from the same doc inherit the same attribute.
+
+C) Fairness metrics and uncertainty reporting
+1) Point estimates
+- For each subgroup g and metric m (e.g., accuracy), compute m_g and overall m.
+- Gaps: Δ_g = m_ref − m_g (ref = overall or best group); worst-group = min_g m_g.
+
+2) Uncertainty for subgroup metrics
+- Proportions (accuracy/TPR/FPR):
+  - 95% CIs via Wilson or Agresti–Coull intervals; for small n_g, use exact (Clopper–Pearson).
+- ROUGE/EM/F1:
+  - Paired bootstrap over examples within group (10k resamples). For summarization, bootstrap documents; for QA, bootstrap (question,doc) pairs.
+- Calibration (ECE):
+  - Compute ECE with fixed binning; bootstrap CIs over examples.
+
+3) Uncertainty for gaps and comparisons
+- Gaps: bootstrap differences (m_ref − m_g) to get 95% CIs.
+- Between-model comparisons within group:
+  - Classification/QA: McNemar’s test on paired correctness; report Δ metric with paired bootstrap CIs.
+  - Summarization: paired bootstrap on ROUGE/Factuality.
+- Multiple comparisons: control family-wise error within each dataset using Holm–Bonferroni across all group comparisons.
+
+4) Small-group stabilization
+- Use Bayesian partial pooling (hierarchical models) to estimate subgroup rates:
+  - Example: y_g ~ Binomial(n_g, p_g); logit(p_g) = α + u_g, u_g ~ N(0, σ^2). Report posterior means and 95% credible intervals alongside frequentist CIs.
+- Minimum reportable unit: set n_g_min (e.g., 30). For groups below threshold, combine with “other” or report as exploratory with explicit caveats.
+
+5) Accounting for measurement error in automated attributes
+- If attribute A has estimated sensitivity Se and specificity Sp:
+  - Corrected prevalence and metric estimates via matrix adjustment; propagate uncertainty by bootstrapping Se/Sp from their CIs.
+  - Alternatively, treat A as probabilistic; weight each example by P(A=1) in subgroup estimates; bootstrap.
+
+D) Concrete audits per dataset (minimal, high-yield)
+- Hyperpartisan (news classification):
+  - Source outlet/domain; article length quartiles; publication year bins.
+  - Content harm: identity mention presence; sentiment by identity (if feasible).
+- LEDGAR (legal):
+  - Clause type/category; document length; readability.
+  - Content harm: detect unredacted PII patterns in model outputs (if generating rationales/summaries).
+- Qasper (QA):
+  - Question type (definition/method/result), section location of evidence, paper field (CS/Bio/Other), length quartiles.
+  - Calibration and abstention fairness: accuracy at fixed confidence thresholds per group.
+- QuALITY (MC QA):
+  - Question difficulty bins, story genre/source, length quartiles.
+- PubMed/arXiv (summarization):
+  - Field/journal, section structure completeness, length quartiles, year.
+  - Content harm: toxicity (should be near-zero), hallucination/faithfulness sample audit.
+
+E) Analysis and reporting
+- Primary tables/figures:
+  - Disaggregated performance tables with 95% CIs; worst-group metric and max gap with CIs.
+  - Gap vs group size plots (to visualize small-n effects).
+  - Calibration curves by subgroup.
+  - For generated text: toxicity and PII rates with CIs; histogram of toxicity scores.
+- Pareto of fairness vs accuracy:
+  - Plot overall accuracy vs worst-group performance; a model that increases both is a clear improvement.
+- Non-inferiority framing:
+  - Declare fairness non-inferior if worst-group performance gap does not exceed baseline by more than ε (predefine ε, e.g., 1 F1 point), with one-sided 95% CI.
+
+F) Process safeguards
+- Pre-register the audit plan (attributes, metrics, thresholds, tests, ε for non-inferiority) before running evaluations.
+- Keep a changelog of any deviations with justification.
+- Use the same random seeds and evaluation order across models; pair examples for all statistical tests.
+- Release: sidecar annotations, guidelines, code to reproduce metrics, and per-example predictions (hashed IDs) to enable external verification, subject to dataset licenses.
+
+G) Minimal implementation checklist
+- Add a SidecarLoader that:
+  - Validates schema, aligns IDs, and raises on missingness > x%.
+  - Provides attribute masks for vectorized metric computation.
+- Extend eval loop:
+  - Collect per-example predictions, confidences, lengths, and IDs.
+  - For each attribute, compute subgroup metrics and CIs; store JSON reports.
+- Detectors:
+  - Wrap toxicity/PII tools behind a common interface; log tool version, threshold, and calibration set.
+- CI/automation:
+  - Fail the job if any subgroup falls below n_g_min without being flagged; emit warnings for detector drift (hash/version changes).
+
+H) Common pitfalls and how to avoid them
+- Proxy bias and privacy: avoid inferring protected classes without governance; document any proxy use and its errors.
+- Leakage: do not let audit attributes influence training, hyperparameter selection, or test-time routing; keep audits post hoc only.
+- Small-n volatility: don’t over-interpret tiny groups; use partial pooling and clear caveats.
+- Tool bias: toxicity/PII detectors are imperfect and can be biased; use two tools and report disagreements.
+- Simpson’s paradox: always show both pooled and disaggregated metrics; check whether improvements are driven by distribution shifts across groups.
+
+This plan augments your evaluation with rigorous, transparent fairness/ethics audits while preserving the comparability and integrity of the original results, and it provides principled uncertainty quantification for both subgroup metrics and fairness gaps.

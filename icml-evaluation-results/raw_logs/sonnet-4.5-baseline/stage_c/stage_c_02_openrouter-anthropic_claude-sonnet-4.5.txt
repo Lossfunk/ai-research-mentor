@@ -1,0 +1,269 @@
+The searches yielded several relevant papers on LLM compression. I have enough domain knowledge combined with these references to construct a rigorous research plan. Let me proceed with the comprehensive execution plan.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Large Language Models (7B-70B+ parameters) face critical deployment barriers: memory footprint (10-140GB for inference), computational cost (TFLOPs per token), and latency (seconds for long contexts). Existing compression methods—quantization, pruning, distillation—operate in isolation and often degrade task performance disproportionately, especially on reasoning benchmarks. Recent work [1,2,3] shows promise in structured compression and activation compression, but lacks:
+1. **Unified frameworks** combining weight, activation, and KV-cache compression
+2. **Compressibility-aware pre-training** that builds compression into the model from initialization
+3. **Rigorous analysis** of compression-performance Pareto frontiers across model scales
+
+**Core Hypothesis:**  
+LLMs can be designed for inherent compressibility through architectural inductive biases and training objectives, achieving superior compression ratios (5-10×) with <2% accuracy degradation compared to post-hoc compression of standard models.
+
+**Primary Goals:**
+- Develop **compressibility-aware training** methods that inject low-rank structure, activation sparsity, and quantization-friendly distributions during pre-training
+- Achieve **8-bit weights + 4-bit activations + 8× KV-cache compression** with <3% drop on MMLU, HellaSwag, HumanEval
+- Demonstrate **3-5× end-to-end speedup** and **5-8× memory reduction** on consumer GPUs (RTX 4090, 24GB)
+- Establish **compression-performance Pareto curves** across 1B, 7B, 13B scales
+
+**Secondary Goals:**
+- Analyze learned compression structures: which layers/heads are naturally low-rank? Which activations are sparse?
+- Transfer compressed models to edge devices (mobile, embedded) with <1GB memory
+- Open-source compressible model checkpoints and compression toolkit
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Compression Methods Comparison**
+
+**Hypothesis:** Existing post-hoc compression methods (quantization, pruning, distillation) have different Pareto trade-offs, and their combination is non-trivial due to compounding errors.
+
+**Setup:**
+- **Models:** Llama2-7B, Mistral-7B, Phi-3-mini (3.8B) as representative architectures
+- **Compression techniques:**
+  1. **Quantization:** GPTQ (4-bit weights), AWQ (activation-aware), SmoothQuant (weight+activation)
+  2. **Pruning:** Wanda (unstructured), LoRAP [6] (structured sub-layer pruning), magnitude pruning
+  3. **Distillation:** Standard KD (teacher=uncompressed), layer-wise distillation
+  4. **Hybrid:** Sequential application (prune→quantize, quantize→distill)
+- **Compression targets:** 50%, 60%, 70% parameter reduction; 4-bit, 3-bit, 2-bit quantization
+- **Implementation:** Use llm-compressor, GPTQ library, custom PyTorch implementations
+
+**Baselines:**
+- Uncompressed fp16 models
+- Official compressed releases (e.g., TheBloke quantized models)
+- Random pruning (sanity check)
+
+**Evaluation Metrics:**
+1. **Accuracy:** MMLU (5-shot), HellaSwag, ARC-Challenge, TruthfulQA, HumanEval (code), GSM8K (math)
+2. **Efficiency:** 
+   - Model size (GB)
+   - Inference latency (tokens/sec) on A100, RTX 4090
+   - Peak memory usage during generation (batch=1, context=2048)
+   - FLOPs per token
+3. **Quality:** Perplexity on WikiText-103, C4 validation
+4. **Compression rate:** Actual size / original size
+
+**Expected Outcomes:**
+- Quantization preserves accuracy best (4-bit: <1% drop, 3-bit: 2-4% drop)
+- Pruning >50% causes catastrophic failures on reasoning tasks
+- Hybrid methods show compounding errors unless carefully orchestrated
+- Establish baseline Pareto frontier for subsequent experiments
+
+**Ablations:**
+- Per-layer compression budgets (compress later layers more aggressively)
+- Calibration data: C4 vs. task-specific data
+- Quantization granularity: per-tensor, per-channel, per-group
+
+---
+
+### **Experiment 2: Compressibility-Aware Pre-Training**
+
+**Hypothesis:** Training models with explicit low-rank and sparsity-inducing regularizers produces weights/activations that compress better than post-hoc methods on standard models.
+
+**Setup:**
+- **Architecture:** Llama-style transformer, 1.3B parameters (24 layers, 2048 hidden, 16 heads)
+- **Training modifications:**
+  1. **Low-rank factorization:** Replace weight matrices W ∈ ℝ^(d×d) with W = UV^T where U ∈ ℝ^(d×r), V ∈ ℝ^(d×r), r = d/4 initially, gradually increase r during training
+  2. **Activation sparsity:** Add L1 penalty on activations: λ₁||h||₁ where λ₁ = 0.001
+  3. **Quantization-aware training (QAT):** Straight-through estimators for 8-bit quantization during forward pass
+  4. **Combined:** Low-rank + sparsity + QAT
+- **Training data:** 100B tokens from RedPajama (mix of Common Crawl, C4, GitHub, Wikipedia)
+- **Compute:** 256 A100-hours (feasible for 1.3B model)
+- **Comparison:** Standard pre-training → post-hoc compression vs. compressibility-aware training → minimal post-processing
+
+**Baselines:**
+- Standard Llama-1.3B trained on same data
+- TinyLlama-1.1B (open-source baseline)
+- Compressed versions of standard models (from Exp 1)
+
+**Evaluation Metrics:**
+- Same accuracy/efficiency metrics as Exp 1
+- **Compression headroom:** Final compression ratio achievable with <1% accuracy drop
+- **Intrinsic metrics:**
+  - Effective rank of weight matrices (nuclear norm / spectral norm)
+  - Activation sparsity (% zeros after ReLU/GELU)
+  - Weight distribution kurtosis (peaked → easier to quantize)
+
+**Expected Outcomes:**
+- Low-rank models achieve 1.5-2× better compression ratios for same accuracy
+- Sparsity regularization produces 40-60% activation sparsity (vs. 20-30% in standard models)
+- QAT models tolerate 4-bit quantization with <0.5% drop (vs. 1-2% for post-hoc)
+- Combined approach yields 5-7× compression with 2% accuracy drop (vs. 3-4× for post-hoc)
+
+**Ablations:**
+- Rank schedule: fixed r vs. gradual increase vs. learned rank per layer
+- Sparsity penalty strength: λ₁ ∈ {0.0001, 0.001, 0.01}
+- QAT bit-width: 8-bit, 6-bit, 4-bit during training
+- Layer-wise compression budgets: compress FFN more than attention
+
+---
+
+### **Experiment 3: Activation & KV-Cache Compression**
+
+**Hypothesis:** Activation compression [7,8,9] combined with KV-cache compression [7] can reduce inference memory by 5-8× without retraining, especially critical for long-context generation.
+
+**Setup:**
+- **Target models:** Llama2-7B, Mistral-7B (both have 32k context versions)
+- **Activation compression methods:**
+  1. **Activation Beacon [7]:** Compress keys/values to fixed-size beacons every N tokens
+  2. **FourierCompress [8]:** FFT-based activation compression exploiting frequency sparsity
+  3. **LoRAct [9]:** Low-rank activation compression via SVD at inference time
+  4. **Quantization:** 8-bit, 4-bit activation quantization
+- **KV-cache strategies:**
+  - Eviction: Keep recent + salient tokens (attention-weighted)
+  - Compression: Quantize to 4-bit, apply low-rank approximation
+  - Hybrid: Compress old cache, keep recent in fp16
+- **Test scenarios:**
+  - Long document QA (NarrativeQA, QuALITY): 10k-20k context
+  - Code completion (HumanEval-Long): 4k-8k context
+  - Few-shot learning: 32-shot MMLU (requires large context)
+
+**Baselines:**
+- Full-precision KV-cache (memory upper bound)
+- Naive eviction (FIFO, keep last N tokens)
+- H2O (heavy hitters oracle for KV-cache)
+
+**Evaluation Metrics:**
+- **Memory:** Peak KV-cache size (GB) for 16k context, batch=1
+- **Accuracy:** Task performance (exact match, F1, pass@1)
+- **Latency:** Time-to-first-token (TTFT), tokens/sec for generation
+- **Compression ratio:** Compressed cache size / full cache size
+- **Quality degradation:** Perplexity increase on long contexts
+
+**Expected Outcomes:**
+- Activation Beacon: 8× memory reduction, <2% accuracy drop on long-context QA
+- FourierCompress: 7.6× compression [8], <0.3% loss, but FFT overhead adds 15-20% latency
+- 4-bit KV-cache quantization: 4× memory reduction, <1% accuracy drop, minimal latency overhead
+- Hybrid (4-bit + eviction): 10× memory reduction, 3-5% accuracy drop, 1.5× speedup
+
+**Ablations:**
+- Beacon interval: compress every {128, 256, 512} tokens
+- Eviction ratio: keep top {10%, 20%, 50%} salient tokens
+- Per-layer compression: compress early layers more aggressively
+- Dynamic compression: adjust based on attention entropy
+
+---
+
+### **Experiment 4: Joint Weight-Activation-Cache Compression**
+
+**Hypothesis:** Simultaneous optimization of weight, activation, and KV-cache compression yields better Pareto frontiers than sequential application, by accounting for error propagation.
+
+**Setup:**
+- **Framework:** Unified compression pipeline with joint loss:
+  - L = L_task + λ_w L_weight + λ_a L_activation + λ_k L_cache
+  - Where L_weight = reconstruction error of compressed weights
+  - L_activation = reconstruction error of compressed activations
+  - L_cache = reconstruction error of compressed KV-cache
+- **Method:** Post-training optimization with calibration data (10k samples from C4)
+  - Initialize with compressibility-aware pre-trained model (Exp 2)
+  - Fine-tune compression parameters (quantization scales, low-rank factors) jointly
+  - Use second-order information (Hessian approximation) to allocate compression budgets
+- **Compression targets:**
+  - Weights: 4-bit GPTQ
+  - Activations: 8-bit per-token quantization
+  - KV-cache: 4-bit + 50% eviction
+  - Overall: 8-10× memory reduction, 3-4× speedup target
+
+**Baselines:**
+- Sequential compression (Exp 1 best method applied sequentially)
+- Compressibility-aware model + post-hoc compression (Exp 2 + Exp 3)
+- Uncompressed model
+
+**Evaluation Metrics:**
+- **Pareto frontier:** Plot accuracy vs. memory, accuracy vs. latency
+- **End-to-end efficiency:**
+  - Tokens/sec/GB (throughput per memory unit)
+  - Accuracy per FLOP (efficiency metric)
+- **Robustness:** Performance variance across 10 random seeds
+- **Generalization:** Zero-shot performance on held-out tasks (BigBench-Hard)
+
+**Expected Outcomes:**
+- Joint optimization outperforms sequential by 5-10% on Pareto frontier
+- Achieves 7-9× compression with <2% accuracy drop (vs. 4-5× for sequential)
+- Identifies optimal compression budget allocation: FFN layers can be compressed more than attention
+- Demonstrates 3× speedup + 6× memory reduction on RTX 4090 for 7B model
+
+**Ablations:**
+- Calibration data size: 1k, 10k, 100k samples
+- Loss weight schedule: static vs. adaptive λ values
+- Compression order: weight-first vs. activation-first vs. simultaneous
+- Layer-wise vs. global compression budgets
+
+---
+
+### **Experiment 5: Scaling Laws for Compressible LLMs**
+
+**Hypothesis:** Compressibility-aware training alters scaling laws: smaller compressible models can match larger standard models after compression, changing the compute-optimal frontier.
+
+**Setup:**
+- **Model scales:** Train compressible models at 370M, 1.3B, 3B, 7B parameters
+- **Training budget:** Fixed compute budget (e.g., 10²² FLOPs) allocated differently:
+  - Standard approach: Train 7B model to 1.4T tokens
+  - Compressible approach: Train 10B model to 1T tokens, then compress to 7B equivalent
+- **Compression targets:** Compress each model to 50%, 60%, 70% of original size
+- **Data:** RedPajama 1T tokens
+- **Analysis:** Fit scaling laws L(N, D, C) where L=loss, N=params, D=data, C=compression ratio
+
+**Baselines:**
+- Chinchilla scaling laws (compute-optimal training)
+- Llama, Mistral, Phi scaling curves
+- Compressed versions of standard models
+
+**Evaluation Metrics:**
+- **Perplexity** on validation set (C4, WikiText-103)
+- **Downstream accuracy** on benchmark suite (MMLU, HellaSwag, ARC, etc.)
+- **Compute efficiency:** Accuracy per training FLOP
+- **Inference efficiency:** Accuracy per inference FLOP
+- **Scaling law coefficients:** Fit power laws and compare exponents
+
+**Expected Outcomes:**
+- Compressible models show slower degradation with compression (shallower slope)
+- 10B compressible → 7B compressed matches standard 7B with 20% less training compute
+- Optimal strategy: Train 1.5-2× larger compressible model, compress to target size
+- Scaling law modification: L(N, D, C) ≈ L₀(N/C^α, D) where α ≈ 0.6-0.8 (vs. α=1 for standard)
+
+**Ablations:**
+- Compression timing: early-training vs. mid-training vs. post-training
+- Compression schedule: gradual compression during training vs. one-shot post-training
+- Data scaling: How does compression interact with data quantity?
+
+---
+
+### **Experiment 6: Edge Deployment & Extreme Compression**
+
+**Hypothesis:** Compressible LLMs can be aggressively compressed (10-20×) for edge devices while maintaining usability for domain-specific tasks, enabling on-device LLMs with <1GB memory.
+
+**Setup:**
+- **Target hardware:** 
+  - Mobile: Snapdragon 8 Gen 3 (12GB RAM, INT8 accelerators)
+  - Embedded: Jetson Orin Nano (8GB RAM)
+  - Desktop: RTX 4060 (8GB VRAM)
+- **Extreme compression:**
+  - 2-bit weights (QuIP-style lattice quantization)
+  - 4-bit activations
+  - 2-bit KV-cache with aggressive eviction
+  - Vocabulary pruning (50k → 16k tokens for English-only)
+  - Layer dropping (remove 30-40% of layers)
+- **Domain adaptation:** Fine-tune on specific tasks:
+  - Medical: PubMedQA, MedMCQA
+  - Legal: LegalBench
+  - Code: HumanEval, MBPP
+- **Starting point:** Compressibility-aware 3B model from Exp 2
+
+**Baselines:**
+- Phi-2 (2.7B) quantized to 4-bit
+- TinyL

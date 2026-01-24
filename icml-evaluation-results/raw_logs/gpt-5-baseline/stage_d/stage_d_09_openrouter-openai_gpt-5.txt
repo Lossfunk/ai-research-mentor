@@ -1,0 +1,102 @@
+Below is a concise plan to adapt a Hierarchical Transformer to healthcare dialogues while preserving comparability to your original results.
+
+Scope and mapping from documents to dialogues
+- Hierarchy levels
+  - Token → Utterance (a single speaker turn).
+  - Utterance → Conversation window (fixed number of recent turns, e.g., 16–64).
+  - Conversation windows → Full encounter (if conversations exceed the global cap, use sliding windows exactly as in the original).
+- Keep the original tokenizer, max token budget per segment, stride, padding, optimizer, and checkpoint-selection rules to maintain comparability.
+
+Preprocessing changes specific to healthcare dialogue
+- Segmentation
+  - Split by speaker turns using dataset timestamps or turn IDs. Preserve original order.
+  - Bound utterance segments by max tokens Lseg (e.g., 128–256) without crossing turn boundaries. If an utterance exceeds Lseg, sub-split with a consistent suffix marker.
+- Special tokens and indices
+  - Add speaker-role embeddings: {patient, clinician, system} at the utterance or token level.
+  - Add time-gap embeddings: bucket inter-turn time gaps (e.g., 0, <30s, 30–120s, >120s) and add as an extra positional bias at the global level.
+  - Maintain existing special tokens, padding masks, and positional encodings; this preserves I/O compatibility.
+- Normalization
+  - ASR artifacts: normalize hesitations, partial words, capitalization; keep disfluency markers if they’re task-relevant (e.g., “[um]” tags).
+  - Medical text normalization: expand common abbreviations with a reversible tag (e.g., “BP{blood_pressure}”) so labels remain consistent; store both raw and normalized forms.
+  - De-identification: scrub PHI consistently across splits using an approved de-ID pipeline; replace with typed placeholders ([NAME], [DATE], [LOC]). Do not alter labels.
+- Batching
+  - Batch by number of utterances per conversation window and total tokens to stabilize memory. Keep padding and masking identical to the original framework.
+- Splits
+  - Split at encounter level. Group by patient and provider IDs where available to avoid cross-encounter leakage. If longitudinal sessions exist, ensure all sessions from the same patient are in a single split.
+
+Architectural adaptations with minimal changes
+- Token→utterance encoder (local)
+  - Reuse the original local encoder unchanged. Add a small affine for speaker-role embedding addition at the token input (learned 3×d table).
+- Utterance representation
+  - Keep the original pooling at segment level (e.g., [CLS] or mean). Optionally concatenate a 1–4 dim learned role/time-gap code before the projection to keep parameter impact minimal.
+- Global (inter-utterance) module
+  - Keep the same global encoder and positional encodings, but switch the positional index from “segment index” to “turn index.” Add a relative-bias term for time-gap buckets (shared across heads) if allowed by your original masking interface.
+- Very long conversations
+  - If the number of turns exceeds the global cap, keep the original sliding-window strategy over turns. Retain the same stride and aggregation rule used for long documents (e.g., majority vote or mean of logits).
+- Optional task adapters (toggleable)
+  - For slot/entity tasks, add a light CRF or token classifier on top of local outputs; this plugs into the same training loop and does not affect document-level heads.
+
+Tasks and datasets (public, de-identified options)
+- Dialogue intent/act and symptom-slot extraction: MedDialog (EN or ZH), MedDG (ZH), COVID-Dialog (subset). If your institution has de-identified scribe conversations, apply the above preprocessing and keep them private.
+- Dialogue summarization to SOAP sections: clinician-patient scribing datasets where available (de-identified). If unavailable, create weak labels with section headers from encounter notes linked to conversations.
+- Triage/risk or follow-up recommendation classification: derive labels from encounter disposition codes (admit/discharge/ER referral) when available.
+- Retrieval QA over guidelines (optional): public clinical guidelines; NL question from the conversation with evidence retrieval.
+
+Evaluation metrics (choose per task; keep scripts consistent with original)
+- Intent/act classification: macro-F1 (primary), accuracy (secondary). Report class-wise F1 for rare intents.
+- Symptom/medication entity and slot filling: entity-level strict and partial F1 (CoNLL-style), micro/macro F1. If linking to UMLS/SNOMED, report concept-linking accuracy or top-k accuracy.
+- Dialogue QA: EM and token-level F1; evidence overlap F1 if rationales exist.
+- SOAP/encounter summarization: ROUGE-1/2/L and BERTScore; add clinical factuality (e.g., QAFactEval or a ruleset checking medications, dosages, negation). Report human-rated clinical correctness on a stratified sample if feasible.
+- Triage/risk: AUROC and AUPRC (primary for class imbalance), macro-F1 (secondary); calibration metrics (ECE, Brier) and decision-curve analysis (net benefit at clinically relevant thresholds).
+- Efficiency and robustness (optional but recommended): latency p50/p90 at batch=1, tokens/sec, and peak memory; performance by conversation length quartiles to detect long-context degradation.
+
+Comparability to original results
+- Keep identical tokenizer, segment length, stride, padding policy, masking, optimizer, LR schedule, warmup, dropout, precision, and checkpoint selection on dev.
+- For metrics shared with the original (e.g., macro-F1), keep the same casing/punctuation rules and evaluation scripts.
+- Control parameter count: if you add role/time-gap embeddings, report the added parameters; optionally include a control that injects a same-sized random embedding to ensure gains aren’t from capacity alone.
+- Run the same number of seeds; use paired statistical tests versus baseline.
+- Report per-length-bin metrics and overall results to mirror document-length analyses.
+
+Statistical testing and uncertainty
+- Classification and QA: paired bootstrap (10k resamples) for metric deltas with 95% CIs; McNemar’s test on per-example correctness for classification; paired bootstrap for EM/F1.
+- Summarization: paired bootstrap over conversations for ROUGE/L, and over human ratings if collected.
+- Calibration: bootstrap CIs for ECE/Brier; reliability diagrams.
+- Multiple comparisons: control via Holm–Bonferroni across model variants per dataset.
+
+IRB, privacy, and ethics considerations
+- Data governance
+  - If using nonpublic clinical conversations, obtain IRB approval or exemption and a data use agreement. Document risk assessment and data minimization (only fields needed for the task).
+  - Enforce de-identification: remove PHI per HIPAA Safe Harbor or Expert Determination; audit de-ID with a second tool/human review on a sample; store only de-identified text for modeling.
+  - Access control: encrypt at rest, role-based access, audit logs; never export raw text in artifacts or logs.
+- Consent and purpose
+  - Ensure dataset license and consent allow secondary research for NLP. For institutional data, align with the declared purpose; avoid secondary uses outside scope.
+- Bias and equity
+  - If attributes exist (age, sex, language, interpreter presence), perform subgroup evaluation; report worst-group performance and gaps with CIs. Avoid inferring sensitive attributes without approval; if using proxies, state limitations.
+- Safety
+  - This system is not a diagnostic device. For any generation task, add harmful-advice filters and report toxicity (should be near-zero) and factuality error rates. Do not deploy without clinician-in-the-loop.
+- Leakage control
+  - Split by patient and provider to prevent cross-encounter leakage. If pretraining used web corpora, deduplicate against the dialogue test set if it was public. Keep tokenizer and normalization fixed prior to split creation to avoid lookahead.
+- Human evaluation
+  - For clinical correctness of summaries or recommendations, use licensed clinicians with a rubric (correctness, harmfulness, omissions). Double-annotate at least 20–30% and report inter-annotator agreement.
+
+Minimal code diffs
+- Add role and time-gap embeddings:
+  - role_embed: 3×d table; add to token inputs before the local encoder.
+  - time_gap_bucket per turn; add as an additive bias or as positional index at the global level.
+- Replace “segment index” with “turn index” for global positional encodings; keep the same encoding type.
+- Keep original pooling and attention masks. For very long dialogues, reuse the original sliding window and aggregation policy.
+- Configuration flags: role_embeddings=true, time_gap_buckets=[0,<30,<120,>120], segment_type=utterance, turn_positional=true.
+
+Failure modes to monitor
+- Long-context degradation: drops in the longest quartile of conversations or with many short turns.
+- Speaker confusion: errors when patient and clinician roles alternate rapidly; verify role-aware ablations.
+- ASR noise sensitivity: evaluate a noisy subset if transcripts come from ASR.
+- Calibration drift: under- or over-confidence in rare intents or triage positives.
+- Hallucinations in summaries: medically incorrect statements; track factuality and harmful-advice flags.
+
+Deliverables
+- A reproducible config for dialogues differing only in segmenter (turn-based), role/time-gap embeddings, and turn-indexed positions.
+- Evaluation scripts for the above metrics, plus fairness and calibration add-ons if applicable.
+- A short ethics appendix: data source, IRB/DUA status, de-ID method, risks, and mitigations.
+
+This adaptation keeps the core model and training loop intact, adds only dialogue-appropriate embeddings and segmentation, and preserves metric and environment comparability so you can attribute performance differences to the domain shift rather than to pipeline changes.

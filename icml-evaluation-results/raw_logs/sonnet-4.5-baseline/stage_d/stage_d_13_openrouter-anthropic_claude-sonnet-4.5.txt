@@ -1,0 +1,450 @@
+# **Real-Time Hierarchical Transformer: Instrumentation & Longitudinal Evaluation**
+
+## **PART 1: STREAMING ARCHITECTURE DESIGN**
+
+### **1.1 Real-Time Adaptation**
+
+#### **A. Streaming Architecture**
+```python
+class StreamingHierarchicalTransformer:
+    """
+    Adapt Hierarchical Transformer for real-time/streaming inputs
+    
+    Use Cases:
+    - Live clinical notes during patient visit
+    - Real-time meeting transcription
+    - Continuous document editing
+    - Live chat/dialogue systems
+    - Streaming news/social media
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.streaming_config = self.design_streaming_config()
+        
+        # Core model (from original paper)
+        self.base_model = self.load_base_hierarchical_transformer()
+        
+        # Streaming components
+        self.buffer = StreamingBuffer(config)
+        self.incremental_encoder = IncrementalEncoder(config)
+        self.state_manager = StateManager(config)
+        
+        # Instrumentation
+        self.logger = StreamingLogger(config)
+        self.failure_tracker = FailureTracker(config)
+        self.performance_monitor = PerformanceMonitor(config)
+    
+    def design_streaming_config(self):
+        """
+        Configure streaming-specific parameters
+        """
+        config = {
+            # Buffer Management
+            'buffer': {
+                'max_tokens': 512,  # Maximum tokens in active buffer
+                'overlap_tokens': 128,  # Overlap between chunks for context
+                'flush_strategy': 'sentence_boundary',  # or 'fixed_size', 'time_based'
+                'retention_policy': 'sliding_window',  # Keep recent context
+            },
+            
+            # Hierarchical Update Strategy
+            'hierarchical_update': {
+                'token_level': 'incremental',  # Update as tokens arrive
+                'sentence_level': 'on_boundary',  # Update on sentence completion
+                'paragraph_level': 'on_boundary',  # Update on paragraph completion
+                'document_level': 'periodic',  # Update every N seconds
+            },
+            
+            # Latency Constraints
+            'latency': {
+                'max_per_token_ms': 50,  # Maximum latency per token
+                'max_update_ms': 200,  # Maximum for hierarchical update
+                'batch_size': 1,  # Real-time = batch size 1
+            },
+            
+            # State Management
+            'state': {
+                'cache_hidden_states': True,  # Cache for efficiency
+                'cache_attention': True,  # Cache attention for incremental updates
+                'max_cache_size_mb': 512,  # Memory limit
+                'eviction_policy': 'lru',  # Least recently used
+            },
+            
+            # Prediction Strategy
+            'prediction': {
+                'mode': 'continuous',  # Continuous predictions vs. on-demand
+                'update_frequency_ms': 500,  # How often to emit predictions
+                'confidence_threshold': 0.7,  # Only emit if confident
+                'emit_partial': True,  # Emit partial/provisional predictions
+            },
+        }
+        
+        return config
+    
+    def stream_process(self, token_stream):
+        """
+        Process streaming input tokens
+        
+        Args:
+            token_stream: Iterator yielding tokens as they arrive
+        
+        Yields:
+            Predictions and intermediate states
+        """
+        for token in token_stream:
+            # Log input
+            self.logger.log_input_token(token, timestamp=time.time())
+            
+            try:
+                # 1. Add token to buffer
+                self.buffer.add_token(token)
+                
+                # 2. Incremental encoding
+                start_time = time.time()
+                encoding = self.incremental_encoder.encode_token(
+                    token, 
+                    cached_state=self.state_manager.get_state()
+                )
+                encoding_latency = (time.time() - start_time) * 1000
+                
+                # Log encoding latency
+                self.performance_monitor.log_latency(
+                    'token_encoding', 
+                    encoding_latency
+                )
+                
+                # 3. Check for boundary conditions (sentence, paragraph)
+                boundaries = self.detect_boundaries(self.buffer)
+                
+                if boundaries:
+                    # Update hierarchical representations
+                    start_time = time.time()
+                    self.update_hierarchical_representations(boundaries)
+                    update_latency = (time.time() - start_time) * 1000
+                    
+                    self.performance_monitor.log_latency(
+                        'hierarchical_update',
+                        update_latency
+                    )
+                
+                # 4. Generate prediction (if ready)
+                if self.should_emit_prediction():
+                    prediction = self.generate_prediction()
+                    
+                    # Log prediction
+                    self.logger.log_prediction(
+                        prediction,
+                        timestamp=time.time(),
+                        buffer_state=self.buffer.get_state()
+                    )
+                    
+                    yield prediction
+                
+                # 5. Update state cache
+                self.state_manager.update_state(encoding)
+                
+            except Exception as e:
+                # Capture and log failure
+                self.failure_tracker.log_failure(
+                    exception=e,
+                    token=token,
+                    buffer_state=self.buffer.get_state(),
+                    timestamp=time.time()
+                )
+                
+                # Attempt recovery
+                self.recover_from_failure(e)
+    
+    def detect_boundaries(self, buffer):
+        """
+        Detect sentence/paragraph boundaries in buffer
+        """
+        boundaries = {
+            'sentence': False,
+            'paragraph': False,
+            'topic_shift': False,
+        }
+        
+        # Sentence boundary detection
+        last_token = buffer.get_last_token()
+        if last_token in ['.', '!', '?', '\n']:
+            boundaries['sentence'] = True
+        
+        # Paragraph boundary detection
+        if buffer.count_newlines() >= 2:
+            boundaries['paragraph'] = True
+        
+        # Topic shift detection (using lightweight classifier)
+        if self.detect_topic_shift(buffer):
+            boundaries['topic_shift'] = True
+        
+        return boundaries
+    
+    def update_hierarchical_representations(self, boundaries):
+        """
+        Update hierarchical representations when boundaries detected
+        """
+        if boundaries['sentence']:
+            # Aggregate tokens to sentence representation
+            sentence_repr = self.aggregate_to_sentence(self.buffer)
+            self.state_manager.add_sentence(sentence_repr)
+        
+        if boundaries['paragraph']:
+            # Aggregate sentences to paragraph representation
+            paragraph_repr = self.aggregate_to_paragraph(
+                self.state_manager.get_sentences()
+            )
+            self.state_manager.add_paragraph(paragraph_repr)
+            
+            # Clear sentence buffer (keep for context)
+            self.state_manager.clear_sentences(keep_last=2)
+        
+        if boundaries['topic_shift']:
+            # Aggregate paragraphs to topic representation
+            topic_repr = self.aggregate_to_topic(
+                self.state_manager.get_paragraphs()
+            )
+            self.state_manager.add_topic(topic_repr)
+```
+
+---
+
+### **1.2 Incremental Encoding**
+
+#### **A. Efficient Incremental Updates**
+```python
+class IncrementalEncoder:
+    """
+    Efficient incremental encoding with state caching
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.cache = AttentionCache()
+        self.kv_cache = KeyValueCache()
+    
+    def encode_token(self, token, cached_state=None):
+        """
+        Encode single token with cached context
+        
+        Optimization: Use KV-cache from previous tokens
+        """
+        # Get cached key-value pairs
+        if cached_state is not None:
+            cached_keys = cached_state.get('keys')
+            cached_values = cached_state.get('values')
+        else:
+            cached_keys = None
+            cached_values = None
+        
+        # Encode new token
+        token_embedding = self.embed_token(token)
+        
+        # Compute attention with cached KV
+        attention_output = self.compute_attention_incremental(
+            query=token_embedding,
+            cached_keys=cached_keys,
+            cached_values=cached_values
+        )
+        
+        # Update cache
+        new_state = {
+            'keys': self.update_cache(cached_keys, token_embedding),
+            'values': self.update_cache(cached_values, attention_output),
+            'position': cached_state['position'] + 1 if cached_state else 0,
+        }
+        
+        return {
+            'encoding': attention_output,
+            'state': new_state,
+        }
+    
+    def compute_attention_incremental(self, query, cached_keys, cached_values):
+        """
+        Compute attention using cached keys/values
+        
+        Standard attention: O(n²) where n = sequence length
+        Incremental: O(n) - only compute for new token
+        """
+        if cached_keys is None:
+            # First token - standard attention
+            return self.standard_attention(query)
+        
+        # Incremental attention
+        # Query: [1, hidden_dim] (single new token)
+        # Cached keys: [seq_len, hidden_dim]
+        # Cached values: [seq_len, hidden_dim]
+        
+        # Compute attention scores
+        scores = torch.matmul(query, cached_keys.T)  # [1, seq_len]
+        scores = scores / math.sqrt(self.config.hidden_dim)
+        
+        # Softmax
+        attn_weights = F.softmax(scores, dim=-1)
+        
+        # Weighted sum of values
+        output = torch.matmul(attn_weights, cached_values)  # [1, hidden_dim]
+        
+        return output
+```
+
+---
+
+## **PART 2: COMPREHENSIVE LOGGING SYSTEM**
+
+### **2.1 Multi-Level Logging**
+
+#### **A. Structured Logging Architecture**
+```python
+class StreamingLogger:
+    """
+    Comprehensive logging for streaming hierarchical transformer
+    
+    Logs:
+    1. Input stream (tokens, timing)
+    2. Model states (representations, attention)
+    3. Predictions (outputs, confidence)
+    4. Performance (latency, throughput)
+    5. Failures (errors, recovery)
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.log_dir = config.log_dir
+        self.session_id = self.generate_session_id()
+        
+        # Initialize log files
+        self.logs = self.initialize_logs()
+        
+        # Sampling strategy (to reduce log volume)
+        self.sampling = {
+            'input_tokens': 1.0,  # Log all
+            'intermediate_states': 0.1,  # Log 10%
+            'predictions': 1.0,  # Log all
+            'performance': 1.0,  # Log all
+        }
+    
+    def initialize_logs(self):
+        """
+        Initialize structured log files
+        """
+        logs = {
+            # 1. Input Stream Log
+            'input_stream': {
+                'path': f'{self.log_dir}/input_stream_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'token_id': 'int',
+                    'token_text': 'str',
+                    'token_position': 'int',
+                    'buffer_size': 'int',
+                    'metadata': 'dict',
+                },
+                'file': open(f'{self.log_dir}/input_stream_{self.session_id}.jsonl', 'w'),
+            },
+            
+            # 2. Model State Log
+            'model_state': {
+                'path': f'{self.log_dir}/model_state_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'state_type': 'str',  # 'token', 'sentence', 'paragraph', 'document'
+                    'representation': 'array',  # Serialized embedding
+                    'attention_weights': 'array',
+                    'cache_size_mb': 'float',
+                    'metadata': 'dict',
+                },
+                'file': open(f'{self.log_dir}/model_state_{self.session_id}.jsonl', 'w'),
+            },
+            
+            # 3. Prediction Log
+            'predictions': {
+                'path': f'{self.log_dir}/predictions_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'prediction_id': 'int',
+                    'prediction_type': 'str',  # 'partial', 'final'
+                    'output': 'dict',  # Task-specific output
+                    'confidence': 'float',
+                    'buffer_state': 'dict',
+                    'latency_ms': 'float',
+                    'metadata': 'dict',
+                },
+                'file': open(f'{self.log_dir}/predictions_{self.session_id}.jsonl', 'w'),
+            },
+            
+            # 4. Performance Log
+            'performance': {
+                'path': f'{self.log_dir}/performance_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'metric_name': 'str',
+                    'metric_value': 'float',
+                    'unit': 'str',
+                    'context': 'dict',
+                },
+                'file': open(f'{self.log_dir}/performance_{self.session_id}.jsonl', 'w'),
+            },
+            
+            # 5. Failure Log
+            'failures': {
+                'path': f'{self.log_dir}/failures_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'failure_id': 'str',
+                    'failure_type': 'str',
+                    'exception': 'str',
+                    'stack_trace': 'str',
+                    'context': 'dict',
+                    'recovery_action': 'str',
+                    'recovery_success': 'bool',
+                },
+                'file': open(f'{self.log_dir}/failures_{self.session_id}.jsonl', 'w'),
+            },
+            
+            # 6. Boundary Detection Log
+            'boundaries': {
+                'path': f'{self.log_dir}/boundaries_{self.session_id}.jsonl',
+                'schema': {
+                    'timestamp': 'float',
+                    'session_id': 'str',
+                    'boundary_type': 'str',  # 'sentence', 'paragraph', 'topic'
+                    'position': 'int',
+                    'confidence': 'float',
+                    'detected_by': 'str',  # 'rule', 'model'
+                    'context_before': 'str',
+                    'context_after': 'str',
+                },
+                'file': open(f'{self.log_dir}/boundaries_{self.session_id}.jsonl', 'w'),
+            },
+        }
+        
+        return logs
+    
+    def log_input_token(self, token, timestamp):
+        """
+        Log incoming token
+        """
+        if random.random() > self.sampling['input_tokens']:
+            return
+        
+        log_entry = {
+            'timestamp': timestamp,
+            'session_id': self.session_id,
+            'token_id': token.get('id'),
+            'token_text': token.get('text'),
+            'token_position': token.get('position'),
+            'buffer_size': token.get('buffer_size'),
+            'metadata': {
+                'source': token.get('source'),
+                'user_id': token.get('user_id'),
+            },
+        }
+        
+        self.write_log('input_stream', log_entry)

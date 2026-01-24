@@ -1,0 +1,509 @@
+# **Fairness & Ethics Audit Framework for Hierarchical Transformers**
+
+## **PART 1: AUDIT DESIGN WITHOUT CONTAMINATION**
+
+### **1.1 Contamination Prevention Protocol**
+
+#### **A. Data Isolation Strategy**
+```python
+class ContaminationPreventionProtocol:
+    """
+    Ensure fairness audits don't contaminate original evaluation
+    """
+    
+    def __init__(self, original_dataset):
+        self.original_dataset = original_dataset
+        self.audit_annotations = {}
+        self.access_log = []
+        
+    def create_audit_layer(self, dataset_split):
+        """
+        Create separate annotation layer without modifying original data
+        
+        Architecture:
+        - Original labels: Immutable, used for model evaluation
+        - Audit annotations: Separate file/table, linked by ID
+        - No cross-contamination
+        """
+        audit_layer = {
+            'split': dataset_split,
+            'original_ids': self.get_sample_ids(dataset_split),
+            'audit_annotations': {},  # Populated separately
+            'annotators': [],
+            'annotation_timestamp': None,
+            'annotation_protocol_version': '1.0',
+        }
+        
+        # Enforce immutability of original data
+        self.lock_original_data(dataset_split)
+        
+        return audit_layer
+    
+    def lock_original_data(self, split):
+        """
+        Make original data read-only
+        """
+        # Set file permissions to read-only
+        # Create checksums to verify no modifications
+        checksum = self.compute_dataset_checksum(split)
+        
+        self.access_log.append({
+            'action': 'lock',
+            'split': split,
+            'checksum': checksum,
+            'timestamp': datetime.now(),
+        })
+        
+        return checksum
+    
+    def verify_no_contamination(self):
+        """
+        Verify original data unchanged
+        """
+        for log_entry in self.access_log:
+            if log_entry['action'] == 'lock':
+                current_checksum = self.compute_dataset_checksum(log_entry['split'])
+                original_checksum = log_entry['checksum']
+                
+                assert current_checksum == original_checksum, \
+                    f"Data contamination detected in {log_entry['split']}!"
+        
+        return True
+```
+
+#### **B. Annotation Workflow**
+```python
+class AuditAnnotationWorkflow:
+    """
+    Separate workflow for fairness annotations
+    """
+    
+    def __init__(self, original_dataset):
+        self.original_dataset = original_dataset
+        self.annotation_schema = self.define_annotation_schema()
+        
+    def define_annotation_schema(self):
+        """
+        Define fairness-relevant annotations
+        """
+        schema = {
+            # Demographic attributes (when available/inferable)
+            'demographic_mentions': {
+                'type': 'multi_label',
+                'categories': [
+                    'gender', 'race', 'ethnicity', 'age', 
+                    'religion', 'disability', 'sexual_orientation',
+                    'socioeconomic_status', 'nationality', 'language'
+                ],
+                'values': ['explicit', 'implicit', 'none'],
+                'annotator_agreement_required': True,
+            },
+            
+            # Sensitive content
+            'sensitive_content': {
+                'type': 'multi_label',
+                'categories': [
+                    'stereotypes', 'bias', 'toxicity', 
+                    'hate_speech', 'microaggressions', 'discrimination'
+                ],
+                'severity': ['none', 'mild', 'moderate', 'severe'],
+            },
+            
+            # Representation
+            'representation': {
+                'type': 'categorical',
+                'categories': [
+                    'positive_representation',
+                    'negative_representation',
+                    'neutral_representation',
+                    'stereotypical_representation',
+                    'no_representation',
+                ],
+            },
+            
+            # Contextual fairness
+            'context_sensitivity': {
+                'type': 'boolean',
+                'description': 'Does evaluation require cultural/contextual knowledge?',
+            },
+            
+            # Ambiguity
+            'annotation_confidence': {
+                'type': 'ordinal',
+                'scale': [1, 2, 3, 4, 5],  # 1=very uncertain, 5=very certain
+            },
+        }
+        
+        return schema
+    
+    def create_annotation_interface(self):
+        """
+        Create annotation interface that shows only necessary information
+        """
+        interface_config = {
+            # Show: Original text, task context
+            'visible_fields': ['text', 'task_description'],
+            
+            # Hide: Original labels, model predictions
+            'hidden_fields': ['label', 'model_prediction', 'model_confidence'],
+            
+            # Rationale: Prevent annotator bias from knowing ground truth
+            'annotation_order': 'randomized',
+            'annotator_blinding': True,
+        }
+        
+        return interface_config
+    
+    def collect_annotations(self, samples, num_annotators=3):
+        """
+        Collect multiple annotations per sample
+        """
+        annotations = []
+        
+        for sample in samples:
+            sample_annotations = {
+                'sample_id': sample['id'],
+                'annotators': [],
+            }
+            
+            for annotator_id in range(num_annotators):
+                annotation = self.get_single_annotation(
+                    sample=sample,
+                    annotator_id=annotator_id,
+                    schema=self.annotation_schema
+                )
+                sample_annotations['annotators'].append(annotation)
+            
+            # Compute inter-annotator agreement
+            sample_annotations['agreement'] = self.compute_agreement(
+                sample_annotations['annotators']
+            )
+            
+            annotations.append(sample_annotations)
+        
+        return annotations
+    
+    def compute_agreement(self, annotator_responses):
+        """
+        Compute inter-annotator agreement
+        """
+        from sklearn.metrics import cohen_kappa_score
+        
+        agreement_scores = {}
+        
+        # For each annotation dimension
+        for field in self.annotation_schema.keys():
+            # Extract responses
+            responses = [a[field] for a in annotator_responses]
+            
+            # Compute agreement
+            if len(responses) >= 2:
+                # Pairwise Kappa
+                kappas = []
+                for i in range(len(responses)):
+                    for j in range(i+1, len(responses)):
+                        kappa = cohen_kappa_score(responses[i], responses[j])
+                        kappas.append(kappa)
+                
+                agreement_scores[field] = {
+                    'mean_kappa': np.mean(kappas),
+                    'min_kappa': np.min(kappas),
+                    'max_kappa': np.max(kappas),
+                }
+        
+        return agreement_scores
+```
+
+---
+
+### **1.2 Audit Data Management**
+
+#### **A. Storage Architecture**
+```python
+class AuditDataManager:
+    """
+    Manage audit data separately from original dataset
+    """
+    
+    def __init__(self, base_path):
+        self.base_path = base_path
+        self.structure = self.create_directory_structure()
+    
+    def create_directory_structure(self):
+        """
+        Separate directory structure for audit data
+        
+        Structure:
+        base_path/
+        ├── original_data/          # Read-only, checksummed
+        │   ├── train.jsonl
+        │   ├── val.jsonl
+        │   └── test.jsonl
+        ├── audit_annotations/      # New annotations
+        │   ├── demographic_v1.0/
+        │   ├── toxicity_v1.0/
+        │   └── representation_v1.0/
+        ├── audit_results/          # Analysis results
+        │   ├── fairness_metrics/
+        │   └── bias_analysis/
+        └── metadata/
+            ├── checksums.json
+            ├── annotation_protocols.json
+            └── audit_log.jsonl
+        """
+        structure = {
+            'original_data': os.path.join(self.base_path, 'original_data'),
+            'audit_annotations': os.path.join(self.base_path, 'audit_annotations'),
+            'audit_results': os.path.join(self.base_path, 'audit_results'),
+            'metadata': os.path.join(self.base_path, 'metadata'),
+        }
+        
+        for path in structure.values():
+            os.makedirs(path, exist_ok=True)
+        
+        return structure
+    
+    def save_audit_annotations(self, annotations, annotation_type, version):
+        """
+        Save audit annotations with versioning
+        """
+        filename = f"{annotation_type}_v{version}.jsonl"
+        filepath = os.path.join(
+            self.structure['audit_annotations'],
+            annotation_type + f"_v{version}",
+            filename
+        )
+        
+        # Save with metadata
+        output = {
+            'metadata': {
+                'annotation_type': annotation_type,
+                'version': version,
+                'created_at': datetime.now().isoformat(),
+                'num_samples': len(annotations),
+                'num_annotators': self.count_annotators(annotations),
+            },
+            'annotations': annotations,
+        }
+        
+        with open(filepath, 'w') as f:
+            for item in annotations:
+                f.write(json.dumps(item) + '\n')
+        
+        # Update metadata
+        self.update_metadata(annotation_type, version, filepath)
+        
+        return filepath
+    
+    def load_with_audit_layer(self, split, audit_types=None):
+        """
+        Load original data with audit annotations as separate layer
+        
+        Returns:
+            Combined dataset where each sample has:
+            - original fields (immutable)
+            - audit_annotations (separate dict)
+        """
+        # Load original data (read-only)
+        original_data = self.load_original_data(split)
+        
+        # Load audit annotations if specified
+        if audit_types:
+            audit_data = {}
+            for audit_type in audit_types:
+                audit_data[audit_type] = self.load_audit_annotations(
+                    audit_type, split
+                )
+            
+            # Merge without contamination
+            combined_data = self.merge_audit_layer(original_data, audit_data)
+        else:
+            combined_data = original_data
+        
+        return combined_data
+    
+    def merge_audit_layer(self, original_data, audit_data):
+        """
+        Merge audit annotations as separate layer
+        """
+        combined = []
+        
+        for sample in original_data:
+            sample_id = sample['id']
+            
+            # Original data (immutable)
+            combined_sample = {
+                'original': sample,  # Nested to prevent modification
+                'audit_annotations': {},
+            }
+            
+            # Add audit annotations
+            for audit_type, annotations in audit_data.items():
+                if sample_id in annotations:
+                    combined_sample['audit_annotations'][audit_type] = \
+                        annotations[sample_id]
+            
+            combined.append(combined_sample)
+        
+        return combined
+```
+
+---
+
+## **PART 2: FAIRNESS AUDIT DIMENSIONS**
+
+### **2.1 Demographic Representation Analysis**
+
+#### **A. Representation Metrics**
+```python
+class DemographicRepresentationAudit:
+    """
+    Audit demographic representation in dataset and model behavior
+    """
+    
+    def __init__(self, dataset_with_audit):
+        self.dataset = dataset_with_audit
+        self.groups = self.identify_demographic_groups()
+    
+    def identify_demographic_groups(self):
+        """
+        Identify demographic groups from audit annotations
+        """
+        groups = defaultdict(set)
+        
+        for sample in self.dataset:
+            demo_annotations = sample['audit_annotations'].get(
+                'demographic_mentions', {}
+            )
+            
+            for category, mentions in demo_annotations.items():
+                if mentions != 'none':
+                    groups[category].add(sample['id'])
+        
+        return groups
+    
+    def compute_representation_metrics(self):
+        """
+        Compute representation statistics
+        """
+        metrics = {}
+        
+        total_samples = len(self.dataset)
+        
+        for category, sample_ids in self.groups.items():
+            count = len(sample_ids)
+            proportion = count / total_samples
+            
+            metrics[category] = {
+                'count': count,
+                'proportion': proportion,
+                'samples': list(sample_ids),
+            }
+        
+        # Intersectionality analysis
+        metrics['intersectional'] = self.analyze_intersectionality()
+        
+        return metrics
+    
+    def analyze_intersectionality(self):
+        """
+        Analyze intersectional representation
+        """
+        from itertools import combinations
+        
+        intersectional_counts = {}
+        
+        # All pairs of demographic categories
+        categories = list(self.groups.keys())
+        for r in range(2, len(categories) + 1):
+            for combo in combinations(categories, r):
+                # Find samples with all categories
+                intersection = set.intersection(*[self.groups[c] for c in combo])
+                
+                if intersection:
+                    intersectional_counts[combo] = {
+                        'count': len(intersection),
+                        'proportion': len(intersection) / len(self.dataset),
+                    }
+        
+        return intersectional_counts
+    
+    def compute_representation_balance(self):
+        """
+        Measure balance across demographic groups
+        
+        Returns:
+            - Entropy (higher = more balanced)
+            - Gini coefficient (lower = more balanced)
+            - Chi-square test for uniformity
+        """
+        from scipy.stats import entropy, chisquare
+        
+        counts = [len(ids) for ids in self.groups.values()]
+        total = sum(counts)
+        proportions = [c / total for c in counts]
+        
+        # Entropy (max = log(n) for uniform distribution)
+        ent = entropy(proportions)
+        max_entropy = np.log(len(proportions))
+        normalized_entropy = ent / max_entropy if max_entropy > 0 else 0
+        
+        # Gini coefficient
+        gini = self.compute_gini(counts)
+        
+        # Chi-square test for uniformity
+        expected = [total / len(counts)] * len(counts)
+        chi2, p_value = chisquare(counts, expected)
+        
+        return {
+            'entropy': ent,
+            'normalized_entropy': normalized_entropy,
+            'gini_coefficient': gini,
+            'chi_square': chi2,
+            'chi_square_pvalue': p_value,
+            'is_balanced': p_value > 0.05,  # Fail to reject uniformity
+        }
+    
+    @staticmethod
+    def compute_gini(values):
+        """
+        Compute Gini coefficient
+        0 = perfect equality, 1 = perfect inequality
+        """
+        sorted_values = np.sort(values)
+        n = len(values)
+        cumsum = np.cumsum(sorted_values)
+        return (2 * np.sum((n - np.arange(n)) * sorted_values)) / (n * cumsum[-1]) - (n + 1) / n
+```
+
+#### **B. Performance Disparity Analysis**
+```python
+class PerformanceDisparityAudit:
+    """
+    Measure performance disparities across demographic groups
+    """
+    
+    def __init__(self, model, dataset_with_audit, predictions):
+        self.model = model
+        self.dataset = dataset_with_audit
+        self.predictions = predictions
+        self.groups = self.stratify_by_demographics()
+    
+    def stratify_by_demographics(self):
+        """
+        Stratify dataset by demographic attributes
+        """
+        stratification = defaultdict(lambda: {
+            'samples': [],
+            'predictions': [],
+            'labels': [],
+        })
+        
+        for idx, sample in enumerate(self.dataset):
+            demo_annotations = sample['audit_annotations'].get(
+                'demographic_mentions', {}
+            )
+            
+            # Create stratification key
+            for category, value in demo_annotations.items():
+                if value !=

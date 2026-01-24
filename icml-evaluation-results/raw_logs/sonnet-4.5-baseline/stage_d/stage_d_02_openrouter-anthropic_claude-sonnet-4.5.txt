@@ -1,0 +1,298 @@
+Let me provide a **general framework** for designing this intervention study that you can adapt to your specific Hierarchical Transformer. 
+
+---
+
+## **Intervention Design: Hierarchical Pooling vs. Flat Mean Pooling**
+
+### **1. INTERVENTION SPECIFICATION**
+
+#### **Baseline (Original):**
+- **Hierarchical Pooling**: Multi-level aggregation where:
+  - Level 1: Token embeddings → Sentence representations
+  - Level 2: Sentence representations → Paragraph/segment representations  
+  - Level 3: Paragraph representations → Document representation
+  - Each level uses attention-based pooling or learned aggregation
+
+#### **Intervention (Modified):**
+- **Flat Mean Pooling**: Single-level aggregation:
+  - All token embeddings → Direct mean pooling → Document representation
+  - No hierarchical structure
+  - Formula: `h_doc = (1/N) Σ h_i` where N = total tokens
+
+#### **Additional Variants to Test:**
+- **Hybrid**: Hierarchical structure + mean pooling at each level
+- **Flat Max Pooling**: Single-level max pooling
+- **Flat Attention Pooling**: Single-level attention without hierarchy
+- **Ablation**: Remove only final pooling layer, keep hierarchy
+
+---
+
+### **2. BASELINES**
+
+#### **Architecture Baselines:**
+1. **Original Hierarchical Transformer** (primary baseline)
+2. **Standard BERT/RoBERTa** with [CLS] token
+3. **Longformer** (efficient long-document baseline)
+4. **BigBird** (sparse attention baseline)
+5. **Hierarchical BERT** (if different from your model)
+
+#### **Pooling Baselines:**
+1. **[CLS] token** representation
+2. **Max pooling** over all tokens
+3. **Attention pooling** (learned attention weights)
+4. **First-last token concatenation**
+
+---
+
+### **3. DATASETS**
+
+#### **Document Classification:**
+1. **IMDB** (sentiment, ~500 words/doc)
+2. **Yelp-5** (5-class sentiment, varying lengths)
+3. **Hyperpartisan News Detection** (binary, long articles)
+4. **arXiv/PubMed abstracts** (scientific categorization)
+5. **20 Newsgroups** (topic classification)
+
+#### **Long Document Understanding:**
+1. **Narrative QA** (question answering on stories)
+2. **HotpotQA** (multi-hop reasoning)
+3. **TriviaQA** (long context QA)
+
+#### **Hierarchical Structure Tasks:**
+1. **Discourse parsing** datasets
+2. **Document summarization** (CNN/DailyMail, XSum)
+3. **Multi-document tasks** (WikiHop)
+
+#### **Selection Criteria:**
+- **Varying document lengths**: Short (100-300), Medium (300-1000), Long (1000+)
+- **Clear hierarchical structure**: Sentences, paragraphs, sections
+- **Diverse domains**: Reviews, news, scientific, dialogue
+- **Multiple task types**: Classification, QA, generation
+
+---
+
+### **4. PRIMARY METRICS**
+
+#### **Performance Metrics:**
+1. **Accuracy** (classification tasks)
+2. **F1-Score** (macro/micro for imbalanced data)
+3. **BLEU/ROUGE** (generation tasks)
+4. **Exact Match / F1** (QA tasks)
+
+#### **Efficiency Metrics:**
+5. **Training time** (hours to convergence)
+6. **Inference latency** (ms per sample)
+7. **Memory footprint** (GB GPU memory)
+8. **FLOPs** (computational cost)
+
+#### **Primary Metric Selection:**
+- **Main**: Task-specific accuracy/F1
+- **Secondary**: Inference latency (practical deployment)
+
+---
+
+### **5. SECONDARY METRICS**
+
+#### **Robustness:**
+1. **Performance on varying document lengths** (stratified analysis)
+2. **Cross-domain transfer** (train on one dataset, test on another)
+3. **Few-shot performance** (10/50/100 examples)
+4. **Adversarial robustness** (TextFooler, BERT-Attack)
+
+#### **Interpretability:**
+1. **Attention pattern analysis** (hierarchical vs. flat)
+2. **Feature importance scores** (SHAP, integrated gradients)
+3. **Probing tasks** (syntactic/semantic information retention)
+
+#### **Representation Quality:**
+1. **Embedding clustering** (t-SNE visualization)
+2. **Representation similarity** (CKA, centered kernel alignment)
+3. **Linear probing accuracy** on auxiliary tasks
+
+#### **Learning Dynamics:**
+1. **Convergence speed** (epochs to 95% best performance)
+2. **Gradient flow** (vanishing/exploding gradients)
+3. **Loss landscape smoothness**
+
+---
+
+### **6. EXPERIMENTAL DESIGN**
+
+#### **Controlled Variables:**
+- Same pretrained weights (if applicable)
+- Same training hyperparameters (LR, batch size, optimizer)
+- Same random seeds (3-5 runs minimum)
+- Same hardware (GPU type, memory)
+- Same data preprocessing pipeline
+- Same tokenizer and vocabulary
+
+#### **Sample Size:**
+- **Minimum 3 random seeds** per configuration
+- **5-10 seeds** for publication-quality results
+- **Full dataset** evaluation (no subsampling)
+
+#### **Stratification:**
+- Stratify by document length (short/medium/long)
+- Stratify by class (for classification)
+- Report aggregate + stratified results
+
+---
+
+### **7. STATISTICAL TESTS**
+
+#### **Pairwise Comparisons:**
+
+1. **Paired t-test** (if normality holds)
+   - Use for comparing mean accuracy across seeds
+   - Null hypothesis: μ_hierarchical = μ_flat
+   - **When**: Same random seeds, paired runs
+
+2. **Wilcoxon Signed-Rank Test** (non-parametric)
+   - Use if normality assumption violated
+   - More robust for small sample sizes (n < 30)
+
+3. **Permutation Test**
+   - Exact test, no distributional assumptions
+   - Recommended for n < 10 seeds
+   - 10,000+ permutations
+
+#### **Multiple Comparisons:**
+
+4. **Bonferroni Correction**
+   - Adjust α = 0.05 / k (k = number of comparisons)
+   - Conservative but simple
+
+5. **Holm-Bonferroni** (less conservative)
+   - Sequential rejection procedure
+
+6. **False Discovery Rate (FDR)** - Benjamini-Hochberg
+   - Control expected proportion of false positives
+   - Better power than Bonferroni
+
+#### **Effect Size:**
+
+7. **Cohen's d**
+   - Standardized mean difference
+   - |d| > 0.8 = large effect, 0.5 = medium, 0.2 = small
+
+8. **Confidence Intervals**
+   - Report 95% CI for all metrics
+   - Bootstrap CI (10,000 samples) if needed
+
+#### **Variance Analysis:**
+
+9. **ANOVA** (if comparing >2 pooling variants)
+   - F-test for overall difference
+   - Post-hoc: Tukey HSD for pairwise comparisons
+
+10. **Mixed-Effects Models**
+    - Account for random effects (seeds, datasets)
+    - Model: `Performance ~ PoolingType + (1|Seed) + (1|Dataset)`
+
+---
+
+### **8. SIGNIFICANCE THRESHOLDS**
+
+- **α = 0.05** (standard)
+- **α = 0.01** (conservative, for primary claims)
+- **Minimum detectable difference**: ±2% accuracy (practical significance)
+- **Report**: p-values, effect sizes, and confidence intervals
+
+---
+
+### **9. REPORTING REQUIREMENTS**
+
+#### **Tables:**
+1. **Main results**: Mean ± std across seeds for each dataset
+2. **Stratified results**: Performance by document length
+3. **Efficiency**: Time, memory, FLOPs comparison
+4. **Statistical tests**: p-values, effect sizes, CI
+
+#### **Figures:**
+1. **Performance vs. document length** (line plot)
+2. **Box plots** of accuracy distributions across seeds
+3. **Attention visualizations** (hierarchical vs. flat)
+4. **Training curves** (loss/accuracy over epochs)
+
+#### **Ablation Study:**
+- Systematically remove hierarchical levels
+- Test each pooling type at each level
+- Report contribution of each component
+
+---
+
+### **10. LEAKAGE & VALIDITY CHECKS**
+
+#### **Data Leakage Prevention:**
+- Strict train/val/test splits (no overlap)
+- No test set access during development
+- Separate validation for hyperparameter tuning
+
+#### **Confound Control:**
+- Same total parameters (adjust hidden dims if needed)
+- Same training budget (steps, not epochs)
+- Same regularization (dropout, weight decay)
+
+#### **Sanity Checks:**
+- Random baseline (ensure > random)
+- Majority class baseline
+- Verify gradient flow in both architectures
+
+---
+
+### **11. IMPLEMENTATION CHECKLIST**
+
+```python
+# Pseudo-code structure
+
+class HierarchicalPooling:
+    def forward(self, token_embeds, structure):
+        # Level 1: tokens -> sentences
+        sent_reps = self.sentence_pooling(token_embeds)
+        # Level 2: sentences -> paragraphs
+        para_reps = self.paragraph_pooling(sent_reps)
+        # Level 3: paragraphs -> document
+        doc_rep = self.document_pooling(para_reps)
+        return doc_rep
+
+class FlatMeanPooling:
+    def forward(self, token_embeds, structure):
+        # Ignore structure, pool all tokens
+        doc_rep = token_embeds.mean(dim=1)  # Simple mean
+        return doc_rep
+
+# Ensure same dimensions
+assert hierarchical_output.shape == flat_output.shape
+```
+
+---
+
+### **12. HYPOTHESIS & PREDICTIONS**
+
+#### **Hypotheses:**
+- **H1**: Hierarchical pooling outperforms flat pooling on long documents (>512 tokens)
+- **H2**: Flat pooling is faster at inference
+- **H3**: Hierarchical pooling better preserves document structure information
+
+#### **Expected Results:**
+- Hierarchical wins on: Long docs, hierarchical tasks, interpretability
+- Flat wins on: Speed, simplicity, short docs
+- Similar on: Well-structured short documents
+
+---
+
+## **NEXT STEPS:**
+
+**Please provide:**
+1. The specific Hierarchical Transformer paper (title, authors, or link)
+2. Your target task (classification, QA, summarization, etc.)
+3. Computational constraints (GPU availability, time budget)
+4. Any specific hypotheses you want to test
+
+With this information, I can refine the experimental design with:
+- Exact architecture modifications
+- Task-specific datasets and metrics
+- Tailored statistical analysis plan
+- Implementation code snippets
+
+Would you like me to elaborate on any specific section?

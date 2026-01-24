@@ -15,10 +15,10 @@ class MetricSpec:
 METRIC_SPECS: dict[str, MetricSpec] = {
     "actionability": MetricSpec(
         "actionability",
-        "1.0: concrete executable steps with commands, parameters, and expected outcomes. 0.8: clear next steps with minor gaps. 0.6: clear direction but user must fill gaps. 0.4: generic suggestions. 0.2: vague advice. 0.0: unusable guidance.",
+        "2.0: concrete executable steps with commands, parameters, and expected outcomes; 1.5: clear next steps with minor gaps; 1.0: clear direction but user must fill important gaps; 0.5: generic suggestions; 0.0: vague or unusable guidance.",
         "scaled",
         0.0,
-        1.0,
+        2.0,
     ),
     # Additional Agentic Capability metrics from eval plan
     "rag_fidelity": MetricSpec(
@@ -51,7 +51,7 @@ METRIC_SPECS: dict[str, MetricSpec] = {
     ),
     "clarification_quality": MetricSpec(
         "clarification_quality",
-        "2.0: probes specific uncertainties drawn from the user prompt or persona context, enabling materially better guidance; 1.0: asks at least one clarifying question but remains partially generic; 0.0: no clarifying probes or purely boilerplate questions.",
+        "2.0: targeted clarifying questions or explicit assumptions that materially improve guidance quality; 1.5: useful probes or stated assumptions with minor gaps; 1.0: optional clarifications present or clear assumptions stated when none were needed; 0.5: generic probes that add little value; 0.0: needed clarifications are missing AND no assumptions are stated, leaving guidance ambiguous.",
         "scaled",
         0.0,
         2.0,
@@ -262,13 +262,21 @@ METRIC_SPECS: dict[str, MetricSpec] = {
         0.0,
         2.0,
     ),
+    # ---------------------- Holistic single-turn metric ----------------------
+    "holistic_score": MetricSpec(
+        "holistic_score",
+        "Holistic assessment of the complete response as a user experience. 2.0: exceptional and rare (<10%); 1.5: good, clear actionable guidance with minor gaps; 1.0: adequate, reasonable direction but notable gaps; 0.5: minimally helpful, generic advice; 0.0: unhelpful or misleading. Use single_turn_holistic_prompt.md which requires weakness identification.",
+        "scaled",
+        0.0,
+        2.0,
+    ),
 }
 
 
 def metric_instruction(spec: MetricSpec) -> str:
     if spec.kind == "binary":
-        return "Return JSON {\"score\": <0 or 1>, \"rationale\": <string>, \"confidence\": <high|medium|low>}"
+        return 'Return JSON {"score": <0 or 1>, "rationale": <string>, "confidence": <high|medium|low>}'
     return (
-        "Return JSON {\"score\": <float between "
-        f"{spec.min_score} and {spec.max_score}>, \"rationale\": <string>, \"confidence\": <high|medium|low>}}"
+        f'Return JSON {{"score": <float between {spec.min_score} and {spec.max_score}>, '
+        f'"rationale": <string>, "confidence": <high|medium|low>}}'
     )

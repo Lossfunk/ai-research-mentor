@@ -1,0 +1,101 @@
+This research plan targets the "Explainability Gap" in safety-critical autonomous driving (AD) systems. It moves beyond qualitative visualization (e.g., "looking at heatmaps") to quantitative rigor, establishing a governance framework for when and how to trust black-box perception models.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Deep learning perception stacks (e.g., BEVFormer, PointPillars) are currently "black boxes." While general interpretability tools (Grad-CAM, SHAP) exist, they are rarely rigorously benchmarked on **3D multi-modal data** (LiDAR + Camera). We do not know if a heatmap showing a pedestrian actually corresponds to the pixels the model used to detect that pedestrian, or if it is merely an artifact of the method. This lack of "faithfulness" prevents certification bodies (ISO 26262, SOTIF) from accepting neural networks in safety loops.
+
+**Research Goal:**
+Develop a **Quantitative Evaluation Framework for AD Interpretability** that benchmarks attribution methods on faithfulness, stability, and modality alignment. The end product is a "Governance Protocol" that selects specific interpretability tools for post-incident analysis based on empirical reliability.
+
+**Core Objectives:**
+1.  **Faithfulness Benchmarking:** Quantify how accurately attribution methods identify the features that actually drive model predictions (using perturbation analysis).
+2.  **Multi-Modal Attribution:** Determine how models weigh LiDAR (geometry) vs. Camera (texture) and whether interpretability tools correctly reflect this balance.
+3.  **Governance Checkpoints:** Define thresholds for "explanation entropy" that act as runtime safety monitors.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The Faithfulness Stress Test (Perturbation Analysis)
+**Hypothesis:** Gradient-based methods (e.g., Grad-CAM) are less faithful than Perturbation-based methods (e.g., RISE) for small objects (pedestrians) in 3D space, often highlighting background context rather than the object itself.
+*   **Setup:**
+    *   **Model:** `BEVFusion` (State-of-the-art Camera+LiDAR fusion).
+    *   **Dataset:** `nuScenes` (Validation set).
+    *   **Methods:** Compare **Grad-CAM**, **Integrated Gradients (IG)**, and **KernelSHAP**.
+    *   **Procedure:** "Pixel Flipping." Calculate attribution maps for detected objects. Progressively mask the "most important" pixels/points and measure the drop in detection confidence (IOU/Score).
+*   **Baselines:** Random masking (Control).
+*   **Evaluation Metrics:** **AOPC** (Area Over Perturbation Curve) - steeper drop equals higher faithfulness.
+*   **Expected Outcome:** IG and SHAP will show higher AOPC than Grad-CAM, but will be 100x slower. We aim to find a "Pareto optimal" method (likely a variant of Feature Ablation) for the roadmap.
+
+#### Experiment 2: Modality Bias Quantification
+**Hypothesis:** In fusion models, interpretability tools often "hallucinate" reliance on camera images even when the model is exclusively using LiDAR geometry to place the bounding box.
+*   **Setup:**
+    *   **Procedure:** Compute attribution scores separately for the Image backbone and LiDAR backbone.
+    *   **Intervention:** Remove the camera feed (black out images). Measure if the *actual* prediction changes vs. if the *attribution* suggested it would.
+*   **Evaluation Metrics:** **Modality Importance Alignment (MIA)** score: The correlation between the attribution mass on a modality and the performance drop when that modality is removed.
+*   **Expected Outcome:** We expect low MIA scores for gradient methods (high noise). This experiment will filter out methods that cannot handle sensor fusion reliability.
+
+#### Experiment 3: The "Silent Failure" Governance Check
+**Hypothesis:** High-entropy attribution maps (scattered heatmaps) are a leading indicator of False Positives (phantom braking) or False Negatives (missed detection) before the confidence score drops.
+*   **Setup:**
+    *   **Task:** Analyze "Near-Miss" scenarios in nuScenes (high-risk interactions).
+    *   **Metric:** Calculate the **Gini Coefficient** (sparsity) of the attribution map for every prediction.
+    *   **Governance Rule:** "If Confidence > 0.9 BUT Gini < Threshold $\rightarrow$ Flag for Human Review."
+*   **Expected Outcome:** A governance policy where low-sparsity explanations successfully flag 30% of "high-confidence errors" that standard uncertainty metrics miss.
+
+---
+
+### 3. Timeline (12 Months)
+
+| Quarter | Month | Milestone | Key Deliverables & Governance Checkpoints |
+| :--- | :--- | :--- | :--- |
+| **Q1** | **1-2** | **Infrastructure** | Setup `mmdetection3d`. Reproduce BEVFusion and PointPillars baselines on nuScenes. |
+| | **3** | **Baseline Explanations** | Implement Grad-CAM, IG, and SHAP hooks for 3D bounding boxes. **Checkpoint 1:** Verify code produces visually coherent heatmaps. |
+| **Q2** | **4-5** | **Faithfulness (Exp 1)** | Run massive perturbation benchmarks (computationally heavy). Generate AOPC curves. |
+| | **6** | **Method Selection** | **Governance Checkpoint 2:** Discard methods with AOPC scores < Random Baseline. Select top 2 for future steps. |
+| **Q3** | **7-8** | **Fusion Analysis (Exp 2)** | Run Modality Bias experiments. Quantify LiDAR vs. Camera reliance. |
+| | **9** | **Safety Policy (Exp 3)** | Develop the "Gini Index" monitoring tool. Retroactively test on failure cases. |
+| **Q4** | **10** | **Governance Framework** | Formalize the "Standard Operating Procedure" for model auditing using the selected tools. |
+| | **11** | **Writing** | Draft paper. Visualize "Success vs. Failure" attribution examples. |
+| | **12** | **Submission** | Submit to **CVPR** (Vision) or **ICRA** (Robotics). Release "OpenAD-Explain" codebase. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Required:** 4x A100 (80GB) or 8x A6000.
+*   **Reasoning:** Calculating Integrated Gradients requires 50-100 forward passes *per object* per scene. This is computationally expensive on 3D fusion models.
+*   **Storage:** 4TB SSD (nuScenes full dataset + cached attribution maps).
+
+**Tools & Libraries:**
+*   **AD Framework:** `mmdetection3d` (OpenMMLab). This is the industry standard for 3D perception.
+*   **Interpretability:** `Captum` (PyTorch) or `Quantus` (specifically for evaluating neural network explanations).
+*   **Visualization:** `WandB` for tracking AOPC curves over time.
+
+**Datasets:**
+*   **Primary:** **nuScenes** (Best for multi-modal fusion).
+*   **Secondary:** **Waymo Open Dataset** (Use a subset if nuScenes results are ambiguous).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Computational Explosion** | Computing Shapley values for 3D/4D inputs is intractable. | **Patch-based Ablation:** Instead of pixel-wise attribution, group pixels into $16 \times 16$ superpixels or LiDAR voxels to reduce dimensionality. |
+| **Visual Clutter** | Heatmaps on 360-degree scenes are unreadable. | **Instance-Specific Attribution:** Mask gradients so the heatmap is calculated *only* for the specific bounding box of interest (e.g., "Why did you detect *this* car?"). |
+| **Tool Incompatibility** | Standard libraries (Captum) don't handle sparse LiDAR tensors natively. | **Custom Hooks:** Write custom gradient dispatchers for the SparseConv layers used in LiDAR backbones (PointPillars/VoxelNet). |
+| **Metric Disagreement** | Faithfulness metrics (Exp 1) might contradict Modality metrics (Exp 2). | **Weighted Scorecard:** Create a composite score (60% Faithfulness, 40% Modality) to select the final tool. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Counterfactual Generation:** Instead of heatmaps, use Generative AI (e.g., Diffusion) to *edit* the scene (remove the pedestrian) and see if the model changes its mind. This is the "Gold Standard" of causality.
+*   **Natural Language Explanations:** Fine-tune a Multimodal LLM (like LLaVA) to ingest the BEV features and output text: "I braked because the object on the left has the trajectory of a child."
+*   **Adversarial Robustness:** Use the interpretability maps to generate adversarial attacks. Attack the pixels the model "looks at" most to prove fragility.
+
+**Optional next step:**
+Install `mmdetection3d` and run the "BEVFusion" demo on a single nuScenes sample to confirm you can access the raw voxel feature maps, as this is the prerequisite for any gradient injection.

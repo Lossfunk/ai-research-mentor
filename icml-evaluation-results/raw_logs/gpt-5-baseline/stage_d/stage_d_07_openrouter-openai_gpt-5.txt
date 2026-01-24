@@ -1,0 +1,94 @@
+Below is a compact stress-test plan for out-of-domain collaborative code and long-document tasks. It adds controlled synthetic perturbations, task-appropriate metrics, and a statistical framework to quantify robustness gaps without changing original labels or evaluation rules.
+
+Goals
+- Measure robustness to structure, noise, and cross-file/long-range dependencies not emphasized in the original domain.
+- Quantify how performance degrades with controlled perturbation severity and identify brittle failure modes.
+
+Benchmark suite (pick 1–2 per category)
+- Collaborative code (repo-level, multi-file, conversational context)
+  - SWE-bench (or SWE-bench Lite): derive retrieval/QA tasks from issue descriptions and patches; labels = gold patches/files touched.
+  - RepoBench-QA (or similar repo-level QA): natural-language questions over README, docs, and code; metrics: EM/F1 or accuracy.
+  - CodeSearchNet (retrieval variant): NL query → code snippet/file; metrics: Recall@k, MRR.
+  - Issue/PR triage (constructed): route issue to component/label using repo metadata; metrics: macro-F1, calibration (ECE).
+- Long-document outside original domain
+  - GovReport (government reports) or EU Legislation: summarization; metrics: ROUGE-1/2/Lsum, factuality (SummaC/QAFactEval as secondary).
+  - NarrativeQA (full-story) or BookSum (chapter-level): QA/summarization over long fiction; metrics: EM/F1 or ROUGE-L.
+  - MultiNews (multi-doc news) or QMSum (meeting transcripts): multi-source summarization; metrics: ROUGE-Lsum, coverage.
+
+Synthetic perturbations (apply via sidecar transforms; do not alter ground-truth labels)
+- Collaborative code
+  - Identifier obfuscation: consistent variable/function/class renaming within a file or across files; preserve semantics.
+  - Formatting/noise: whitespace changes, comment injection/removal, docstring drift (paraphrase, reorder sentences), code block reflow.
+  - Multi-file structure: reorder file listings and function definitions; split/merge files while preserving import paths; insert irrelevant large files from same language.
+  - Dependency stress: move key function to a different file/module; require cross-file linkage to answer.
+  - Diff noise: insert conflict markers (<<<<<<<), interleave unrelated hunks, or add revert commits to increase distraction.
+  - Mixed modality: interleave issue threads (NL), code diffs, and test logs; shuffle conversational turns within bounded windows.
+- Long-document
+  - Section/paragraph reordering: shuffle sections with headers intact; bounded shuffles to simulate editorial changes.
+  - Distractor injection: add semantically similar but incorrect paragraphs from nearest-neighbor retrieval; vary distractor count.
+  - Redundancy: duplicate relevant paragraphs multiple times; test susceptibility to repetition bias.
+  - Contradictions: insert a contradicted claim adjacent to the true statement; mark contradiction provenance for analysis.
+  - OCR/layout noise: character substitutions, hyphenation at line breaks, header/footers, table-to-text linearization, citation marker perturbations.
+  - Multilingual sprinkling: insert short passages or named entities in another language; keep label unchanged if not answer-bearing.
+
+Severity ladder
+- Define 3–5 levels per corruption (e.g., number of renamed identifiers; number of distractors; degree of reordering).
+- For each example, generate paired inputs across severities to enable within-example comparisons.
+
+Evaluation metrics
+- Primary task metrics (per dataset)
+  - Classification/triage: macro-F1 (primary), accuracy; class-wise F1 on rare labels.
+  - Retrieval: Recall@k (k=1,5,10), MRR; success@k with exact file/function match.
+  - QA: EM and token-level F1; answer localization overlap (if evidence spans available).
+  - Summarization: ROUGE-1/2/Lsum; factuality/consistency score (SummaC/ZsRE-style QAFactEval).
+- Robustness metrics (report per severity and aggregated)
+  - Relative drop: (Mclean − Mcorrupt)/Mclean; plot vs severity.
+  - Area under Corruption Curve (AUCC): 1 − mean relative drop across severities and perturbation types (analogous to mCE); higher is better.
+  - Length-normalized performance: metric vs effective tokens; slope change under corruption.
+  - Calibration: ECE/Brier score shifts; risk-coverage curves (selective prediction) to assess abstention behavior under shift.
+  - Evidence sensitivity: for retrieval/QA, fraction of predictions whose evidence remains correct when non-relevant segments are perturbed.
+
+Statistical analysis plan
+- Design
+  - Paired evaluation: same example across severities and variants to remove between-example noise.
+  - Seeds: 3–5 seeds per model; aggregate with paired statistics across seeds.
+- Per-dataset hypothesis tests
+  - Task metrics: paired bootstrap over examples (10k resamples) for Δ metric at each severity; report 95% CIs. For classification, also run McNemar on per-example correctness between clean and corrupted.
+  - Robustness gap: test mean relative drop > 0 with one-sample t-test on per-example drops; compare models via paired t-test or Wilcoxon signed-rank on per-example drop differences.
+  - AUCC: bootstrap AUCC per seed; compare variants with two-sample or paired t-test across seeds; report CI.
+  - Calibration: bootstrap ECE deltas; for risk-coverage, compare AUCs via paired bootstrap.
+- Mixed-effects modeling (length- and repo/document-controlled)
+  - For QA/classification: correct_ij ~ model + severity + model×severity + log(tokens) + (1 | example_id) + (1 | seed).
+  - For latency/efficiency side analyses: log(latency) ~ model + severity + log(tokens) + (1 | example_id).
+  - Significant model×severity < 0 (on correctness) indicates different robustness slopes.
+- Multiple comparisons
+  - Control FWER within each dataset across perturbations and severities using Holm–Bonferroni.
+  - Report Benjamini–Hochberg FDR as secondary for broader scans.
+- Power guidance
+  - Pilot on 10–20% of test set to estimate SD of per-example drops (often 3–8 metric points). For detecting a 2-point mean drop at α=0.05, 80% power typically needs N≈(1.96+0.84)^2×σ^2/δ^2 examples (paired). With σ=6, δ=2 → N≈35; most datasets exceed this.
+  - Across seeds, detecting a 1-point AUCC difference with seed SD≈0.6 needs ~3–4 seeds.
+
+Implementation notes (to avoid label contamination)
+- Apply perturbations via sidecar transforms keyed by example ID; never alter labels.
+- Ensure deterministic transforms with fixed RNG seeds; store severity metadata.
+- For multi-file/code tasks, keep import/compile integrity where relevant (static analysis passes if used) and verify the answer remains valid post-perturbation.
+
+Failure modes to monitor and diagnose
+- Long-range degradation: accuracy drop grows with document/repo length or number of files; inspect slope of metric vs log(tokens).
+- Order sensitivity: large drops under section/function reordering; check whether global encoder is overly order-rigid.
+- Distractor susceptibility: precision falls as distractors increase; analyze attention to irrelevant segments.
+- Redundancy bias: model flips to majority duplicate content; measure performance vs number of duplicates.
+- Contradiction fragility: incorrect but adjacent contradicted claims sway predictions; track contradiction-specific error rate.
+- Code-specific brittleness: identifier renaming breaks retrieval/QA; multi-file evidence linking fails when functions move modules.
+- Miscalibration under shift: ECE increases; confidence–accuracy curves diverge.
+
+Reporting
+- For each dataset and perturbation:
+  - Clean metric ± 95% CI; per-severity metric and relative drops with CIs.
+  - AUCC with CI; model ranking by AUCC.
+  - Length-binned robustness plots; calibration deltas.
+- Global view:
+  - Robustness Pareto: clean accuracy vs AUCC; highlight models on the Pareto front.
+  - Error taxonomy with counts/ratios per failure mode.
+
+This setup surfaces whether hierarchical structure truly helps under multi-file/code and complex long-doc shifts, quantifies robustness as controlled perturbations intensify, and provides statistically defensible comparisons across model variants.

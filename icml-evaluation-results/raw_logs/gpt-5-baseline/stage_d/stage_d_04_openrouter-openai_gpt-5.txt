@@ -1,0 +1,41 @@
+Below is a practical ablation plan to study local attention window size in a Hierarchical Transformer, with benchmarks, minimal code edits, a compute budget, and failure modes to watch.
+
+Objective and variants
+- What you vary: the local (intra-segment) self-attention receptive field W within the segment encoder, keeping everything else (tokenization, segment length, global encoder, pooling, training schedule, and hyperparameters) fixed.
+- Recommended window sizes:
+  - Full: full attention within segment (reference).
+  - 256, 128, 64 tokens (symmetric band around each token).
+  - Optional: 384 or 192 if your segments are 512 to probe finer granularity.
+- Keep segment length Lseg and number of local layers constant. If Lseg < W, use full attention for that segment.
+
+Benchmark suite
+Choose at least one dataset per task type, covering increasing document lengths and different dependency structures. Use the paper’s evaluation protocol (splits, preprocessing, metrics).
+
+- Long-document classification
+  - Hyperpartisan News (PAN19). Metric: macro-F1 (primary), accuracy (secondary).
+  - LEDGAR (legal contract provision classification). Metric: macro-F1.
+  - Optional: AG News Long or arXiv Category (if you already have standardized long-form variants).
+
+- Long-context QA (evidence potentially far from query)
+  - Qasper (questions on research papers). Metric: EM and token-level F1 (primary).
+  - QuALITY (multiple-choice long reading). Metric: accuracy (primary), calibration ECE (secondary).
+  - Optional: NarrativeQA (full-story) with ROUGE-L/F1 on abstractive answers.
+
+- Long summarization
+  - PubMed and/or arXiv (scientific long-doc summarization). Metric: ROUGE-1/2/Lsum (primary), factuality (QAFactEval or SummaC) as secondary if available.
+  - GovReport (very long). Metric: ROUGE-Lsum (primary).
+
+- Length sensitivity probes
+  - For each dataset, bin test documents by effective tokens (e.g., quartiles) to reveal long-context degradation as W shrinks.
+
+Minimal code changes (PyTorch-style)
+- Add a config flag local_window_size (int or "full").
+- In the local encoder self-attention, apply a band mask that allows attention only within ±W/2 positions. Keep padding masks as-is. Leave the global (inter-segment) encoder unchanged.
+
+Sketch:
+- Build a [S, S] additive mask once per segment length S:
+  - band = 0 where |i − j| ≤ W/2 else −inf (use a large negative like −1e4 in fp16).
+  - If W == "full" or S ≤ W, set band = 0.
+- Combine with the usual padding mask:
+  - attn_bias = band + pad_bias, broadcast to [batch, heads, S, S].
+- With relative position

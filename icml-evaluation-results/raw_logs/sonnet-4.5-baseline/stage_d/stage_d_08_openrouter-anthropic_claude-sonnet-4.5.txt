@@ -1,0 +1,458 @@
+# **Zero-Shot Hierarchical Transformer: Design & Comparability**
+
+## **PART 1: ZERO-SHOT VARIANT DESIGN**
+
+### **1.1 Architecture Redesign**
+
+#### **A. Remove Hierarchy-Specific Pretraining**
+```python
+class ZeroShotHierarchicalTransformer:
+    """
+    Hierarchical Transformer without hierarchy-specific pretraining
+    
+    Key Changes:
+    1. Use standard pretrained encoder (BERT/RoBERTa) - NO hierarchy pretraining
+    2. Add lightweight hierarchical aggregation layers (randomly initialized)
+    3. Train end-to-end on downstream tasks only
+    
+    Rationale:
+    - Tests if hierarchical structure emerges from architecture alone
+    - Isolates contribution of hierarchical pretraining vs. architecture
+    - More practical for domains without large-scale hierarchical corpora
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.design_choices = self.define_design_choices()
+    
+    def define_design_choices(self):
+        """
+        Critical design decisions for zero-shot variant
+        """
+        choices = {
+            # Choice 1: Base Encoder
+            'base_encoder': {
+                'options': [
+                    'bert-base-uncased',      # Standard BERT
+                    'roberta-base',           # Standard RoBERTa
+                    'longformer-base-4096',   # Long-context baseline
+                ],
+                'selection': 'roberta-base',
+                'justification': 'Most common baseline, strong performance, no hierarchy bias',
+                'frozen': False,  # Allow fine-tuning
+            },
+            
+            # Choice 2: Hierarchical Aggregation
+            'hierarchical_layers': {
+                'initialization': 'random',  # NOT from hierarchy pretraining
+                'architecture': 'lightweight',
+                'parameters': 'minimal',  # ~5-10% of total parameters
+                'justification': 'Test if task-specific training can learn hierarchy',
+            },
+            
+            # Choice 3: Position Encodings
+            'position_encoding': {
+                'type': 'learned_hierarchical',
+                'levels': ['token', 'sentence', 'paragraph', 'document'],
+                'initialization': 'random',
+                'justification': 'Provide hierarchical inductive bias without pretraining',
+            },
+            
+            # Choice 4: Attention Patterns
+            'attention_pattern': {
+                'level_1_token': 'local_window',  # Standard local attention
+                'level_2_sentence': 'full_attention',
+                'level_3_paragraph': 'full_attention',
+                'window_sizes': [128, 256, 512],
+                'justification': 'Architectural bias only, no pretrained patterns',
+            },
+        }
+        
+        return choices
+    
+    def build_architecture(self):
+        """
+        Build zero-shot hierarchical architecture
+        """
+        model = nn.ModuleDict({
+            # 1. Standard pretrained encoder (NO hierarchy pretraining)
+            'base_encoder': self.load_standard_encoder(),
+            
+            # 2. Lightweight hierarchical aggregation (random init)
+            'hierarchical_pooling': self.build_hierarchical_pooling(),
+            
+            # 3. Task-specific heads (random init)
+            'task_head': self.build_task_head(),
+        })
+        
+        return model
+    
+    def load_standard_encoder(self):
+        """
+        Load standard pretrained encoder WITHOUT hierarchy pretraining
+        """
+        from transformers import AutoModel
+        
+        # Load standard BERT/RoBERTa
+        encoder = AutoModel.from_pretrained(
+            self.design_choices['base_encoder']['selection']
+        )
+        
+        # Verify: NO hierarchy-specific pretraining
+        assert not self.has_hierarchy_pretraining(encoder), \
+            "Encoder must not have hierarchy-specific pretraining!"
+        
+        return encoder
+    
+    def build_hierarchical_pooling(self):
+        """
+        Lightweight hierarchical pooling layers (random initialization)
+        
+        Architecture:
+        - Level 1: Token -> Sentence pooling
+        - Level 2: Sentence -> Paragraph pooling  
+        - Level 3: Paragraph -> Document pooling
+        
+        Key: Minimal parameters, random initialization
+        """
+        hidden_dim = self.config.hidden_size
+        
+        pooling = nn.ModuleDict({
+            # Sentence-level pooling (tokens -> sentence)
+            'sentence_pooling': nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.LayerNorm(hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, hidden_dim),
+            ),
+            
+            # Paragraph-level pooling (sentences -> paragraph)
+            'paragraph_pooling': nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.LayerNorm(hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, hidden_dim),
+            ),
+            
+            # Document-level pooling (paragraphs -> document)
+            'document_pooling': nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim // 2),
+                nn.LayerNorm(hidden_dim // 2),
+                nn.ReLU(),
+                nn.Linear(hidden_dim // 2, hidden_dim),
+            ),
+        })
+        
+        # Initialize randomly (Xavier/Kaiming)
+        for module in pooling.values():
+            self.initialize_weights(module)
+        
+        return pooling
+    
+    def initialize_weights(self, module):
+        """
+        Random initialization for hierarchical layers
+        """
+        for m in module.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+    
+    def forward(self, input_ids, attention_mask, hierarchical_structure):
+        """
+        Forward pass with hierarchical aggregation
+        
+        Args:
+            input_ids: Token IDs [batch, seq_len]
+            attention_mask: Attention mask [batch, seq_len]
+            hierarchical_structure: Dict with sentence/paragraph boundaries
+        """
+        # 1. Base encoding (standard pretrained encoder)
+        token_embeds = self.base_encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        ).last_hidden_state  # [batch, seq_len, hidden]
+        
+        # 2. Hierarchical aggregation (random init, task-trained)
+        sentence_embeds = self.aggregate_to_sentences(
+            token_embeds, 
+            hierarchical_structure['sentence_boundaries']
+        )
+        
+        paragraph_embeds = self.aggregate_to_paragraphs(
+            sentence_embeds,
+            hierarchical_structure['paragraph_boundaries']
+        )
+        
+        document_embed = self.aggregate_to_document(paragraph_embeds)
+        
+        # 3. Task-specific prediction
+        output = self.task_head(document_embed)
+        
+        return output
+    
+    def aggregate_to_sentences(self, token_embeds, sentence_boundaries):
+        """
+        Aggregate tokens to sentence representations
+        """
+        batch_size = token_embeds.size(0)
+        sentence_embeds = []
+        
+        for b in range(batch_size):
+            batch_sentences = []
+            for start, end in sentence_boundaries[b]:
+                # Mean pooling over tokens in sentence
+                sentence_tokens = token_embeds[b, start:end]
+                pooled = sentence_tokens.mean(dim=0)
+                
+                # Apply learned transformation
+                transformed = self.hierarchical_pooling['sentence_pooling'](pooled)
+                batch_sentences.append(transformed)
+            
+            sentence_embeds.append(torch.stack(batch_sentences))
+        
+        return sentence_embeds
+```
+
+---
+
+### **1.2 Comparison: Original vs. Zero-Shot**
+
+#### **A. Architecture Comparison Table**
+```python
+ARCHITECTURE_COMPARISON = {
+    'component': [
+        'Base Encoder',
+        'Hierarchical Layers',
+        'Position Encodings',
+        'Pretraining Objective',
+        'Pretraining Data',
+        'Total Parameters',
+        'Trainable from Scratch',
+    ],
+    
+    'original_hierarchical': [
+        'Custom encoder with hierarchy',
+        'Pretrained on hierarchical tasks',
+        'Hierarchical positional embeddings (pretrained)',
+        'Hierarchical MLM + Document Structure Prediction',
+        'Large hierarchical corpus (e.g., books, papers)',
+        '110M (example)',
+        'Hierarchical layers: pretrained',
+    ],
+    
+    'zero_shot_variant': [
+        'Standard RoBERTa (no hierarchy)',
+        'Random initialized, lightweight',
+        'Hierarchical positional embeddings (random init)',
+        'None (no pretraining)',
+        'None (uses standard RoBERTa pretraining)',
+        '~130M (125M RoBERTa + 5M hierarchy)',
+        'Hierarchical layers: random init',
+    ],
+    
+    'key_difference': [
+        'Standard vs. hierarchy-pretrained',
+        'Pretrained vs. random init',
+        'Pretrained vs. random init',
+        'Hierarchy-specific vs. none',
+        'Specialized vs. general',
+        'Similar scale',
+        'Pretrained hierarchy vs. learned from task',
+    ],
+}
+```
+
+#### **B. Training Data Comparison**
+```python
+class TrainingDataComparison:
+    """
+    Ensure fair comparison of training data
+    """
+    
+    def __init__(self, original_config, zeroshot_config):
+        self.original = original_config
+        self.zeroshot = zeroshot_config
+    
+    def compare_training_regimes(self):
+        """
+        Compare training data and procedures
+        """
+        comparison = {
+            # Pretraining Phase
+            'pretraining': {
+                'original': {
+                    'data': 'Hierarchical corpus (books, papers, etc.)',
+                    'size': '100GB+ (example)',
+                    'tasks': [
+                        'Masked Language Modeling (hierarchical)',
+                        'Document structure prediction',
+                        'Sentence ordering',
+                        'Section boundary detection',
+                    ],
+                    'duration': '1M steps',
+                },
+                'zeroshot': {
+                    'data': 'Standard RoBERTa pretraining (no hierarchy)',
+                    'size': 'Same as RoBERTa (160GB)',
+                    'tasks': ['Standard MLM'],
+                    'duration': 'N/A (use pretrained RoBERTa)',
+                    'note': 'NO hierarchy-specific pretraining',
+                },
+            },
+            
+            # Fine-tuning Phase (THIS IS WHAT WE COMPARE)
+            'finetuning': {
+                'original': {
+                    'data': 'Task-specific dataset (e.g., IMDB, HotpotQA)',
+                    'starting_point': 'Hierarchy-pretrained checkpoint',
+                    'trainable_params': 'All parameters',
+                },
+                'zeroshot': {
+                    'data': 'SAME task-specific dataset',
+                    'starting_point': 'RoBERTa + random hierarchy layers',
+                    'trainable_params': 'All parameters',
+                    'note': 'Must learn hierarchy from task data alone',
+                },
+            },
+        }
+        
+        return comparison
+    
+    def ensure_identical_finetuning(self):
+        """
+        Critical: Fine-tuning must be IDENTICAL for fair comparison
+        """
+        requirements = {
+            'dataset': {
+                'requirement': 'Exact same task dataset',
+                'verification': 'MD5 checksum match',
+                'rationale': 'Only difference should be initialization',
+            },
+            
+            'data_splits': {
+                'requirement': 'Identical train/val/test splits',
+                'verification': 'Same random seed for splitting',
+                'rationale': 'Eliminate data variance',
+            },
+            
+            'preprocessing': {
+                'requirement': 'Identical tokenization and preprocessing',
+                'verification': 'Same tokenizer, same max length',
+                'rationale': 'Eliminate preprocessing bias',
+            },
+            
+            'hyperparameters': {
+                'requirement': 'Same learning rate, batch size, epochs',
+                'verification': 'Config file comparison',
+                'rationale': 'Fair optimization comparison',
+                'note': 'May need different warmup for zero-shot',
+            },
+        }
+        
+        return requirements
+```
+
+---
+
+## **PART 2: TRAINING CONFIGURATION**
+
+### **2.1 Fine-Tuning Configuration**
+
+#### **A. Hyperparameter Design**
+```python
+class ZeroShotTrainingConfig:
+    """
+    Training configuration for zero-shot variant
+    """
+    
+    def __init__(self, task_name, dataset_size):
+        self.task = task_name
+        self.dataset_size = dataset_size
+        self.config = self.design_training_config()
+    
+    def design_training_config(self):
+        """
+        Design training configuration for zero-shot variant
+        
+        Key Considerations:
+        1. Longer training: Random hierarchy layers need more steps
+        2. Careful warmup: Prevent catastrophic forgetting of RoBERTa
+        3. Layer-wise learning rates: Different rates for encoder vs. hierarchy
+        """
+        config = {
+            # Optimizer
+            'optimizer': {
+                'type': 'AdamW',
+                'betas': (0.9, 0.999),
+                'eps': 1e-8,
+                'weight_decay': 0.01,
+            },
+            
+            # Learning Rates (Layer-wise)
+            'learning_rates': {
+                'base_encoder': 2e-5,      # Standard fine-tuning rate
+                'hierarchical_layers': 5e-4,  # Higher rate for random init
+                'task_head': 1e-3,         # Highest rate for random init
+                'rationale': 'Different rates for pretrained vs. random layers',
+            },
+            
+            # Warmup (Critical for stability)
+            'warmup': {
+                'steps': max(1000, int(self.dataset_size * 0.1)),
+                'schedule': 'linear',
+                'rationale': 'Longer warmup to stabilize random hierarchy layers',
+                'note': 'Original may use shorter warmup (already pretrained)',
+            },
+            
+            # Training Duration
+            'training': {
+                'epochs': self.calculate_epochs(),
+                'batch_size': 16,  # Adjust based on GPU memory
+                'gradient_accumulation': 2,
+                'effective_batch_size': 32,
+                'max_steps': None,  # Train for fixed epochs
+            },
+            
+            # Regularization
+            'regularization': {
+                'dropout': 0.1,
+                'attention_dropout': 0.1,
+                'layer_dropout': 0.0,
+                'label_smoothing': 0.1,
+            },
+            
+            # Gradient Management
+            'gradients': {
+                'clip_norm': 1.0,
+                'clip_value': None,
+            },
+            
+            # Learning Rate Schedule
+            'lr_schedule': {
+                'type': 'linear_with_warmup',
+                'warmup_ratio': 0.1,
+                'decay_to': 0.0,
+            },
+        }
+        
+        return config
+    
+    def calculate_epochs(self):
+        """
+        Calculate appropriate number of epochs
+        
+        Zero-shot variant may need MORE epochs than original:
+        - Random hierarchy layers need more training
+        - But risk overfitting on small datasets
+        
+        Strategy: Use validation performance for early stopping
+        """
+        if self.dataset_size < 5000:
+            # Small dataset: More epochs but risk overfitting
+            base_epochs = 20
+        elif self

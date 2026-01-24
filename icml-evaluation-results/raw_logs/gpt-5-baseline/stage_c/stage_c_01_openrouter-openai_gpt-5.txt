@@ -1,0 +1,29 @@
+1. Problem framing and goals
+
+Sea ice is a dynamic, multi-scale medium whose geometry (floe boundaries, leads), thermodynamics (concentration, thickness), and kinematics (drift, deformation) evolve under coupled ocean–atmosphere forcing. Graph neural networks (GNNs) are well-suited to such data because they operate on irregular grids, support multi-scale representations, and can integrate physics constraints.
+
+Research questions and goals
+- RQ1 (Representation): What graph abstractions (pixel/superpixel, floe, grid-cell, multi-layer) best capture sea-ice morphology and dynamics for learning?
+- RQ2 (Forecasting): Can spatiotemporal GNNs with conservation and simple sea-ice physics priors improve sub-seasonal sea-ice concentration (SIC) and drift forecasts over CNN/LSTM baselines?
+- RQ3 (Segmentation + Tracking): Can GNNs improve floe segmentation and multi-temporal tracking to yield more accurate floe-size distributions (FSD) and split/merge events?
+- RQ4 (Low-label classification): Can semi-supervised graph learning reduce labeling burden for SAR sea-ice type classification without sacrificing accuracy?
+- RQ5 (Uncertainty and reliability): How to quantify and calibrate uncertainty and detect out-of-distribution (OOD) regimes (e.g., extreme melt, storms)?
+
+Measurable 6-month targets
+- ≥10% RMSE reduction in 1–30 day SIC forecasts vs strong baselines (UNet/ConvLSTM) across Arctic subregions; parity with or improvement over recent graph models [6–7].
+- ≥5-point mean IoU improvement in floe segmentation vs classical (graph-cuts/watershed) and deep baselines; ≤20% error in FSD tail exponent vs expert-derived references [3–5].
+- Semi-supervised SAR classification within 2–3 points of fully supervised CNN using ≤5% labeled pixels [1–2,8].
+- Demonstrate mass conservation error ≤2% per forecast week on evaluation domains.
+
+
+2. Experiments
+
+Experiment 1: Multi-temporal floe graph construction, segmentation, and tracking
+- Hypothesis: A GNN that reasons on a floe-scale graph with shape, texture, and polarimetric features and explicit temporal edges for contact/overlap will improve segmentation/tracking quality and FSD accuracy over pixel CNNs and classical graph-cut/watershed pipelines.
+- Setup:
+  - Data: Sentinel-1 GRD IW/EW SAR dual-pol where available; MODIS/OLCI optical for ancillary validation; curated scenes across seasons/regions (Beaufort, Chukchi, marginal ice zone). Use existing floe tracking/segmentation references where available (e.g., IFT and multi-temporal graph-based segmentation) [3–5].
+  - Graph: Nodes are superpixels (SLIC/Felzenszwalb) aggregated into candidate floes; features include SAR backscatter stats, GLCM/CPA textures, polarization ratios, shape descriptors. Spatial edges via adjacency; temporal edges via overlap/nearest-neighbor with motion priors from coarse drift fields.
+  - Model: Two-stage pipeline:
+    1) GNN instance segmentation (edge classification + node refinement) to delineate floes.
+    2) Temporal association GNN (bipartite matching with learned edge scores) to track across t→t+Δt (allow splits/merges).
+  - Training: Contrastive pretraining

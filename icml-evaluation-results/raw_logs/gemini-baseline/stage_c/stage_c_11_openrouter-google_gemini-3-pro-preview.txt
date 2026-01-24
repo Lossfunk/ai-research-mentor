@@ -1,0 +1,96 @@
+This research plan focuses on the **Probabilistic Downscaling of Climate Variables** (specifically Precipitation and Temperature extremes). It addresses the "Uncertainty Gap" where black-box Deep Learning (DL) super-resolution models produce visually realistic high-resolution maps that may violate physical laws or fail to capture the stochastic nature of local weather.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+General Circulation Models (GCMs) operate at coarse resolutions (100km+), averaging out critical local phenomena like convective storms. While Deep Learning methods (GANs, UNets) outperform traditional statistical downscaling (BCSD) in point-accuracy (RMSE), they often fail to quantify **predictive uncertainty**. A single deterministic "super-resolved" future is dangerous for policymakers who need to know the *range* of possible worst-case scenarios (e.g., flood risks). Furthermore, DL models frequently hallucinate physically impossible weather patterns (violating conservation of mass/energy).
+
+**Research Goal:**
+Establish a cross-lab benchmark for **Physics-Constrained Probabilistic Downscaling**. The collaboration will compare Generative AI (Diffusion Models) against Bayesian Neural Networks to determine which approach best balances **resolution fidelity**, **uncertainty calibration**, and **physical consistency**.
+
+**Core Objectives:**
+1.  **Probabilistic Rigor:** Move beyond RMSE/SSIM. Evaluate using Continuous Ranked Probability Score (CRPS) and Rank Histograms to ensure the model knows *when* it is unsure.
+2.  **Physics Compliance:** Quantify violations of thermodynamic constraints (e.g., Clausius-Clapeyron scaling for rain) in the downscaled outputs.
+3.  **Cross-Model Generalization:** Train on Reanalysis data (ERA5) but test on GCM data (CMIP6) to assess domain shift robustness.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The Generative vs. Bayesian Showdown
+**Hypothesis:** Denoising Diffusion Probabilistic Models (DDPMs) will produce more realistic spatial covariance (texture) than Bayesian UNets, but Bayesian UNets will offer better calibrated pixel-wise uncertainty (Spread-Skill ratio).
+*   **Setup:**
+    *   **Task:** 8x Super-Resolution (32km $\rightarrow$ 4km).
+    *   **Target:** Daily Precipitation and Max Temperature over a complex topography region (e.g., The Alps or US Rockies).
+    *   **Lab A (Generative Team):** Train a Conditional Diffusion Model (e.g., SR3 or CorrDiff architecture).
+    *   **Lab B (Bayesian Team):** Train a Bayesian UNet using Monte Carlo Dropout or Variational Inference.
+*   **Baselines:** Interpolation (Bilinear), Bias-Corrected Spatial Disaggregation (BCSD), Standard Deterministic UNet.
+*   **Evaluation Metrics:** CRPS (primary), Log-Likelihood, Spatial Power Spectral Density (PSD).
+*   **Expected Outcome:** Diffusion models dominate on PSD (preserving extremes), while Bayesian UNets win on CRPS (better calibration), defining a clear trade-off.
+
+#### Experiment 2: Physics-Informed Consistency Check
+**Hypothesis:** Unconstrained generative models will produce "spectral hallucinations" (rain where there is no moisture flux). Constraining the loss with a mass-conservation penalty improves physical reliability without sacrificing resolution.
+*   **Setup:**
+    *   **Method:** Implement a "Physics-Guided Loss" ($L_{phy}$) that penalizes residuals in the moisture budget equation.
+    *   **Comparison:** Train models from Exp 1 with and without $L_{phy}$.
+    *   **Metric:** "Physics Violation Rate" – percentage of pixels violating conservation laws > $\epsilon$.
+*   **Expected Outcome:** Pure DL models will show high violation rates (~15-20%). Physics-constrained versions will reduce this to <5% but may slightly blur fine details (the perception-distortion tradeoff).
+
+#### Experiment 3: The "Perfect Prognosis" Transfer Test
+**Hypothesis:** Models trained on "perfect" observational data (ERA5) fail when applied to "imperfect" GCM data (CMIP6) due to bias.
+*   **Setup:**
+    *   **Training:** Train on ERA5 Reanalysis (1980-2010).
+    *   **Testing:** Apply the frozen model to raw CMIP6 historical runs (same period).
+    *   **Evaluation:** Compare the statistical distribution of the downscaled CMIP6 output against local station observations (e.g., E-OBS or GHCN).
+*   **Expected Outcome:** Significant distributional shift. This motivates the need for a "Quantile Mapping" pre-processing step, which the collaboration must standardize.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables & Collaboration Points |
+| :--- | :--- | :--- |
+| **Month 1** | **Data Harmonization** | **Joint:** Agree on grid specs, regions, and Zarr/NetCDF structure. Preprocess ERA5 (Input) and High-Res target (e.g., CERRA or prism). |
+| **Month 2** | **Model Training (Parallel)** | **Lab A:** Train Diffusion Models. **Lab B:** Train Bayesian Baselines. Weekly syncs on loss convergence. |
+| **Month 3** | **Uncertainty Auditing** | **Exchange Checkpoints.** Lab A evaluates Lab B's model on calibration (Rank Histograms). Lab B evaluates Lab A's model on spatial coherence. |
+| **Month 4** | **Physics Validation** | **Joint:** Run spectral analysis and conservation checks (Exp 2). Implement physics-loss fine-tuning if violation >10%. |
+| **Month 5** | **GCM Application** | Apply best models to CMIP6 projections (Scenario SSP5-8.5). Visualize future extremes and uncertainty bounds. |
+| **Month 6** | **Paper & Release** | Draft paper. Publish "Probabilistic-Downscaling-Bench" codebase and weights. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Training:** 4x A100 GPUs (Diffusion models are computationally expensive to train and sample).
+*   **Storage:** ~10TB shared storage (S3 bucket or Globus Endpoint) for ERA5 and CMIP6 tensors.
+
+**Tools & Libraries:**
+*   **Data Handling:** `xarray` (Python standard for gridded climate data), `dask` (parallel loading).
+*   **ML Frameworks:** `NVIDIA Modulus` (has physics-ML primitives) or `diffusers` (Hugging Face).
+*   **Evaluation:** `climpred` (verification metrics), `uncertainty-toolbox`.
+
+**Datasets:**
+*   **Input (Low Res):** ERA5 Reanalysis (30km), CMIP6 (100km).
+*   **Target (High Res):** E-OBS (Europe, 10km) or PRISM (USA, 4km). *Note: Ensure both labs have legal access to the Target dataset.*
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Metric Disagreement** | Lab A prefers perceptual quality; Lab B prefers RMSE. | **Pre-commit to CRPS:** Agree that Continuous Ranked Probability Score is the "Gold Standard" for probabilistic forecasting, as it rewards both accuracy and calibration. |
+| **Inference Latency** | Diffusion models take minutes to generate one map, making them useless for 100-year simulations. | **Distillation:** If sampling is too slow, plan a "Consistency Distillation" step (Month 5) to speed up the diffusion model by 10-50x. |
+| **Data Drift** | The statistical relationship between coarse/fine scales changes under climate change (Stationarity Assumption). | **Out-of-Sample Test:** Hold out the warmest years (2015-2023) for testing. If performance drops, acknowledge the limitation of "Perfect Prognosis" methods in the discussion. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **Temporal Consistency:** Extend the model to generate *video* (time-series) rather than independent frames. This ensures that a storm doesn't teleport 50km between time steps.
+*   **Multivariate Dependencies:** Downscale Temperature and Humidity *jointly*. Physics requires that Relative Humidity respects the temperature-dependent saturation point.
+*   **Cascading Impacts:** Feed the downscaled uncertainty bounds into a hydrological model (e.g., HydroBlocks) to see how uncertainty propagates into flood risk estimates.
+
+**Optional next step:**
+Set up a shared **GitHub repository** immediately with a sample `xarray` dataloader script that both labs verify works on their local clusters, as data formatting is the #1 cause of delays in climate ML.

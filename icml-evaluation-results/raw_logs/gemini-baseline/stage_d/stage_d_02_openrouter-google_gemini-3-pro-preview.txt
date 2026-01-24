@@ -1,0 +1,57 @@
+Based on standard Hierarchical Transformer architectures (e.g., Hi-BERT, HAN), here is the experimental design to intervene by replacing the learned hierarchical aggregator with a parameter-free flat mean pooling operation.
+
+### 1. Intervention Design: "Flat" vs. "Deep" Aggregation
+
+**Objective:** To determine if the computational cost of a learned global encoder (Level 2) yields statistically significant performance gains over simple averaging, testing the hypothesis that long-document tasks rely on *global coherence* rather than just *evidence accumulation*.
+
+**Architectural Modification:**
+*   **Original (Control):** The output of the Local Encoder (e.g., BERT) is a tensor of shape `(Batch, Num_Chunks, Hidden_Dim)`. This is passed to a Transformer or LSTM layer to generate a final document vector $v_{doc}$.
+*   **Intervention (Treatment):** Remove the Level 2 Transformer/LSTM.
+    *   Apply **Mean Pooling** over the `Num_Chunks` dimension.
+    *   *Crucial Implementation Detail:* You must apply a **mask** to exclude padding chunks (empty chunks) from the average calculation.
+    *   **Formula:**
+        $$v_{doc} = \frac{\sum_{i=1}^{K} (h_i \times m_i)}{\sum_{i=1}^{K} m_i}$$
+        Where $h_i$ is the representation of chunk $i$ (e.g., the `[CLS]` token) and $m_i$ is a binary mask (1 if chunk exists, 0 if padding).
+
+### 2. Datasets
+Select datasets that vary in length and the necessity of narrative flow to test where the intervention breaks.
+
+*   **Dataset A (Narrative/Coherence):** **IMDb** (Reviews) or **BookSum**.
+    *   *Rationale:* Sentiment often relies on the interplay between the beginning and end of a text.
+*   **Dataset B (Keyword Heavy/Topical):** **EUR-LEX** (Legal) or **MIMIC-III** (Clinical).
+    *   *Rationale:* These tasks often rely on detecting specific terms (statutes or symptoms) anywhere in the text. Mean pooling often performs surprisingly well here.
+*   **Dataset C (Extreme Length):** **Hyperpartisan News**.
+    *   *Rationale:* Tests the signal dilution problem. Does averaging 50 chunks dilute the signal of the 1 chunk that matters?
+
+### 3. Baselines
+
+1.  **BERT-Base Truncated (Lower Bound):** Standard BERT taking only the first 512 tokens. This establishes if looking at the rest of the document is necessary at all.
+2.  **Hierarchical-Attn/Transformer (Control):** The original architecture from the paper with the learned Level 2 encoder.
+3.  **Longformer / BigBird (Competitive):** A sparse-attention model. This tests if an end-to-end mechanism is superior to the chunking approach entirely.
+
+### 4. Metrics
+
+**Primary Metrics (Performance):**
+*   **Macro-F1 Score:** Essential for multi-label or imbalanced datasets (common in legal/medical text).
+*   **Accuracy:** Only for balanced binary classification (e.g., IMDb).
+
+**Secondary Metrics (Efficiency):**
+*   **Training Throughput:** Samples per second.
+*   **Inference Latency:** Milliseconds per document.
+*   **GPU Memory Footprint:** Peak memory usage during training.
+    *   *Hypothesis:* The Intervention will significantly reduce memory and increase throughput by removing the backpropagation requirements of the Level 2 encoder.
+
+### 5. Statistical Tests
+To claim the intervention is "comparable" or "worse," you cannot rely on a single F1 score difference.
+
+*   **McNemar’s Test:**
+    *   *Usage:* Compare the classification errors of the **Hierarchical (Control)** vs. **Mean Pooling (Intervention)** on the same Test Set.
+    *   *Contingency Table:* Count cases where Model A is right/Model B is wrong, and vice versa.
+    *   *Goal:* If $p > 0.05$, the complex hierarchical model is **not** significantly better than simple averaging.
+*   **Expected Calibration Error (ECE):**
+    *   *Usage:* Mean pooling often results in less confident predictions (logits closer to zero). Check if the intervention hurts the model's probability calibration.
+
+### 6. Implementation Warning (Leakage Check)
+When implementing the Mean Pooling intervention, ensure you do not inadvertently introduce **Padding Leakage**.
+*   If your tensor is `[Batch, 10, 768]` but a document only has 3 chunks, the remaining 7 are zero-padding.
+*   If you use `torch.mean()` directly on the dimension, you will divide by 10 instead of 3, suppressing the magnitude of the document vector and destroying performance. **Always divide by the sum of the attention mask.**

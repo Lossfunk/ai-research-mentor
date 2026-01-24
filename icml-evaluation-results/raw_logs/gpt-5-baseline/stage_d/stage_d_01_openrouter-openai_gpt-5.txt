@@ -1,0 +1,127 @@
+Below is a compact, paper-agnostic checklist that covers what hierarchical Transformer papers usually require. You can map the paper’s specifics onto each item.
+
+Key components to specify and reproduce
+
+1) Data preprocessing
+- Corpus and licensing: exact sources, time cutoffs, language filters, and any domain constraints.
+- Deduplication: exact method (e.g., exact hashing, MinHash/SimHash with thresholds, n-gram overlap), whether done within pretraining and across downstream datasets.
+- Text normalization: unicode normalization, lowercasing/casing policy, punctuation normalization, URL/email/user-handle handling, emoji, numbers.
+- Segmentation:
+  - Sentence splitter and version (e.g., Punkt, spaCy, Stanza), paragraph boundaries, handling of titles/headers.
+  - Document chunking into segments/windows: tokens per segment (e.g., 256/512), stride/overlap, max number of segments per document, truncation policy for very long docs, handling of ragged last segment.
+- Tokenizer:
+  - Type and version (BPE/WordPiece/Unigram), vocabulary size, special tokens ([CLS]/[SEP]/[PAD]/[DOC]/[SEG]), normalization rules, pretokenizer.
+  - Whether tokenizer was trained from scratch or reused; training corpus and whether evaluation data was excluded.
+- Positional and structural indices:
+  - Within-segment positional scheme (absolute vs relative) and across-segment (segment index embeddings, paragraph embeddings).
+  - Segment IDs, attention masks distinguishing intra- vs inter-segment attention.
+- Batching:
+  - Padding strategy (pad to segment vs pad to max doc), masking of padded segments, packing multiple short docs in a batch or not.
+- Task labels and targets:
+  - For classification: label space, class mapping, any rebalancing.
+  - For QA/summarization: span alignment across segments, sliding-window inference, context window formation.
+- Splits:
+  - Train/dev/test policy by document/source/author/time; ensure all segments of a document remain in the same split.
+
+2) Architecture: hierarchical blocks
+- Local (intra-segment) encoder:
+  - Transformer depth/width, heads, FFN size, dropout, activation, positional encoding type; weight sharing across segments; initialization (e.g., BERT/RoBERTa/Longformer checkpoint).
+- Segment representation:
+  - Use of segment [CLS], first-token, pooled mean/max, or attentive pooling; projection/gating; normalization.
+- Global (inter-segment) encoder:
+  - Transformer over segment embeddings; number of layers/heads; positional encoding for segment order; optional paragraph/chapter embeddings; residual and layer norm placement.
+- Cross-level interaction:
+  - Pure two-stage vs iterative/refinement; cross-attention from segments to global tokens; memory tokens; block-sparse attention patterns (e.g., local + global tokens).
+- Compression/downsampling:
+  - Strided pooling, k-max, conv pooling, or learned pooling to reduce number of segments.
+- Classifier/decoder head:
+  - Document-level head on global [CLS]/pooled global state; for span tasks, pointer across segments; aggregation rules for multi-window inference.
+- Parameter sharing:
+  - Shared local encoder across segments; shared vs separate parameters between local and global layers; adapters/LoRA if used.
+
+3) Training schedule and optimization
+- Pretraining objectives:
+  - MLM span vs token masking, masking rates per level; sentence order prediction; next-segment prediction; “hierarchical MLM” (mask whole sentences/segments); any contrastive or alignment losses between levels.
+- Training stages:
+  - Stage 1: pretrain local encoder only (short sequences).
+  - Stage 2: introduce global encoder with frozen or partially frozen local encoder.
+  - Stage 3: end-to-end fine-tuning on task; curriculum on document length (short → long).
+- Length curriculum and ramp-up:
+  - Start with fewer/shorter segments; progressively increase max tokens and segments; adjust batch size via grad accumulation.
+- Optimizer and schedule:
+  - AdamW betas/eps, weight decay; learning rates per stage (often lower for pretrained parts); warmup steps; linear/cosine decay; gradient clipping; gradient checkpointing; mixed precision.
+- Regularization:
+  - Dropout rates per level; attention dropout; label smoothing; stochastic depth; R-Drop; EMA of weights if used.
+- Batch/compute:
+  - Global batch size, accumulation steps, devices; sequence length and segments per doc in each stage; wall-clock or step budgets.
+- Checkpointing and selection:
+  - Save frequency; best-checkpoint selection on dev metric; early stopping criteria; seeds.
+
+4) Evaluation protocol and comparability requirements
+- Exact datasets and splits:
+  - Use the paper’s splits or official benchmarks; if custom, publish doc IDs; enforce document-level splitting.
+- Tokenizer and preprocessing:
+  - Same tokenizer version and normalization; same sentence splitter; same chunking (tokens per segment, stride, max segments); same truncation.
+- Model initialization:
+  - Identical base checkpoint(s) and tokenizer; same parameter-tying; same positional embedding settings and lengths.
+- Attention/masks:
+  - Identical intra-/inter-segment attention patterns; same special tokens and indices; same max positions.
+- Inference settings:
+  - Sliding-window policy, overlap, and voting/aggregation; max doc segments at test; beam size/temperature for generation; threshold calibration on dev only.
+- Metrics:
+  - Exact metric definitions (micro/macro F1, example-level vs token-level, span-level EM/F1, ROUGE variants), casing and punctuation handling, tie-breaking rules; confidence intervals or seeds.
+- Hyperparameter budget:
+  - Tuning ranges and trials; selection strictly on dev; report best and variance across seeds.
+- Compute:
+  - Hardware, precision, batch size/effective batch, training steps/epochs; gradient checkpointing; to the extent they affect results.
+- Reproducibility:
+  - Random seeds; deterministic ops flags; library versions; environment (CUDA, cuDNN, PyTorch/TF, tokenizers, spaCy).
+
+Leakage risks between pretraining and evaluation (and mitigations)
+
+1) Content contamination
+- Overlap between pretraining corpora and test sets (exact or near-duplicate documents, sentences, or passages; common with Wikipedia, BookCorpus, news).
+  - Mitigation: robust dedup across pretrain and downstream via MinHash/SimHash on n-grams, high-similarity thresholds; exclude known benchmark sources; timestamp cutoffs.
+- Tokenizer/vocab trained on evaluation data.
+  - Mitigation: train tokenizer on pretraining-only; freeze before any downstream split creation.
+- Sentence splitter or normalization trained/fitted on full corpus including test.
+  - Mitigation: use pretrained splitters or fit only on training data.
+
+2) Split integrity for long documents
+- Segment-level splits that let segments from the same document leak across train/dev/test.
+  - Mitigation: split by document/source/author and enforce grouping before chunking; verify by doc IDs.
+- Sliding-window overlaps crossing split boundaries (e.g., overlapping contexts from the same doc in different splits).
+  - Mitigation: build windows after splitting; ensure no window from a held-out doc appears elsewhere.
+
+3) Global statistics and preprocessing leakage
+- Computing IDF, normalization stats, label priors, or unsupervised embeddings on the full dataset including dev/test.
+  - Mitigation: fit stats on training only; recompute per split.
+
+4) Label or metadata leakage
+- Using label-bearing fields (titles, URLs, filenames, section headers) that trivially encode the target.
+  - Mitigation: follow paper’s feature set; exclude metadata unless explicitly allowed; document any inclusion.
+
+5) Hyperparameter/selection leakage
+- Tuning on test, early stopping on test, or ensembling guided by test.
+  - Mitigation: use dev only; single final test; report results across seeds.
+
+6) Cross-task and retrieval leakage
+- Pretraining on task-specific datasets or answer keys; retrieval indices that contain test answers and are tuned with test labels (open-domain QA).
+  - Mitigation: exclude downstream benchmarks from pretrain; build retrieval indices and tune retrievers on train/dev only; freeze before test.
+
+7) Temporal leakage
+- Using pretraining data from after the evaluation time cutoff for time-sensitive tasks.
+  - Mitigation: enforce temporal splits and pretrain only on data prior to cutoff.
+
+8) Evaluation-time context bleed
+- At inference, aggregating information across multiple documents or versions where some are from the test distribution but were seen during training (e.g., cross-doc memory, cache).
+  - Mitigation: disable caching across examples; clear memory between documents; restrict retrieval to allowed corpora.
+
+Minimal reproduction checklist you can fill from the paper
+- Data: sources, time range, dedup method; tokenizer model+vocab; sentence splitter; segment length/stride/max segments; splits by document.
+- Architecture: local encoder config and init; global encoder config; pooling/aggregation; positional encodings at both levels; attention pattern.
+- Training: objectives per stage; freeze/unfreeze plan; optimizer and LR schedule; batch size/accumulation; dropout; steps/epochs; seeds.
+- Evaluation: exact preprocessing; inference windowing and aggregation; metrics; checkpoint selection; number of runs and variance.
+- Contamination controls: corpus exclusions, dedup across corpora, tokenizer freeze, train-only stats, doc-level splits, temporal cutoffs.
+
+If you share the specific paper, I can translate its exact settings (hyperparameters, objectives, window sizes, schedules, and evaluation protocol) into a runnable checklist.

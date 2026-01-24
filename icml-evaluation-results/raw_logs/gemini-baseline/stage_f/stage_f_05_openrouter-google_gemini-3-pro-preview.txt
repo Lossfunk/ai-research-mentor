@@ -1,0 +1,66 @@
+This checklist is tailored for a **Privacy-Preserving NLP** paper (e.g., text sanitization, differential privacy, federated learning, or membership inference attacks).
+
+In this domain, the **Ethics Statement** and **Artifact Safety** are scrutinized more heavily than in standard NLP papers. Reviewers are looking for "Privacy Theater"—claims of safety that fall apart under simple attacks.
+
+### **Phase 1: The 6-Week Countdown**
+
+#### **Week 1 (Now): The "Realism" Audit**
+*   **[ ] The "Utility" Check:** Does your privacy method destroy the model's usefulness?
+    *   *Requirement:* You must show the **Privacy-Utility Trade-off curve**. A table with just "99% Privacy" is a reject if accuracy drops by 20%.
+*   **[ ] The "Attack" Baseline:**
+    *   *Requirement:* You cannot just claim privacy. You must attack your own model. Run a standard **Membership Inference Attack (MIA)** or **Model Inversion Attack** against your defense.
+*   **[ ] Dataset Hygiene:**
+    *   *Action:* If using a private dataset, ensure you have a public proxy (e.g., Enron, WikiText) to allow reproducibility.
+
+#### **Week 2: Artifact & Code Prep (Safety First)**
+*   **[ ] PII Scrubbing in Code:**
+    *   *Risk:* Hardcoded paths like `/home/jdoe/medical_data/patient_names.csv`.
+    *   *Fix:* Grep your codebase for specific names, emails, or private keys.
+*   **[ ] The "Safe" Release Strategy:**
+    *   *Decision:* Are you releasing the *sanitized* data?
+    *   *Warning:* If you release a "sanitized" dataset, run a re-identification script on it first. If *you* can re-identify a user, a reviewer can too. (Instant Rejection + Ethics Flag).
+*   **[ ] Differential Privacy (DP) Proof:**
+    *   *Artifact:* If claiming DP, include the privacy accountant code (e.g., Opacus or TensorFlow Privacy scripts) showing how epsilon ($\epsilon$) was calculated.
+
+#### **Week 3: Drafting the Ethics Statement**
+*   **[ ] Dual Use / Responsible Disclosure:**
+    *   *Context:* If your paper proposes a new *attack*, you must discuss how this helps defenses.
+    *   *Text:* "While we demonstrate a vulnerability in [Model X], this highlights the need for [Defense Y]. We have notified the model developers..."
+*   **[ ] Data Consent:**
+    *   *Context:* If using email/chat datasets.
+    *   *Text:* "We utilize the [Dataset Name], which contains public domain emails. No active user recruitment or intervention was performed."
+*   **[ ] The "Illusion of Privacy":**
+    *   *Check:* Do not claim "Guaranteed Anonymity" unless you have a mathematical proof (like DP). Use phrases like "Empirically reduces re-identification risk."
+
+#### **Week 4: The "Red Team" Review (Simulated Reviewer)**
+*   **[ ] The "Canary" Test:**
+    *   *Test:* Inject a "Canary" (a unique, fake secret phrase) into the training data. Can you extract it from the final model? Reviewers love this sanity check.
+*   **[ ] Comparative Baselines:**
+    *   *Check:* Did you compare against simple **Text Scrubbing** (e.g., Presidio/Microsoft)? Sometimes simple Regex beats complex neural scrubbers.
+
+#### **Week 5: Final Formatting & Anonymization**
+*   **[ ] Title Check:** Ensure the title doesn't overclaim (e.g., change "Perfectly Private LLMs" to "Enhanced Privacy for LLMs").
+*   **[ ] Author Anonymity:**
+    *   *Check:* Remove acknowledgments to specific grants (e.g., "Supported by NIH Grant #12345" de-anonymizes you). Move this to the camera-ready version.
+
+#### **Week 6: Submission & Upload**
+*   **[ ] Final Artifact Upload:**
+    *   Upload code to **Anonymous GitHub**.
+    *   Upload model weights (if safe) to anonymous Drive/Zenodo.
+*   **[ ] The Checklist:** Fill out the venue-specific "Responsible NLP Research" checklist (mandatory for ACL/EMNLP).
+
+---
+
+### **Specific Risks for Privacy Papers**
+
+| **Risk Factor** | **The Reviewer's Fear** | **The Fix** |
+| :--- | :--- | :--- |
+| **"We used GPT-4 to sanitize..."** | Sending private data to OpenAI API violates privacy (data leaves your server). | **Fix:** Use a local open-weights model (e.g., Llama-3-8B) for sanitization, or explicitly state you used the "Zero-Data-Retention" enterprise API. |
+| **"Epsilon = 100"** | In Differential Privacy, $\epsilon > 10$ is often considered huge/useless. | **Fix:** Acknowledge this. "While $\epsilon=100$ provides weak theoretical guarantees, we show it empirically prevents MIA." |
+| **Releasing the Model** | The model itself might memorize PII. | **Fix:** Do not release the model weights trained on private data. Release the *code* and a script to train on *dummy data*. |
+
+### **Required Artifacts List**
+1.  **Codebase:** Anonymized, with a `requirements.txt`.
+2.  **Privacy Accountant:** The log/script showing $\epsilon$ calculation (if DP).
+3.  **Attack Script:** The code used to evaluate privacy leakage (prove you tried to break it).
+4.  **Sample Data:** 5-10 rows of *synthetic* or *public* dummy data to show input format. **NEVER** upload a "sample" of the real private data.

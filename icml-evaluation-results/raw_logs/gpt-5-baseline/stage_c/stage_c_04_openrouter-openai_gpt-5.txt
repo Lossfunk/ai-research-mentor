@@ -1,0 +1,67 @@
+1. Problem framing and goals
+
+Constraint: You have no local compute and limited or no budget for cloud/GPU time.
+
+Opportunity: You can still produce publishable, high-impact work by focusing on (a) evaluation and auditing using API access or existing model outputs, (b) data/benchmark design and curation, (c) systematic reviews and meta-research, (d) theory and methods that do not require training, and (e) community coordination and reproducibility.
+
+Primary 6-month goals
+- G1: Release a rigorous, model-agnostic evaluation suite for LLMs (“Zero-Compute Eval Kit”) with ≥3 task families, automated scoring, and a public leaderboard that accepts API logs, not model weights.
+- G2: Publish a cross-provider safety/bias audit using only public APIs/outputs with a transparent taxonomy and reproducible prompt bank; include at least one small human-annotated gold set.
+- G3: Publish a literature-based, registered-report–style systematic review on evaluation leakage/contamination and dataset licensing/governance in LLM training corpora with an actionable checklist for dataset authors.
+- G4: Demonstrate a plug-and-play retrieval-augmented generation (RAG) evaluator that improves groundedness of API-only models using free/open retrieval endpoints, without any finetuning.
+
+Evidence note: Web search tooling is unavailable in this environment. To add authoritative citations in the write-up, use targeted queries such as:
+- “CheckList behavioral testing NLP Ribeiro 2020 arXiv”
+- “HELM Holistic Evaluation of Language Models Stanford arXiv”
+- “TruthfulQA Lin 2021 arXiv” and “MT-Bench LMSYS arXiv”
+- “Dynabench adversarial data collection Kiela arXiv”
+- “Dataset licensing LLM C4 The Pile provenance arXiv”
+Prefer arXiv, official project pages, and datasets’ documentation for authoritative sources.
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+
+Experiment 1: Zero-Compute Eval Kit (ZCEK) — behavioral tests for instruction following and reasoning
+- Hypothesis: A CheckList-style, templated evaluation suite with automated graders and perturbations correlates better with human judgments of model helpfulness/robustness than standard static benchmarks, while requiring no local model execution.
+- Setup:
+  - Tasks: Instruction following (multi-step plans, constraints), factual QA with citations, and simple reasoning (chain-of-thought optional, self-consistency).
+  - Data: Hand-authored templates with slot filling; synthetic paraphrases via any free API credits or manual paraphrasing; 300–1,000 items per task family.
+  - Execution: Submit prompts to hosted models via free/community endpoints when available, or use published model outputs where authors provide them. Accept JSONL logs from others.
+  - Grading: Rule-based and regex graders; answer matching with weak normalization; citation presence and URL validity checks; optional LLM-as-judge with a fixed rubric using free tiers.
+- Baselines: Published scores on MT-Bench/HELM/TruthfulQA; naive exact-match graders; single-prompt evaluation without perturbations.
+- Metrics: Correlation with small human-annotated subset (Spearman/Pearson), robustness gap (performance drop under paraphrase/negations), pass-at-k for self-consistency, time/energy per 100 prompts.
+- Expected outcomes: Higher correlation to human ratings than static leaderboards; clear robustness differentials across providers; fully reproducible scoring and perturbation scripts.
+
+Experiment 2: Cross-provider safety and bias audit via API-only probing
+- Hypothesis: Carefully stratified prompt banks reveal systematic, provider-specific gaps in refusal policies, jailbreak susceptibility, and social bias that are obscured by aggregate safety scores.
+- Setup:
+  - Prompt bank: ~1,000 prompts across categories (self-harm, illicit advice, medical/legal, demographic stereotypes, political persuasion). Include benign controls and perturbations (roleplay, obfuscation).
+  - Execution: Query multiple hosted models (e.g., popular closed and open providers’ endpoints or community mirrors) within rate limits; if necessary, coordinate volunteers to collect responses.
+  - Labeling: Rule-based detectors for refusal/harmfulness; small human panel (3–5 annotators) for 200-sample gold labels; optional LLM-as-judge with fixed rubric for scaling.
+- Baselines: Providers’ own safety benchmarks and red-team reports; open safety leaderboards if available.
+- Metrics: Refusal rate at equal-risk prompts, harmfulness rate on gold labels, jailbreak success rate, differential bias indices (toxicity or sentiment across demographics), calibration of self-reported safety justifications, inter-annotator agreement (κ).
+- Expected outcomes: A transparent safety/bias map with statistically significant inter-model differences; a reusable prompt bank and labeling schema; actionable recommendations.
+
+Experiment 3: Training-free RAG evaluator — grounded response improvements without finetuning
+- Hypothesis: Even without training, a lightweight RAG wrapper using open retrieval APIs increases groundedness and reduces hallucination for general models on factoid tasks.
+- Setup:
+  - Retrieval: Use free endpoints such as Wikipedia REST API, Common Crawl search proxies, or academic search APIs with free quotas; local retrieval avoided.
+  - Pipeline: Query → retrieve top-k passages → synthesize answer with explicit “use citations” instructions; enforce answer citing retrieved snippets.
+  - Domains: Open-domain QA (e.g., recent events excluded if retrieval can’t access), entity disambiguation, and definition/attribute queries.
+- Baselines: Direct prompting without retrieval; simple “cite your sources” prompting without retrieval.
+- Metrics: Groundedness (fraction of claims supported by retrieved text), citation validity (URL resolves; quote overlap), factuality against gold QA sets where licensing permits, response length and latency.
+- Expected outcomes: +10–20 point groundedness improvement over direct prompting with minimal added latency; documentation of failure modes when retrieval misses or conflicts.
+
+Experiment 4: Systematic review and governance audit of training data and evaluation leakage
+- Hypothesis: A structured review and dataset-governance audit will surface common leakage risks and licensing gaps, enabling a practical checklist that improves future research rigor.
+- Setup:
+  - Corpus: 60–100 papers/posts on LLM training corpora (C4, The Pile, RedPajama, Dolma, SlimPajama) and benchmark contamination studies; dataset cards and licenses.
+  - Method: PRISMA-style screening; dual-review extraction of key variables (source provenance, deduplication, license, personal data handling, known overlaps with common benchmarks).
+  - Output: A checklist and template for dataset documentation; a taxonomy of leakage; recommended evaluation hygiene.
+- Baselines: Existing dataset cards and prior surveys; any public incident reports of contamination.
+- Metrics: Inter-rater agreement on coding; coverage of major datasets; number of identified gaps; external expert feedback from one invited reviewer.
+- Expected outcomes: A citable, practitioner-focused checklist adopted by at least one open dataset in the wild within 6–12 months; foundation for a registered report.
+
+Experiment 5 (optional, low/no compute): LLM-as-judge reliability study on public outputs
+- Hypothesis: With a fixed rubric, LLM-as-judge can approximate human evals within acceptable error when used only to triage items for human review.
+- Setup: Use public model outputs from

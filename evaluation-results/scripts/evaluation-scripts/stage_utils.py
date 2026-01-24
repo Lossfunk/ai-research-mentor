@@ -29,12 +29,30 @@ def normalize_stage(stage: str) -> Tuple[str, str]:
     raise StageRunError(f"Unknown stage: {stage}")
 
 
-def ensure_stage_directories(stage_folder: str) -> Tuple[Path, Path, Path]:
-    """Create and return (raw_dir, analysis_dir, iaa_dir) for a stage."""
-    base = Path("evals-for-papers/results")
-    raw_dir = base / "raw_logs" / stage_folder
-    analysis_dir = base / "analysis_reports" / stage_folder
-    iaa_dir = base / "inter_annotator_agreement" / stage_folder
+def ensure_stage_directories(
+    stage_folder: str,
+    results_root: str | None = None,
+    system_subdir: str | None = None,
+) -> Tuple[Path, Path, Path]:
+    """Create and return (raw_dir, analysis_dir, iaa_dir) for a stage.
+    
+    Args:
+        stage_folder: The stage folder name (e.g., "stage_a")
+        results_root: Optional root directory for results. Defaults to "icml-evaluation-results"
+        system_subdir: Optional system subdirectory (e.g., "mentor", "gpt-5-baseline")
+                       If provided, paths become: {root}/{raw_logs|analysis_reports}/{system_subdir}/{stage_folder}
+    """
+    base = Path(results_root) if results_root else Path("icml-evaluation-results")
+    
+    if system_subdir:
+        raw_dir = base / "raw_logs" / system_subdir / stage_folder
+        analysis_dir = base / "analysis_reports" / system_subdir / stage_folder
+        iaa_dir = base / "inter_annotator_agreement" / system_subdir / stage_folder
+    else:
+        raw_dir = base / "raw_logs" / stage_folder
+        analysis_dir = base / "analysis_reports" / stage_folder
+        iaa_dir = base / "inter_annotator_agreement" / stage_folder
+    
     raw_dir.mkdir(parents=True, exist_ok=True)
     analysis_dir.mkdir(parents=True, exist_ok=True)
     iaa_dir.mkdir(parents=True, exist_ok=True)

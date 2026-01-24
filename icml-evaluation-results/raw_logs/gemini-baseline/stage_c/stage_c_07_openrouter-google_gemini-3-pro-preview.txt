@@ -1,0 +1,102 @@
+This research plan targets **Edge-AI for Marine Ecology**, focusing on deploying lightweight, real-time computer vision models on low-power devices (e.g., Raspberry Pi, Jetson Nano, or smartphones) to assist volunteer divers in assessing reef health without relying on cloud connectivity or heavy workstations.
+
+### 1. Problem Framing and Goals
+
+**The Problem:**
+Coral reef monitoring currently relies on two extremes: high-cost, expert-led surveys (slow, sparse) or volunteer "citizen science" (high variance, prone to taxonomic errors). While Deep Learning (DL) models for coral classification exist, they are typically computationally expensive (requiring server-grade GPUs) and struggle with the visual degradation of underwater imagery (turbidity, color absorption). There is no "turnkey" tool that runs *in situ* on a diver's battery-powered equipment to provide immediate feedback or automated logging.
+
+**Research Goal:**
+Develop **"ReefEdge,"** a highly optimized, energy-efficient object detection pipeline capable of identifying key reef health indicators (Live Coral, Bleached Coral, Crown-of-Thorns Starfish) at >10 FPS on <10 Watts of power.
+
+**Core Objectives:**
+1.  **Model Compression:** Distill state-of-the-art detectors (YOLOv8/v10) into integer-quantized formats (INT8) suitable for edge deployment.
+2.  **Domain Robustness:** Integrate lightweight underwater image enhancement (UIE) to mitigate color cast without destroying inference speed.
+3.  **Power Efficiency:** Benchmark the trade-off between accuracy (mAP) and battery life to ensure a standard 60-minute dive capability.
+
+---
+
+### 2. Experiments
+
+#### Experiment 1: The "Quantization-Aware" Baseline
+**Hypothesis:** Post-Training Quantization (PTQ) to INT8 will degrade Mean Average Precision (mAP) by less than 5% compared to FP32, while doubling inference speed on ARM architecture.
+*   **Setup:**
+    *   **Data:** **CoralNet** (global standard) and **CSIRO COTS** (Crown-of-Thorns Starfish) dataset.
+    *   **Model:** Train YOLOv8-Nano and MobileNetV3-SSD in FP32.
+    *   **Optimization:** Convert models using **TensorRT** (for NVIDIA Jetson) and **TFLite** (for Raspberry Pi/Android). Apply INT8 quantization with calibration on a subset of reef images.
+*   **Baselines:** Uncompressed FP32 models.
+*   **Evaluation Metrics:** mAP@0.5, Model Size (MB), Inference Latency (ms).
+*   **Expected Outcome:** A ~4x reduction in model size and ~2x speedup, with mAP dropping from ~0.78 to ~0.74 (acceptable for screening).
+
+#### Experiment 2: Lightweight Pre-processing (Color Restoration)
+**Hypothesis:** A lightweight GAN-based color correction step (e.g., FUnIE-GAN) improves downstream detection accuracy on turbid images more than simple histogram equalization, without exceeding the latency budget.
+*   **Setup:**
+    *   **Pipeline:** Raw Input $\rightarrow$ Enhancement Module $\rightarrow$ Detector.
+    *   **Variants:**
+        1.  No Enhancement.
+        2.  CLAHE (Contrast Limited Adaptive Histogram Equalization - fast, CPU-based).
+        3.  **Tiny-FUnIE-GAN** (Distilled GAN for underwater enhancement).
+*   **Evaluation Metrics:** Detection mAP on the "UIEB" (Underwater Image Enhancement Benchmark) dataset; End-to-end Latency (FPS).
+*   **Expected Outcome:** CLAHE provides a minor boost with negligible cost. Tiny-GAN provides significant accuracy gains (+10% mAP) but may drop FPS below real-time thresholds, requiring a "periodic" sampling strategy (process every 5th frame).
+
+#### Experiment 3: The "Diver's Battery" Profile
+**Hypothesis:** The system can sustain continuous logging for a standard 60-minute dive on a 10,000mAh power bank.
+*   **Setup:**
+    *   **Hardware:** NVIDIA Jetson Nano (representing high-end edge) vs. Raspberry Pi 5 + Hailo-8 AI Accelerator (low power).
+    *   **Load:** Continuous inference on video stream.
+    *   **Measurement:** Use a USB power meter to log current/voltage.
+*   **Baselines:** Idle power consumption.
+*   **Evaluation Metrics:** Joules per Inference, Total Runtime (minutes), Thermal throttling events.
+*   **Expected Outcome:** The Raspberry Pi + Accelerator combo will offer the best Joules/Inference ratio, proving feasibility for volunteer gear integration.
+
+---
+
+### 3. Timeline (6 Months)
+
+| Month | Milestone | Key Deliverables |
+| :--- | :--- | :--- |
+| **Month 1** | **Data & Pipeline** | Aggregate CoralNet/CSIRO datasets. Pre-process (annotate/clean). Set up local training environment. |
+| **Month 2** | **Model Training** | Train "Teacher" models (YOLOv8-Large) and "Student" models (Nano). Establish FP32 baselines. |
+| **Month 3** | **Optimization (Exp 1)** | Execute TensorRT/TFLite conversion. Perform INT8 calibration. Measure accuracy loss. |
+| **Month 4** | **Enhancement (Exp 2)** | Integrate color correction algorithms. Run ablation studies (Enhancement vs. No Enhancement). |
+| **Month 5** | **Hardware Benchmarking** | Deploy to Jetson/RPi. Run battery drain tests (Exp 3). Optimize thermal management (heatsinks/enclosures). |
+| **Month 6** | **Paper & Demo** | Draft paper. Create a video demo of the system running on recorded dive footage. |
+
+---
+
+### 4. Resources
+
+**Compute:**
+*   **Training:** 1x NVIDIA RTX 3090/4090 or Cloud GPU (A100) for initial training.
+*   **Edge Testing:** NVIDIA Jetson Nano Orin ($200) and Raspberry Pi 5 ($80) with Hailo-8L or Coral TPU accelerator.
+
+**Tools & Libraries:**
+*   **Frameworks:** PyTorch (training), Ultralytics (YOLO implementation).
+*   **Edge Inference:** NVIDIA TensorRT, TensorFlow Lite, OpenVINO.
+*   **Image Processing:** OpenCV, `waternet` codebase (for enhancement).
+
+**Datasets:**
+*   **CoralNet:** Massive repository of annotated coral images (requires requesting access to specific subsets like "Moorea" or "GBR").
+*   **CSIRO COTS:** Specific dataset for starfish detection.
+*   **UIEB:** Underwater Image Enhancement Benchmark (for testing turbidity handling).
+
+---
+
+### 5. Risks and Mitigations
+
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Motion Blur** | Divers are unstable; blurred frames cause missed detections. | **Frame Selection:** Implement a Laplacian variance check to discard blurry frames *before* passing them to the heavy neural network. |
+| **Overheating** | Waterproof enclosures trap heat, throttling the GPU. | **Duty Cycling:** Do not run inference on every frame. Process 5 FPS instead of 30. Use aluminum enclosure as a passive heatsink. |
+| **False Positives** | Rocks looking like coral (high background clutter). | **Temporal Consistency:** Only register a detection if it appears in $N$ consecutive frames (tracking by detection). |
+| **Data Imbalance** | Bleached coral is rare compared to healthy coral. | **Synthetic Data:** Use Copy-Paste augmentation to insert bleached coral segments into healthy reef backgrounds during training. |
+
+---
+
+### 6. Stretch Ideas & Follow-up Directions
+
+*   **GPS/Depth Tagging:** Integrate a pressure sensor and surface GPS log to create a 3D map of the reef health, not just a count.
+*   **Active Learning App:** If deployed on a smartphone, build a UI where the diver can "verify" uncertain detections post-dive, creating a feedback loop to retrain the model.
+*   **Invasive Species Alert:** Retrain specifically for Lionfish or other invasive species to assist culling efforts.
+
+**Optional next step:**
+Visit **CoralNet (coralnet.ucsd.edu)** and request API access or download the public "CSIRO Crown-of-Thorns" dataset immediately to verify image quality and annotation formats.

@@ -1,0 +1,55 @@
+This is a sophisticated critique. Reviewers are asking: *“Did your model learn what makes a paper ‘good’ (universal scientific merit), or did it just learn what an ACL paper looks like (domain-specific buzzwords)?”*
+
+Here is a strategy to frame your response, followed by the specific experiments to back it up.
+
+---
+
+### Part 1: Framing the Response (The Rhetorical Strategy)
+
+You should argue that while **lexical features** (vocabulary) are domain-specific, **rhetorical and structural features** (how arguments are constructed) are likely transferrable.
+
+**Draft Response Text:**
+> "We agree that domain transferability is a critical challenge. A model trained on NLP papers (ACL) risks overfitting to domain-specific terminology (e.g., 'BLEU score', 'Transformer') rather than learning universal indicators of quality (e.g., clarity of argumentation, experimental rigor).
+>
+> However, we argue that peer review prediction relies on two distinct signal types:
+> 1.  **Content Signals (Domain-Specific):** Is the topic novel? (Hard to transfer).
+> 2.  **Rhetorical Signals (Domain-Agnostic):** Is the problem statement clear? Does the conclusion follow from the premises? (Transferable).
+>
+> To address the reviewer's concern, we have expanded our analysis to explicitly test the model's ability to generalize across the distinct sub-communities within our dataset (Computational Linguistics vs. Machine Learning) and analyzed feature stability to isolate which signals drive performance."
+
+---
+
+### Part 2: Proposed New Experiments & Ablations
+
+To support the argument above, you need to run (or propose) these three specific analyses.
+
+#### Experiment A: The "Cross-Venue" Transfer Test
+The PeerRead dataset contains both NLP conferences (ACL/EMNLP/NAACL) and ML conferences (ICLR). These communities have different writing styles and mathematical densities.
+
+*   **The Experiment:** Train on **ACL/EMNLP** (NLP) and test on **ICLR** (ML), and vice versa.
+*   **The Expected Outcome:** Performance will drop compared to in-domain training.
+*   **The "Save":** If the performance remains better than a random baseline, you can claim the model has learned *some* universal features of scientific writing.
+*   **Narrative:** "While direct transfer results in a performance dip (F1 drops by $X\%$), the model maintains predictive power above the random baseline. This indicates that while vocabulary is brittle, the underlying structural features of 'accepted papers' share commonalities across CS disciplines."
+
+#### Experiment B: The "Structural vs. Lexical" Stability Analysis
+Reviewers suspect the model relies on keywords. You need to prove that **hand-engineered features** (which are more abstract) transfer better than **embeddings** (which are lexical).
+
+*   **The Experiment:** Compare the transfer gap of the **Hand-Engineered Model** (readability, length, equations) vs. the **Deep Text Model** (GloVe/BERT).
+*   **The Hypothesis:** The Hand-Engineered model should be *more* robust to domain shifts because "having more equations" or "using complex sentence structures" is a signal that works in both NLP and ML.
+*   **Narrative:** "Our ablation shows that hand-engineered structural features exhibit higher transferability between ACL and ICLR than raw text embeddings. This suggests that while deep models capture superior in-domain nuance, structural proxies (like mathematical density and readability) provide a more robust, albeit coarser, cross-domain signal."
+
+#### Experiment C: The "Buzzword Masking" Ablation (The Robustness Check)
+To prove the model isn't just counting trendy words, force it to look at the surrounding context.
+
+*   **The Experiment:** Identify the top 100 most frequent nouns/entities in the training set (e.g., "LSTM", "Attention", "Translation") and mask them with a generic `<KEYWORD>` token in both train and test sets.
+*   **The Goal:** Check if the aspect score prediction (e.g., for "Clarity") holds up.
+*   **Narrative:** "Even after masking the top 100 domain-specific keywords, our model retains $Y\%$ of its performance on the 'Clarity' and 'Substance' aspect scores. This suggests the model is attending to the *contextual framing* of the results (e.g., 'We significantly outperform...', 'Our rigorous analysis shows...') rather than simply detecting the presence of popular topics."
+
+---
+
+### Part 3: Summary for the Discussion Section
+
+Once you run these (or if you are proposing them as future work), add this paragraph to your Discussion:
+
+> **"Generalization across Scientific Domains:**
+> A key limitation of our current approach is the reliance on lexical features that may not transfer beyond Computer Science. Our cross-venue experiments (ACL $\to$ ICLR) reveal that while deep text models suffer from domain shift due to vocabulary mismatch, structural features (e.g., mathematical density, syntactic complexity) remain robust predictors of acceptance. This implies that a truly universal 'AI Reviewer' would require a two-tiered architecture: a domain-agnostic module analyzing rhetorical structure and clarity, paired with a domain-specific module (potentially utilizing external knowledge graphs) to assess novelty and technical correctness."

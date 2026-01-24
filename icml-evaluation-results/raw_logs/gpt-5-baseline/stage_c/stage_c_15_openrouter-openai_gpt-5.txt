@@ -1,0 +1,90 @@
+1. Problem framing and goals
+
+Context and motivation
+- AI legal assistants are increasingly used for drafting, issue spotting, summarization, and citation lookup. However, human-centered safety, reliability, and privacy assessments are sparse, and governance risks include unauthorized practice of law (UPL), hallucinated citations, disclosure of sensitive data, and inequitable performance across user groups.
+- This plan focuses on evaluating assistive systems (not replacing legal judgment) for two user populations: licensed professionals (attorneys, paralegals, law students) and self-represented litigants (SRLs). The emphasis is on grounded retrieval, calibrated refusals, safety templates, and privacy-by-design.
+
+Primary 6-month goals
+- G1: Build a reproducible, open-source evaluation harness for legal assistance with retrieval (RAG), logging, and red-teaming—instrumented for citation validity, hallucination rate, uncertainty, and usability.
+- G2: Complete IRB/ethics approvals and a UPL compliance review; run two preregistered human studies (professionals; SRLs) and one offline citation audit yielding statistically powered results.
+- G3: Deliver a governance pack: model card, evaluation card, data protection impact assessment (DPIA), red-team/abuse report, and stop–go criteria for any deployment.
+- G4: Release a public report comparing RAG vs no-RAG, and calibrated abstention vs uncalibrated models, including error severity taxonomy and fairness slices.
+
+Evidence note and references
+- Web search tooling is unavailable here. To attach authoritative sources in your write-up, use targeted queries such as:
+  - “LexGLUE Chalkidis arXiv benchmark legal NLP”
+  - “CaseHOLD legal case holdings dataset arXiv”
+  - “ContractNLI contract entailment EMNLP 2021”
+  - “LegalBench collaborative benchmark arXiv”
+  - “Caselaw Access Project API Harvard LIL”; “CourtListener Free Law Project API”
+  - “Mata v. Avianca ChatGPT sanctions court order PDF”
+  - “User studies AI legal assistants hallucinations Stanford HAI/RegLab”
+  - “Bluebook citation validation automated”
+
+
+2. Experiments (each with hypothesis, setup, baselines, evaluation metrics, and expected outcomes)
+
+Experiment 1: Citation accuracy and hallucination audit
+- Hypothesis: Retrieval-augmented generation (RAG) with source constraints reduces nonexistent/incorrect citations ≥50% vs direct LLM prompting.
+- Setup:
+  - Corpus: Public caselaw via CourtListener/CAP APIs; statutes via GovInfo/Cornell LII. Build a jurisdiction-tagged index (case name, reporter, citation, URL).
+  - Prompts: 300–500 standardized legal tasks (short memos, case summaries, “find authority” queries) across 3 jurisdictions. Require JSON output containing citations.
+  - Conditions: Direct LLM; RAG (top-k passages); RAG+strict citation template (must quote span+URL).
+  - Automated validators: Citation existence (match to index), string/Bluebook-pattern checks, URL resolves, quote overlap with retrieved text.
+- Baselines: Heuristic “cite similar case names”; non-RAG LLM with “cite sources” instruction.
+- Metrics: Nonexistent citation rate; incorrect pin cites; quote overlap (token-level F1); hallucination rate per 1,000 tokens; latency.
+- Expected outcomes: RAG halves nonexistent citation rate; template+quote reduces it further; small latency increase.
+
+Experiment 2: Issue spotting with professional users (human-centered study)
+- Hypothesis: Attorneys/paralegals using a grounded assistant achieve higher issue recall with equal or lower time-on-task than control; students benefit more but over-trust unless warnings/uncertainty are surfaced.
+- Setup:
+  - Participants: 30 practicing attorneys/paralegals + 30 advanced law students; IRB consent; no client data; compensated.
+  - Tasks: 6 fact patterns (contracts/torts/crim). Between-subjects: Control (no AI) vs AI (RAG assistant with uncertainty display).
+  - Ground truth: Expert panel annotated issue lists; inter-annotator agreement κ≥0.7.
+- Baselines: Control group; within AI condition, ablation with/without uncertainty cues.
+- Metrics: Issue recall/precision/F1; time-on-task; SUS/UMUX usability; trust-in-automation; error acceptance (count of incorrect issues adopted).
+- Expected outcomes: Professionals: +10–15% recall, −10–20% time; students: larger recall gains but higher error acceptance without uncertainty cues.
+
+Experiment 3: Drafting quality and style compliance
+- Hypothesis: RAG with jurisdiction-specific templates yields equal-or-better drafting quality vs human-written baseline under blinded review.
+- Setup:
+  - Tasks: Draft a 500–700 word memo section and a motion skeleton for two domains.
+  - Conditions: Human-only; AI-only; Human+AI (co-pilot); AI with/without RAG.
+  - Review: Blinded expert panel rates on 5-point rubric (legal accuracy, citation validity, clarity, structure, tone).
+- Baselines: Human-only; AI-only no-RAG.
+- Metrics: Mean rubric scores; TOST equivalence vs human baseline; revision time; proportion requiring material correction.
+- Expected outcomes: Human+AI achieves equivalence/superiority; AI-only without RAG underperforms on citation validity.
+
+Experiment 4: Safety and client triage for SRLs (risk-sensitive)
+- Hypothesis: A rule-first flow with conservative templates and calibrated refusals reduces unsafe guidance vs free-form LLM responses.
+- Setup:
+  - Scenarios: 200 SRL vignettes (housing, small claims, immigration info, benefits)—pre-vetted for ethics.
+  - Conditions: Free-form LLM; RAG; Rule-first (finite-state templates + LLM for paraphrase); Rule-first+RAG.
+  - Safety rubric: No legal advice; provide public resources; highlight jurisdiction limits; encourage seeking counsel where appropriate.
+- Baselines: Free-form LLM.
+- Metrics: Unsafe advice rate; refusal at risk; readability (grade level); jurisdiction misfit rate; demographic fairness slice if vignettes allow.
+- Expected outcomes: Rule-first+RAG minimizes unsafe rate (<5%) with acceptable helpfulness.
+
+Experiment 5: Calibration and selective abstention
+- Hypothesis: Temperature scaling + selective prediction (abstain below confidence) lowers severe error rate at modest coverage loss.
+- Setup:
+  - Tasks: Classification sub-tasks (is authority on-point? jurisdiction fit?); regression proxy for confidence from logits/entropy; conformal risk-control for abstention thresholds.
+- Baselines: Uncalibrated.
+- Metrics: Brier score; ECE; risk–coverage curves; severe error rate (unsafe + wrong authority) at fixed coverage.
+- Expected outcomes: 30–50% severe error reduction at 80–90% coverage.
+
+Experiment 6: Privacy and attack surface red team
+- Hypothesis: With local inference and strict data handling, no PII exfiltrates; prompt injection and jailbreaks can be mitigated by retrieval whitelists and content filters.
+- Setup:
+  - Canaries: Embed unique strings in user docs; probe via follow-up prompts. Evaluate RAG guardrails (domain whitelist; strip system prompt).
+  - Attacks: Prompt injection in retrieved pages; jailbreak attempts; cross-document leakage tests.
+  - Telemetry: Verify zero network egress in local mode; encrypted at-rest storage; 30/60/90-day data deletion checks.
+- Baselines: Unrestricted RAG; cloud-hosted default model (offline comparison; no real user data).
+- Metrics: Canary exposure rate; jailbreak success rate; PII leakage flags; false block rate; performance impact.
+- Expected outcomes: 0 canary exposures; ≤2% performance loss from guardrails; documented residual risks.
+
+Experiment 7: Benchmark-to-human correlation study
+- Hypothesis: Scores on legal NLP benchmarks weakly correlate with human-centered outcomes; retrieval and calibration matter more.
+- Setup:
+  - Run models on LegalBench/LexGLUE/CaseHOLD/ContractNLI where licenses permit.
+  - Correlate benchmark metrics with Experiment 2–4 outcomes across model/setting

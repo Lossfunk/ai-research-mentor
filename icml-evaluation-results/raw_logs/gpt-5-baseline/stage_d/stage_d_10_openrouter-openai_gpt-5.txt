@@ -1,0 +1,62 @@
+Below is a focused plan to test whether adding a privacy/governance constraint—specifically offline inference (no network calls, no third‑party APIs, no cross‑session caches)—changes “verification‑like” failure rates for a Hierarchical Transformer. It keeps the original evaluation comparable while isolating the constraint’s impact.
+
+A) What “verification‑like failure” means here
+- Claim verification tasks: predicting SUPPORTS/REFUTES/NEI and citing evidence spans; failure = incorrect label or missing/wrong evidence.
+- Evidence‑required QA: answer must be supported by provided or retrieved passages; failure = incorrect answer or correct answer without correct supporting evidence.
+- Long-form generation (optional): summaries or rationales must be factually attributable to source; failure = extrinsic hallucination (unsupported by source).
+
+B) Governance constraint and variants (baselines)
+- Constraint (Offline): No external network calls; all retrieval/reranking and validation models run locally on a fixed, time‑stamped snapshot (e.g., Wikipedia dump). No telemetry or cross‑document caches that persist beyond a process.
+- Variants
+  1) H-RAG-Online (baseline): Hierarchical Transformer + retrieval stack with allowed online services (e.g., web search or managed vector DB/reranker), as used in your current pipeline.
+  2) H-RAG-Offline (treatment): Same model, same prompts/decoding, same retrieval hyperparameters/top‑k, but all components run locally on an offline snapshot; no network calls.
+  3) H-Closed (control): No external retrieval; use only the dataset‑supplied context (closed‑book or provided documents).
+  4) Flat-long baseline (optional): Longformer/BigBird/LED with the same retrieval regimes (Online/Offline/Closed) to see if effects are general or hierarchy‑specific.
+
+C) Datasets (verification-centric, long-context friendly)
+- Claim verification
+  - FEVER (with evidence). Metrics: label accuracy, macro-F1; evidence precision/recall (sentence‑level), FEVER score (correct label + at least one correct evidence set).
+  - FEVEROUS (tables + text). Same metrics; add table cell evidence F1.
+  - SciFact. Metrics: accuracy/macro-F1; rationale selection F1.
+- Evidence‑centric multi-hop/long‑doc QA
+  - HotpotQA (full wiki). Metrics: EM/F1; supporting facts F1; Joint EM (answer + support).
+  - Qasper (paper QA). Metrics: EM/F1; if available, evidence overlap.
+- Long-form factuality (optional, probes hallucinations)
+  - PubMed or arXiv summarization with QAFactEval or SummaC. Metrics: ROUGE-1/2/L; factuality score; hallucination rate (1 − factuality).
+- All retrieval‑dependent tasks must use the same offline snapshot (e.g., enwiki-YYYYMMDD) for both Online and Offline conditions; Online may use a managed service but it must be restricted to that snapshot (if not possible, document the snapshot mismatch explicitly and treat results as sensitivity analysis).
+
+D) Keeping results comparable
+- Freeze: tokenizer, segmentation (segment length/stride/max segments), masking, model weights, decoding settings, seed, hardware/precision, and checkpoint selection rules.
+- Retrieval parity: same top‑k, max context, dedup, and reranking depth; identical prompt templates and evidence formatting.
+- Corpus control: identical snapshot and preprocessing for the Offline index; if Online can’t be pinned to the same snapshot, record timestamp and expected drift magnitude.
+- Logging: collect per‑query retrieval diagnostics (recall@k against gold evidence) in both regimes.
+
+E) Metrics to quantify verification impact
+- Primary (per dataset class)
+  - Claim verification: accuracy, macro-F1, FEVER/FEVEROUS score; evidence P/R/F1; “Verified answer rate” = proportion of predictions that are correct and include at least one gold evidence set.
+  - QA: EM/F1; Supporting facts F1; Joint EM; “Attributable answer rate” = correct answer with correct supporting evidence.
+  - Summarization: factuality score (QAFactEval/SummaC); hallucination rate; ROUGE as context.
+- Secondary
+  - Retrieval quality: evidence recall@k and MRR vs gold; hit@k of gold page/doc.
+  - Calibration: ECE/Brier; risk–coverage curves (can the model abstain when unverified).
+  - Efficiency (to ensure constraint isn’t confounded by compute): latency p50/p90 and tokens/sec; peak memory at batch=1.
+
+F) Statistical analysis
+- Paired design: run the same test examples under Online and Offline; predictions are paired per example and per seed.
+- Tests
+  - Claim/QA correctness: McNemar’s test on per-example correctness (Online vs Offline). Report Δ accuracy/EM/F1 with 95% CIs via paired bootstrap (10k resamples).
+  - Evidence metrics: paired bootstrap for evidence F1 and Verified/Attributable rates; for proportions, use Wilson CIs and test deltas via McNemar (correct evidence included: yes/no).
+  - Retrieval recall@k: Wilcoxon signed-rank on per-example recall; report Δ recall and its 95% CI.
+  - Summarization factuality: paired bootstrap over documents; report Δ factuality and Δ hallucination rate with CIs.
+  - Mixed-effects (length/control): correct_ij ~ regime (Online/Offline) + log(tokens) + (1 | example_id) + (1 | seed). A significant negative coefficient for regime implies higher failure under Offline beyond length effects.
+- Multiple comparisons: within each dataset family, control family-wise error via Holm–Bonferroni across metrics; report FDR (BH) as secondary.
+- Non-inferiority option: predefine ε (e.g., ε=1.0 F1 point or 1–2 percentage points in Verified rate). Declare Offline non-inferior if lower CI bound of Δ ≥ −ε.
+
+G) Minimal implementation changes
+- Retrieval layer
+  - Online: your existing web/API search + reranker (document exact setup).
+  - Offline: local BM25 (e.g., Pyserini) + local cross‑encoder reranker (e.g., monoT5, MiniLM) on the same snapshot; shard index for speed; identical top‑k and truncation.
+- Evidence handling: identical evidence packaging into the Hierarchical Transformer (same segmenting and ordering).
+- Governance toggles
+  - offline_mode=true disables any network calls and cross‑session caches; logs a run hash with software versions and snapshot ID.
+  - pii_filter=[off|on]: optional second

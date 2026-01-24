@@ -1,0 +1,48 @@
+<thinking>
+Experienced user. They want a concrete ablation plan. Key is to be blunt: local window ablations are easy to run but easy to misinterpret because hierarchy masks failures. Need to specify minimal change, tight benchmark, budget, and failure modes. 150–300 words.
+</thinking>
+
+**Blunt assessment:** A local-attention window ablation is only informative if you force the model to *need* long-range information. Otherwise the hierarchy will paper over window shrinkage and you’ll conclude “window size doesn’t matter,” which is false.
+
+Here’s a clean, review-safe setup.
+
+---
+
+## Benchmark suite (pick one, don’t sprawl)
+Use the **same environment(s) as the paper**, but select the subset with the *longest effective horizons* (e.g., sparse-reward or delayed-control tasks). If the paper includes short-horizon tasks, exclude them—they dilute the signal.
+
+Keep dataset, tokenizer, hierarchy depth, and rollout horizon unchanged.
+
+---
+
+## Ablation definition (minimal code change)
+- Modify **only** the local self-attention window size inside each hierarchical block.
+- Keep window size **constant across levels** for this ablation (otherwise effects are confounded).
+- Suggested sweep: original window → ½ → ¼ → full attention (upper bound).
+
+No retraining tricks, no extra regularization, no compensating token persistence.
+
+---
+
+## Compute budget
+- Reuse pretrained checkpoints where possible; otherwise retrain with **identical steps and seeds**.
+- Minimum **3–5 seeds per setting**.
+- Expect this to cost ~1–1.5× the baseline training budget; anything larger means you’re changing too much.
+
+If you can’t afford multiple seeds, don’t run the ablation—it won’t be interpretable.
+
+---
+
+## Metrics and failure modes to monitor
+**Primary**
+- Downstream task return.
+- Rollout reconstruction error *as a function of horizon* (not just final).
+
+**Critical failure modes**
+- **Long-context degradation:** performance collapses only at long rollouts.
+- **Hierarchy over-reliance:** higher-level tokens dominate attention as windows shrink.
+- **Silent instability:** same mean return, much higher variance across seeds.
+
+If shrinking the window hurts only long-horizon metrics while short-horizon stays flat, that’s the expected—and meaningful—result.
+
+If you want, I can help you phrase this as a single ablation figure that tells the whole story without a wall of plots.

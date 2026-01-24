@@ -1,0 +1,444 @@
+# **Automatically Learned Hierarchical Structure: Evaluation Framework**
+
+## **PART 1: AUTOMATIC STRUCTURE LEARNING**
+
+### **1.1 Clustering-Based Hierarchy Discovery**
+
+#### **A. Multi-Level Clustering Approach**
+```python
+class AutomaticHierarchyLearner:
+    """
+    Learn hierarchical document structure automatically using clustering
+    
+    Replaces hand-designed hierarchy (sections → paragraphs → sentences)
+    with data-driven discovered structure
+    
+    Methods:
+    1. Hierarchical clustering (agglomerative/divisive)
+    2. Topic modeling (LDA, NMF, BERTopic)
+    3. Segmentation algorithms (TextTiling, C99, GraphSeg)
+    4. Neural segmentation (BERT-based)
+    5. Hybrid approaches
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.methods = self.define_learning_methods()
+        
+    def define_learning_methods(self):
+        """
+        Define automatic structure learning methods
+        """
+        methods = {
+            # Method 1: Hierarchical Agglomerative Clustering
+            'hierarchical_clustering': {
+                'description': 'Bottom-up clustering of text segments',
+                'algorithm': 'Ward linkage on sentence embeddings',
+                'parameters': {
+                    'embedding_model': 'sentence-transformers/all-MiniLM-L6-v2',
+                    'linkage': 'ward',  # or 'average', 'complete'
+                    'distance_metric': 'euclidean',
+                    'num_levels': 'auto',  # Determine from dendrogram
+                    'cut_threshold': 'dynamic',  # Adaptive threshold
+                },
+                'output': 'Dendrogram with hierarchical structure',
+                'implementation': self.hierarchical_clustering,
+            },
+            
+            # Method 2: Divisive Clustering (Top-Down)
+            'divisive_clustering': {
+                'description': 'Top-down recursive splitting',
+                'algorithm': 'Recursive k-means on embeddings',
+                'parameters': {
+                    'max_depth': 5,
+                    'min_cluster_size': 3,  # sentences
+                    'split_criterion': 'silhouette',  # or 'gap_statistic'
+                    'k_range': [2, 5],  # Try 2-5 splits at each level
+                },
+                'output': 'Tree structure',
+                'implementation': self.divisive_clustering,
+            },
+            
+            # Method 3: Topic Modeling
+            'topic_modeling': {
+                'description': 'Discover topics at multiple granularities',
+                'algorithms': {
+                    'lda': 'Latent Dirichlet Allocation',
+                    'nmf': 'Non-negative Matrix Factorization',
+                    'bertopic': 'BERT-based topic modeling',
+                },
+                'parameters': {
+                    'method': 'bertopic',  # Most modern
+                    'num_topics_range': [5, 50],
+                    'hierarchical': True,  # Multi-level topics
+                    'min_topic_size': 5,
+                },
+                'output': 'Topic hierarchy',
+                'implementation': self.topic_modeling_hierarchy,
+            },
+            
+            # Method 4: Text Segmentation
+            'text_segmentation': {
+                'description': 'Segment text into coherent blocks',
+                'algorithms': {
+                    'texttiling': 'TextTiling algorithm',
+                    'c99': 'C99 segmentation',
+                    'graphseg': 'Graph-based segmentation',
+                    'neural': 'BERT-based segmentation',
+                },
+                'parameters': {
+                    'method': 'neural',
+                    'window_size': 3,  # For TextTiling
+                    'smoothing': 2,
+                    'min_segment_length': 2,
+                },
+                'output': 'Flat segmentation (can be hierarchicalized)',
+                'implementation': self.text_segmentation,
+            },
+            
+            # Method 5: Spectral Clustering
+            'spectral_clustering': {
+                'description': 'Graph-based clustering using eigenvectors',
+                'algorithm': 'Spectral clustering on similarity graph',
+                'parameters': {
+                    'similarity_metric': 'cosine',
+                    'num_clusters': 'auto',  # Eigengap heuristic
+                    'affinity': 'rbf',
+                },
+                'output': 'Cluster assignments',
+                'implementation': self.spectral_clustering,
+            },
+            
+            # Method 6: Bayesian Nonparametric
+            'bayesian_nonparametric': {
+                'description': 'Automatically determine number of clusters',
+                'algorithm': 'Hierarchical Dirichlet Process',
+                'parameters': {
+                    'concentration': 1.0,
+                    'max_iterations': 1000,
+                },
+                'output': 'Probabilistic hierarchy',
+                'implementation': self.bayesian_hierarchy,
+            },
+        }
+        
+        return methods
+    
+    def hierarchical_clustering(self, document):
+        """
+        Hierarchical agglomerative clustering
+        
+        Steps:
+        1. Split document into sentences
+        2. Compute sentence embeddings
+        3. Perform hierarchical clustering
+        4. Determine optimal cut points
+        5. Extract hierarchical structure
+        """
+        from sklearn.cluster import AgglomerativeClustering
+        from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+        from sentence_transformers import SentenceTransformer
+        
+        # 1. Split into sentences
+        sentences = self.split_sentences(document)
+        
+        # 2. Compute embeddings
+        model = SentenceTransformer(
+            self.methods['hierarchical_clustering']['parameters']['embedding_model']
+        )
+        embeddings = model.encode(sentences)
+        
+        # 3. Compute linkage matrix
+        linkage_matrix = linkage(
+            embeddings,
+            method=self.methods['hierarchical_clustering']['parameters']['linkage'],
+            metric=self.methods['hierarchical_clustering']['parameters']['distance_metric']
+        )
+        
+        # 4. Determine optimal cut points for multiple levels
+        hierarchy_levels = self.determine_cut_points(linkage_matrix, embeddings)
+        
+        # 5. Extract hierarchical structure
+        structure = {
+            'levels': [],
+            'dendrogram': linkage_matrix,
+            'embeddings': embeddings,
+            'sentences': sentences,
+        }
+        
+        for level_idx, threshold in enumerate(hierarchy_levels):
+            # Cut dendrogram at this threshold
+            clusters = fcluster(linkage_matrix, threshold, criterion='distance')
+            
+            # Organize into structure
+            level_structure = self.organize_clusters(sentences, clusters, level_idx)
+            structure['levels'].append(level_structure)
+        
+        return structure
+    
+    def determine_cut_points(self, linkage_matrix, embeddings):
+        """
+        Determine optimal cut points for hierarchical levels
+        
+        Methods:
+        1. Gap statistic
+        2. Silhouette score
+        3. Elbow method
+        4. Dendrogram inconsistency
+        """
+        from scipy.cluster.hierarchy import inconsistent
+        from sklearn.metrics import silhouette_score
+        
+        # Compute inconsistency coefficients
+        inconsistency = inconsistent(linkage_matrix)
+        
+        # Find significant jumps in inconsistency
+        # These indicate natural hierarchical boundaries
+        inconsistency_values = inconsistency[:, 3]  # Inconsistency coefficient
+        
+        # Detect jumps using derivative
+        derivatives = np.diff(inconsistency_values)
+        jump_indices = np.where(derivatives > np.percentile(derivatives, 75))[0]
+        
+        # Convert to distance thresholds
+        thresholds = linkage_matrix[jump_indices, 2]
+        
+        # Validate with silhouette scores
+        validated_thresholds = []
+        for threshold in thresholds:
+            clusters = fcluster(linkage_matrix, threshold, criterion='distance')
+            if len(np.unique(clusters)) > 1:  # At least 2 clusters
+                score = silhouette_score(embeddings, clusters)
+                if score > 0.3:  # Reasonable clustering quality
+                    validated_thresholds.append(threshold)
+        
+        # Ensure hierarchical ordering (descending)
+        validated_thresholds = sorted(validated_thresholds, reverse=True)
+        
+        # Limit to max depth
+        max_levels = self.config.get('max_hierarchy_depth', 4)
+        return validated_thresholds[:max_levels]
+    
+    def topic_modeling_hierarchy(self, document):
+        """
+        Multi-level topic modeling for hierarchy discovery
+        
+        Uses BERTopic with hierarchical topic modeling
+        """
+        from bertopic import BERTopic
+        from sklearn.feature_extraction.text import CountVectorizer
+        
+        # Split into sentences
+        sentences = self.split_sentences(document)
+        
+        # Initialize BERTopic with hierarchical settings
+        vectorizer_model = CountVectorizer(
+            ngram_range=(1, 2),
+            stop_words='english'
+        )
+        
+        topic_model = BERTopic(
+            vectorizer_model=vectorizer_model,
+            min_topic_size=self.methods['topic_modeling']['parameters']['min_topic_size'],
+            calculate_probabilities=True
+        )
+        
+        # Fit model
+        topics, probs = topic_model.fit_transform(sentences)
+        
+        # Get hierarchical topics
+        hierarchical_topics = topic_model.hierarchical_topics(sentences)
+        
+        # Convert to hierarchical structure
+        structure = self.convert_topics_to_hierarchy(
+            sentences=sentences,
+            topics=topics,
+            hierarchical_topics=hierarchical_topics,
+            topic_model=topic_model
+        )
+        
+        return structure
+    
+    def text_segmentation(self, document):
+        """
+        Neural text segmentation for boundary detection
+        """
+        # Use BERT-based segmentation
+        from transformers import AutoTokenizer, AutoModel
+        import torch
+        
+        # Load model
+        tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        model = AutoModel.from_pretrained('bert-base-uncased')
+        
+        # Split into sentences
+        sentences = self.split_sentences(document)
+        
+        # Compute sentence embeddings
+        embeddings = []
+        for sentence in sentences:
+            inputs = tokenizer(sentence, return_tensors='pt', truncation=True, max_length=512)
+            with torch.no_grad():
+                outputs = model(**inputs)
+            # Use [CLS] token as sentence embedding
+            embedding = outputs.last_hidden_state[0, 0, :].numpy()
+            embeddings.append(embedding)
+        
+        embeddings = np.array(embeddings)
+        
+        # Compute coherence scores (similarity between adjacent sentences)
+        coherence_scores = []
+        for i in range(len(embeddings) - 1):
+            similarity = cosine_similarity(
+                embeddings[i].reshape(1, -1),
+                embeddings[i + 1].reshape(1, -1)
+            )[0, 0]
+            coherence_scores.append(similarity)
+        
+        # Detect boundaries (low coherence = boundary)
+        boundaries = self.detect_boundaries_from_coherence(coherence_scores)
+        
+        # Create segments
+        segments = self.create_segments_from_boundaries(sentences, boundaries)
+        
+        # Hierarchicalize segments (recursive segmentation)
+        structure = self.hierarchicalize_segments(segments, embeddings)
+        
+        return structure
+    
+    def detect_boundaries_from_coherence(self, coherence_scores, threshold_percentile=25):
+        """
+        Detect segment boundaries from coherence scores
+        
+        Low coherence (bottom 25th percentile) indicates boundary
+        """
+        threshold = np.percentile(coherence_scores, threshold_percentile)
+        boundaries = [i + 1 for i, score in enumerate(coherence_scores) if score < threshold]
+        return boundaries
+    
+    def hierarchicalize_segments(self, segments, embeddings):
+        """
+        Recursively segment to create hierarchy
+        
+        Args:
+            segments: List of text segments
+            embeddings: Sentence embeddings
+        
+        Returns:
+            Hierarchical structure
+        """
+        structure = {
+            'levels': [],
+        }
+        
+        # Level 0: All segments
+        structure['levels'].append({
+            'level': 0,
+            'segments': [{'text': seg, 'id': i} for i, seg in enumerate(segments)],
+        })
+        
+        # Recursively segment each segment
+        current_level_segments = segments
+        level = 1
+        
+        while len(current_level_segments) > 1 and level < self.config.get('max_hierarchy_depth', 4):
+            next_level_segments = []
+            
+            for segment in current_level_segments:
+                # Segment this segment
+                sub_sentences = self.split_sentences(segment)
+                if len(sub_sentences) > 2:  # Can be further segmented
+                    sub_segments = self.segment_text(sub_sentences)
+                    next_level_segments.extend(sub_segments)
+                else:
+                    next_level_segments.append(segment)
+            
+            # If no further segmentation possible, stop
+            if len(next_level_segments) == len(current_level_segments):
+                break
+            
+            structure['levels'].append({
+                'level': level,
+                'segments': [{'text': seg, 'id': i} for i, seg in enumerate(next_level_segments)],
+            })
+            
+            current_level_segments = next_level_segments
+            level += 1
+        
+        return structure
+```
+
+---
+
+### **1.2 Hybrid Approaches**
+
+#### **A. Combining Multiple Methods**
+```python
+class HybridHierarchyLearner:
+    """
+    Combine multiple automatic methods for robust hierarchy discovery
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.learners = {
+            'clustering': AutomaticHierarchyLearner(config),
+            'topic': AutomaticHierarchyLearner(config),
+            'segmentation': AutomaticHierarchyLearner(config),
+        }
+    
+    def learn_hybrid_hierarchy(self, document):
+        """
+        Learn hierarchy using multiple methods and combine
+        
+        Strategies:
+        1. Voting: Agree on boundaries across methods
+        2. Ensemble: Weighted combination
+        3. Cascade: Use one method to initialize another
+        4. Consensus: Only keep high-agreement boundaries
+        """
+        # Run all methods
+        clustering_hierarchy = self.learners['clustering'].hierarchical_clustering(document)
+        topic_hierarchy = self.learners['topic'].topic_modeling_hierarchy(document)
+        seg_hierarchy = self.learners['segmentation'].text_segmentation(document)
+        
+        # Extract boundaries from each
+        clustering_boundaries = self.extract_boundaries(clustering_hierarchy)
+        topic_boundaries = self.extract_boundaries(topic_hierarchy)
+        seg_boundaries = self.extract_boundaries(seg_hierarchy)
+        
+        # Combine using voting
+        consensus_boundaries = self.voting_consensus(
+            [clustering_boundaries, topic_boundaries, seg_boundaries],
+            min_votes=2  # At least 2 methods must agree
+        )
+        
+        # Build final hierarchy from consensus boundaries
+        final_hierarchy = self.build_hierarchy_from_boundaries(
+            document,
+            consensus_boundaries
+        )
+        
+        # Add confidence scores based on agreement
+        final_hierarchy = self.add_confidence_scores(
+            final_hierarchy,
+            [clustering_hierarchy, topic_hierarchy, seg_hierarchy]
+        )
+        
+        return final_hierarchy
+    
+    def voting_consensus(self, boundary_sets, min_votes=2):
+        """
+        Find boundaries that appear in at least min_votes methods
+        """
+        from collections import Counter
+        
+        # Flatten all boundaries
+        all_boundaries = []
+        for boundaries in boundary_sets:
+            all_boundaries.extend(boundaries)
+        
+        # Count votes
+        boundary_votes = Counter(all_boundaries)
+        
+        # Keep boundaries with

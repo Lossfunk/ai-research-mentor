@@ -1,0 +1,237 @@
+The searches yielded highly relevant sources on privacy-preserving mental health AI [1,2,3,4,5] and open-source mental health models [7,8,9]. I have sufficient evidence to construct a rigorous plan.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Mental health chatbots can improve access to care (especially in underserved regions), but face critical privacy risks: sensitive conversations expose users to data breaches, re-identification, and misuse by third parties. Existing commercial solutions (Woebot, Wysa) use cloud processing with opaque privacy practices. Recent work [1,2,3,4,5] demonstrates feasibility of privacy-preserving approaches (federated learning, differential privacy), but lacks:
+
+1. **End-to-end open-source implementations** combining privacy-preserving training, secure inference, and deployment
+2. **Rigorous privacy-utility trade-off analysis** across multiple privacy mechanisms
+3. **Clinical validation** of privacy-enhanced models (do they maintain therapeutic quality?)
+4. **Practical deployment frameworks** for resource-constrained settings (on-device inference, low bandwidth)
+
+**Core Constraints (Open-Source Only):**
+- **Models:** Llama 2/3, Mistral, Phi, Flan-T5, Mental-Alpaca [7], MentalLLaMA [8], MentalBERT [9]
+- **Privacy frameworks:** Opacus (DP), PySyft (federated learning), CrypTen (secure MPC), TenSEAL (homomorphic encryption)
+- **Infrastructure:** Local deployment (no proprietary cloud), Hugging Face inference endpoints (optional)
+- **Evaluation:** Open datasets (Counseling & Psychotherapy Corpus, DAIC-WOZ, Reddit Mental Health)
+
+**Core Hypothesis:**  
+Privacy-preserving mental health chatbots using federated learning + differential privacy + on-device inference can achieve clinical-quality responses (>70% alignment with therapist responses, <15% harm rate) while providing formal privacy guarantees (ε≤3 differential privacy), using only open-source tools and deployable on consumer hardware (<8GB RAM).
+
+**Primary Goals (6-month horizon):**
+- Develop 3 privacy-preserving architectures: (1) Federated fine-tuning, (2) DP-trained models, (3) On-device inference with encrypted communication
+- Achieve >70% therapeutic alignment (vs. licensed therapist responses) with ε≤3 DP guarantee
+- Deploy on consumer devices (smartphone, laptop) with <2s response latency
+- Open-source complete toolkit: training code, inference server, mobile app, privacy audit tools
+- Validate with 50-100 beta users (IRB-approved pilot)
+
+**Secondary Goals:**
+- Multi-lingual support (English, Spanish, Mandarin) for global accessibility
+- Crisis detection with privacy (identify suicidal ideation without exposing user identity)
+- Interpretability: Explain model responses while preserving privacy
+- Establish benchmarks for privacy-utility trade-offs in mental health NLP
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Federated Fine-Tuning of Open-Source Mental Health LLMs**
+
+**Hypothesis:** Federated learning with LoRA adapters [1,2] enables collaborative fine-tuning of mental health LLMs (Llama 2-7B, Mental-Alpaca) across multiple institutions without sharing raw conversation data, achieving >75% therapeutic quality while preventing data reconstruction attacks.
+
+**Setup:**
+- **Base models:** 
+  - Llama 2-7B-Chat (open-source, instruction-tuned)
+  - Mental-Alpaca-7B [7] (mental health-specialized)
+  - Mistral-7B-Instruct (strong reasoning, open-source)
+- **Federated framework:** 
+  - **Tool:** Flower (federated learning framework, open-source)
+  - **Architecture:** FedAvg with LoRA adapters (rank=16, α=32)
+  - **Clients:** Simulate 5-10 institutions (hospitals, counseling centers) with 500-2,000 conversations each
+  - **Privacy:** Secure aggregation (encrypt gradients before aggregation), client-level DP (clip gradients, add Gaussian noise)
+- **Datasets:**
+  - **Primary:** Counseling & Psychotherapy Corpus (1,000+ therapy sessions)
+  - **Supplementary:** DAIC-WOZ (depression interviews), Reddit Mental Health (r/depression, r/anxiety posts)
+  - **Synthetic:** Generate conversations with GPT-4 + therapist validation (for controlled experiments)
+  - **Split:** 70% train (distributed across clients), 15% val, 15% test
+- **Training protocol:**
+  - Local training: 3-5 epochs per round on client data
+  - Aggregation: FedAvg every 10 rounds (aggregate LoRA weights only, ~10MB vs. 14GB for full model)
+  - Total rounds: 50-100 (estimated 2-3 weeks wall-clock time)
+  - Privacy budget: ε=3, δ=10⁻⁵ (client-level DP via Opacus)
+
+**Baselines:**
+1. Centralized training (all data pooled, no privacy—upper bound)
+2. Local training only (each client trains independently, no collaboration)
+3. Non-private federated learning (FedAvg without DP)
+4. Pretrained models without fine-tuning (Llama 2, Mental-Alpaca zero-shot)
+
+**Evaluation Metrics:**
+1. **Therapeutic quality:**
+   - **Alignment:** ROUGE-L, BERTScore vs. therapist responses
+   - **Empathy:** Empathy score from RoBERTa-empathy classifier
+   - **Helpfulness:** Human evaluation (3 licensed therapists rate 100 responses on 1-5 scale)
+   - **Harm rate:** % responses flagged as harmful (invalidating, dismissive, inappropriate advice)
+2. **Privacy:**
+   - **DP guarantee:** Achieved ε, δ
+   - **Membership inference attack:** Success rate (should be ~50%, random guessing)
+   - **Reconstruction attack:** BLEU score between reconstructed and original conversations (should be <10%)
+3. **Efficiency:**
+   - **Communication cost:** MB transmitted per round
+   - **Training time:** Wall-clock hours to convergence
+   - **Client dropout tolerance:** Accuracy with 20%, 50% client dropout
+
+**Expected Outcomes:**
+- Federated LoRA: 72-78% alignment vs. therapists (vs. 80-85% for centralized, 60-65% for local-only)
+- DP overhead: 3-5% accuracy drop for ε=3 (acceptable for privacy gain)
+- Communication: 10-20MB per round (vs. 14GB for full model)
+- Privacy: Membership inference success rate 52-55% (near random), reconstruction BLEU <8%
+- Identifies optimal LoRA rank (trade-off: higher rank = better quality but less privacy)
+
+**Ablations:**
+- LoRA rank: {8, 16, 32, 64}
+- DP noise scale: ε ∈ {1, 3, 5, 10, ∞ (no DP)}
+- Client sampling: Random vs. stratified (by data quality)
+- Aggregation frequency: Every {5, 10, 20} rounds
+- Heterogeneity: Non-IID data distribution (each client specializes in different disorders)
+
+---
+
+### **Experiment 2: Differential Privacy Training for Mental Health Classification**
+
+**Hypothesis:** DP-SGD training [5] of mental health classifiers (crisis detection, disorder classification) achieves >80% F1 score with ε≤3, enabling privacy-preserving triage and referral systems.
+
+**Setup:**
+- **Tasks:**
+  1. **Crisis detection:** Binary classification (suicidal ideation: yes/no)
+  2. **Disorder classification:** Multi-class (depression, anxiety, PTSD, bipolar, none)
+  3. **Severity assessment:** Ordinal regression (PHQ-9 score prediction: 0-27)
+- **Models:**
+  - MentalBERT [9] (pretrained on mental health text, 110M params)
+  - MentalRoBERTa [9] (alternative architecture)
+  - DistilBERT (smaller, faster, 66M params)
+- **DP training:**
+  - **Framework:** Opacus (PyTorch DP library)
+  - **Mechanism:** DP-SGD with per-sample gradient clipping (C=1.0) + Gaussian noise
+  - **Privacy budget:** ε ∈ {1, 3, 5}, δ=10⁻⁵
+  - **Batch size:** 32-64 (larger batches improve privacy-utility trade-off)
+- **Datasets:**
+  - **Crisis detection:** DAIC-WOZ (189 interviews, 30% with depression), CLPsych Shared Task data
+  - **Disorder classification:** Reddit Mental Health (10k posts labeled by subreddit)
+  - **Severity:** DAIC-WOZ PHQ-9 scores
+  - **Augmentation:** Paraphrase with PEGASUS to increase training data (privacy-preserving)
+
+**Baselines:**
+1. Non-private training (standard fine-tuning)
+2. Naive noise addition (add noise to final model, not DP-SGD)
+3. Rule-based classifiers (keyword matching for crisis detection)
+4. Human baseline (clinician agreement, inter-rater reliability)
+
+**Evaluation Metrics:**
+1. **Classification performance:**
+   - **Crisis detection:** F1, precision, recall (prioritize recall—minimize false negatives)
+   - **Disorder classification:** Macro-F1, per-class F1
+   - **Severity:** MAE, RMSE for PHQ-9 prediction
+2. **Privacy:**
+   - **DP guarantee:** Achieved ε, δ
+   - **Membership inference:** Attack success rate on training vs. test data
+   - **Attribute inference:** Can attacker infer sensitive attributes (age, location)?
+3. **Fairness:**
+   - **Demographic parity:** F1 across gender, age, race (if metadata available)
+   - **Equalized odds:** FPR/FNR across groups
+4. **Calibration:** Reliability diagrams (predicted probabilities vs. true frequencies)
+
+**Expected Outcomes:**
+- MentalBERT + DP-SGD (ε=3): F1 0.82-0.86 for crisis detection (vs. 0.88-0.92 non-private)
+- Disorder classification: Macro-F1 0.75-0.80 (vs. 0.82-0.87 non-private)
+- Privacy: Membership inference success 52-56% (near random guessing)
+- DP overhead: 5-8% F1 drop for ε=3, acceptable for formal privacy guarantee
+- Identifies privacy-critical features (certain phrases strongly correlate with training data)
+
+**Ablations:**
+- Clipping threshold: C ∈ {0.5, 1.0, 2.0}
+- Noise multiplier: σ ∈ {0.8, 1.0, 1.5}
+- Batch size: {16, 32, 64, 128} (larger = better privacy-utility trade-off)
+- Pretraining: MentalBERT vs. general BERT vs. RoBERTa
+- Data augmentation: With vs. without paraphrasing
+
+---
+
+### **Experiment 3: On-Device Inference with Encrypted Communication**
+
+**Hypothesis:** Quantized LLMs (4-bit, 8-bit) deployed on consumer devices (smartphones, laptops) with end-to-end encryption achieve <2s response latency and prevent server-side data access, enabling fully private mental health conversations.
+
+**Setup:**
+- **Model compression:**
+  - **Quantization:** GPTQ (4-bit), AWQ (4-bit), bitsandbytes (8-bit)
+  - **Pruning:** Wanda (unstructured), SparseGPT
+  - **Distillation:** Distill Llama 2-7B → 1.3B or 3B (faster inference)
+  - **Target:** <4GB model size (fit in smartphone RAM)
+- **Deployment platforms:**
+  1. **Android:** llama.cpp + Android NDK (C++ inference engine)
+  2. **iOS:** Core ML (convert ONNX model)
+  3. **Desktop:** Ollama (local LLM server, open-source)
+  4. **Web:** WebLLM (in-browser inference via WebGPU)
+- **Encryption:**
+  - **End-to-end:** TLS 1.3 for client-server communication (if optional server sync)
+  - **At-rest:** AES-256 encryption for local conversation storage
+  - **Optional server:** Homomorphic encryption (TenSEAL) for encrypted analytics (aggregate usage stats without decrypting)
+- **Inference optimization:**
+  - **KV-cache:** Reduce latency for multi-turn conversations
+  - **Speculative decoding:** Draft model + verification for 2-3× speedup
+  - **Batching:** Process multiple user queries in parallel (if server-based)
+
+**Baselines:**
+1. Cloud-based inference (GPT-4, Claude—privacy risk but high quality)
+2. Full-precision on-device (Llama 2-7B FP16, likely too slow)
+3. Smaller models (Phi-2, TinyLlama) without compression
+
+**Evaluation Metrics:**
+1. **Performance:**
+   - **Latency:** Time to first token (TTFT), tokens/sec
+   - **Throughput:** Conversations/hour on target device
+   - **Memory:** Peak RAM usage during inference
+   - **Battery:** % battery drain per 10-minute conversation
+2. **Quality:**
+   - **Therapeutic alignment:** ROUGE-L, BERTScore vs. therapist responses
+   - **Perplexity:** On mental health test set
+   - **User satisfaction:** 5-point Likert scale (beta user study)
+3. **Privacy:**
+   - **Data residency:** % of data that never leaves device
+   - **Encryption strength:** Verified TLS 1.3, AES-256
+   - **Attack surface:** Penetration testing (attempt to extract conversations)
+4. **Deployment feasibility:**
+   - **Installation size:** APK/IPA size (target: <500MB)
+   - **Compatibility:** % of devices that can run model (Android 8+, iOS 14+)
+
+**Expected Outcomes:**
+- 4-bit Llama 2-7B: 1.5-2.5s TTFT, 15-25 tokens/sec on flagship smartphones (Snapdragon 8 Gen 2)
+- 8-bit Llama 2-7B: 0.8-1.5s TTFT, 25-40 tokens/sec
+- Distilled 3B model: 0.5-1.0s TTFT, 40-60 tokens/sec (best latency)
+- Quality: 3-5% degradation vs. full-precision (acceptable for privacy gain)
+- Battery: 5-8% drain per 10-minute conversation (manageable)
+- 100% data residency (no server communication except optional encrypted sync)
+
+**Ablations:**
+- Quantization: 4-bit vs. 8-bit vs. FP16
+- Model size: 1.3B vs. 3B vs. 7B
+- KV-cache size: {512, 1024, 2048} tokens
+- Device tiers: Flagship (Snapdragon 8 Gen 2) vs. mid-range (Snapdragon 7 Gen 1) vs. budget (Snapdragon 600-series)
+
+---
+
+### **Experiment 4: Privacy-Utility Trade-Off Analysis Across Mechanisms**
+
+**Hypothesis:** Different privacy mechanisms (federated learning, DP, on-device inference, secure MPC) have distinct privacy-utility-cost trade-offs; systematic comparison identifies optimal strategies for different deployment scenarios (high-security clinical vs. consumer apps).
+
+**Setup:**
+- **Privacy mechanisms:**
+  1. **Federated learning:** FedAvg + LoRA (Exp 1)
+  2. **Differential privacy:** DP-SGD training (Exp 2)
+  3. **On-device inference:** No data transmission (Exp 3)
+  4. **Secure MPC:** CrypTen for encrypted model inference (server-based but encrypted)
+  5. **Homomorphic encryption:** TenSEAL for encrypted analytics
+  6. **Hybrid:** Federated + DP + on-device (maximum privacy)

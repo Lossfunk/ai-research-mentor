@@ -1,0 +1,56 @@
+<thinking>
+Experienced user. Need concrete heuristics + evaluation. Key is to be blunt: heuristics can match structure cues but not semantics; parity must be narrowly defined. Provide metrics and error analysis.
+</thinking>
+
+**Blunt assessment:** Rule-based cues can approximate *structural boundaries* surprisingly well, but they will not replicate hierarchical *reasoning*. If you define parity too broadly, this will fail. Define parity narrowly: boundary detection and routing efficiency, not end-task accuracy.
+
+---
+
+## Prototype heuristics (pre-inference only)
+Keep them deterministic and cheap.
+
+- **Section headers:** regex + typography cues (all-caps, numbering, markdown headers). Treat as hard boundaries.
+- **Discourse markers:** lexicon-based triggers (“however,” “in summary,” “methods,” “limitations”) with sentence-level scope.
+- **Layout cues:** paragraph length spikes, bullet/list starts, code fences.
+- **Window routing:** map tokens to pseudo-levels (sentence → paragraph → section) and pre-chunk accordingly.
+
+Output is a **structure graph** (segments + parent links), not summaries.
+
+---
+
+## How to integrate
+Feed the model **the same tokens**, but:
+- Use heuristic segments to set attention masks or chunk ordering.
+- No learned parameters, no training-time changes.
+
+This keeps the comparison clean.
+
+---
+
+## Metrics (define parity precisely)
+Primary (structure-level):
+- **Boundary F1** vs. the Hierarchical Transformer’s induced boundaries.
+- **Segment purity:** proportion of segments containing a single gold topic (if available).
+
+Secondary (downstream, diagnostic):
+- **Efficiency at fixed accuracy:** latency/memory for matched task performance.
+- **Long-context recall:** accuracy conditioned on dependencies crossing ≥K segments.
+
+Do not lead with overall accuracy; that confounds semantics.
+
+---
+
+## Error analysis (where heuristics will lose)
+Predefine buckets:
+- **False splits:** rhetorical markers inside a coherent section.
+- **Missed merges:** long sections without explicit headers.
+- **Semantic drift:** structurally correct segments that group unrelated content.
+
+For each bucket, show examples and quantify frequency.
+
+---
+
+## Decision rule
+If heuristics match boundary F1 and recover most efficiency gains but trail on long-range dependencies, conclude: **hierarchy helps mainly via learned semantics, not structure discovery**. That’s a useful, honest result.
+
+If you want, tell me the document genre—I can tune the marker lexicon to avoid obvious false splits.

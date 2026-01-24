@@ -1,0 +1,253 @@
+The search yielded some relevant sources on saliency-based interpretability for autonomous driving [1,2,3,4,5,6], but limited coverage of concept-based methods, transformer interpretability, or governance frameworks. I'll construct a comprehensive 1-year roadmap drawing on these sources and established domain knowledge, noting where authoritative references should be obtained.
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Autonomous driving (AD) perception models—CNNs, transformers, multi-modal fusion networks—make safety-critical decisions (object detection, trajectory prediction, scene understanding) but remain opaque black boxes. Interpretability tools (saliency maps [1,2,3], attention visualization, concept activation vectors, counterfactual explanations) promise to explain model behavior, but face critical gaps:
+
+1. **Validation gap:** Most interpretability methods lack ground-truth validation (do saliency maps actually reflect causal reasoning? [1])
+2. **Safety-critical requirements:** AD demands higher standards than general ML (false explanations can mask dangerous failure modes)
+3. **Stakeholder diversity:** Engineers, regulators (NHTSA, Euro NCAP), insurers, end-users need different explanation granularities
+4. **Governance uncertainty:** No consensus on interpretability requirements for AD certification (SAE Levels 3-5)
+5. **Method proliferation:** 50+ interpretability techniques with unclear comparative strengths for AD-specific tasks
+
+Recent work [1,2,3] demonstrates saliency-based attention for steering/detection, but systematic evaluation across methods, failure modes, and governance contexts is absent.
+
+**Core Hypothesis:**  
+Rigorous evaluation of interpretability tools on AD perception models—using causal validation [1], adversarial robustness testing, multi-stakeholder alignment studies, and failure mode analysis—can identify which methods provide trustworthy explanations for different AD tasks (detection, segmentation, prediction) and inform regulatory frameworks for interpretability requirements.
+
+**Primary Goals (1-year horizon):**
+- **Technical:** Evaluate 8-10 interpretability methods (saliency, attention, concept-based, counterfactual) across 3 AD perception tasks (object detection, semantic segmentation, trajectory prediction)
+- **Validation:** Establish ground-truth benchmarks using causal interventions, human driver gaze [2,3], and controlled failure injection
+- **Governance:** Conduct 3 stakeholder workshops (engineers, regulators, insurers) to align interpretability requirements with certification needs
+- **Deployment:** Publish open-source evaluation toolkit + benchmark datasets + policy recommendations white paper
+- **Impact:** Influence 1-2 regulatory standards (submit to ISO 21448 SOTIF, SAE J3016 updates)
+
+**Secondary Goals:**
+- Identify failure modes where interpretability tools mislead (adversarial saliency, concept drift)
+- Multi-modal interpretability (camera + LiDAR + radar fusion)
+- Real-time constraints: Latency budgets for in-vehicle explanation systems
+- Fairness: Interpretability across diverse driving contexts (urban, highway, weather conditions)
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Saliency Map Validation via Causal Filtering (Months 1-3)**
+
+**Hypothesis:** Causal filtering [1] of saliency maps (removing regions and measuring prediction change) can separate spurious correlations from true causal factors in CNN-based object detectors, improving explanation fidelity by 30-50% vs. unfiltered saliency.
+
+**Setup:**
+- **Models:**
+  - YOLOv8 (real-time detection, 640×640 input)
+  - Faster R-CNN (two-stage detector, ResNet-50 backbone)
+  - DETR (transformer-based detection)
+- **Interpretability methods:**
+  1. Grad-CAM (gradient-weighted class activation mapping)
+  2. Integrated Gradients
+  3. LIME (local surrogate models)
+  4. Attention rollout (for DETR)
+- **Causal validation protocol [1]:**
+  - Generate saliency map for prediction (e.g., "pedestrian detected")
+  - Segment map into "blobs" (connected high-saliency regions)
+  - Systematically mask each blob (replace with mean pixel value or inpainting)
+  - Measure prediction change (ΔP: drop in detection confidence)
+  - Retain only blobs with ΔP > threshold (e.g., 0.2)
+  - Compare filtered vs. unfiltered maps: precision (% high-saliency pixels causally relevant), recall (% causal regions captured)
+- **Datasets:**
+  - nuScenes (1,000 scenes, 23 classes, multi-camera)
+  - KITTI (7,481 training images, stereo cameras)
+  - BDD100K (100k videos, diverse weather/lighting)
+- **Ground truth:** Human driver gaze data [2,3] from naturalistic driving studies (100 hours from MIT-AVT dataset)
+
+**Baselines:**
+1. Unfiltered saliency maps (standard Grad-CAM, IG)
+2. Random masking (sanity check)
+3. Human gaze heatmaps (gold standard for attention)
+4. Occlusion sensitivity (brute-force but computationally expensive)
+
+**Evaluation Metrics:**
+1. **Fidelity:**
+   - Insertion/deletion curves (AUC): Incrementally add/remove high-saliency pixels, measure accuracy change
+   - Pointing game: % of top-saliency pixels inside ground-truth bounding boxes
+   - Causal precision/recall: % saliency regions with ΔP > 0.2
+2. **Alignment with human gaze:**
+   - KL divergence between saliency map and driver gaze heatmap
+   - Normalized Scanpath Saliency (NSS)
+3. **Computational cost:** ms per explanation (target: <50ms for real-time)
+4. **Stability:** Saliency map variance across similar inputs (low variance = stable)
+
+**Expected Outcomes:**
+- Causal filtering improves precision by 35-45% (removes spurious background activations)
+- Grad-CAM + causal filtering: 0.72-0.78 AUC on insertion curves (vs. 0.55-0.65 unfiltered)
+- DETR attention rollout: Better alignment with human gaze (NSS 1.8-2.2 vs. 1.2-1.6 for CNNs)
+- Identifies failure modes: Sky/road texture often highlighted but not causal for detection
+- Computational: Grad-CAM 15-25ms, IG 80-120ms, LIME 200-500ms (too slow for real-time)
+
+**Ablations:**
+- Masking strategies: Mean replacement vs. Gaussian blur vs. GAN inpainting
+- Blob segmentation thresholds: {0.1, 0.2, 0.3} for ΔP
+- Model architectures: CNN vs. transformer attention patterns
+- Object classes: Pedestrian vs. vehicle vs. traffic sign (different saliency patterns)
+
+---
+
+### **Experiment 2: Concept-Based Interpretability for Semantic Segmentation (Months 3-5)**
+
+**Hypothesis:** Concept Activation Vectors (CAVs) and Network Dissection can identify human-interpretable concepts (road surface, lane markings, vehicle rear lights) learned by segmentation models, enabling debugging of systematic errors (e.g., misclassifying wet roads as water).
+
+**Setup:**
+- **Models:**
+  - DeepLabV3+ (ASPP, ResNet-101 backbone)
+  - SegFormer (transformer-based, hierarchical)
+  - Mask2Former (universal segmentation)
+- **Concept extraction methods:**
+  1. **TCAV (Testing with CAVs):** Train linear classifiers to separate concept vs. non-concept activations in intermediate layers
+  2. **Network Dissection:** Identify units (channels) that align with semantic concepts (IoU with concept masks)
+  3. **ACE (Automated Concept Extraction):** Unsupervised discovery of visual concepts via clustering
+- **Concepts (20-30 defined):**
+  - **Road surface:** Dry asphalt, wet asphalt, gravel, snow
+  - **Lane markings:** Solid white, dashed yellow, faded/worn
+  - **Lighting:** Daytime, dusk, night, headlights, streetlights
+  - **Weather:** Rain, fog, snow, clear
+  - **Objects:** Vehicle rear (brake lights on/off), pedestrian (clothing color), cyclist
+- **Datasets:**
+  - Cityscapes (19 classes, 5,000 annotated, diverse cities)
+  - Mapillary Vistas (25,000 images, 100+ classes)
+  - ACDC (Adverse Conditions, 4,000 images with fog/rain/snow/night)
+  - Custom concept dataset: 500 images per concept manually annotated
+
+**Baselines:**
+1. No concept-based analysis (standard segmentation metrics only)
+2. Manual layer visualization (t-SNE of activations)
+3. Ablation studies (remove layers, measure performance drop)
+
+**Evaluation Metrics:**
+1. **Concept sensitivity (TCAV):**
+   - Directional derivative: How much does prediction change when moving in CAV direction?
+   - Statistical significance: t-test across concept examples
+2. **Concept alignment (Network Dissection):**
+   - IoU between unit activation and concept mask
+   - % units aligned with ≥1 concept (interpretability score)
+3. **Debugging utility:**
+   - Can concepts explain failure modes? (e.g., "wet road" concept missing → misclassification)
+   - Counterfactual: If we enhance "lane marking" concept, does performance improve?
+4. **Human evaluability:**
+   - User study: 20 engineers rate concept meaningfulness (1-5 scale)
+   - Concept stability: Do concepts persist across training runs?
+
+**Expected Outcomes:**
+- Network Dissection: 40-55% of units in DeepLabV3+ align with ≥1 concept (vs. 25-35% for ImageNet models)
+- TCAV: "Wet road" concept has high sensitivity for road/sidewalk classification (directional derivative 0.6-0.8)
+- Identifies bugs: Models lack "faded lane marking" concept → 15-20% accuracy drop on worn roads
+- ACE discovers 12-18 interpretable concepts automatically (road texture, vehicle orientation)
+- Transformer models (SegFormer) have more distributed concepts (harder to isolate single-unit concepts)
+
+**Ablations:**
+- Concept granularity: Coarse (road surface) vs. fine (asphalt roughness)
+- Layer depth: Early (low-level textures) vs. late (semantic concepts)
+- Concept dataset size: 100 vs. 500 vs. 1,000 examples per concept
+- Model architectures: CNN vs. transformer concept localization
+
+---
+
+### **Experiment 3: Counterfactual Explanations for Trajectory Prediction (Months 5-7)**
+
+**Hypothesis:** Counterfactual generation (minimal input perturbations that change predicted trajectory) can identify fragile decision boundaries in trajectory predictors, revealing safety-critical scenarios where small perception errors cause large trajectory changes.
+
+**Setup:**
+- **Models:**
+  - Trajectron++ (graph-based, multi-agent interaction)
+  - Wayformer (transformer for waypoint prediction)
+  - MultiPath++ (multi-modal trajectory forecasting)
+- **Counterfactual generation:**
+  - **Optimization-based:** Minimize ||x' - x|| s.t. f(x') ≠ f(x) (change predicted trajectory by >2m)
+  - **GAN-based:** Train conditional GAN to generate realistic counterfactual scenes
+  - **Search-based:** Genetic algorithms to perturb object positions/velocities
+- **Perturbation types:**
+  - Object displacement: Move pedestrian/vehicle ±0.5-2m
+  - Velocity change: ±10-30% speed adjustment
+  - Appearance: Occlusion, lighting change
+  - Map features: Lane marking removal, traffic sign occlusion
+- **Datasets:**
+  - nuScenes Prediction (1,000 scenes, 12k agents)
+  - Argoverse 2 (250k scenarios, HD maps)
+  - Waymo Open Motion (104k scenarios, multi-agent)
+
+**Baselines:**
+1. Random perturbations (sanity check)
+2. Adversarial examples (maximize prediction error, may be unrealistic)
+3. Rule-based scenarios (domain expert-defined edge cases)
+
+**Evaluation Metrics:**
+1. **Counterfactual quality:**
+   - Minimality: L2 distance of perturbation (target: <1m object displacement)
+   - Realism: Discriminator score (GAN-based), physics plausibility (no teleportation)
+   - Diversity: # distinct counterfactual classes (e.g., "pedestrian crosses" vs. "vehicle cuts in")
+2. **Safety insights:**
+   - Fragility score: # counterfactuals with <0.5m perturbation causing >2m trajectory change
+   - Failure mode coverage: % of known AD failure scenarios (NHTSA crash database) explained by counterfactuals
+3. **Actionability:**
+   - User study: 15 AD engineers rate usefulness for debugging (1-5 scale)
+   - Mitigation success: Can identified fragile scenarios be fixed via retraining?
+
+**Expected Outcomes:**
+- 15-25% of test scenarios have fragile counterfactuals (<0.5m perturbation → >2m trajectory change)
+- Most fragile scenarios: Pedestrian near curb (ambiguous crossing intent), occluded vehicles at intersections
+- GAN-based counterfactuals: 78-85% realism score (vs. 60-70% for optimization-based)
+- Identifies 8-12 novel failure modes not in existing test suites
+- Retraining with counterfactual augmentation improves robustness by 12-18% (fewer fragile scenarios)
+
+**Ablations:**
+- Perturbation budget: {0.3m, 0.5m, 1.0m, 2.0m}
+- Counterfactual diversity: Single vs. multiple counterfactuals per input
+- Model architectures: Graph vs. transformer sensitivity to perturbations
+- Scenario complexity: Single-agent vs. multi-agent interactions
+
+---
+
+### **Experiment 4: Multi-Modal Fusion Interpretability (Months 7-9)**
+
+**Hypothesis:** Interpreting multi-modal fusion (camera + LiDAR + radar) requires modality-specific attribution methods that identify which sensor modality drives each prediction, enabling diagnosis of sensor failures and fusion strategy weaknesses.
+
+**Setup:**
+- **Models:**
+  - BEVFusion (unified BEV representation, camera + LiDAR)
+  - TransFusion (transformer-based fusion)
+  - PointPainting (LiDAR points painted with camera semantics)
+- **Modality attribution methods:**
+  1. **Modality dropout:** Systematically remove modalities, measure performance drop
+  2. **Shapley values:** Compute marginal contribution of each modality to prediction
+  3. **Attention visualization:** For transformers, analyze cross-modal attention weights
+  4. **Gradient-based:** Integrated gradients for each modality input
+- **Fusion strategies:**
+  - Early fusion (concatenate features)
+  - Late fusion (separate backbones, fuse predictions)
+  - Intermediate fusion (BEV-level fusion)
+- **Datasets:**
+  - nuScenes (camera + LiDAR + radar, 40k annotated frames)
+  - Waymo Open (camera + LiDAR, 200k frames)
+  - Custom failure injection: Simulate sensor degradation (camera blur, LiDAR dropout, radar noise)
+
+**Baselines:**
+1. Single-modality models (camera-only, LiDAR-only)
+2. Oracle fusion (assume perfect modality selection)
+3. Uniform weighting (equal contribution from all modalities)
+
+**Evaluation Metrics:**
+1. **Modality importance:**
+   - Shapley value distribution: % contribution per modality across scenarios
+   - Critical modality identification: Which modality is necessary (accuracy drops >20% when removed)?
+2. **Failure diagnosis:**
+   - Can attribution identify degraded sensors? (e.g., high camera attribution when LiDAR is noisy)
+   - False reliance: Does model over-rely on one modality in ambiguous scenarios?
+3. **Fusion strategy comparison:**
+   - Which fusion approach has most balanced modality usage?
+   - Robustness: Performance under single-modality failure
+4. **Computational cost:** ms per attribution (target: <100ms)
+
+**Expected Outcomes:**
+- Camera contributes 55-65% for object classification, LiDAR 60-75% for distance estimation
+- BEVFusion

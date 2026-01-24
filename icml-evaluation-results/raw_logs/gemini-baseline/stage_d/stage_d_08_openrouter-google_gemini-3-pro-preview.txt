@@ -1,0 +1,69 @@
+This proposal designs a **Zero-Shot Late-Fusion Variant**. Instead of learning a hierarchical representation (which requires training a Level 2 encoder), this variant utilizes a pre-trained NLI (Natural Language Inference) backbone to classify local chunks independently, then aggregates the signals deterministically.
+
+This removes the need for hierarchical pre-training (e.g., Masked Chunk/Sentence Modeling) and task-specific fine-tuning.
+
+### 1. The Zero-Shot Architecture: "Chunk-wise Entailment"
+
+**Concept:** Replace the *Learned* Global Encoder (Transformer/LSTM) with a *Heuristic* Global Aggregator. The "Hierarchy" is preserved in the data flow (Word $\to$ Chunk $\to$ Doc) but removed from the parameter space.
+
+*   **Level 1 (Local - Zero-Shot):**
+    *   **Backbone:** `DeBERTa-v3-large` (or similar) fine-tuned on MNLI (Multi-Genre Natural Language Inference).
+    *   **Input:** Pair each Chunk $C_i$ with a hypothesis template for every class label $L_j$.
+        *   *Template:* "This text is about [Label Description]."
+    *   **Output:** An "Entailment" probability score $P(E | C_i, L_j)$ for every chunk-label pair.
+
+*   **Level 2 (Global - Deterministic):**
+    *   **Mechanism:** Aggregation of probabilities rather than embeddings.
+    *   **Max-Pooling (aka "Evidence Detection"):** $S_{doc, j} = \max_{i=1..K} P(E | C_i, L_j)$.
+        *   *Logic:* If *any* chunk strongly entails the label (e.g., contains a specific keyword or sentiment), the document receives that label.
+    *   **Mean-Pooling (aka "Consensus"):** $S_{doc, j} = \frac{1}{K} \sum_{i=1}^{K} P(E | C_i, L_j)$.
+        *   *Logic:* The label must be consistent across the whole text.
+
+### 2. Redesigned Configuration
+
+Since there is no gradient updates, the "Training Configuration" is replaced by an **"Inference Configuration."**
+
+**Removed Components:**
+*   `Optimizer` (AdamW) & `Scheduler` (Linear Warmup).
+*   `Loss Function` (CrossEntropy).
+*   `Gradient Accumulation Steps`.
+*   `Hierarchical_Pretraining_Path` (The checkpoint warm-starting the Level 2 encoder).
+
+**New Configuration Parameters:**
+*   **`Hypothesis_Template`:** A string format required for the NLI model (e.g., `f"The topic of this section is {label_name}."`).
+*   **`Aggregation_Mode`:** `['MAX', 'MEAN', 'TOP_K_MEAN']`.
+    *   *Recommendation:* `TOP_K_MEAN` (Average the scores of the top 3 most confident chunks) balances outlier noise and signal dilution.
+*   **`Label_Map`:** A semantic dictionary mapping Class IDs to descriptive natural language names (e.g., `0 -> "Politics"`, `1 -> "Sports"`). *Crucial: The model relies on the semantic meaning of the label name, not the ID.*
+
+### 3. Comparability Justification
+
+To ensure the Zero-Shot variant can be validly compared to the Supervised Hierarchical Baseline in your tables:
+
+**A. Same Input/Output Interface**
+*   **Inputs:** The pipeline must accept the exact same raw text files and perform the exact same **Segmentation** (Window Size 512, Stride 128). This isolates the impact of the *model* from the impact of *data processing*.
+*   **Outputs:** The Zero-Shot aggregator must output a probability distribution over the same $N$ classes. You must apply `Softmax` to the aggregated scores $S_{doc}$ to generate comparable logits.
+
+**B. Metric Alignment**
+*   **Thresholding:** Supervised models learn a decision boundary. Zero-Shot models output raw probabilities. To compare F1 scores fairly, you cannot just take `argmax`.
+*   **Calibration (The "One-Shot" Adjustment):** You are permitted to use the **Validation Set** (not Test Set) to calibrate a threshold $\tau$ for the Zero-Shot scores.
+    *   *Why:* This aligns the sensitivity of the Zero-Shot model with the Supervised model, ensuring the comparison is about *ranking quality* (AUC/ROC) rather than absolute calibration.
+
+**C. Resource Normalization**
+*   **Inference Cost:** The Zero-Shot NLI approach is computationally expensive ($N_{classes} \times K_{chunks}$ forward passes).
+*   To make the comparison fair in an "Efficiency" table, you must report **Inference FLOPs**.
+    *   *Supervised Hierarchical:* $1 \times \text{BERT pass per chunk}$.
+    *   *Zero-Shot NLI:* $N_{labels} \times \text{BERT pass per chunk}$.
+    *   *Justification:* This highlights the trade-off: The Zero-Shot variant saves *Training Time* (zero hours) but increases *Inference Cost*.
+
+### 4. Summary of Experiment
+
+| Component | Original Hierarchical Transformer | Zero-Shot NLI Variant |
+| :--- | :--- | :--- |
+| **Level 1** | BERT (Fine-tuned) | DeBERTa-MNLI (Frozen) |
+| **Level 2** | Transformer/LSTM (Learned) | Max/Mean Pooling (Heuristic) |
+| **Pre-training** | Hierarchical MLM (Optional) | None (Off-the-shelf) |
+| **Training Data** | 100% of Train Set | 0% (None) |
+| **Comparability** | Standard F1 | F1 @ Calibrated Threshold |
+
+**Primary Hypothesis to Test:** "Does the learned hierarchical structure contribute unique signal, or is long-document classification simply the sum of local evidence?"
+*   If the Zero-Shot Max-Pooling performs comparably to the Supervised model, it suggests the task is "Locally Salient" (finding a needle in a haystack) rather than "Globally Structural."

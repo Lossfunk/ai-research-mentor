@@ -1,0 +1,57 @@
+This is a crucial section to write carefully. When results are "modest" (a polite academic term for "barely better than a baseline" or "statistically significant but practically small"), the goal is to shift the narrative from **"our model is weak"** to **"the task is inherently noisy and requires a paradigm shift."**
+
+Here is a strategy to frame these limitations and a concrete contingency plan for future work.
+
+---
+
+### Part 1: How to Frame the Limitations (The Defense)
+
+Do not apologize for the results. Instead, contextualize them using the following three arguments.
+
+#### 1. The "Subjectivity Ceiling" Argument
+**Argument:** Aspect scores (e.g., Originality, Substance) are not objective truths; they are subjective opinions with low inter-annotator agreement.
+**The Spin:** "The modest performance is likely not a failure of model capacity, but a reflection of the **aleatoric uncertainty** in the labels. If two human reviewers cannot agree on whether a paper’s 'Originality' is a 3 or a 4, a model cannot be expected to minimize loss beyond that human variance."
+
+#### 2. The "External Knowledge" Gap
+**Argument:** Predicting "Originality" or "Significance" requires knowledge outside the paper itself. You cannot judge if an idea is new just by reading the idea; you must know the entire history of the field.
+**The Spin:** "Aspect score prediction is treated here as a single-document classification task. However, true assessment of 'Novelty' is a **retrieval-heavy task** requiring comparison against the state-of-the-art. Modest gains suggest that text-only models hit an upper bound when deprived of the citation graph or external knowledge bases."
+
+#### 3. The "Halo Effect" (Collinearity)
+**Argument:** Reviewers often decide "Accept/Reject" first and then fill in the aspect scores to match that decision (e.g., giving high scores across the board for a paper they like).
+**The Spin:** "The high correlation between aspect scores suggests they often suffer from a 'halo effect,' where a reviewer’s overall impression bleeds into specific sub-scores. This makes the labels less distinct and harder for a model to disentangle based on specific textual features."
+
+---
+
+### Part 2: Contingency Plan for Future Work
+
+This section shows reviewers you have a roadmap to solve the problems you just identified.
+
+#### Direction A: From Regression to Pairwise Ranking
+Instead of predicting absolute scores (which are poorly calibrated between reviewers), propose predicting relative quality.
+*   **Proposal:** "Future work should reframe this as a **Learning-to-Rank** problem. Instead of asking 'Is this paper a 4/5?', the model should take pairs of papers and predict 'Is Paper A better than Paper B on Clarity?' This mitigates individual reviewer bias and calibration issues."
+
+#### Direction B: Multi-Task Learning with Review Text
+The raw scores are noisy summaries; the review *text* contains the signal.
+*   **Proposal:** "To improve aspect prediction, future models should utilize a **multi-task objective** that jointly predicts the score *and* generates the textual review (or aligns the paper embedding with the review embedding). This forces the model to learn the semantic justification for a score, rather than just fitting a noisy integer."
+
+#### Direction C: Retrieval-Augmented Assessment
+Address the "External Knowledge" gap.
+*   **Proposal:** "To break the performance ceiling on 'Originality' and 'Substance,' future architectures must incorporate **Retrieval-Augmented Generation (RAG)**. The model should retrieve the top-$k$ related papers from the training set and condition the score prediction on the *difference* between the current submission and retrieved priors."
+
+---
+
+### Part 3: Sample Text for the Discussion Section
+
+You can adapt these paragraphs for your paper:
+
+**On the "Subjectivity Ceiling" (Insert in Discussion):**
+> "While our models achieve performance comparable to baselines, the gains in aspect score prediction remain modest. We hypothesize that this performance plateaus due to the inherent subjectivity of the ground truth labels. In peer review, inter-annotator agreement on sub-aspects like 'Novelty' is notoriously low (approaching random chance in some venues). Consequently, the error term in our models likely captures irreducible human variance rather than model deficiency. This suggests that without calibrated or 'gold-standard' consensus labels, single-document regression models face a hard 'subjectivity ceiling'."
+
+**On the "External Knowledge" Gap (Insert in Limitations):**
+> "Furthermore, our analysis highlights a fundamental limitation in treating review prediction as a self-contained text classification task. Determining 'Substance' or 'Originality' is inherently comparative; a human reviewer evaluates a paper relative to the existing literature. Our current approach, which relies solely on the submission text, lacks the external world knowledge required to verify claims of novelty. This indicates that textual coherence alone is a weak proxy for scientific merit."
+
+**On the Contingency Plan (Insert in Future Work):**
+> "To address these limitations, future work must move beyond simple regression on noisy labels. We propose three specific directions:
+> 1.  **Pairwise Ranking:** shifting the objective from absolute score prediction to relative ranking (e.g., Siamese networks comparing paper pairs) to mitigate reviewer calibration bias.
+> 2.  **Citation-Aware Modeling:** incorporating citation graphs or retrieval mechanisms to provide the model with context regarding the state-of-the-art, thereby allowing for a genuine assessment of novelty.
+> 3.  **Review-Guided Supervision:** utilizing the text of the reviews as auxiliary supervision signals to ground the score predictions in specific semantic critiques."

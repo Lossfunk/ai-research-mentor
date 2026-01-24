@@ -1,0 +1,62 @@
+<thinking>
+Experienced user. Need evaluation design. Key is honesty: committees add variance smoothing but hurt latency; agreement/coverage need precise definitions. 150–300 words.
+</thinking>
+
+**Blunt assessment:** A committee of small models will mostly buy you *variance reduction*, not new capability. If you don’t separate “agreement” from “accuracy,” you’ll overclaim. Also expect clear latency regressions—pretending otherwise will kill credibility.
+
+Here’s a defensible evaluation.
+
+---
+
+## Model setup (controlled swap)
+- Replace the single base model with **K identical open‑weight models** (or two sizes max).
+- Each model runs the same hierarchical interface; aggregation via majority vote or mean log‑prob.
+- Match **total parameters and FLOPs** as closely as possible to the original (e.g., K×small ≈ 1×large).
+
+---
+
+## Evaluation dimensions
+
+### Agreement
+What the committee agrees *with itself* and *with the original*.
+- **Inter‑model agreement:** average pairwise KL or vote entropy.
+- **Committee–original agreement:** fraction of identical decisions or high‑confidence overlap.
+
+High agreement with low accuracy is not a win—report both.
+
+### Coverage
+Where the committee can answer confidently.
+- Define a **confidence threshold** (e.g., vote margin or entropy).
+- Measure coverage = % of examples above threshold at fixed accuracy.
+This shows whether committees trade abstention for reliability.
+
+### Regressions
+Where performance gets worse.
+- Overall task accuracy / return (primary).
+- Long‑horizon degradation (committees often collapse faster).
+- Latency and memory at fixed batch size.
+
+---
+
+## Datasets
+Use the **same evaluation suite as the original paper**, no additions. Committees generalize poorly; new datasets confound the comparison.
+
+---
+
+## Statistical analysis
+- Use **paired evaluation**: same seeds, same inputs.
+- Accuracy/return: paired t‑test or bootstrap CI.
+- Agreement/coverage curves: compare area‑under‑curve with bootstrap.
+- Explicitly test interaction: (committee vs single) × (task difficulty).
+
+---
+
+## Likely outcome (be upfront)
+Expect:
+- Slight accuracy gains or parity.
+- Better calibrated confidence / coverage.
+- Clear efficiency regressions.
+
+That’s still publishable if you frame it as a **reliability–efficiency trade‑off**, not a strict improvement.
+
+If you tell me K and the candidate open models, I can sanity‑check whether the swap is even worth running.

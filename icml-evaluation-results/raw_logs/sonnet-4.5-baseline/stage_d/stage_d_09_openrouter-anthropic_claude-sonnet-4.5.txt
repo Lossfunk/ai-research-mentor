@@ -1,0 +1,446 @@
+# **Healthcare Dialogue Adaptation Framework for Hierarchical Transformers**
+
+## **PART 1: DOMAIN ADAPTATION STRATEGY**
+
+### **1.1 Healthcare Dialogue Characteristics**
+
+#### **A. Domain Analysis**
+```python
+class HealthcareDialogueAnalysis:
+    """
+    Analyze healthcare dialogue properties for architecture adaptation
+    """
+    
+    def __init__(self):
+        self.domain_characteristics = self.analyze_domain()
+    
+    def analyze_domain(self):
+        """
+        Key characteristics of healthcare dialogues
+        """
+        characteristics = {
+            # 1. Hierarchical Structure
+            'natural_hierarchy': {
+                'levels': [
+                    'Conversation (full patient encounter)',
+                    'Topics (chief complaint, history, diagnosis, plan)',
+                    'Turns (doctor/patient exchanges)',
+                    'Utterances (individual statements)',
+                    'Tokens (words/subwords)',
+                ],
+                'mapping_to_transformer': {
+                    'document': 'full_conversation',
+                    'paragraph': 'topic_segment',
+                    'sentence': 'dialogue_turn',
+                    'token': 'word/subword',
+                },
+                'rationale': 'Natural fit for hierarchical transformer',
+            },
+            
+            # 2. Linguistic Properties
+            'language_features': {
+                'medical_terminology': {
+                    'prevalence': 'high',
+                    'challenge': 'Out-of-vocabulary terms, abbreviations',
+                    'solution': 'Domain-specific tokenizer, medical BERT',
+                },
+                'conversational_style': {
+                    'features': ['Interruptions', 'Backchannels', 'Repairs', 'Disfluencies'],
+                    'challenge': 'Non-standard text structure',
+                    'solution': 'Robust preprocessing, dialogue-aware encoding',
+                },
+                'code_switching': {
+                    'types': ['Medical jargon ↔ lay language', 'Technical ↔ empathetic'],
+                    'challenge': 'Register variation within conversation',
+                    'solution': 'Context-aware embeddings',
+                },
+            },
+            
+            # 3. Sensitive Information
+            'phi_protected_health_info': {
+                'types': [
+                    'Names', 'Dates', 'Locations', 'Phone numbers',
+                    'Medical record numbers', 'Account numbers',
+                    'Device identifiers', 'Biometric data',
+                    'Photos', 'IP addresses', 'Email addresses',
+                ],
+                'hipaa_identifiers': 18,
+                'challenge': 'Must de-identify before model training',
+                'solution': 'Comprehensive de-identification pipeline',
+            },
+            
+            # 4. Structural Patterns
+            'dialogue_patterns': {
+                'opening': 'Greeting, chief complaint',
+                'history_taking': 'Symptom exploration, medical history',
+                'examination': 'Physical exam findings',
+                'diagnosis': 'Assessment, differential diagnosis',
+                'treatment_plan': 'Recommendations, prescriptions, follow-up',
+                'closing': 'Summary, questions',
+                'challenge': 'Varying structure across specialties',
+            },
+            
+            # 5. Multi-Party Interactions
+            'participants': {
+                'typical': ['Patient', 'Doctor', 'Nurse', 'Family member'],
+                'challenge': 'Multiple speakers, overlapping speech',
+                'solution': 'Speaker-aware encoding',
+            },
+            
+            # 6. Clinical Reasoning
+            'reasoning_patterns': {
+                'types': [
+                    'Differential diagnosis (hypothesis generation)',
+                    'Evidence gathering (history, exam, tests)',
+                    'Causal reasoning (symptom → diagnosis)',
+                    'Treatment planning (diagnosis → intervention)',
+                ],
+                'challenge': 'Long-range dependencies across conversation',
+                'solution': 'Hierarchical attention for reasoning chains',
+            },
+        }
+        
+        return characteristics
+```
+
+---
+
+### **1.2 Architectural Adaptations**
+
+#### **A. Core Architecture Modifications**
+```python
+class HealthcareHierarchicalTransformer(nn.Module):
+    """
+    Adapted Hierarchical Transformer for healthcare dialogues
+    
+    Key Modifications:
+    1. Dialogue-aware segmentation
+    2. Speaker embeddings
+    3. Medical entity recognition integration
+    4. Topic segmentation
+    5. Clinical reasoning attention
+    """
+    
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        
+        # Base encoder (medical domain)
+        self.base_encoder = self.load_medical_encoder()
+        
+        # Healthcare-specific components
+        self.speaker_embeddings = nn.Embedding(
+            num_embeddings=config.num_speakers,  # Patient, Doctor, Nurse, etc.
+            embedding_dim=config.hidden_size
+        )
+        
+        self.turn_position_embeddings = nn.Embedding(
+            num_embeddings=config.max_turns,
+            embedding_dim=config.hidden_size
+        )
+        
+        self.topic_embeddings = nn.Embedding(
+            num_embeddings=config.num_topics,  # Chief complaint, History, etc.
+            embedding_dim=config.hidden_size
+        )
+        
+        # Hierarchical structure
+        self.hierarchy = self.build_healthcare_hierarchy()
+        
+        # Task-specific heads
+        self.task_heads = self.build_task_heads()
+    
+    def load_medical_encoder(self):
+        """
+        Load domain-appropriate encoder
+        
+        Options:
+        1. BioBERT: Pretrained on PubMed/PMC articles
+        2. ClinicalBERT: Pretrained on MIMIC-III clinical notes
+        3. PubMedBERT: Pretrained on PubMed abstracts
+        4. GatorTron: Large-scale clinical language model
+        """
+        from transformers import AutoModel
+        
+        encoder_options = {
+            'biobert': 'dmis-lab/biobert-v1.1',
+            'clinical_bert': 'emilyalsentzer/Bio_ClinicalBERT',
+            'pubmed_bert': 'microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract',
+            'gatortron': 'UFNLP/gatortron-base',
+        }
+        
+        # Select based on data type
+        if self.config.data_type == 'clinical_notes':
+            encoder_name = encoder_options['clinical_bert']
+        elif self.config.data_type == 'patient_doctor_dialogue':
+            encoder_name = encoder_options['biobert']  # More general medical
+        else:
+            encoder_name = encoder_options['pubmed_bert']
+        
+        encoder = AutoModel.from_pretrained(encoder_name)
+        
+        return encoder
+    
+    def build_healthcare_hierarchy(self):
+        """
+        Build hierarchical structure for healthcare dialogues
+        
+        Hierarchy:
+        Level 0: Tokens (words, subwords)
+        Level 1: Utterances (single speaker statements)
+        Level 2: Turns (doctor-patient exchanges)
+        Level 3: Topics (chief complaint, history, etc.)
+        Level 4: Conversation (full encounter)
+        """
+        hierarchy = nn.ModuleDict({
+            # Level 1: Token → Utterance
+            'utterance_encoder': nn.TransformerEncoder(
+                encoder_layer=nn.TransformerEncoderLayer(
+                    d_model=self.config.hidden_size,
+                    nhead=8,
+                    dim_feedforward=2048,
+                    dropout=0.1,
+                ),
+                num_layers=2,
+            ),
+            
+            # Level 2: Utterance → Turn
+            'turn_encoder': nn.TransformerEncoder(
+                encoder_layer=nn.TransformerEncoderLayer(
+                    d_model=self.config.hidden_size,
+                    nhead=8,
+                    dim_feedforward=2048,
+                    dropout=0.1,
+                ),
+                num_layers=2,
+            ),
+            
+            # Level 3: Turn → Topic
+            'topic_encoder': nn.TransformerEncoder(
+                encoder_layer=nn.TransformerEncoderLayer(
+                    d_model=self.config.hidden_size,
+                    nhead=8,
+                    dim_feedforward=2048,
+                    dropout=0.1,
+                ),
+                num_layers=2,
+            ),
+            
+            # Level 4: Topic → Conversation
+            'conversation_encoder': nn.TransformerEncoder(
+                encoder_layer=nn.TransformerEncoderLayer(
+                    d_model=self.config.hidden_size,
+                    nhead=8,
+                    dim_feedforward=2048,
+                    dropout=0.1,
+                ),
+                num_layers=2,
+            ),
+        })
+        
+        return hierarchy
+    
+    def forward(self, batch):
+        """
+        Forward pass with healthcare-specific encoding
+        
+        Args:
+            batch: Dict with keys:
+                - input_ids: Token IDs [batch, max_seq_len]
+                - attention_mask: Mask [batch, max_seq_len]
+                - speaker_ids: Speaker for each token [batch, max_seq_len]
+                - turn_ids: Turn number for each token [batch, max_seq_len]
+                - topic_ids: Topic segment for each token [batch, max_seq_len]
+                - utterance_boundaries: List of (start, end) tuples
+                - turn_boundaries: List of (start, end) tuples
+                - topic_boundaries: List of (start, end) tuples
+        """
+        # 1. Token-level encoding (with medical BERT)
+        token_embeds = self.base_encoder(
+            input_ids=batch['input_ids'],
+            attention_mask=batch['attention_mask'],
+        ).last_hidden_state  # [batch, seq_len, hidden]
+        
+        # 2. Add speaker embeddings
+        speaker_embeds = self.speaker_embeddings(batch['speaker_ids'])
+        token_embeds = token_embeds + speaker_embeds
+        
+        # 3. Add turn position embeddings
+        turn_embeds = self.turn_position_embeddings(batch['turn_ids'])
+        token_embeds = token_embeds + turn_embeds
+        
+        # 4. Add topic embeddings
+        topic_embeds = self.topic_embeddings(batch['topic_ids'])
+        token_embeds = token_embeds + topic_embeds
+        
+        # 5. Hierarchical aggregation
+        utterance_embeds = self.aggregate_to_utterances(
+            token_embeds, 
+            batch['utterance_boundaries']
+        )
+        
+        turn_embeds = self.aggregate_to_turns(
+            utterance_embeds,
+            batch['turn_boundaries']
+        )
+        
+        topic_embeds = self.aggregate_to_topics(
+            turn_embeds,
+            batch['topic_boundaries']
+        )
+        
+        conversation_embed = self.aggregate_to_conversation(topic_embeds)
+        
+        # 6. Task-specific prediction
+        outputs = {}
+        for task_name, task_head in self.task_heads.items():
+            outputs[task_name] = task_head(conversation_embed)
+        
+        return outputs
+    
+    def aggregate_to_utterances(self, token_embeds, boundaries):
+        """
+        Aggregate tokens to utterance representations
+        """
+        batch_size = token_embeds.size(0)
+        utterance_embeds = []
+        
+        for b in range(batch_size):
+            batch_utterances = []
+            for start, end in boundaries[b]:
+                # Extract utterance tokens
+                utterance_tokens = token_embeds[b, start:end]
+                
+                # Encode with utterance-level transformer
+                encoded = self.hierarchy['utterance_encoder'](
+                    utterance_tokens.unsqueeze(0)
+                )[0]
+                
+                # Pool to single vector (mean or [CLS])
+                pooled = encoded.mean(dim=0)
+                batch_utterances.append(pooled)
+            
+            if batch_utterances:
+                utterance_embeds.append(torch.stack(batch_utterances))
+            else:
+                # Handle empty case
+                utterance_embeds.append(torch.zeros(1, token_embeds.size(-1)))
+        
+        return utterance_embeds
+```
+
+---
+
+### **1.3 Preprocessing Pipeline**
+
+#### **A. De-identification (HIPAA Compliance)**
+```python
+class HealthcareDataPreprocessor:
+    """
+    Comprehensive preprocessing for healthcare dialogues
+    
+    Critical: HIPAA-compliant de-identification BEFORE any model training
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.deidentifier = self.setup_deidentification()
+        self.medical_tokenizer = self.setup_medical_tokenizer()
+        self.segmenter = self.setup_segmentation()
+    
+    def setup_deidentification(self):
+        """
+        Setup HIPAA-compliant de-identification
+        
+        18 HIPAA Identifiers to Remove:
+        1. Names
+        2. Geographic subdivisions smaller than state
+        3. Dates (except year)
+        4. Telephone numbers
+        5. Fax numbers
+        6. Email addresses
+        7. Social Security numbers
+        8. Medical record numbers
+        9. Health plan beneficiary numbers
+        10. Account numbers
+        11. Certificate/license numbers
+        12. Vehicle identifiers
+        13. Device identifiers
+        14. URLs
+        15. IP addresses
+        16. Biometric identifiers
+        17. Full-face photos
+        18. Any other unique identifying number
+        """
+        from presidio_analyzer import AnalyzerEngine
+        from presidio_anonymizer import AnonymizerEngine
+        
+        # Use Presidio or similar tool
+        analyzer = AnalyzerEngine()
+        anonymizer = AnonymizerEngine()
+        
+        # Custom recognizers for medical context
+        medical_recognizers = [
+            self.create_mrn_recognizer(),
+            self.create_medication_recognizer(),
+            self.create_diagnosis_code_recognizer(),
+        ]
+        
+        for recognizer in medical_recognizers:
+            analyzer.registry.add_recognizer(recognizer)
+        
+        deidentifier = {
+            'analyzer': analyzer,
+            'anonymizer': anonymizer,
+            'entities_to_anonymize': [
+                'PERSON', 'LOCATION', 'DATE_TIME', 'PHONE_NUMBER',
+                'EMAIL_ADDRESS', 'US_SSN', 'MEDICAL_RECORD_NUMBER',
+                'CREDIT_CARD', 'US_DRIVER_LICENSE', 'URL',
+                'IP_ADDRESS', 'MEDICATION', 'DIAGNOSIS_CODE',
+            ],
+            'anonymization_strategy': {
+                'PERSON': 'replace',  # Replace with [PERSON_1], [PERSON_2], etc.
+                'DATE_TIME': 'shift',  # Shift dates consistently
+                'LOCATION': 'replace',  # Replace with [LOCATION_1], etc.
+                'MEDICAL_RECORD_NUMBER': 'hash',  # Hash to preserve uniqueness
+            },
+        }
+        
+        return deidentifier
+    
+    def deidentify_conversation(self, conversation):
+        """
+        De-identify a single conversation
+        
+        Returns:
+            - De-identified text
+            - Mapping for re-identification (stored separately, securely)
+            - Audit log
+        """
+        analyzer = self.deidentifier['analyzer']
+        anonymizer = self.deidentifier['anonymizer']
+        
+        deidentified_conversation = {
+            'conversation_id': conversation['id'],
+            'turns': [],
+            'phi_detected': [],
+            'anonymization_map': {},  # Store separately, encrypted
+        }
+        
+        for turn_idx, turn in enumerate(conversation['turns']):
+            text = turn['text']
+            
+            # Analyze for PHI
+            results = analyzer.analyze(
+                text=text,
+                language='en',
+                entities=self.deidentifier['entities_to_anonymize']
+            )
+            
+            # Anonymize
+            anonymized_result = anonymizer.anonymize(
+                text=text,
+                analyzer_results=results
+            )
+            
+            deidentified_conversation['turns'].

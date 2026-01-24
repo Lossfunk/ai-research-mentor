@@ -1,0 +1,229 @@
+**Web search unavailable.** The following plan draws on established domain knowledge of climate downscaling, deep learning for Earth system modeling, and uncertainty quantification. For publication-grade rigor, you should conduct systematic literature reviews via Google Scholar, arXiv (cs.LG, physics.ao-ph), and climate modeling journals (Nature Climate Change, JAMES, GMD) for recent deep learning downscaling methods (e.g., super-resolution CNNs, diffusion models, physics-informed neural networks), benchmark datasets (CMIP6, CORDEX, ERA5), and UQ frameworks (Bayesian neural networks, ensemble methods, conformal prediction).
+
+---
+
+## 1. Problem Framing and Goals
+
+**Problem Statement:**  
+Climate model downscaling—converting coarse-resolution Global Climate Model (GCM) outputs (25-100km) to high-resolution regional projections (1-10km)—is critical for impact assessment (agriculture, water resources, extreme events). Traditional approaches face limitations:
+
+1. **Dynamical downscaling (Regional Climate Models, RCMs):** Computationally expensive (months per simulation), limited ensemble sizes (5-20 members), physics-based but still parameterization-dependent
+2. **Statistical downscaling:** Fast but assumes stationarity (fails under climate change), limited spatial coherence, struggles with extremes
+3. **Emerging ML methods:** Show promise (super-resolution GANs, diffusion models, physics-informed networks) but lack rigorous uncertainty quantification, physical consistency validation, and cross-region generalization studies
+4. **Fragmented evaluation:** No consensus benchmarks; different labs use different metrics, datasets, baselines
+
+**Cross-Lab Collaboration Rationale:**  
+Multi-institutional collaboration is essential to:
+- Pool computational resources (100k+ GPU-hours for large-scale experiments)
+- Access diverse regional datasets (North America, Europe, Asia, Africa)
+- Combine expertise: ML researchers + climate scientists + statisticians + domain experts
+- Establish community benchmarks and standardized evaluation protocols
+- Validate across climate zones, topographies, and phenomena (precipitation, temperature, extremes)
+
+**Core Hypothesis:**  
+Deep learning downscaling methods with rigorous uncertainty quantification (Bayesian neural networks, ensemble methods, conformal prediction) can achieve dynamical downscaling-level accuracy (RMSE within 10-15% of RCM) at 100-1000× lower computational cost while providing calibrated probabilistic forecasts (Continuous Ranked Probability Score, CRPS, within 5% of RCM ensembles) across diverse climate regimes.
+
+**Primary Goals (6-month horizon):**
+- **Benchmark creation:** Standardized multi-region dataset (5-10 domains: CONUS, Europe, East Asia, Amazon, Sahel) with GCM inputs + RCM/observational targets
+- **Method evaluation:** Compare 5-8 ML downscaling approaches (CNNs, GANs, diffusion models, physics-informed networks) + 3-4 UQ methods (MC Dropout, deep ensembles, conformal prediction, Bayesian NNs)
+- **Uncertainty validation:** Establish calibration metrics, reliability diagrams, sharpness-calibration trade-offs
+- **Physical consistency:** Validate energy/water balance, spatial coherence, temporal autocorrelation, extreme value statistics
+- **Publication:** Multi-author paper (Nature Climate Change, JAMES, or PNAS) + open-source benchmark suite
+
+**Secondary Goals:**
+- Transfer learning: Pre-train on one region, fine-tune on data-scarce regions
+- Extreme event skill: Evaluate on heatwaves, heavy precipitation, droughts
+- Multi-variable downscaling: Joint temperature + precipitation + wind
+- Computational efficiency: FLOPs, wall-clock time, carbon footprint comparison
+
+---
+
+## 2. Experiments
+
+### **Experiment 1: Baseline Method Comparison Across Regions**
+
+**Hypothesis:** State-of-the-art ML downscaling methods (super-resolution CNNs, GANs, diffusion models) achieve comparable spatial accuracy to dynamical downscaling (RMSE within 10-15%) but with 100-1000× speedup, though performance varies by climate regime (better in mid-latitudes, worse in tropics/complex terrain).
+
+**Setup:**
+- **Methods (5-8 to compare):**
+  1. **CNN-based:** Enhanced Deep Super-Resolution (EDSR) adapted for climate (residual blocks, upsampling layers)
+  2. **GAN-based:** SRGAN, ESRGAN (adversarial training for realistic textures)
+  3. **Diffusion models:** Denoising Diffusion Probabilistic Models (DDPM) conditioned on GCM outputs
+  4. **Physics-informed:** PINNs with energy/mass conservation constraints
+  5. **Hybrid:** CNN + physical process emulation (convection, orographic precipitation)
+  6. **Classical:** BCSD (Bias Correction Spatial Disaggregation), quantile mapping (baselines)
+- **Regions (5-10 domains, 100-500km² each):**
+  - **North America:** CONUS (varied climate, good data), Pacific Northwest (complex terrain)
+  - **Europe:** Central Europe (well-observed), Mediterranean (climate change hotspot)
+  - **Asia:** East Asia monsoon region, Tibetan Plateau (high elevation)
+  - **Tropics:** Amazon (convective precipitation), West Africa Sahel (drought-prone)
+  - **Southern Hemisphere:** Southeast Australia (bushfire risk)
+- **Data sources:**
+  - **GCM inputs:** CMIP6 models (10-15 models, historical 1980-2014, SSP scenarios 2015-2100), resolution 50-100km
+  - **Targets:** 
+    - RCM: CORDEX simulations (12-25km), NA-CORDEX, EUR-CORDEX, etc.
+    - Observations: ERA5 reanalysis (0.25°, ~25km), gridded station data (CRU, GPCC for precip)
+  - **Variables:** Daily temperature (Tmax, Tmin, Tmean), precipitation, optionally wind/humidity
+- **Training:**
+  - Train on 1980-2005 (25 years), validate 2006-2010, test 2011-2014
+  - Future projections: 2050-2070 under SSP2-4.5, SSP5-8.5
+  - Patch-based training: 128×128 or 256×256 pixel patches
+  - Augmentation: Random crops, temporal shuffling (preserve autocorrelation)
+- **Compute:** Distributed across labs (each lab trains 1-2 methods on 2-3 regions)
+
+**Baselines:**
+1. Bilinear interpolation (naive upsampling)
+2. Quantile mapping (statistical downscaling)
+3. BCSD (operational statistical method)
+4. Dynamical downscaling (RCM simulations, gold standard but expensive)
+
+**Evaluation Metrics:**
+1. **Spatial accuracy:**
+   - RMSE, MAE (temperature in °C, precipitation in mm/day)
+   - Spatial correlation (pattern similarity)
+   - Perceptual quality: Fréchet Inception Distance (FID) for realistic textures
+2. **Temporal fidelity:**
+   - Temporal autocorrelation (lag-1, lag-7)
+   - Spectral analysis (power spectrum of variability)
+3. **Extremes:**
+   - 95th, 99th percentile errors
+   - Extreme Value Index (EVI), return period accuracy for 10-year, 50-year events
+4. **Physical consistency:**
+   - Energy balance residual (surface radiation - latent/sensible heat)
+   - Water balance (precipitation - evapotranspiration - runoff)
+   - Orographic enhancement (precipitation gradient with elevation)
+5. **Efficiency:**
+   - Training time (GPU-hours), inference time (seconds per day)
+   - FLOPs, model size (parameters)
+   - Carbon footprint (kg CO₂e, using ML CO₂ Impact calculator)
+
+**Expected Outcomes:**
+- CNN/GAN methods: RMSE 0.8-1.2°C for temperature (vs. 0.6-0.9°C for RCM), 15-25% for precipitation (vs. 10-18% RCM)
+- Diffusion models: Better perceptual quality (FID 20-30 vs. 40-60 for CNNs) but 5-10× slower inference
+- Physics-informed: 10-15% better energy balance closure, but similar spatial RMSE
+- Regional variation: 20-30% higher errors in tropics (convective precipitation) and complex terrain (Tibetan Plateau)
+- Speedup: 100-500× faster than RCM (minutes vs. days per simulation)
+
+**Ablations:**
+- Architecture depth: Shallow (6 layers) vs. deep (20+ layers)
+- Loss functions: L1 vs. L2 vs. perceptual loss vs. adversarial
+- Conditioning: GCM variables only vs. + topography vs. + land cover
+- Upsampling factor: 2× (50→25km) vs. 4× (100→25km) vs. 8× (100→12.5km)
+
+---
+
+### **Experiment 2: Uncertainty Quantification Methods**
+
+**Hypothesis:** Ensemble-based UQ (deep ensembles, MC Dropout) provides well-calibrated uncertainty estimates (reliability within 5% of perfect calibration) and outperforms single-model predictions on sharpness-calibration trade-offs, enabling probabilistic climate projections for decision-making.
+
+**Setup:**
+- **UQ methods (4-5 to compare):**
+  1. **Deep ensembles:** Train 10-20 models with different initializations, aggregate predictions
+  2. **MC Dropout:** Apply dropout at inference (20-50 samples), estimate epistemic uncertainty
+  3. **Bayesian Neural Networks:** Variational inference (mean-field or MCMC), full posterior over weights
+  4. **Quantile regression:** Predict multiple quantiles (10th, 50th, 90th percentiles)
+  5. **Conformal prediction:** Post-hoc calibration, provide prediction intervals with coverage guarantees
+  6. **Diffusion ensembles:** Sample multiple trajectories from diffusion model
+- **Application:** Apply each UQ method to best-performing downscaling model from Exp 1 (likely CNN or diffusion)
+- **Calibration datasets:** Hold-out test set (2011-2014), future scenarios (2050-2070)
+- **Ensemble size:** Trade-off analysis (5, 10, 20 members) for computational cost vs. uncertainty quality
+
+**Baselines:**
+1. Single deterministic model (no UQ)
+2. RCM ensembles (CORDEX multi-model, 5-15 members)
+3. GCM ensemble spread (direct CMIP6 spread, no downscaling)
+
+**Evaluation Metrics:**
+1. **Calibration:**
+   - Reliability diagrams (predicted probability vs. observed frequency)
+   - Expected Calibration Error (ECE)
+   - Continuous Ranked Probability Score (CRPS): Measures probabilistic forecast quality
+2. **Sharpness:**
+   - Prediction interval width (narrower = sharper, but must be calibrated)
+   - Uncertainty ratio: Predictive std / RCM ensemble std (should be ~1.0)
+3. **Skill scores:**
+   - Brier Skill Score (BSS) for binary events (e.g., precipitation > threshold)
+   - Ranked Probability Skill Score (RPSS) for multi-category forecasts
+4. **Decomposition:**
+   - Aleatoric vs. epistemic uncertainty (data noise vs. model uncertainty)
+   - Spatial uncertainty patterns (higher in data-sparse regions, complex terrain)
+5. **Coverage:**
+   - 90% prediction interval coverage (should contain 90% of observations)
+   - Conditional coverage (coverage stratified by season, region, extreme events)
+
+**Expected Outcomes:**
+- Deep ensembles (20 members): CRPS 0.15-0.25°C for temperature (vs. 0.20-0.30°C for single model)
+- MC Dropout: 70-80% of ensemble quality at 1/5 computational cost
+- Conformal prediction: Achieves exact coverage (90% intervals contain 90% of data) but wider intervals
+- BNNs: Best epistemic uncertainty estimates but 10-20× training cost
+- Diffusion ensembles: Most diverse samples, best for extreme event tails
+- Identifies high-uncertainty regions: Transition zones (e.g., rainforest-savanna), high-elevation areas
+
+**Ablations:**
+- Ensemble size: {5, 10, 20, 50} members (diminishing returns after 20)
+- Dropout rate: {0.1, 0.2, 0.3} for MC Dropout
+- Conformal calibration set size: {100, 500, 1000} samples
+- Uncertainty aggregation: Mean, median, mixture of Gaussians
+
+---
+
+### **Experiment 3: Physical Consistency and Process-Level Validation**
+
+**Hypothesis:** Incorporating physical constraints (energy/water conservation, thermodynamic relationships) into ML models improves physical realism by 20-30% (measured by process-based metrics) without sacrificing statistical accuracy, enhancing trustworthiness for impact assessments.
+
+**Setup:**
+- **Physical constraints to enforce:**
+  1. **Energy balance:** Surface radiation = sensible heat + latent heat + ground heat (residual < 10 W/m²)
+  2. **Water balance:** Precipitation = evapotranspiration + runoff + storage change (residual < 5%)
+  3. **Thermodynamic consistency:** Temperature-humidity relationships (Clausius-Clapeyron), lapse rate with elevation
+  4. **Spatial coherence:** Neighboring grid cells have correlated weather (spatial autocorrelation)
+  5. **Temporal consistency:** Realistic diurnal/seasonal cycles, persistence
+- **Implementation strategies:**
+  1. **Hard constraints:** Physics-informed neural networks (PINNs) with PDE loss terms
+  2. **Soft constraints:** Multi-task learning (predict variables + physical residuals), weighted loss
+  3. **Post-processing:** Correct outputs to satisfy conservation laws (e.g., rescale to close water balance)
+  4. **Hybrid models:** ML for spatial details + physical model for large-scale dynamics
+- **Validation:**
+  - Compare constrained vs. unconstrained versions of same architecture
+  - Process-based metrics (not just grid-point statistics)
+  - Expert evaluation: 5-10 climate scientists assess physical plausibility
+
+**Baselines:**
+1. Unconstrained ML model (standard CNN/GAN)
+2. Dynamical downscaling (RCM, satisfies physics by construction)
+3. Empirical statistical downscaling (no physics)
+
+**Evaluation Metrics:**
+1. **Energy balance closure:**
+   - Mean absolute residual (W/m²)
+   - % of grid cells with residual < 10 W/m²
+2. **Water balance closure:**
+   - Residual as % of precipitation
+   - Basin-scale runoff accuracy (compare to streamflow observations)
+3. **Thermodynamic relationships:**
+   - Temperature-dewpoint correlation (should follow Clausius-Clapeyron)
+   - Lapse rate: Temperature change with elevation (should be ~6.5°C/km)
+4. **Spatial patterns:**
+   - Orographic precipitation enhancement (windward vs. leeward slopes)
+   - Land-sea temperature contrast
+   - Variogram analysis (spatial autocorrelation structure)
+5. **Temporal patterns:**
+   - Diurnal cycle amplitude and phase (peak temperature at 14-16h local time)
+   - Seasonal cycle (correct phase and amplitude)
+   - Persistence (autocorrelation at 1-day, 7-day lags)
+6. **Extreme events:**
+   - Heatwave duration and spatial extent
+   - Precipitation intensity-duration-frequency (IDF) curves
+
+**Expected Outcomes:**
+- Physics-informed models: 25-40% better energy balance closure (residual 8-12 W/m² vs. 15-25 W/m² unconstrained)
+- Water balance: 15-20% improvement in basin runoff accuracy
+- Trade-off: 2-5% increase in spatial RMSE for 30% better physical consistency
+- Hybrid models: Best of both worlds (physical large-scale + ML fine-scale)
+- Identifies failure modes: Unconstrained models produce physically implausible extremes (e.g., negative precipitation after bias correction)
+
+**Ablations:**
+- Constraint weighting: Physics loss weight λ ∈ {0.1, 0.5, 1.0, 5.0}
+- Constraint types: Energy-only vs. water-only vs. both
+- Enforcement strategy: Hard vs. soft vs. post-processing
+- Regional sensitivity: Constraints more important in tropics (convection

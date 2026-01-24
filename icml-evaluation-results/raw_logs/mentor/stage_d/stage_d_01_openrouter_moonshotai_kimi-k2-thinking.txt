@@ -1,0 +1,45 @@
+<thinking>
+User is experienced; wants reproduction checklist. I have the paper content via attachment. Need to be critical, structured but not long lists >3? The instruction says avoid long lists, but here listing key components is explicitly requested; still keep concise and grouped. Lead with assessment and leakage risks. 150–300 words. No citations list.**Blunt assessment:** Reproducing this pipeline is doable, but most failed reproductions miss *implicit coupling* between preprocessing, hierarchy design, and evaluation rollouts. If you treat these as separable, your numbers won’t match.
+
+Below is what actually matters.
+
+---
+
+## 1. Key pipeline components (what must be matched)
+
+**Data preprocessing**
+- Observations are *discretized before* the transformer via a **hierarchical VQ-style encoder** (or equivalent token clustering). Token *granularity per level* is not cosmetic: coarse/global tokens are intentionally over-represented in rollouts.
+- Sequence construction is fixed-length with strict temporal alignment; padding, BOS/EOS handling, and frame skipping affect rollout stability.
+- Crucially: the sparsification policy is applied **after encoding, before rollout**, not during encoding.
+
+**Hierarchical Transformer blocks**
+- Multiple latent levels, each with its own attention budget and sparsification rule.
+- Lower levels are aggressively dropped during rollouts; higher-level tokens persist across long horizons.
+- Attention is standard dense *within* a level; efficiency gains come from token removal, not exotic attention kernels.
+
+**Training & evaluation schedule**
+- World model is pretrained *offline only* on the fixed dataset.
+- Rollouts during policy learning use **exactly the same sparsification policy** as evaluation—no “full-token” teacher forcing.
+- Evaluation metrics include rollout FLOPs and reconstruction error, not just downstream score.
+
+---
+
+## 2. Comparability requirements (reviewers will check these)
+
+- Same dataset split, same tokenizer/codebook, same rollout horizon.
+- Equal rollout *depth* when comparing against flat or non-hierarchical baselines.
+- Identical policy learner and training budget; gains must come from the world model, not PPO tuning.
+
+If you relax any of these, your results are not comparable.
+
+---
+
+## 3. Pretraining–evaluation leakage risks (easy to get wrong)
+
+- **Tokenizer leakage:** training the VQ encoder on evaluation episodes inflates rollout stability.
+- **Sparsification tuning on eval:** choosing token drop rates based on evaluation reconstruction error is direct leakage.
+- **Full-token pretraining, sparse eval mismatch:** this silently advantages the hierarchical model.
+
+**If you want this to reproduce cleanly:** lock the encoder and sparsification policy *before* touching evaluation, and never change them again.
+
+If you want, tell me which environment you’re targeting (Atari? DMControl?), and I’ll tell you where reproductions usually break first.

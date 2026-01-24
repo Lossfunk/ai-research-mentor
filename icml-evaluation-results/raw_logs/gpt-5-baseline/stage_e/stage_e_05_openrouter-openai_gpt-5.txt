@@ -1,0 +1,51 @@
+Below is a discussion-ready response that acknowledges the transferability concern and commits to concrete tests and mitigations, followed by the specific experiments/ablations we will add.
+
+Framing the response
+- We agree domain shift is a central risk. Aspect scores are venue- and rater-dependent, so models trained on one venue/year may overfit rubric, topic, or style artifacts rather than the intended latent traits (clarity, originality, impact).
+- Our goal is domain-stable measurement under uncertainty, not venue-specific heuristics. We therefore (i) harmonize scales across venues, (ii) evaluate true out-of-domain (OOD) generalization, and (iii) quantify adaptation cost when a small number of target labels are available.
+- We will report performance relative to reliability ceilings in each target venue (i.e., fraction of inter-rater reliability), which appropriately adjusts expectations across domains.
+
+New experiments and ablations to address transferability
+
+1) True OOD protocols
+- Leave-one-venue-out (LOVO) and leave-one-year-out (LOYO): Train on all but one venue (or year), test on the held-out. Report Kendall’s τ/Spearman’s ρ and calibration (ECE), plus absolute and relative-to-ceiling performance for each aspect.
+- Multi-source to unseen-target: Train on multiple venues, evaluate on a completely unseen venue to test whether diversity helps transfer.
+
+2) Score scale harmonization
+- Within-cell standardization: Z-score/ordinal anchoring within venue-year and re-train models; compare OOD performance pre/post.
+- Hierarchical/ordinal modeling: Use cumulative link models with venue random effects or a shared encoder with venue-specific bias heads; test whether separating shared vs venue-specific components improves OOD.
+- IRT-based alignment: Fit a simple item–rater model to recover venue/rater severity and map scores to a shared latent trait; evaluate transfer in that latent space.
+
+3) Topic and style confounding controls
+- Topic-controlled evaluation: Match accepted/rejected pairs across source and target on topic embeddings; re-compute OOD metrics to estimate how much of the drop is topic-driven.
+- Adversarial venue removal: Train a domain-adversarial model (DANN) to minimize venue predictability from representations; compare OOD performance vs ERM.
+- Style/format ablations: Remove or neutralize features tied to formatting (length, reference count, section headers) and template phrases; show how much OOD performance depends on these proxies.
+
+4) Distribution shift quantification
+- Shift vs performance curves: Measure divergence between source and target (e.g., Jensen–Shannon distance over topic distributions; Fréchet distance over paper embeddings) and plot OOD performance as a function of shift to make degradation predictable and interpretable.
+- Stability of feature attribution: Compare SHAP/permutation importance rankings across venues; report rank correlations and sign flips to identify venue-specific shortcuts.
+
+5) Few-shot adaptation and calibration cost
+- Few-shot fine-tuning: Fine-tune on k labeled target examples (k ∈ {0, 10, 50, 100}); plot learning curves to quantify adaptation cost per aspect.
+- Target-aware calibration: Apply temperature scaling or isotonic regression using a small validation split from the target; report ECE/coverage improvements and τ/ρ changes.
+- Conformal prediction: Provide per-venue prediction intervals and abstention; verify nominal coverage and show improved decision quality when abstaining on high-shift items.
+
+6) Robust training objectives
+- Group DRO across venues: Optimize worst-group performance to reduce venue-specific overfitting; compare to ERM under LOVO.
+- CORAL/MMD alignment: Add covariance/feature distribution alignment penalties; report whether these reduce the OOD gap without harming in-domain.
+
+7) Error taxonomy and slices in the target domain
+- High-confidence error audit: Manually inspect top-confidence OOD false positives/negatives to categorize failure modes (rubric drift, topic novelty cues, parse failures).
+- Slice-level reporting: OOD performance by topic, document length quintiles, parse quality, and year; include CIs to surface brittle regions.
+
+What we will add to the paper/discussion
+- A LOVO/LOYO section with reliability-adjusted results: “On held-out venues, models retain X–Y% of the venue-specific reliability ceiling; few-shot (k=50) closes Z% of the gap.”
+- Harmonization and robustness: “Score standardization and hierarchical ordinal heads improve OOD τ by Δ; adversarial venue removal and CORAL reduce dependence on venue/style proxies.”
+- Shift-aware interpretation: “OOD drops scale with source–target topic divergence; feature-importance stability is high for clarity but lower for originality/impact, indicating greater domain sensitivity.”
+- Practical contingency: “For deployment, we provide calibrated uncertainty and abstain under high shift; a small target calibration set (50–100 papers) substantially improves calibration and ranking.”
+
+If transfer remains limited after these steps
+- Reposition the task as decision support with uncertainty: emphasize calibrated ranking within venue-year cohorts and high-precision flagging of extremes rather than raw cross-venue point prediction.
+- Focus on invariant signals: prioritize clarity/structure cues that show stable attributions across venues; treat originality/impact as requiring target-aware context (e.g., retrieval over local prior art) and evaluate them primarily with few-shot adaptation.
+
+This plan directly tests and, where possible, improves cross-venue generalization, quantifies the expected performance drop under measurable shift, and provides an adaptation-and-calibration path that makes the models useful in new venues without overclaiming universality.
