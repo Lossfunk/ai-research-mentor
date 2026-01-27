@@ -1,0 +1,46 @@
+<thinking>
+  <thinking>
+The user wants to adapt a Hierarchical Transformer to healthcare dialogue data. I need to:
+1. Assess what this likely means (they probably mean a hierarchical model for multi-turn conversations)
+2. Identify the key challenges specific to healthcare dialogue
+3. Give concrete, actionable changes needed
+4. Cover evaluation and ethics properly
+
+Key issues I see:
+- Healthcare dialogue has privacy constraints (PHI)
+- Clinical accuracy is critical - can't hallucinate
+- Hierarchical structure needs to handle speaker roles (doctor/patient)
+- Evaluation needs clinical validity, not just BLEU
+- IRB is mandatory for any real patient data
+
+I should be direct about what's hard and what won't work.
+</thinking>
+
+This is a high-risk adaptation that will fail without major changes. Here's what you actually need:
+
+**Architecture Changes:**
+Your standard hierarchical attention won't capture clinical roles. Add explicit speaker embeddings for doctor/patient/system turns. The patient history encoder needs medical ontology integration (SNOMED CT/ICD embeddings) - without this, you're just doing generic dialogue. Most importantly: **add a clinical fact-checking head** that verifies generated responses against the patient's stated symptoms/medications. Healthcare models that hallucinate kill people.
+
+**Preprocessing:**
+Raw dialogue transcripts are useless. You need structured annotation of:
+- Clinical entities (medications, symptoms, diagnoses)
+- Dialogue acts with clinical intent (history-taking vs. treatment recommendation)
+- Temporal markers (symptom onset, medication changes)
+
+**Evaluation Metrics:**
+BLEU/ROUGE are clinically meaningless. Your primary metrics must be:
+- **Clinical accuracy**: % of statements that are medically valid given patient history (requires physician annotation)
+- **Safety**: Rate of harmful recommendations (target: <0.1%)
+- **Task completion**: Did it gather needed history? Did it provide appropriate next steps?
+
+**IRB/Ethics:**
+You cannot use real patient dialogue without IRB approval - full stop. Even de-identification often fails for dialogues (dates, rare diseases, voice patterns). You'll likely need:
+- IRB protocol for data use
+- Business Associate Agreement if using vendor data
+- FDA considerations if this touches diagnosis/treatment (SaMD classification)
+
+**Comparable Results:**
+You won't be comparable to general dialogue models. Publish on clinical benchmarks (MeDAL, CASI) instead. The field expects lower BLEU scores but higher clinical validity.
+
+**Bottom line:** If you don't have clinical collaborators and IRB access, pick a different project. This isn't a dataset you can download and run experiments on.
+</thinking>

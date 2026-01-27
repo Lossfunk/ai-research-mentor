@@ -1,0 +1,190 @@
+<thinking>
+  The user wants me to:
+1. Run an ablation on local attention window sizes in a Hierarchical Transformer
+2. Recommend a benchmark suite
+3. Suggest minimal code changes
+4. Estimate compute budget
+5. Identify failure modes to monitor (especially long-context degradation)
+
+However, I notice that the user mentions "attached Hierarchical Transformer" but there is no attachment in the message. I need to address this missing information.
+
+Since I don't have the actual code, I should:
+1. Acknowledge the missing attachment
+2. Provide a general but actionable framework that would work for typical hierarchical transformers
+3. Give specific code examples based on common implementations (like Swin Transformer, HiP, or other hierarchical models)
+4. Make reasonable assumptions about the model architecture
+5. Provide concrete recommendations that the user can adapt
+
+Let me structure my response:
+
+1. **Acknowledge missing attachment** - I'll provide a general framework that works for common hierarchical transformers
+2. **Benchmark Suite Recommendation** - I should recommend tasks that test both local and long-range dependencies
+   - Image: ImageNet, COCO, ADE20K
+   - Text: Long Range Arena, WikiText, PG-19
+   - General: Perplexity, downstream task performance, efficiency metrics
+3. **Minimal Code Changes** - I'll show how to modify attention windows in common frameworks
+   - For Swin Transformer: change `window_size` parameter
+   - For general implementation: show how to parameterize the window size
+   - Provide a config-based approach
+4. **Compute Budget** - Estimate based on model size and sequence length
+   - Provide formulas for memory and FLOPs
+   - Give concrete examples for different scales
+5. **Failure Modes** - Focus on:
+   - Long-context degradation
+   - Performance cliffs
+   - Memory/efficiency tradeoffs
+   - Phase transitions in behavior
+
+Let me create a comprehensive but practical plan.
+
+For hierarchical transformers, common architectures include:
+- Swin Transformer (vision)
+- HiP-Transformer (general)
+- Longformer (with sliding windows)
+- BigBird (hybrid)
+
+I'll assume a Swin-like architecture as it's the most common hierarchical transformer with local attention. The ablation would involve changing the window size at different stages.
+
+**Benchmark Suite:**
+- For vision: ImageNet-1K classification, COCO detection, ADE20K segmentation
+- For language: Long Range Arena (LRA), WikiText-103, PG-19
+- Metrics: Accuracy/F1, perplexity, throughput, memory usage
+
+**Code Changes:**
+I'll show a config-driven approach where window sizes are parameterized. For Swin, it's typically a single integer. For more general cases, it might be a list per layer.
+
+**Compute Budget:**
+The compute scales roughly linearly with sequence length within a window, but the number of windows scales inversely with window size. For local attention, complexity is O(n * w) where n is seq length, w is window size.
+
+**Failure Modes:**
+- Window too small: can't capture necessary context, performance drops
+- Window too large: loses the benefits of locality, compute increases
+- Long-context degradation: tasks requiring cross-window info suffer
+- Attention collapse: windows might become redundant
+
+Let me write this up clearly.
+</thinking>
+
+I don't see an attached model, but I'll provide a complete ablation framework for **Swin Transformer-style hierarchical architectures** (the most common local-attention model). This applies to most vision and adapted language models with patch embedding and stage-wise processing.
+
+---
+
+### **Recommended Benchmark Suite**
+
+Test across **three regimes** to capture window size effects:
+
+| Task | Dataset | Metric | Why It Matters |
+|------|---------|--------|----------------|
+| **Short-context** | ImageNet-1K (cls) | Top-1 Acc | Baseline performance, local patterns dominate |
+| **Medium-context** | COCO 2017 (det) | mAP@50:95 | Requires cross-window object relationships |
+| **Long-context** | ADE20K (seg) | mIoU | Dense prediction, long-range spatial dependencies |
+| **Extreme-context** | Long Range Arena (LRA) | Acc | Stress test for context >4k tokens |
+
+**Additional diagnostics:**
+- **Effective Receptive Field (ERF)** analysis: Visualize which input tokens each output token attends to
+- **Throughput (imgs/sec)** at batch size 32
+- **Peak memory** per GPU
+
+---
+
+### **Minimal Code Changes**
+
+For a Swin Transformer, modify **one line** in your config and add a loop:
+
+```python
+# Original config (e.g., swin_tiny_patch4_window7_224.yaml)
+MODEL:
+  SWIN:
+    WINDOW_SIZE: 7  # Change this
+
+# Ablation script: minimal changes
+def run_ablation(window_sizes=[4, 7, 12, 16, 24]):
+    results = {}
+    for w in window_sizes:
+        # 1. Modify config (no code change to model)
+        cfg.MODEL.SWIN.WINDOW_SIZE = w
+        
+        # 2. Adjust image size if needed to be divisible
+        cfg.DATA.IMG_SIZE = nearest_multiple(cfg.DATA.IMG_SIZE, w)
+        
+        # 3. Train for few epochs (see compute budget)
+        model = build_model(cfg)
+        train_model(model, cfg)
+        
+        # 4. Evaluate on suite
+        results[w] = evaluate_suite(model, cfg)
+    return results
+
+# For non-Swin models: parameterize window size in attention module
+# Before: self.attn = LocalAttention(window_size=7)
+# After:  self.attn = LocalAttention(window_size=cfg.window_size)
+```
+
+**Key trick**: Use **patch size × window size** as your unit. Keep `img_size // patch_size` divisible by `window_size` to avoid padding artifacts.
+
+---
+
+### **Compute Budget (A100-40GB)**
+
+| Model Scale | Window Sizes | Epochs | GPU Hours | Cost (AWS) |
+|-------------|--------------|--------|-----------|------------|
+| **Tiny** (Swin-T) | [4,7,12,16] | 10 (fine-tune) | ~8 hrs | ~$25 |
+| **Base** (Swin-B) | [4,7,12,16,24] | 5 (fine-tune) | ~20 hrs | ~$60 |
+| **From-scratch** | 7 only | 300 | ~200 hrs | ~$600 |
+
+**Budget optimization:**
+- **Don't train from scratch** for each window. **Fine-tune** a pre-trained model for 5-10 epochs instead.
+- **Early stopping**: If validation drops >2% vs. baseline (window=7), abort that run.
+- **Log-linear law**: Performance vs. log(window_size) is often linear. Test 3-4 points to find the knee.
+
+**Memory scaling**: Memory ≈ O(batch_size * window_size² * heads). A window of 24 uses ~12x more memory than 7. Use gradient checkpointing if needed.
+
+---
+
+### **Failure Modes to Monitor**
+
+#### **1. Long-Context Degradation (Critical)**
+- **Signal**: ADE20K mIoU drops >3% as window size decreases
+- **Mechanism**: Small windows can't capture object-scene relationships across 64+ patches
+- **Mitigation**: Shifted window attention helps; test with/without shift
+- **Monitor**: ERF radius (should be >50% image diameter for seg)
+
+#### **2. Performance Cliff**
+- **Signal**: Sudden >5% drop at window size ≤6 in ImageNet
+- **Mechanism**: Minimum window needed for patch interactions (empirically ~7×7)
+- **Action**: Run micro-ablation around cliff (5,6,7,8) to find exact threshold
+
+#### **3. Attention Redundancy**
+- **Signal**: Throughput plateaus despite smaller windows
+- **Mechanism**: Overhead of many windows dominates; kernel launch latency
+- **Monitor**: FLOPs vs. throughput correlation. If FLOPs↓ but throughput↔, you've hit overhead limits
+
+#### **4. Phase Transition in Shifted Windows**
+- **Signal**: Odd vs. even window sizes behave differently
+- **Mechanism**: Shifted window partitioning has different overlap patterns
+- **Test**: Always test both `window_size` and `window_size + 1`
+
+#### **5. Resolution Mismatch**
+- **Signal**: Small windows work at 224px but fail at 384px
+- **Mechanism**: Effective context shrinks relative to image size
+- **Rule**: Keep `window_size * patch_size ≥ 32px` in original image space
+
+---
+
+### **Quick Start Protocol**
+
+```bash
+# 1. Run pilot (1 GPU, 2 hours)
+python ablate_windows.py --model swin_t --windows 4 7 12 --epochs 5
+
+# 2. Identify cliff (e.g., at w=4)
+# 3. Run full suite around optimum (w=7,8,9,12,16)
+python ablate_windows.py --model swin_b --windows 7 8 9 12 16 --epochs 10
+
+# 4. Plot results
+plot_window_ablation.py --metrics imagenet_acc coco_map ade_mIoU --save plot.png
+```
+
+**Red flag abort conditions**: If any window size shows NaN loss, memory OOM, or performance <80% of baseline within 3 epochs, terminate and widen your search range.
+
+If you share your specific model code, I can give exact line numbers and patch diff.

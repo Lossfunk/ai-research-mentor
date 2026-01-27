@@ -1,0 +1,194 @@
+<thinking>
+  The user is asking me to plan a two-phase replication study. Let me break down what they're asking for:
+
+1. Phase 1: Re-implement an attached Hierarchical Transformer baseline
+2. Phase 2: Introduce a low-parameter alternative to the hierarchy (e.g., grouped pooling)
+3. Include power analysis
+4. Include methods to avoid double-counting correlated improvements
+
+However, I notice that the user mentions "attached Hierarchical Transformer baseline" but there is no attachment in their message. I need to address this and still provide a useful plan that would work for a typical hierarchical transformer.
+
+Let me structure my response:
+
+1. Acknowledge the missing attachment and provide a general framework
+2. Phase 1: Re-implementation plan
+   - Model architecture understanding
+   - Implementation strategy
+   - Validation approach
+3. Phase 2: Low-parameter alternative
+   - Design considerations
+   - Specific grouped pooling approach
+   - Parameter comparison
+4. Power analysis
+   - Effect size estimation
+   - Sample size calculation
+   - Practical considerations
+5. Avoiding double-counting correlated improvements
+   - Statistical methods
+   - Experimental design strategies
+   - Ablation studies
+
+I should be thorough and provide concrete details for each section. Let me think about what a typical hierarchical transformer looks like - probably something like Hierarchical Attention Networks or a transformer with multiple layers of abstraction.
+
+For the low-parameter alternative, grouped pooling is a good suggestion. I could propose something like:
+- Grouping attention heads and pooling their outputs
+- Using hierarchical pooling instead of hierarchical attention
+- Parameter sharing across hierarchy levels
+
+For power analysis, I need to consider:
+- What metric are we measuring? (e.g., accuracy, F1)
+- What's the expected effect size?
+- What's the baseline variance?
+- Appropriate statistical test
+
+For avoiding double-counting:
+- Nested cross-validation
+- Bonferroni correction or FDR
+- Ablation studies to isolate effects
+- Reporting effect sizes with confidence intervals
+
+Let me create a comprehensive plan.
+</thinking>
+
+I'd be happy to help plan this two-phase replication. Since the attachment isn't visible, I'll outline a general framework based on standard Hierarchical Transformer architectures (e.g., HAN, HAT) that you can adapt to your specific baseline.
+
+---
+
+## **Phase 1: Baseline Re-implementation**
+
+### **1.1 Architecture Reconstruction**
+First, systematically identify the baseline's key components:
+- **Hierarchy levels**: Typically 2-3 (word→sentence→document or patch→region→image)
+- **Attention mechanisms**: Self-attention at each level + cross-level attention
+- **Position encoding**: How hierarchical positions are represented
+- **Aggregation**: Whether they use max/mean attention pooling or learned combinations
+
+**Implementation Strategy:**
+- Start with a minimal working example on a toy dataset (e.g., 100 samples)
+- Implement each hierarchy level as a separate module with identical interface
+- Use the original paper's hyperparameters as defaults but parameterize everything
+- Validate intermediate representations: check that attention weights sum to 1, dimensions match
+
+### **1.2 Validation Checklist**
+- **Exact replication**: Match published results within ±0.5% on original dataset
+- **Diagnostic plots**: Attention entropy per hierarchy level, gradient flow
+- **Unit tests**: Verify parameter count matches paper's claim
+- **Speed benchmark**: Time per epoch vs. reported compute
+
+---
+
+## **Phase 2: Low-Parameter Alternative (Grouped Pooling)**
+
+### **2.1 Design: Hierarchical Grouped Pooling (HGP)**
+Replace learned cross-level attention with **parameter-free pooling over grouped representations**:
+
+```
+Standard: [Word Attn] → learned sentence attention → [Sentence Attn] → learned doc attention
+HGP:      [Word Attn] → GROUP & POOL → [Pooled Rep] → GROUP & POOL → [Final Rep]
+```
+
+**Specific Implementation:**
+- **Grouping**: Split sequence into fixed-size chunks (e.g., 8 words/sentence)
+- **Pooling**: Use `max` or `mean` within groups (no parameters)
+- **Hierarchy**: Apply pooling recursively: `L₀ (words) → pool → L₁ (phrases) → pool → L₂ (sentences)`
+- **Residual connections**: Add skip connections from each level to final representation
+
+**Parameter Savings:**
+- Removes cross-level attention matrices (Q/K/V per level): ~3 × d² × (levels-1) parameters
+- For d=512, 3 levels: saves ~1.5M parameters
+- Total model parameters reduced by 15-30% typically
+
+### **2.2 Ablation Variants**
+Test these progressively to isolate benefits:
+- **HGP-Max**: Max pooling only
+- **HGP-Mean**: Mean pooling only
+- **HGP-Learned**: Add *single* learned linear projection *after* final pool (minimal parameters)
+
+---
+
+## **Power Analysis**
+
+### **3.1 Effect Size Estimation**
+From pilot runs on your baseline:
+- Run baseline 5 times with different seeds
+- Calculate standard deviation σ of your primary metric (e.g., F1)
+- **Minimum Detectable Effect**: Δ = 0.5 × σ (conservative)
+
+Example: If σ = 0.8% F1, target Δ = 0.4% improvement
+
+### **3.2 Sample Size Calculation**
+Use **paired t-test** power analysis (since you'll compare matched runs):
+
+```
+n = 2 × (Z_(1-α/2) + Z_(1-β))² × σ² / Δ²
+```
+
+For α=0.05, power=0.8 (β=0.2):
+- Z_(1-α/2) = 1.96, Z_(1-β) = 0.84
+- With σ=0.8, Δ=0.4: **n ≈ 25 runs per model**
+
+**Practical Adjustment**: Use **10 runs** with **variance stabilization** (see below) - more feasible.
+
+### **3.3 Variance Reduction Techniques**
+- **Seed averaging**: For each model, average 3 runs per seed, then treat as one observation
+- **Stratified sampling**: Ensure same train/val/test splits across all comparisons
+- **Fixed initialization**: Use identical pretrained embeddings for all models
+
+---
+
+## **Avoiding Double-Counting Correlated Improvements**
+
+### **4.1 Statistical Methods**
+
+**A. Nested Cross-Validation with Bonferroni**
+- **Outer loop**: 5-fold CV for final performance estimate
+- **Inner loop**: 3-fold CV for hyperparameter tuning *per model*
+- **Correction**: Multiply p-values by number of comparisons (e.g., 3: baseline vs HGP-Max vs HGP-Mean)
+
+**B. Report Effect Sizes with CIs**
+Instead of just p-values, report:
+- **Cohen's d** = (μ₁ - μ₂) / pooled_sd
+- **95% CI** via bootstrap (resample runs 1000×)
+- **Claim significance only if**: CI excludes 0 AND d > 0.2 (small effect threshold)
+
+### **4.2 Experimental Design**
+
+**A. Isolation Protocol**
+Test each improvement *independently* before combining:
+1. **Parameter reduction only**: HGP vs. baseline with *same* number of layers
+2. **Speed only**: Measure throughput with batch size fixed
+3. **Combined**: Only after (1) and (2) show independent benefit
+
+**B. Correlation-Aware Testing**
+Since model outputs are correlated (same data, similar architectures):
+- **Permutation test**: Randomly shuffle model labels across runs to build empirical null distribution
+- **Block bootstrap**: Resample *datasets* rather than individual predictions to preserve correlations
+
+**C. Ablation Table Structure**
+Report results in this format to prevent double-counting:
+
+| Model | Params | Speed | F1 | ΔF1 (vs. baseline) | Isolated Effect |
+|-------|--------|-------|----|-------------------|-----------------|
+| Baseline | 5.2M | 1.0× | 82.1 | - | - |
+| HGP-Max | 3.7M | 1.4× | 82.3 | +0.2 | **+0.2** (p=0.03) |
+| HGP-Mean | 3.7M | 1.4× | 81.9 | -0.2 | -0.2 (p=0.21) |
+| HGP-Learned | 3.8M | 1.3× | 82.5 | +0.4 | **+0.2** (vs HGP-Max, p=0.04) |
+
+**Key**: The "Isolated Effect" column shows *incremental* benefit over the *previous* best low-param variant, not cumulative benefit.
+
+### **4.3 Multiple Comparison Control**
+If testing >5 variants, use **False Discovery Rate (FDR)** control (Benjamini-Hochberg) instead of Bonferroni - less conservative for exploratory work.
+
+---
+
+## **Timeline & Milestones**
+
+**Weeks 1-2**: Phase 1 - Re-implement baseline, validate on 10% dataset  
+**Weeks 3-4**: Full baseline training, collect σ for power analysis  
+**Weeks 5-6**: Phase 2 - Implement HGP variants, run ablations  
+**Weeks 7-8**: Full-scale experiments with 10 seeds, statistical analysis  
+**Week 9**: Write-up with isolation protocol and corrected significance claims
+
+---
+
+**Final Check**: Before running full experiments, simulate your analysis pipeline on random noise to verify that your correction methods produce false positive rate ≤ α. This "analysis validation" is often overlooked but crucial for trustworthy results.

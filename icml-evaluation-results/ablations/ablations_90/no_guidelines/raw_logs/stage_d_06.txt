@@ -1,0 +1,378 @@
+<thinking>
+  The user is asking about augmenting a Hierarchical Transformer evaluation with fairness/ethics audits on the same datasets. They want to know:
+1. How to add new annotations or audits without contaminating original labels
+2. How to report uncertainty
+
+This is a research methodology question about ML fairness evaluation. I need to provide a comprehensive answer about how to conduct fairness audits on existing datasets without compromising the original data, and how to properly report uncertainty in fairness metrics.
+
+Let me think about the key aspects:
+- The context is Hierarchical Transformers, which are often used for document-level tasks (e.g., document classification, multi-label classification)
+- Fairness/ethics audits typically involve:
+  - Identifying sensitive attributes (gender, race, age, etc.)
+  - Measuring disparities in performance across groups
+  - Checking for biases in predictions, attention patterns, etc.
+- The challenge is doing this without contaminating original labels
+- Uncertainty reporting is crucial for fairness metrics
+
+I should structure my answer to cover:
+1. Methodology for adding fairness annotations
+2. Data management strategies to avoid contamination
+3. Specific fairness metrics for Hierarchical Transformers
+4. Uncertainty quantification methods
+5. Reporting guidelines
+
+Let me think about concrete steps:
+
+**1. Adding New Annotations Without Contamination:**
+- Create annotation layers/snapshots
+- Use metadata tables instead of modifying original data
+- Version control for datasets
+- Separate annotation pipelines
+- Blind annotation processes
+
+**2. Fairness Audits Specific to Hierarchical Transformers:**
+- Group fairness metrics (demographic parity, equalized odds)
+- Representation bias in hierarchical attention
+- Performance disparities across document types/authors
+- Bias amplification through hierarchy
+- Intersectional fairness considerations
+
+**3. Uncertainty Reporting:**
+- Confidence intervals for fairness metrics
+- Bayesian approaches
+- Bootstrapping
+- Multiple testing corrections
+- Sensitivity analysis
+
+I should provide a detailed, actionable plan that researchers can implement. Let me organize this into clear sections.
+
+The user mentioned "attached Hierarchical Transformer evaluation" but there's no actual attachment. I should acknowledge this and provide a general framework that would apply to most such evaluations.
+
+Let me draft a comprehensive response:
+
+1. **Introduction**: Acknowledge the importance of fairness audits and the contamination concern
+2. **Annotation Architecture**: Technical solutions for clean separation
+3. **Fairness Audit Design**: Specific to Hierarchical Transformers
+4. **Uncertainty Quantification**: Statistical methods
+5. **Reporting Framework**: Best practices
+6. **Implementation Checklist**: Practical steps
+
+I should be specific about:
+- Database schemas for annotations
+- Statistical methods with formulas
+- Code examples where helpful
+- Concrete examples for document-level tasks
+
+Let me think about the unique aspects of Hierarchical Transformers:
+- They process documents as sequences of sentences or chunks
+- They have two-level attention (word-level and sentence-level)
+- Fairness issues could arise at either level
+- Document metadata (author, source, date) is important
+
+For fairness audits, I should consider:
+- Protected attributes might not be in the original dataset
+- Need to annotate these separately
+- Could use proxy attributes or external models
+- Must preserve privacy and ethical considerations
+
+For uncertainty:
+- Fairness metrics are often ratios/proportions
+- Need to account for finite sample sizes
+- Should report both statistical uncertainty and methodological uncertainty
+
+Let me write a detailed response.
+</thinking>
+
+# Augmenting Hierarchical Transformer Evaluations with Fairness Audits
+
+Here's a comprehensive framework for adding fairness and ethics audits to your Hierarchical Transformer evaluation while preserving data integrity and properly reporting uncertainty.
+
+## 1. Annotation Architecture: Preventing Label Contamination
+
+### **Layered Annotation Storage**
+Never modify original data files. Instead, create a **metadata overlay system**:
+
+```sql
+-- Example schema for fairness annotations
+CREATE TABLE fairness_annotations (
+    sample_id VARCHAR(255) PRIMARY KEY REFERENCES original_data(sample_id),
+    annotation_version INT,
+    protected_attributes JSONB,  -- e.g., {"gender": "F", "race": "Black"}
+    annotation_confidence FLOAT,
+    annotator_id VARCHAR(100),
+    annotation_timestamp TIMESTAMP,
+    audit_type VARCHAR(50)  -- 'human', 'model_proxy', 'metadata_derived'
+);
+
+CREATE TABLE model_predictions (
+    sample_id VARCHAR(255),
+    model_version VARCHAR(100),
+    prediction JSONB,
+    attention_weights_hierarchical JSONB,  -- Store sentence/word-level attention
+    fairness_audit_id VARCHAR(255) REFERENCES fairness_annotations(sample_id)
+);
+```
+
+**Key principles:**
+- **Immutable originals**: Original labels remain read-only; all audits reference sample IDs
+- **Versioned annotations**: Each audit round gets a version number for reproducibility
+- **Separation of concerns**: Model predictions and fairness labels live in separate tables
+
+### **Snapshot-Based Workflow**
+```bash
+# Create a frozen snapshot for auditing
+cp -r /data/original /snapshots/audit_v1_2024-01-15
+chmod -w /snapshots/audit_v1_2024-01-15/*
+
+# All audits operate on snapshots, never originals
+export AUDIT_DATA_PATH=/snapshots/audit_v1_2024-01-15
+```
+
+---
+
+## 2. Fairness Audit Design for Hierarchical Transformers
+
+### **A. Protected Attribute Annotation Strategies**
+
+For document-level tasks (e.g., sentiment analysis, topic classification), annotate:
+
+1. **Author-level attributes**: Gender, race, age bracket of document author (if available)
+2. **Content-level proxies**: Use NER + lexicon methods to detect demographic mentions
+3. **Structural attributes**: Document source, publication tier, language variety
+
+**Example for a movie review dataset:**
+```python
+# Create annotation without touching original labels
+def add_fairness_metadata(sample_id, text, metadata):
+    # Detect gendered pronouns in review as proxy for reviewer gender
+    gender_indicators = detect_gender_markers(text)  # Returns {'confidence': 0.7, 'gender': 'F'}
+    
+    # Store separately
+    fairness_db.insert({
+        'sample_id': sample_id,
+        'protected_attributes': {
+            'inferred_gender': gender_indicators,
+            'movie_genre': metadata['genre']  # Could be proxy for race/gender themes
+        },
+        'annotation_confidence': gender_indicators['confidence'],
+        'audit_type': 'model_proxy'
+    })
+```
+
+### **B. Hierarchical-Specific Fairness Metrics**
+
+Beyond standard metrics, audit **hierarchical bias propagation**:
+
+1. **Attention Disparity Score**: Measure if attention focuses on different text segments across groups
+   ```python
+   def attention_disparity(attention_weights, group_labels):
+       # attention_weights: [num_samples, num_sentences, num_words]
+       # Compute Jensen-Shannon divergence of attention distributions
+       group0_attn = attention_weights[group_labels == 0].mean(axis=0)
+       group1_attn = attention_weights[group_labels == 1].mean(axis=0)
+       return jensen_shannon_divergence(group0_attn, group1_attn)
+   ```
+
+2. **Sentence-Level Performance Gaps**: Are certain demographic groups' writing styles processed less accurately?
+   ```python
+   # For each sentence position in documents
+   for sent_idx in range(max_sentences):
+       group_accuracies = {
+           group: accuracy(predictions[group_samples, sent_idx], 
+                          labels[group_samples, sent_idx])
+           for group in unique_groups
+       }
+       disparity = max(group_accuracies.values()) - min(group_accuracies.values())
+   ```
+
+3. **Intersectional Hierarchy Bias**: Check if bias amplifies at higher-level representations
+   ```python
+   # Compare word-level vs. sentence-level bias
+   word_level_bias = compute_bias(word_representations)
+   sentence_level_bias = compute_bias(sentence_representations)
+   amplification_factor = sentence_level_bias / (word_level_bias + epsilon)
+   ```
+
+---
+
+## 3. Uncertainty Quantification: Statistical & Methodological
+
+### **A. Statistical Uncertainty (Sampling Variability)**
+
+Fairness metrics are **ratios with small sample sizes** for minority groups. Use:
+
+1. **Bootstrap Confidence Intervals**
+   ```python
+   from scipy.stats import bootstrap
+   
+   def bootstrap_fairness_metric(predictions, labels, groups, metric_fn, n_bootstrap=2000):
+       def statistic(indices):
+           sample_preds = predictions[indices]
+           sample_labels = labels[indices]
+           sample_groups = groups[indices]
+           return metric_fn(sample_preds, sample_labels, sample_groups)
+       
+       # Stratified bootstrap to preserve group proportions
+       res = bootstrap(
+           data=(np.arange(len(predictions)),),
+           statistic=statistic,
+           n_resamples=n_bootstrap,
+           confidence_level=0.95,
+           method='BCa'  # Bias-corrected accelerated
+       )
+       return res.confidence_interval
+   ```
+
+2. **Bayesian Credible Intervals** for small groups
+   ```python
+   import pymc as pm
+   
+   with pm.Model() as fairness_model:
+       # Beta-Binomial for error rates
+       alpha = pm.HalfNormal('alpha', sigma=1)
+       beta = pm.HalfNormal('beta', sigma=1)
+       
+       error_rates = pm.Beta('error_rate', alpha, beta, 
+                            observed=group_errors, 
+                            size=num_groups)
+       
+       # Compute disparity as deterministic
+       disparity = pm.Deterministic('disparity', 
+                                   pm.math.abs(error_rates[0] - error_rates[1]))
+       
+       trace = pm.sample(2000, return_inferencedata=True)
+       ci = az.hdi(trace['disparity'], hdi_prob=0.95)
+   ```
+
+### **B. Methodological Uncertainty**
+
+Report **multiple sources of uncertainty**:
+
+1. **Annotation Uncertainty**: When using proxy labels
+   ```python
+   # Weight metrics by annotation confidence
+   weighted_disparity = np.sum(confidence_weights * group_disparities) / np.sum(confidence_weights)
+   
+   # Report sensitivity to confidence threshold
+   for threshold in [0.5, 0.7, 0.9]:
+       filtered_samples = confidence_weights > threshold
+       disparity_at_threshold = compute_disparity(filtered_samples)
+   ```
+
+2. **Model Uncertainty**: Ensembles of fine-tuned models
+   ```python
+   # Train 5 models with different seeds
+   model_predictions = [train_model(seed=i) for i in range(5)]
+   
+   # Report distribution of fairness metrics
+   fairness_scores = [compute_fairness(pred) for pred in model_predictions]
+   print(f"Fairness metric: {np.mean(fairness_scores)} ± {np.std(fairness_scores)}")
+   ```
+
+3. **Metric Choice Uncertainty**: Report multiple fairness definitions
+   ```markdown
+   | Metric | Value | 95% CI | Interpretation |
+   |--------|-------|--------|----------------|
+   | Demographic Parity | 0.12 | [0.08, 0.16] | Acceptance rate diff |
+   | Equalized Odds (TPR) | 0.08 | [0.05, 0.11] | True positive diff |
+   | Equalized Odds (FPR) | 0.15 | [0.10, 0.20] | False positive diff |
+   ```
+
+---
+
+## 4. Reporting Framework: Transparency & Reproducibility
+
+### **Required Report Sections**
+
+**1. Annotation Provenance**
+```markdown
+## Fairness Annotation Details
+- **Source**: Inferred from author bios (publicly available)
+- **Coverage**: 78% of samples have gender annotation (confidence > 0.7)
+- **Validation**: Manual review of 200 samples showed 92% agreement
+- **Limitations**: Non-binary genders not captured; proxy inference may misclassify
+- **Access**: Annotations available at [DOI] with restricted use agreement
+```
+
+**2. Uncertainty Summary Table**
+```python
+# Generate comprehensive uncertainty report
+def generate_fairness_report(metrics_dict, bootstrap_results):
+    report = {}
+    for metric_name, value in metrics_dict.items():
+        report[metric_name] = {
+            'point_estimate': value,
+            '95_ci': bootstrap_results[metric_name].ci,
+            'std_error': bootstrap_results[metric_name].se,
+            'sample_size_minority': len(minority_group_samples),
+            'annotation_confidence_mean': np.mean(confidence_weights),
+            'sensitivity_to_threshold': compute_sensitivity_analysis()
+        }
+    return pd.DataFrame(report).T
+```
+
+**3. Visualization Standards**
+- **Error bars**: Always show 95% CIs on disparity bar charts
+- **Sample size annotation**: Display n per group on all plots
+- **Attention heatmaps**: Show group differences with significance tests
+- **Sensitivity tornado plots**: Show how metrics change under different assumptions
+
+### **Ethics Checklist for Publication**
+
+- [ ] **IRB Approval**: If human annotators used
+- [ ] **Data Access**: Provide differential access (raw data vs. annotations)
+- [ ] **Reproducibility**: Seed all randomness; version-control annotation code
+- [ ] **Limitations Section**: Explicitly discuss annotation quality and coverage
+- [ ] **Stakeholder Input**: Consult affected communities before proxy labeling
+
+---
+
+## 5. Implementation Example: End-to-End Pipeline
+
+```python
+# Step 1: Create audit snapshot
+audit_data = create_snapshot('/data/original', '/audit/snapshot_v1')
+
+# Step 2: Add protected attributes (separately)
+annotator = DemographicAnnotator(method='proxy_lexicon')
+fairness_labels = annotator.annotate(audit_data, confidence_threshold=0.6)
+save_to_database(fairness_labels, table='fairness_annotations_v1')
+
+# Step 3: Train hierarchical transformer (original task)
+model = HierarchicalTransformer()
+model.fit(audit_data['text'], audit_data['original_labels'])
+
+# Step 4: Compute predictions with hierarchical features
+predictions = model.predict(audit_data['text'])
+attention_weights = model.get_attention_weights()  # [samples, sentences, words]
+
+# Step 5: Fairness audit
+auditor = HierarchicalFairnessAuditor()
+results = auditor.compute_all_metrics(
+    predictions=predictions,
+    labels=audit_data['original_labels'],
+    fairness_labels=fairness_labels,
+    attention_weights=attention_weights,
+    groups=['gender', 'race', 'intersection']
+)
+
+# Step 6: Uncertainty quantification
+uncertainty = BootstrapUncertainty(n_resamples=5000)
+ci_results = uncertainty.compute_ci(results, stratify_by='group')
+
+# Step 7: Generate report
+report = FairnessReportGenerator()
+report.create(results, ci_results, output_path='./fairness_audit_v1.pdf')
+```
+
+---
+
+## Key Takeaways
+
+1. **Never touch originals**: Use ID-referenced overlays and immutable snapshots
+2. **Stratify uncertainty**: Report statistical, annotation, and model uncertainty separately
+3. **Hierarchical awareness**: Audit bias at both word and sentence levels
+4. **Transparency**: Disclose annotation methods, confidence, and coverage limitations
+5. **Community involvement**: Validate proxy labels with affected groups when possible
+
+This framework ensures your fairness audit is rigorous, reproducible, and ethically sound while preserving the integrity of your original evaluation.

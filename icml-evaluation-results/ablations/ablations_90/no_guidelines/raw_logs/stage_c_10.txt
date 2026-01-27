@@ -1,0 +1,179 @@
+<thinking>
+  The user is asking for a research plan for multimodal misinformation detection in low-bandwidth regions. This is a specific and important topic. Let me break down the key components:
+
+1. **Multimodal misinformation detection**: This involves detecting false or misleading information that spans multiple modalities (text, images, video, audio). This is more complex than single-modality detection because it requires understanding how different modalities interact and potentially contradict or reinforce each other.
+
+2. **Low-bandwidth regions**: This constraint is crucial. It means:
+   - Limited internet connectivity (slow speeds, high latency, intermittent access)
+   - Likely limited computational resources on devices
+   - Possibly older or less powerful hardware
+   - Data costs may be high, so models need to be efficient
+   - Offline functionality may be important
+   - Need to consider text-heavy vs. media-heavy content distribution patterns
+
+3. **Resource-constrained**: This relates to both the infrastructure limitations and the research process itself. The plan should be realistic about budget, time, and computational resources.
+
+I need to outline a comprehensive research plan that addresses:
+- Problem definition and scope
+- Literature review focus areas
+- Methodology (model development, data considerations)
+- Evaluation strategy
+- Deployment considerations for low-bandwidth
+- Ethical considerations
+- Timeline and milestones
+- Resource requirements
+
+Let me structure this as a formal research plan with clear phases.
+
+**Key challenges to address:**
+- Multimodal fusion is computationally expensive
+- Large models (like CLIP, Flamingo) are not suitable for low-bandwidth deployment
+- Need for efficient architectures
+- Data scarcity for low-resource languages/regions
+- Cultural context matters for misinformation detection
+- Need for lightweight, potentially on-device processing
+- Bandwidth-efficient fact-checking (can't send everything to cloud)
+
+**Potential approaches:**
+- Model compression (pruning, quantization, knowledge distillation)
+- Efficient architectures (MobileNet, EfficientNet for vision; DistilBERT for text)
+- Cascaded systems (lightweight screening → cloud verification only when needed)
+- Unimodal pre-screening before multimodal analysis
+- Offline-first design with selective syncing
+- Use of text transcripts instead of audio/video when possible
+- Synthetic data generation for training
+- Federated learning to leverage distributed data without centralization
+
+Let me create a detailed, actionable plan.
+</thinking>
+
+# Resource-Constrained Research Plan: Multimodal Misinformation Detection for Low-Bandwidth Regions
+
+## 1. Problem Scoping & Feasibility (Months 1-2)
+
+### Core Research Questions
+- **Primary**: How can we achieve ≥85% detection accuracy for multimodal misinformation with models that operate within 100MB memory footprint and <500ms latency on entry-level smartphones?
+- **Secondary**: What modality-compression strategies preserve the most discriminative features for misinformation detection in low-bandwidth contexts?
+
+### Target Definition
+- **Platforms**: WhatsApp, Facebook Lite, offline sharing via Bluetooth
+- **Modalities**: Text + static images (primary), short video clips (secondary), audio notes (tertiary)
+- **Languages**: Focus on 2-3 low-resource languages (e.g., Amharic, Burmese, Hausa) + English as baseline
+- **Devices**: Android Go phones (1GB RAM, 16GB storage) as minimum spec
+
+## 2. Literature Review & Baseline Establishment (Months 1-3)
+
+### Key Focus Areas
+- **Efficient Multimodal Fusion**: Review late-fusion vs. early-fusion tradeoffs for resource constraints
+- **Model Compression**: Quantization-aware training, unstructured pruning, knowledge distillation specific to multimodal tasks
+- **Low-Bandwidth ML**: On-device inference, federated learning with intermittent connectivity
+- **Cultural Context**: Anthropological studies of misinformation spread in target regions
+
+### Baseline Models
+- **Text**: DistilBERT (40% smaller, 60% faster than BERT)
+- **Vision**: MobileNetV3-Small (≈2.9MB)
+- **Multimodal**: Lightweight CLIP distillation (student: 50MB, teacher: ViT-B/32)
+- **Benchmark**: Establish "bandwidth-adjusted accuracy" metric = accuracy / (model_size + avg_inference_data_transfer)
+
+## 3. Data Strategy (Months 2-6)
+
+### Data Collection
+- **Constraint**: Max 5GB total dataset size
+- **Approach**:
+  - Partner with local fact-checkers (e.g., Africa Check, BOOM Live) for annotated datasets
+  - Synthetic misinformation generation using GPT-4 + DALL-E 3, then validate with local experts
+  - Harvest public WhatsApp groups (with IRB approval) for real-world distribution patterns
+  - **Key insight**: Collect *compression artifacts* as features—low-bandwidth regions have distinct recompression signatures
+
+### Data Efficiency Techniques
+- **Modality dropping**: Train with 30% probability of missing modalities to simulate network failures
+- **Text-first sampling**: Prioritize text features; use images only when text confidence is borderline
+- **Active learning**: Uncertainty sampling to maximize annotation value of limited fact-checker time
+
+## 4. Model Development (Months 3-9)
+
+### Architecture Design Principles
+1. **Cascaded Gating**: 
+   - Stage 1: Text-only classifier (runs locally, 95% of content filtered here)
+   - Stage 2: Lightweight image analysis (only if Stage 1 confidence ∈ [0.3, 0.7])
+   - Stage 3: Full multimodal fusion (only for high-virality content, can be cloud-offloaded)
+
+2. **Modality-Specific Compression**:
+   - **Text**: 4-bit quantized DistilBERT + lexical backoff to TF-IDF for OOV terms
+   - **Vision**: Adaptive resolution (224px → 112px if image entropy < threshold) + JPEG quality estimation as feature
+   - **Fusion**: Bilinear pooling with random projection (Johnson-Lindenstrauss) to reduce dimensionality by 80%
+
+### Training Strategy
+- **Knowledge Distillation**: Train 500MB teacher model on high-quality data → distill to 50MB student
+- **Progressive shrinking**: Start with full model, prune 20% every 5 epochs based on gradient flow
+- **Federated simulation**: Train with dropout layers that simulate 2G connection drops (30% packet loss)
+
+## 5. Evaluation Framework (Months 6-10)
+
+### Metrics
+- **Primary**: F1-score on misinformation class, model size, inference time on Pixel 4a (proxy for low-end)
+- **Secondary**: Bandwidth consumption per 100 posts, battery drain (mAh/inference), offline operation time
+- **Novel**: "Crisis performance"—accuracy degradation when only 1 modality available
+
+### Test Scenarios
+1. **Offline mode**: 48-hour operation without internet
+2. **Intermittent sync**: 5-minute connectivity window per day
+3. **Low-quality media**: Images compressed to 50KB, 10-second audio at 16kbps
+4. **Adversarial**: Misinformation optimized to evade text detection (e.g., text in images)
+
+## 6. Deployment & Pilot (Months 8-12)
+
+### Prototype Specifications
+- **App size**: <25MB APK
+- **Model updates**: Delta compression (only changed weights), <5MB per week
+- **Fact-checking**: Pre-downloaded database of 10K fact-checks, updated via SMS-encoded diffs
+- **On-device DB**: SQLite with FTS5 for full-text search of known misinformation patterns
+
+### Pilot Design
+- **Location**: 2 regions (e.g., rural Ethiopia, urban Myanmar)
+- **Scale**: 500 users, 3-month deployment
+- **Control**: A/B test against text-only baseline
+- **Ethics**: Community advisory board, opt-in only, transparent model cards in local languages
+
+## 7. Resource Allocation (Total Budget: ~$150K)
+
+### Personnel (60%)
+- 1 PhD student (model development): $40K
+- 1 Research engineer (deployment): $35K
+- 1 Anthropologist/local partner liaison: $15K
+
+### Compute (15%)
+- 2x A100 GPU-months for teacher training: $10K
+- Edge device testing lab (20 phones): $8K
+
+### Data & Travel (25%)
+- Fact-checker partnerships/annotation: $20K
+- 2 field trips for pilot setup: $12K
+- IRB, ethics review, community engagement: $10K
+
+## 8. Risk Mitigation
+
+| Risk | Probability | Mitigation |
+|------|-------------|------------|
+| Data scarcity for low-resource languages | High | Use cross-lingual transfer + synthetic data; partner early |
+| Model performs well but too slow | Medium | Profile every 2 weeks on target hardware; maintain aggressive latency budget |
+| Cultural context misalignment | High | Hire local researchers as co-investigators, not just annotators |
+| Battery drain makes app unusable | Medium | Implement on-device scheduler to run only when charging |
+
+## 9. Key Innovation Points
+
+- **Compression-aware features**: Explicitly model JPEG artifacts, audio recompression as signals of provenance
+- **Asynchronous multimodality**: Design for modalities arriving minutes/hours apart (e.g., text now, image later via Bluetooth)
+- **Civic infrastructure integration**: Tie detections to community radio, SMS hotlines for verification
+
+## 10. Timeline Summary
+
+```
+M1-2: Scoping, partnerships, baseline
+M3-4: Data collection, teacher model training
+M5-7: Student model distillation, compression
+M8-9: App development, offline testing
+M10-12: Pilot deployment, data analysis
+```
+
+This plan prioritizes **practical deployment constraints** over state-of-the-art accuracy, ensuring the research outputs are immediately usable in target regions while maintaining scientific rigor.

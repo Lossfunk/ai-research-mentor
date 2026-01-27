@@ -1,0 +1,181 @@
+<thinking>
+  The user is asking for a research plan on "compressible LLMs" with experiments, ablations, and a 6-month timeline. This is a research planning question. I need to provide a structured, actionable plan that covers:
+
+1. Key research questions in compressible LLMs
+2. Specific experiments and ablations
+3. A realistic timeline over 6 months
+4. Milestones and deliverables
+
+Let me think about what "compressible LLMs" means. This could refer to:
+- Model compression techniques (pruning, quantization, distillation)
+- Inherent compressibility of LLMs (what makes them compressible)
+- Dynamic compression during inference
+- Compression-aware training
+- Evaluating compression tradeoffs
+
+The user wants a comprehensive plan. I should structure this as a research project plan with phases, experiments, and timeline.
+
+Key aspects to cover:
+- Literature review baseline
+- Compression methods to study
+- Evaluation metrics
+- Datasets and models
+- Ablations
+- Timeline with milestones
+
+Let me create a detailed 6-month plan. I'll assume this is for a small research team (2-3 people) and focus on practical, achievable goals.
+
+Month 1-2: Setup and baseline
+Month 3-4: Core experiments
+Month 5: Ablations and analysis
+Month 6: Writing and final experiments
+
+I should suggest specific compression methods, evaluation protocols, and ablation studies. I should also mention potential pitfalls and practical considerations.
+
+Let me structure this clearly with phases, experiments, and timeline.
+</thinking>
+
+# Research Plan: Compressible Large Language Models
+
+## Overview
+This plan investigates the compressibility of LLMs through pruning, quantization, and architectural modifications, focusing on understanding *why* and *when* compression works. We'll target a 7B-13B parameter model scale for practical turnaround.
+
+---
+
+## **Phase 1: Foundation & Baselines (Months 1-2)**
+
+### Core Experiments
+1. **Baseline Compression Suite**
+   - Train 7B param model from scratch on C4 + RedPajama (200B tokens)
+   - Apply post-training compression: 
+     - Magnitude pruning (10%, 30%, 50%, 70% sparsity)
+     - W4A16, W3A16, W8A8 quantization (RTN, GPTQ, AWQ)
+     - Layer dropout (remove 1-4 layers)
+   - Evaluate: perplexity, MMLU, HellaSwag, HumanEval, inference speed/memory
+
+2. **Compressibility Diagnostics**
+   - Measure layer-wise sensitivity: compress each layer independently, track performance drop
+   - Analyze Hessian spectra (top eigenvalues) per layer/module
+   - Correlate sensitivity with attention head diversity, neuron activation sparsity, and weight norm distributions
+
+### Ablations
+- **Data regime**: Compare compressibility when trained on 50B vs 200B tokens
+- **Architecture**: Test Llama vs Mistral (sliding window) vs MLP-only variations
+- **Scale**: Replicate key experiments at 1B and 13B scales
+
+**Deliverable**: Compressibility "heat map" showing which components are most robust to compression
+
+---
+
+## **Phase 2: Dynamic & Adaptive Compression (Months 3-4)**
+
+### Core Experiments
+3. **Input-Adaptive Compression**
+   - Train compression policy network (tiny MLP) that predicts per-sample sparsity pattern
+   - Hard attention: dynamically prune attention heads based on input complexity (measured by token uncertainty)
+   - Early exit + layer skipping: learn routing function for easy examples
+
+4. **Compression-Aware Pre-training**
+   - Add L1 regularization on weights to encourage magnitude-based pruning
+   - Insert quantization noise during training (straight-through estimator)
+   - Train with **dynamic width**: randomly drop 30% of neurons each forward pass
+
+### Ablations
+- **Policy architecture**: Compare LSTM vs MLP vs token-embedding-only routing
+- **Training cost**: Measure if compression-aware training hurts pre-training efficiency
+- **Granularity**: Token-level vs sequence-level vs batch-level adaptation
+
+**Deliverable**: Model that achieves 2-3x inference speedup on 50% of "easy" examples with <1% accuracy loss
+
+---
+
+## **Phase 3: Understanding & Theory (Month 5)**
+
+### Core Experiments
+5. **Lottery Ticket Hypothesis for LLMs**
+   - Find "winning tickets" at 30% sparsity using iterative magnitude pruning
+   - Analyze ticket structure: are early layers more critical? Are attention patterns preserved?
+   - Test if tickets are transferable across tasks (MMLU → GSM8K)
+
+6. **Compressibility vs. Emergence**
+   - Plot scaling law: compressibility (performance@50% sparsity) vs. model size
+   - Test if specific capabilities (few-shot, chain-of-thought) are more fragile
+   - Measure "critical compression threshold" where capabilities abruptly degrade
+
+### Ablations
+- **Pruning schedule**: One-shot vs iterative vs gradual during training
+- **Rewinding**: Compare resetting to step 1000 vs 5000 vs 20000
+- **Mask structure**: Unstructured vs 2:4 vs block (4x4) sparsity
+
+**Deliverable**: Paper section on "The Compressibility Scaling Laws" with empirical formulas
+
+---
+
+## **Phase 4: Integration & Validation (Month 6)**
+
+### Core Experiments
+7. **Hybrid Compression Pipeline**
+   - Combine best methods: e.g., 30% structured pruning + W4A16 quantization + input-adaptive layer skipping
+   - Benchmark end-to-end latency on A100/H100 (vLLM, TensorRT-LLM)
+   - Compare vs. smaller dense model (e.g., compressed 7B vs. dense 3B)
+
+8. **Downstream Robustness**
+   - Fine-tune compressed models on 3 tasks: instruction following, summarization, code generation
+   - Evaluate compression transfer: does a model pruned for perplexity retain code ability?
+   - Measure forgetting: pre- vs post-compression performance gap
+
+### Ablations
+- **Hardware**: Measure speedup on CPU (ARM) vs. GPU vs. edge device (Jetson)
+- **Batch size**: Does compression benefit vanish at large batches?
+- **Quantization order**: Prune-then-quantize vs. quantize-then-prune
+
+**Deliverable**: Production-ready compressed model + technical report
+
+---
+
+## **Timeline & Milestones**
+
+| Month | Key Milestone | Risk Mitigation |
+|-------|---------------|-----------------|
+| **1** | Baseline 7B trained; pruning code debugged | Use pretrained checkpoint if training stalls |
+| **2** | Compressibility heat map complete | Focus on 2-3 most promising methods only |
+| **3** | Adaptive compression prototype running | Simplify policy network if training unstable |
+| **4** | 2x speedup on easy examples validated | Fall back to static compression if dynamic fails |
+| **5** | Scaling laws plotted; lottery tickets found | Reduce model sizes if compute limited |
+| **6** | Final hybrid model + paper draft | Pre-write methods section to save time |
+
+---
+
+## **Practical Recommendations**
+
+**Compute Budget**: ~2,000 A100-hours/month
+- Training: 1,500 hrs (FP16/BF16)
+- Inference/eval: 500 hrs
+
+**Models**: Start with **Mistral-7B** architecture (proven efficiency), then test **Llama-3-8B**
+
+**Evaluation Suite**: 
+- **Efficiency**: Real throughput (tok/s), memory footprint, energy (J/tok)
+- **Quality**: MMLU (5-shot), HumanEval (pass@1), MT-Bench (instruction)
+- **Stability**: 5 runs with different seeds for all experiments
+
+**Key Ablations to Prioritize**:
+1. **Sparsity structure**: Unstructured is academic; 2:4 is hardware-realizable
+2. **Calibration data**: Use 128 samples from pre-training vs. downstream task for GPTQ
+3. **Layer importance**: Always skip layers 15-18 in 24-layer models (they're often redundant)
+
+**Expected Outcomes**:
+- 30-50% unstructured sparsity with <2% perplexity degradation
+- W4A16 quantization with near-zero loss using AWQ
+- 1.5-2x real speedup via input-adaptive methods
+- Empirical scaling law: compressibility ∝ log(model size) × sqrt(training tokens)
+
+---
+
+## **Contingency Plans**
+
+- **If dynamic methods fail**: Pivot to static structured pruning + quantization
+- **If compute limited**: Use OpenLLaMA-3B and focus on lottery tickets
+- **If results are negative**: Reframe as "compressibility limits of LLMs" and publish negative findings
+
+Would you like me to elaborate on any specific experiment or provide code skeletons for the adaptive compression policy?

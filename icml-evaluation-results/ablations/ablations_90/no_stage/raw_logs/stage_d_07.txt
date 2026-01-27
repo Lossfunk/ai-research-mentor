@@ -1,0 +1,37 @@
+<thinking>
+  <thinking>
+The user wants to stress-test a Hierarchical Transformer on out-of-domain tasks. They want synthetic perturbations, evaluation metrics, and a statistical analysis plan. This is a specific technical question that needs concrete, actionable advice. I need to be critical about what would actually work vs. what's just noise.
+
+Key considerations:
+- Hierarchical Transformers rely on document structure (sections, paragraphs, etc.)
+- Collaborative code has different structure than natural language
+- Long documents have different failure modes than short ones
+- Need perturbations that actually test the hierarchy mechanism, not just generic robustness
+
+I should focus on perturbations that specifically target the hierarchical inductive bias, not generic corruptions. And the metrics need to measure hierarchy-specific failures.
+</thinking>
+
+This is a solid stress-test plan, but it needs to target the hierarchical mechanism specifically, not just generic robustness.
+
+**Perturbations that actually test hierarchy:**
+
+For **collaborative code**: 
+- **Cross-file dependency shuffling**: Randomly reorder function definitions across files while preserving local syntax. A hierarchical model should break if it's over-relying on file-level structure.
+- **Comment injection flood**: Insert 10x more docstrings/comments at random nesting levels. Tests if the model confuses semantic vs. structural hierarchy.
+- **Flattening**: Remove all indentation and newlines, then test recovery. Directly attacks the model's ability to infer hierarchy from tokens.
+
+For **long documents**:
+- **Section scrambling**: Shuffle paragraphs across section boundaries but keep intra-paragraph order. Measures if the model uses section-level context.
+- **Synthetic depth**: Insert 5-10 levels of fake nested headings (e.g., "1.1.1.1.1...") with gibberish content. Tests robustness to adversarial hierarchy depth.
+- **Cross-reference poisoning**: Add 100+ fake cross-references (e.g., "see Section X.Y") that point to wrong sections. Tests if the model overfits to explicit structural cues.
+
+**Metrics that matter:**
+- **Hierarchy violation rate**: % of predictions where the model assigns a child label to a parent-level context (or vice versa). More direct than accuracy.
+- **Depth generalization gap**: Performance difference between documents with depth ≤ training max vs. depth > training max. Should be large if hierarchy is brittle.
+- **Structural attention entropy**: Measure attention entropy across hierarchy levels under perturbation. Should spike if the model loses confidence in structure.
+
+**Statistical analysis:**
+Don't just report means. Use **hierarchical bootstrapping**—sample entire documents (not individual examples) to preserve correlation structure. Compute 95% CIs for each perturbation's effect size. If the CI for performance drop doesn't exclude zero, your perturbation is too weak to matter.
+
+**Critical gap**: You need a **non-hierarchical baseline** (e.g., standard Transformer with same parameters). If both models fail similarly, your perturbations aren't testing hierarchy—they're just hard. The *gap* between them is your robustness measure.
+</thinking>

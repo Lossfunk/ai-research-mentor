@@ -1,0 +1,341 @@
+<thinking>
+  The user wants me to:
+1. Extend a Hierarchical Transformer evaluation with efficiency metrics (latency, memory, throughput)
+2. Preserve comparability to original results
+3. Propose an analysis plan to show statistical separation between accuracy and efficiency trade-offs
+
+However, I notice that the user mentions "attached Hierarchical Transformer evaluation" but there is no attachment in the message. I need to address this and provide a general framework that would work for typical Hierarchical Transformer evaluations, while noting that I don't have the specific attachment.
+
+Let me think about what a typical Hierarchical Transformer evaluation would include:
+- Usually it's a paper or study evaluating Hierarchical Transformers (like H-Transformer-1D, Hourglass, etc.)
+- Would include accuracy metrics on tasks like language modeling, classification, etc.
+- Would have baselines like standard Transformers, Linformers, Performers, etc.
+- Would include model sizes, hyperparameters
+
+Since I don't have the specific attachment, I should:
+1. Acknowledge the missing attachment
+2. Provide a general but detailed framework that would apply to most Hierarchical Transformer evaluations
+3. Make it concrete enough to be immediately useful
+4. Include specific statistical methods for showing trade-offs
+
+Key components to include:
+- Efficiency metrics definition and measurement protocol
+- Experimental setup for fair comparison
+- Statistical analysis plan
+- Visualization strategies
+- Code snippets for implementation
+- Specific statistical tests for separation
+
+Let me structure this as a comprehensive research plan:
+
+1. **Efficiency Metrics Definition**: Clear definitions of latency, memory, throughput
+2. **Measurement Protocol**: How to measure these consistently
+3. **Experimental Design**: Controlling variables, hardware specs, etc.
+4. **Statistical Analysis Plan**: 
+   - For accuracy: standard metrics
+   - For efficiency: distributions
+   - For trade-offs: Pareto analysis, hypothesis testing
+5. **Visualization**: 2D/3D plots, Pareto frontiers
+6. **Implementation Details**: Code snippets
+7. **Comparability Preservation**: How to ensure fair comparison with original results
+
+I should be specific about statistical tests:
+- Use ANOVA or Kruskal-Wallis for multiple comparisons
+- Use pairwise tests with corrections (Bonferroni, Tukey)
+- For trade-off analysis: use hypervolume indicator, Pareto dominance
+- For statistical separation: effect sizes, confidence intervals
+
+Let me also include concrete examples with numbers to make it more actionable.
+
+I should also mention tools like:
+- PyTorch Profiler
+- NVIDIA Nsight
+- `time`, `psutil`, `torch.cuda.memory_summary()`
+- Weights & Biases for logging
+
+For statistical analysis, mention:
+- SciPy for statistical tests
+- Pareto front computation
+- Bootstrap confidence intervals
+
+Let me write this up in a clear, structured way that a researcher could immediately implement.
+</thinking>
+
+I don't see an attachment in your message. To provide a concrete extension plan, I'll outline a comprehensive framework based on typical Hierarchical Transformer evaluations (e.g., H-Transformer-1D, Hourglass, Synthesizer). You can adapt this directly to your specific paper/experiment.
+
+---
+
+## **Extended Evaluation Framework: Efficiency + Accuracy**
+
+### **1. Efficiency Metrics Protocol**
+
+Define standardized measurement conditions to preserve comparability:
+
+```python
+# Measurement template (run on same hardware as original)
+def measure_efficiency(model, dataloader, device, warmup_steps=100, measure_steps=1000):
+    """
+    Measures latency, memory, and throughput with proper warmup
+    """
+    model.eval()
+    
+    # WARMUP
+    with torch.no_grad():
+        for i, batch in enumerate(dataloader):
+            if i >= warmup_steps: break
+            _ = model(batch.to(device))
+    
+    # MEASUREMENT
+    torch.cuda.reset_peak_memory_stats(device)
+    torch.cuda.synchronize(device)
+    
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    
+    latencies = []
+    start_event.record()
+    
+    with torch.no_grad():
+        for i, batch in enumerate(dataloader):
+            if i >= measure_steps: break
+            
+            iter_start = time.perf_counter()
+            _ = model(batch.to(device))
+            torch.cuda.synchronize(device)
+            latencies.append(time.perf_counter() - iter_start)
+    
+    end_event.record()
+    torch.cuda.synchronize(device)
+    
+    total_time = start_event.elapsed_time(end_event) / 1000  # seconds
+    total_tokens = sum(batch.numel() for batch in dataloader[:measure_steps])
+    
+    metrics = {
+        'latency_mean_ms': np.mean(latencies) * 1000,
+        'latency_std_ms': np.std(latencies) * 1000,
+        'latency_p99_ms': np.percentile(latencies, 99) * 1000,
+        'memory_peak_mb': torch.cuda.max_memory_allocated(device) / 1e6,
+        'memory_reserved_mb': torch.cuda.memory_reserved(device) / 1e6,
+        'throughput_tok_s': total_tokens / total_time,
+        'throughput_samples_s': measure_steps / total_time
+    }
+    return metrics
+```
+
+**Key Controls for Comparability:**
+- **Hardware**: Lock GPU model, CPU, RAM (e.g., "A100-40GB, 32-core AMD, 256GB RAM")
+- **Software**: Fix PyTorch/CUDA versions, cuDNN backend, deterministic flags
+- **Batch Size**: Use same batch size per-token or per-sample as original
+- **Sequence Length**: Test at {512, 1024, 2048, 4096} if variable
+- **Precision**: Measure FP32 and BF16/FP8 if supported
+- **Compilation**: Test both `torch.compile()` and eager mode
+
+---
+
+### **2. Statistical Analysis Plan for Trade-off Separation**
+
+#### **Phase A: Individual Metric Distributions**
+For each model variant, run **N≥30** independent trials (different random seeds, reboots):
+
+```python
+# Collect distributions
+accuracy_scores = []  # from original evaluation
+latency_distributions = []  # list of 30+ measurements per model
+memory_distributions = []
+throughput_distributions = []
+
+# Statistical significance of efficiency differences
+from scipy.stats import mannwhitneyu, kruskal
+
+def test_efficiency_separation(model_A_metrics, model_B_metrics, metric_name):
+    """
+    Test if efficiency difference is statistically significant
+    """
+    # Use Mann-Whitney U (non-parametric, handles outliers)
+    statistic, p_value = mannwhitneyu(
+        model_A_metrics[metric_name],
+        model_B_metrics[metric_name],
+        alternative='two-sided'
+    )
+    
+    # Effect size (common language effect size)
+    cles = statistic / (len(model_A_metrics) * len(model_B_metrics))
+    
+    return {
+        'p_value': p_value,
+        'effect_size': cles,
+        'significant': p_value < 0.05,
+        'clinically_meaningful': cles > 0.7 or cles < 0.3
+    }
+```
+
+#### **Phase B: Joint Accuracy-Efficiency Hypothesis Testing**
+
+**Core Innovation**: Test **trade-off dominance** statistically:
+
+```python
+def pareto_dominance_test(model_A, model_B, accuracy_metric='perplexity', 
+                         efficiency_metric='latency_mean_ms'):
+    """
+    Statistical test for Pareto dominance with confidence intervals
+    """
+    # Bootstrap 95% CIs for each metric
+    n_bootstrap = 1000
+    
+    def bootstrap_ci(data, stat_func=np.mean):
+        bootstrap_stats = []
+        for _ in range(n_bootstrap):
+            sample = np.random.choice(data, size=len(data), replace=True)
+            bootstrap_stats.append(stat_func(sample))
+        return np.percentile(bootstrap_stats, [2.5, 97.5])
+    
+    # CIs for both models
+    acc_ci_A = bootstrap_ci(model_A['accuracies'])
+    acc_ci_B = bootstrap_ci(model_B['accuracies'])
+    eff_ci_A = bootstrap_ci(model_A[efficiency_metric])
+    eff_ci_B = bootstrap_ci(model_B[efficiency_metric])
+    
+    # Determine dominance with statistical confidence
+    results = {
+        'accuracy_better': acc_ci_A[0] > acc_ci_B[1] if accuracy_higher_better 
+                          else acc_ci_A[1] < acc_ci_B[0],
+        'efficiency_better': eff_ci_A[0] < eff_ci_B[1] if efficiency_lower_better 
+                            else eff_ci_A[1] > eff_ci_B[0],
+        'accuracy_ci': acc_ci_A,
+        'efficiency_ci': eff_ci_A
+    }
+    
+    # Pareto dominance requires BOTH to be better
+    results['pareto_dominant'] = results['accuracy_better'] and results['efficiency_better']
+    
+    return results
+```
+
+#### **Phase C: Hypervolume Analysis for Multi-Objective Trade-offs**
+
+For K models, compute Pareto hypervolume:
+
+```python
+from pymoo.util.misc import stack
+from pymoo.indicators.hv import Hypervolume
+
+# Normalize metrics to [0,1] range using reference points
+ref_point = np.array([max_accuracy, max_latency, max_memory])  # worst values
+
+# Collect normalized points
+F = stack([
+    np.column_stack([m['accuracy'], m['latency'], m['memory']]) 
+    for m in all_models
+])
+
+# Compute hypervolume (larger = better trade-off space coverage)
+hv = Hypervolume(ref_point=ref_point)
+hypervolume_value = hv.do(F)
+
+# Statistical significance via bootstrapping
+hv_distribution = []
+for _ in range(1000):
+    bootstrap_indices = np.random.choice(len(F), size=len(F), replace=True)
+    hv_distribution.append(hv.do(F[bootstrap_indices]))
+    
+hv_ci = np.percentile(hv_distribution, [2.5, 97.5])
+```
+
+---
+
+### **3. Visualization Strategy for Statistical Separation**
+
+#### **Plot 1: Confidence Interval Pareto Plot**
+```python
+import matplotlib.pyplot as plt
+
+def plot_pareto_with_ci(models_data):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    for name, data in models_data.items():
+        # Plot mean point
+        ax.scatter(data['accuracy_mean'], data['latency_mean'], 
+                  s=100, label=name)
+        
+        # Plot 95% CI ellipses
+        ellipse = confidence_ellipse(
+            data['accuracy_scores'], data['latency_mean_ms'],
+            n_std=1.96, edgecolor='black', facecolor='none'
+        )
+        ax.add_patch(ellipse)
+    
+    # Highlight Pareto frontier (statistically significant)
+    pareto_models = compute_pareto_frontier(models_data, ci_overlap=False)
+    for model in pareto_models:
+        ax.scatter(model['accuracy_mean'], model['latency_mean'], 
+                  s=200, marker='*', color='gold')
+    
+    ax.set_xlabel('Accuracy (↑)')
+    ax.set_ylabel('Latency ms (↓)')
+    ax.legend()
+    plt.show()
+```
+
+#### **Plot 2: Efficiency Distribution Overlays**
+```python
+# Violin plots showing full latency distribution per model
+sns.violinplot(data=latency_df, x='model', y='latency_ms')
+plt.title('Latency Distribution with Statistical Separation')
+# Add significance bars: *** p<0.001, ** p<0.01, * p<0.05
+```
+
+---
+
+### **4. Preserving Original Comparability Checklist**
+
+- [ ] **Same Data Splits**: Use identical train/val/test splits
+- [ ] **Same Evaluation Protocol**: If original used ensembling, keep it
+- [ ] **Same Hardware**: Or report normalized speedup ratios
+- [ ] **Same Batch Size**: Critical for memory/throughput
+- [ ] **Same Precision**: FP32 vs mixed precision affects latency
+- [ ] **Same Random Seeds**: For accuracy variance measurement
+- [ ] **Same Sequence Length**: Or report length scaling curves
+- [ ] **Same Warmup**: Ensure fair cache/buffer initialization
+
+**Normalization for Cross-Hardware Comparison:**
+```
+Report Relative Efficiency Scores:
+- Latency: "X% faster than baseline Transformer"
+- Memory: "Y% reduction vs baseline"
+- Throughput: "Z× tokens/sec improvement"
+```
+
+---
+
+### **5. Final Statistical Reporting Template**
+
+| Model | Accuracy (↓ PPL) | Latency (ms) | Memory (GB) | Throughput (tok/s) | Pareto Rank | HV Contribution |
+|-------|------------------|--------------|-------------|-------------------|-------------|-----------------|
+| Transformer (baseline) | 12.5 ± 0.2 | 45.2 ± 1.1 | 8.4 ± 0.1 | 1,250 ± 30 | 3 | 0.23 |
+| H-Transformer-1D | **11.8 ± 0.3** | **38.1 ± 0.9** | **6.2 ± 0.1** | **1,480 ± 25** | **1** | **0.41** |
+| Performer | 13.1 ± 0.4 | 29.5 ± 0.8 | 5.8 ± 0.1 | 1,920 ± 40 | 2 | 0.36 |
+
+**Statistical Annotations:**
+- Bold = Pareto dominant over baseline (p < 0.01, CI non-overlap)
+- ± values = 95% bootstrap confidence intervals
+- Pareto Rank = Position on non-dominated frontier
+- HV Contribution = Hypervolume contribution (higher = better trade-off)
+
+---
+
+### **6. Recommended Experimental Pipeline**
+
+1. **Week 1**: Implement efficiency measurement harness, verify reproducibility on baseline
+2. **Week 2**: Run N=30 trials per model, collect distributions
+3. **Week 3**: Compute bootstrap CIs, run Mann-Whitney U tests
+4. **Week 4**: Generate Pareto plots, hypervolume analysis, write-up
+
+**Key Deliverable**: A **Trade-off Efficiency Score (TES)** combining metrics:
+```
+TES = (Accuracy_Improvement × Efficiency_Improvement) / (Latency × Memory)
+```
+with statistical significance weighting.
+
+---
+
+If you share the specific paper or evaluation setup, I can tailor the exact statistical tests, reference points, and significance thresholds to match the original experimental design.

@@ -1,0 +1,180 @@
+<thinking>
+  The user wants me to stress-test a Hierarchical Transformer model on tasks outside its original domain. They want:
+1. Synthetic perturbations for collaborative code or long-document tasks
+2. Evaluation metrics
+3. A statistical analysis plan to measure robustness gaps
+
+Since no model is attached, I'll need to make reasonable assumptions about what a "Hierarchical Transformer" might be. Typically, these are models that:
+- Process long sequences by first encoding segments/chunks independently, then aggregating them
+- Examples: HIBERT, Longformer (to some extent), Hierarchical BERT, etc.
+- Often used for document classification, summarization, or other long-text tasks
+
+The user wants to test it on "collaborative code or long-document tasks outside the original domain". This suggests:
+- Original domain might be something like long document classification/summarization
+- New domains: collaborative code (GitHub PRs, code reviews) or long-document tasks (legal docs, scientific papers)
+
+I need to propose:
+1. **Synthetic perturbations**: Ways to artificially degrade the input data to test robustness
+2. **Evaluation metrics**: How to measure performance degradation
+3. **Statistical analysis plan**: How to determine if the degradation is significant
+
+Let me structure this comprehensively:
+
+## 1. Synthetic Perturbations
+
+For collaborative code:
+- **Structural perturbations**: Remove indentation, scramble function order, add dead code
+- **Semantic perturbations**: Rename variables poorly, add comments that contradict code, introduce subtle bugs
+- **Collaborative noise**: Insert review comments, diff markers, merge conflict artifacts
+- **Length perturbations**: Truncate files, duplicate sections
+
+For long documents:
+- **Structural perturbations**: Shuffle sections, remove headings, insert irrelevant paragraphs
+- **Semantic perturbations**: Introduce factual contradictions, replace key terms with synonyms/antonyms
+- **Noise injection**: Add OCR errors, typos, formatting artifacts
+- **Length perturbations**: Truncate beginnings/middles/ends, add filler content
+
+## 2. Evaluation Metrics
+
+Need to measure:
+- **Performance drop**: Accuracy/F1 decrease on main task
+- **Robustness metrics**: 
+  - Robustness rate (performance on perturbed vs clean)
+  - Perturbation sensitivity (gradient of performance w.r.t perturbation strength)
+  - Consistency (variance across perturbations)
+- **Task-specific metrics**: 
+  - For code: BLEU, CodeBLEU, exact match, AST matching
+  - For docs: ROUGE, BERTScore, factual consistency
+
+## 3. Statistical Analysis Plan
+
+Need to:
+- Compare performance distributions (clean vs perturbed)
+- Use appropriate tests (paired t-test, Wilcoxon signed-rank)
+- Control for multiple comparisons
+- Measure effect sizes
+- Account for model variance
+
+Let me flesh this out in detail.
+</thinking>
+
+# Stress-Testing Hierarchical Transformers: A Robustness Framework
+
+I'll assume your Hierarchical Transformer was originally trained for long-document NLP tasks (e.g., summarization, classification) and you're porting it to **collaborative code understanding** (GitHub PR review prediction, code documentation generation) or **extreme-scale document analysis** (legal contract parsing, scientific literature mining). Here's a comprehensive stress-testing protocol:
+
+---
+
+## 1. Synthetic Perturbations by Domain
+
+### **A. Collaborative Code Tasks** (PR review acceptance, code summarization)
+
+| Perturbation Category | Specific Transformations | Intensity Levels | Expected Failure Mode |
+|----------------------|--------------------------|------------------|----------------------|
+| **Structural Degradation** | 1. Randomize function/class order<br>2. Remove all indentation<br>3. Inject dead code blocks (unreachable)<br>4. Strip comments vs. inject *misleading* comments | 0%, 30%, 60%, 100% of file affected | Hierarchy collapse: model over-relies on sequential structure |
+| **Semantic Corruption** | 1. Adversarial variable renaming (`temp1`, `data2`)<br>2. Flip conditional operators (`==` → `!=`)<br>3. Introduce off-by-one errors in loops<br>4. Swap function call arguments | 5, 10, 20 errors per 100 LOC | Localized attention failure: misses subtle bug patterns |
+| **Collaborative Noise** | 1. Insert unresolved merge conflict markers (`<<<<<<< HEAD`)<br>2. Embed code review threads (`// TODO: fix this - @user`)<br>3. Add diff context lines (`+`, `-` markers)<br>4. Inject synthetic review comments (gibberish vs. relevant) | 1, 5, 10 noise injections per file | Cross-segment interference: confuses code vs. meta-content |
+| **Length Extremes** | 1. Truncate file after N tokens (head/middle/tail)<br>2. Duplicate code blocks 2x, 5x, 10x<br>3. Concatenate unrelated files | 512, 2048, 8192, 16384 token limits | Memory/aggregation bottleneck: hierarchical pooling saturates |
+
+### **B. Long-Document Tasks** (legal clause extraction, scientific claim verification)
+
+| Perturbation Category | Specific Transformations | Intensity Levels | Expected Failure Mode |
+|----------------------|--------------------------|------------------|----------------------|
+| **Structural Disruption** | 1. Shuffle sections at random<br>2. Remove all headings/section markers<br>3. Insert irrelevant boilerplate paragraphs<br>4. Reverse document order (sentences) | 0%, 25%, 50%, 75% shuffled | Segment position bias: model expects logical flow |
+| **Semantic Drift** | 1. Replace key terms with antonyms<br>2. Insert contradictory sentences (factually)<br>3. Add "negation" prefixes to claims<br>4. Swap entity names ( plaintiff ↔ defendant ) | 5%, 10%, 20% of sentences altered | Global coherence failure: cross-segment reasoning breaks |
+| **Real-World Noise** | 1. Simulate OCR errors (0→O, rn→m)<br>2. Add realistic typos (keyboard distance)<br>3. Insert PDF extraction artifacts (`•`, `ﬁ`)<br>4. Vary whitespace randomly | Character error rate: 1%, 5%, 10% | Tokenization fragility: subword splits degrade |
+| **Scale Pressure** | 1. Truncate at 25%/50%/75% positions<br>2. Append filler text (repeated paragraphs)<br>3. Test on 2x, 5x longer documents than training | 4K, 8K, 16K, 32K token lengths | Hierarchical aggregation failure: top-level encoder loses detail |
+
+---
+
+## 2. Evaluation Metrics
+
+### **Primary Performance Metrics**
+- **Task-specific**: 
+  - Code: `CodeBLEU`, `Exact Match (EM)`, `AST F1` (parse tree overlap)
+  - Documents: `ROUGE-L`, `BERTScore-F1`, `Factual Consistency Score (FactCC)`
+- **Robustness Metrics**:
+  - **Robustness Rate**: `RR = Acc_perturbed / Acc_clean` (higher is better)
+  - **Perturbation Sensitivity**: `ΔAcc / ΔIntensity` (slope of degradation)
+  - **Consistency Score**: `1 - std(Acc_across_perturbation_types)` (stability)
+
+### **Diagnostic Metrics**
+- **Hierarchy Utilization**: Measure attention entropy across segment boundaries (detect if model ignores hierarchical structure)
+- **Error Localization**: For code, % of errors where model fails within ±5 tokens of perturbation
+- **Confidence Calibration**: ECE (Expected Calibration Error) on clean vs. perturbed data
+
+---
+
+## 3. Statistical Analysis Plan
+
+### **Hypothesis Testing Framework**
+
+**Null Hypothesis (H₀)**: No robustness gap exists; performance on perturbed data equals clean data.
+
+**Test Battery**:
+1. **Paired Tests**: For each perturbation type, run paired t-test or Wilcoxon signed-rank on model outputs (same input, perturbed vs. clean)
+2. **Multiple Comparison Correction**: Use **Holm-Bonferroni** or **Benjamini-Hochberg** (FDR control) across perturbation categories
+3. **Effect Size**: Report **Cohen's d** (mean difference / pooled std) for practical significance
+   - `d < 0.2`: negligible gap
+   - `0.2 ≤ d < 0.5`: small but concerning
+   - `d ≥ 0.5`: critical robustness failure
+
+### **Experimental Design**
+
+```python
+# Recommended setup
+n_samples = 500  # Per condition
+n_replicates = 5  # Model runs with different seeds
+perturbation_levels = [0.0, 0.3, 0.6, 1.0]
+
+# Analysis pipeline:
+for perturbation in perturbation_space:
+    clean_scores = []
+    perturbed_scores = []
+    
+    for seed in range(n_replicates):
+        model = load_model(seed=seed)
+        clean_scores.append(evaluate(model, clean_data))
+        perturbed_scores.append(evaluate(model, perturb(clean_data, perturbation)))
+    
+    # Statistical tests
+    t_stat, p_val = paired_ttest(clean_scores, perturbed_scores)
+    effect_size = cohens_d(clean_scores, perturbed_scores)
+    robustness_rate = np.mean(perturbed_scores) / np.mean(clean_scores)
+    
+    # Report: p_val, effect_size, confidence_interval
+```
+
+### **Advanced Analysis**
+
+- **Interaction Effects**: Use **two-way ANOVA** to test if robustness gaps vary by:
+  - Perturbation type × Document length
+  - Perturbation intensity × Code complexity (cyclomatic complexity)
+- **Regression Modeling**: Fit mixed-effects model:
+  ```
+  Performance ~ Perturbation_Intensity + (1|Document_ID) + (1|Model_Seed)
+  ```
+  to isolate variance components
+- **Failure Mode Clustering**: Use **silhouette analysis** on error patterns to identify if model fails systematically on specific perturbation combinations
+
+### **Reporting Standards**
+
+Report **Robustness Gap Profile**:
+```
+Model: HierarchicalTransformer-XL
+Task: Code Summarization
+Gap Magnitude: ΔBLEU = -12.3 (p < 0.001, d = 0.67)
+Most Vulnerable: Semantic corruption (RR = 0.71)
+Least Vulnerable: Length perturbation (RR = 0.94)
+Critical Threshold: Performance drops below 80% of clean at 40% perturbation intensity
+```
+
+---
+
+## 4. Implementation Checklist
+
+- [ ] **Control for baseline**: Test on non-hierarchical Transformer (e.g., Longformer) to isolate hierarchy-specific robustness
+- [ ] **Compute budget**: Estimate ~5,000 model runs (500 samples × 5 replicates × 2 tasks)
+- [ ] **Human evaluation**: Sample 100 failure cases for qualitative error analysis
+- [ ] **Ablation**: Disable hierarchical aggregation (flatten segments) to measure robustness contribution
+
+This framework will reveal whether your hierarchical architecture provides **genuine robustness** to long-context structure or merely **overfits to training-domain regularities**.

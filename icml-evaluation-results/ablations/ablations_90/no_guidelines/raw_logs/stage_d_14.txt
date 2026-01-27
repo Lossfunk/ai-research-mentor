@@ -1,0 +1,515 @@
+<thinking>
+  The user is asking about prototyping rule-based heuristics that approximate hierarchical cues (like section headers and discourse markers) before model inference, and defining metrics and error analysis to assess parity with a Hierarchical Transformer model.
+
+This is a research-oriented question about NLP. The user wants to:
+1. Create rule-based heuristics that mimic hierarchical structure detection
+2. Use these heuristics before model inference (likely as a preprocessing step or lightweight alternative)
+3. Define metrics to compare these heuristics against a Hierarchical Transformer
+4. Define error analysis methods to assess parity (how well they match)
+
+I need to provide a comprehensive research-oriented answer covering:
+- What rule-based heuristics could look like for detecting hierarchical cues
+- How to implement them
+- What metrics to use for comparison
+- How to conduct error analysis
+- The concept of "parity" in this context
+
+Let me structure this response:
+
+1. **Introduction**: Context and motivation
+2. **Rule-based Heuristics Design**: Specific rules for headers, discourse markers, etc.
+3. **Implementation Strategy**: How to apply these before inference
+4. **Metrics for Parity Assessment**: Quantitative measures
+5. **Error Analysis Framework**: Qualitative and quantitative analysis
+6. **Experimental Setup**: How to run the comparison
+7. **Example**: Concrete example with code
+8. **Limitations and Considerations**
+
+I should be precise, technical, and research-oriented. The user mentioned "attached Hierarchical Transformer" but there's no attachment, so I'll assume a standard hierarchical transformer architecture and make my answer general enough to apply to various implementations.
+
+Let me think about specific rule-based heuristics:
+
+**For Section Headers:**
+- Regex patterns for numbered sections (1., 1.1, I., A., etc.)
+- Font features (bold, uppercase, larger size) if available
+- Position in document (first line of paragraph)
+- Keyword matching (Abstract, Introduction, Conclusion)
+
+**For Discourse Markers:**
+- Lexical cues: "however", "therefore", "first", "second", "in conclusion"
+- Syntactic patterns: "In this section", "As shown above"
+- Position-based: sentence-initial, paragraph-initial
+
+**Hierarchy Construction:**
+- Indentation levels
+- Numbering schemes
+- Font size changes
+
+**Metrics:**
+- Precision, Recall, F1 for structure detection
+- Tree edit distance for hierarchical structure
+- Boundary detection accuracy
+- Cohen's Kappa for inter-annotator style agreement
+- Performance parity: compare downstream task performance
+- Efficiency metrics: latency, memory
+
+**Error Analysis:**
+- Confusion matrix for label errors
+- Error categorization: false positives/negatives by type
+- Qualitative analysis of failure cases
+- Statistical significance testing
+- Ablation study of rules
+
+Let me write a comprehensive answer.
+</thinking>
+
+Here is a research-oriented framework for prototyping rule-based heuristics to approximate hierarchical cues and assessing their parity with a Hierarchical Transformer.
+
+---
+
+## 1. Rule-Based Heuristic Design
+
+### A. Header Detection Rules
+```python
+import re
+from typing import List, Tuple, Dict
+
+def extract_headers(text: str) -> List[Dict]:
+    """
+    Detect section headers using pattern matching
+    """
+    headers = []
+    lines = text.split('\n')
+    
+    patterns = {
+        'numbered': r'^(?:\d+\.)+\s+[A-Z][^\n]{1,80}$',  # "1.1 Introduction"
+        'roman': r'^(?:[IVX]+\.)+\s+[A-Z][^\n]{1,80}$',   # "II. Related Work"
+        'alphabetical': r'^[A-Z]\.\s+[A-Z][^\n]{1,80}$',   # "A. Methods"
+        'keyword': r'^(?:ABSTRACT|INTRODUCTION|METHODS|RESULTS|CONCLUSION)$',
+        'bold_capital': r'^[A-Z\s]{5,80}$'  # All caps, assuming bold formatting
+    }
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        for htype, pattern in patterns.items():
+            if re.match(pattern, line):
+                headers.append({
+                    'text': line,
+                    'line_idx': i,
+                    'type': htype,
+                    'level': infer_hierarchy_level(line)
+                })
+                break
+    
+    return headers
+
+def infer_hierarchy_level(header_text: str) -> int:
+    """Infer nesting level from numbering/bullets"""
+    if re.match(r'^\d+\.\d+\.\d+', header_text):
+        return 3
+    elif re.match(r'^\d+\.\d+', header_text):
+        return 2
+    elif re.match(r'^\d+', header_text):
+        return 1
+    return 0
+```
+
+### B. Discourse Marker Rules
+```python
+DISCOURSE_MARKERS = {
+    'contrast': ['however', 'but', 'nevertheless', 'although'],
+    'causal': ['therefore', 'thus', 'because', 'consequently'],
+    'sequential': ['first', 'second', 'then', 'finally', 'next'],
+    'elaboration': ['for example', 'specifically', 'in particular'],
+    'summarization': ['in conclusion', 'overall', 'to summarize']
+}
+
+def segment_by_discourse(text: str) -> List[Dict]:
+    """Segment text using discourse markers"""
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    segments = []
+    current_segment = []
+    
+    for sent in sentences:
+        lower_sent = sent.lower()
+        marker_type = None
+        
+        # Check for markers
+        for dtype, markers in DISCOURSE_MARKERS.items():
+            if any(marker in lower_sent for marker in markers):
+                marker_type = dtype
+                break
+        
+        # Start new segment if marker at sentence start
+        if marker_type and (lower_sent.startswith(tuple(DISCOURSE_MARKERS[marker_type]))):
+            if current_segment:
+                segments.append({
+                    'text': ' '.join(current_segment),
+                    'type': 'content'
+                })
+            current_segment = [sent]
+        else:
+            current_segment.append(sent)
+    
+    if current_segment:
+        segments.append({'text': ' '.join(current_segment), 'type': 'content'})
+    
+    return segments
+```
+
+### C. Hierarchy Construction Heuristic
+```python
+def build_rule_based_tree(text: str) -> Dict:
+    """Construct hierarchical tree from rules"""
+    headers = extract_headers(text)
+    segments = segment_by_discourse(text)
+    
+    tree = {'root': [], 'hierarchy': []}
+    current_path = []
+    
+    for header in sorted(headers, key=lambda x: x['line_idx']):
+        level = header['level']
+        
+        # Adjust current path based on level
+        while len(current_path) >= level:
+            current_path.pop()
+        
+        node = {
+            'header': header['text'],
+            'level': level,
+            'children': [],
+            'discourse_segments': []
+        }
+        
+        if current_path:
+            current_path[-1]['children'].append(node)
+        else:
+            tree['root'].append(node)
+        
+        current_path.append(node)
+    
+    # Assign segments to nearest preceding header
+    for seg in segments:
+        seg_start = text.find(seg['text'])
+        nearest_header = min(
+            [h for h in headers if h['line_idx'] < seg_start],
+            key=lambda h: seg_start - h['line_idx'],
+            default=None
+        )
+        
+        if nearest_header:
+            # Find corresponding node in tree
+            target_node = find_node_by_header(tree['root'], nearest_header['text'])
+            if target_node:
+                target_node['discourse_segments'].append(seg)
+    
+    return tree
+```
+
+---
+
+## 2. Metrics for Parity Assessment
+
+### A. Structural Alignment Metrics
+
+```python
+from sklearn.metrics import precision_recall_fscore_support
+import tree_edit_distance as ted
+
+def evaluate_structure_parity(
+    rule_tree: Dict, 
+    transformer_tree: Dict,
+    text: str
+) -> Dict[str, float]:
+    """
+    Compare hierarchical structure predictions
+    """
+    # 1. Boundary Detection (token-level)
+    rule_bounds = extract_boundaries(rule_tree, text)
+    trans_bounds = extract_boundaries(transformer_tree, text)
+    
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        trans_bounds, rule_bounds, average='binary', zero_division=0
+    )
+    
+    # 2. Tree Edit Distance
+    tree_dist = ted.distance(
+        json.dumps(rule_tree), 
+        json.dumps(transformer_tree)
+    )
+    normalized_ted = tree_dist / max(
+        count_nodes(rule_tree), 
+        count_nodes(transformer_tree)
+    )
+    
+    # 3. Level Accuracy
+    rule_levels = extract_level_sequence(rule_tree)
+    trans_levels = extract_level_sequence(transformer_tree)
+    level_accuracy = sum(r == t for r, t in zip(rule_levels, trans_levels)) / len(trans_levels)
+    
+    # 4. Segment Purity
+    rule_segments = get_all_segments(rule_tree)
+    trans_segments = get_all_segments(transformer_tree)
+    segment_iou = compute_segment_iou(rule_segments, trans_segments, text)
+    
+    return {
+        'boundary_f1': f1,
+        'normalized_ted': normalized_ted,
+        'level_accuracy': level_accuracy,
+        'segment_iou': segment_iou,
+        'tree_similarity': 1 - normalized_ted
+    }
+
+def extract_boundaries(tree: Dict, text: str) -> List[int]:
+    """Extract binary boundary labels for each token position"""
+    # Implementation: 1 if token starts new segment/header, 0 otherwise
+    pass
+```
+
+### B. Downstream Performance Parity
+```python
+def evaluate_task_parity(
+    rule_based_model: callable,
+    hierarchical_transformer: callable,
+    test_dataset: List[Dict],
+    task_metric: str = 'f1'
+) -> Dict:
+    """
+    Compare downstream task performance
+    """
+    rule_predictions = []
+    trans_predictions = []
+    gold_labels = []
+    
+    for sample in test_dataset:
+        # Rule-based inference
+        tree = build_rule_based_tree(sample['text'])
+        rule_pred = rule_based_model(tree)  # Task-specific
+        
+        # Transformer inference
+        trans_pred = hierarchical_transformer(sample['text'])
+        
+        rule_predictions.append(rule_pred)
+        trans_predictions.append(trans_pred)
+        gold_labels.append(sample['label'])
+    
+    # Compute performance gap
+    rule_score = compute_metric(rule_predictions, gold_labels, task_metric)
+    trans_score = compute_metric(trans_predictions, gold_labels, task_metric)
+    
+    return {
+        'rule_performance': rule_score,
+        'transformer_performance': trans_score,
+        'performance_gap': trans_score - rule_score,
+        'relative_performance': rule_score / trans_score,
+        'statistical_significance': paired_permutation_test(
+            rule_predictions, trans_predictions, gold_labels
+        )
+    }
+```
+
+---
+
+## 3. Error Analysis Framework
+
+### A. Categorization Schema
+
+```python
+from enum import Enum
+from collections import Counter
+
+class ErrorType(Enum):
+    FALSE_POSITIVE_HEADER = "fp_header"
+    FALSE_NEGATIVE_HEADER = "fn_header"
+    LEVEL_MISMATCH = "level_mismatch"
+    OVERSEGMENTATION = "oversegmentation"
+    UNDERSEGMENTATION = "undersegmentation"
+    DISCOURSE_BOUNDARY_ERROR = "discourse_error"
+
+def analyze_errors(
+    rule_tree: Dict,
+    transformer_tree: Dict,
+    text: str
+) -> Dict:
+    """
+    Fine-grained error categorization
+    """
+    errors = []
+    
+    # 1. Header Detection Errors
+    rule_headers = {h['text'] for h in extract_flat_headers(rule_tree)}
+    trans_headers = {h['text'] for h in extract_flat_headers(transformer_tree)}
+    
+    for fp in rule_headers - trans_headers:
+        errors.append({
+            'type': ErrorType.FALSE_POSITIVE_HEADER,
+            'text': fp,
+            'context': get_context(fp, text)
+        })
+    
+    for fn in trans_headers - rule_headers:
+        errors.append({
+            'type': ErrorType.FALSE_NEGATIVE_HEADER,
+            'text': fn,
+            'context': get_context(fn, text)
+        })
+    
+    # 2. Hierarchy Level Errors
+    for rule_h, trans_h in zip(
+        sorted(extract_flat_headers(rule_tree), key=lambda x: x['text']),
+        sorted(extract_flat_headers(transformer_tree), key=lambda x: x['text'])
+    ):
+        if rule_h['text'] == trans_h['text'] and rule_h['level'] != trans_h['level']:
+            errors.append({
+                'type': ErrorType.LEVEL_MISMATCH,
+                'text': rule_h['text'],
+                'rule_level': rule_h['level'],
+                'trans_level': trans_h['level']
+            })
+    
+    # 3. Segmentation Errors
+    rule_segs = get_segment_boundaries(rule_tree, text)
+    trans_segs = get_segment_boundaries(transformer_tree, text)
+    
+    # Compute boundary shifts
+    for r_bound, t_bound in zip(rule_segs, trans_segs):
+        shift = abs(r_bound - t_bound)
+        if shift > 10:  # Token threshold
+            errors.append({
+                'type': ErrorType.OVERSEGMENTATION if r_bound < t_bound else ErrorType.UNDERSEGMENTATION,
+                'rule_boundary': r_bound,
+                'trans_boundary': t_bound,
+                'shift': shift
+            })
+    
+    return {
+        'error_counts': Counter([e['type'] for e in errors]),
+        'error_examples': errors[:50],  # Sample for inspection
+        'error_rate': len(errors) / len(trans_headers) if trans_headers else 0
+    }
+```
+
+### B. Qualitative Analysis Protocol
+
+1. **Failure Case Taxonomy**:
+   - **Lexical Ambiguity**: Headers that are also content (e.g., "Results" as verb)
+   - **Formatting Variations**: Unconventional numbering (e.g., "Part One")
+   - **Implicit Hierarchy**: No explicit markers but semantic shift
+   - **Domain-Specific**: Scientific vs. legal document conventions
+
+2. **Confusion Matrix by Document Type**:
+```python
+def error_by_domain(error_analysis: Dict, document_metadata: List[Dict]):
+    """Stratify errors by domain"""
+    domain_errors = defaultdict(Counter)
+    for meta in document_metadata:
+        domain = meta['domain']
+        doc_errors = analyze_errors_on_doc(meta['id'])
+        domain_errors[domain].update(doc_errors['error_counts'])
+    return domain_errors
+```
+
+---
+
+## 4. Parity Assessment Pipeline
+
+```python
+def full_parity_assessment(
+    test_corpus: List[str],
+    transformer_model,
+    task_evaluator: callable
+) -> Dict:
+    """
+    Complete parity evaluation pipeline
+    """
+    results = {
+        'structural_metrics': [],
+        'error_analysis': [],
+        'efficiency': {},
+        'task_parity': None
+    }
+    
+    # Efficiency measurement
+    import time
+    
+    rule_times = []
+    trans_times = []
+    
+    for doc in test_corpus:
+        # Structural comparison
+        start = time.time()
+        rule_tree = build_rule_based_tree(doc)
+        rule_times.append(time.time() - start)
+        
+        start = time.time()
+        trans_tree = transformer_model.extract_hierarchy(doc)  # Assuming this method
+        trans_times.append(time.time() - start)
+        
+        metrics = evaluate_structure_parity(rule_tree, trans_tree, doc)
+        results['structural_metrics'].append(metrics)
+        
+        errors = analyze_errors(rule_tree, trans_tree, doc)
+        results['error_analysis'].append(errors)
+    
+    # Aggregate
+    results['efficiency'] = {
+        'rule_latency_mean': np.mean(rule_times),
+        'transformer_latency_mean': np.mean(trans_times),
+        'speedup': np.mean(trans_times) / np.mean(rule_times),
+        'rule_memory_mb': measure_memory(build_rule_based_tree),
+        'transformer_memory_mb': measure_memory(transformer_model.extract_hierarchy)
+    }
+    
+    # Task-specific parity
+    results['task_parity'] = evaluate_task_parity(
+        rule_based_model=lambda tree: task_evaluator(rule_featurize(tree)),
+        hierarchical_transformer=transformer_model,
+        test_dataset=create_task_dataset(test_corpus)
+    )
+    
+    return aggregate_results(results)
+```
+
+---
+
+## 5. Statistical Significance & Decision Thresholds
+
+Define parity as achieving **≥95% structural similarity** with **<5% relative performance gap**:
+
+```python
+def assess_parity_status(evaluation_results: Dict) -> Dict:
+    """
+    Binary parity decision with confidence intervals
+    """
+    struct_sim = evaluation_results['structural_metrics']['tree_similarity']
+    perf_gap = evaluation_results['task_parity']['performance_gap']
+    
+    # Bootstrap confidence intervals
+    struct_ci = bootstrap_ci(evaluation_results['structural_metrics']['tree_similarity'])
+    gap_ci = bootstrap_ci(evaluation_results['task_parity']['performance_gap'])
+    
+    return {
+        'parity_achieved': struct_sim >= 0.95 and abs(perf_gap) <= 0.05,
+        'structural_similarity': struct_sim,
+        'structural_ci': struct_ci,
+        'performance_gap': perf_gap,
+        'gap_ci': gap_ci,
+        'recommendation': (
+            "Accept rule-based approximation" if struct_sim >= 0.95 and abs(perf_gap) <= 0.05
+            else "Refine heuristics" if struct_sim < 0.90
+            else "Consider hybrid approach"
+        )
+    }
+```
+
+---
+
+## 6. Key Considerations
+
+1. **Ablation Study**: Test each rule component independently to measure contribution
+2. **Domain Adaptation**: Rules may need tuning per genre (legal, scientific, technical)
+3. **Hybrid Fallback**: Use rules for high-confidence cases, transformer for ambiguous regions
+4. **Error Propagation**: Analyze how structural errors affect downstream task performance
+5. **Annotation Cost**: Rule errors can guide active learning for transformer fine-tuning
+
+This framework provides both quantitative parity metrics and qualitative error insights to systematically evaluate whether rule-based heuristics can serve as a viable approximation or preprocessing step for hierarchical transformers.

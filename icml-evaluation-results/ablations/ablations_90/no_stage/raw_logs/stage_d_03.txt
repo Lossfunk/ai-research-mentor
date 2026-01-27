@@ -1,0 +1,38 @@
+<thinking>
+  <thinking>
+The user wants to extend a Hierarchical Transformer evaluation with efficiency metrics while maintaining comparability to original results, and propose an analysis plan for statistical separation of accuracy-efficiency trade-offs.
+
+Key points:
+- Need to add latency, memory, throughput metrics
+- Must preserve comparability to original results
+- Need statistical analysis plan for trade-offs
+- Should be critical and direct
+
+My assessment: This is a solid request but needs specifics. The biggest risk is adding metrics in a way that breaks comparability or produces meaningless statistics. I need to push back on vague "statistical separation" and give concrete methodology.
+
+Plan:
+1. Lead with assessment of the core challenge
+2. Give specific measurement protocol
+3. Propose concrete statistical approach (not generic)
+4. Warn about common pitfalls
+</thinking>
+
+This is a good direction but your plan will fail if you don't control for hardware and batch size. Here's how to do it properly:
+
+**Measurement Protocol**
+Run all models (original and hierarchical variants) on *identical hardware* with *fixed batch sizes* across sequence lengths. Measure:
+- **Latency**: Median of 1000 forward passes (warmup first) per sequence length
+- **Memory**: Peak allocated GPU memory via `torch.cuda.max_memory_allocated()`
+- **Throughput**: Tokens/second = (batch_size * seq_len) / median_latency
+
+**Statistical Analysis**
+Don't just report p-values. Use **Pareto frontier analysis**:
+1. Normalize metrics: accuracy → [0,1], efficiency → [0,1] (inverted so higher is better)
+2. Compute hypervolume dominated by each model variant
+3. Statistical test: Bootstrap 95% CIs on hypervolume differences. If CIs don't overlap, you have separation.
+
+**Critical Warning**
+If your original results used different hardware, you *must* re-run them. Comparing your laptop latency to published TPU numbers is scientific garbage. Budget 2-3 weeks for proper re-evaluation.
+
+**Next Step**: Share your current hardware setup and the exact sequence lengths from the original eval. I'll tell you if this is feasible or if you need to scale back.
+</thinking>

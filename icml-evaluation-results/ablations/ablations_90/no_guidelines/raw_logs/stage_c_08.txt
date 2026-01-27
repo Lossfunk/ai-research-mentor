@@ -1,0 +1,241 @@
+<thinking>
+  The user wants a plan for privacy-preserving mental health chatbots using only open-source tools. This is a research-oriented question that requires:
+1. Understanding the domain (mental health chatbots, privacy preservation)
+2. Knowledge of relevant open-source tools
+3. Ability to structure a research/drafting plan with experiments, constraints, and checkpoints
+
+I should provide a comprehensive, structured plan that covers:
+- Key privacy requirements for mental health data
+- Open-source tools available for different components
+- Experimental design to test privacy and efficacy
+- Constraints/limitations
+- Milestones/checkpoints
+
+Let me think through the components:
+
+**Privacy Requirements:**
+- Data minimization
+- On-device processing
+- End-to-end encryption
+- Differential privacy
+- Secure multi-party computation
+- Federated learning
+- De-identification
+- Access controls
+- Audit logging
+
+**Open-source tools:**
+- LLMs: Llama 2, Mistral, Falcon, etc.
+- Privacy tools: Opacus, PySyft, TF Privacy
+- Vector DBs: ChromaDB, Qdrant (with privacy features)
+- Encryption: age, minisign, libsodium
+- Deployment: LocalAI, Ollama, text-generation-webui
+- Frameworks: LangChain, LlamaIndex
+- Security: SELinux, AppArmor, Docker
+- Federated Learning: Flower, FATE
+- Differential Privacy: OpenDP, SmartNoise
+
+**Experiments:**
+1. Baseline performance vs privacy-preserving versions
+2. Privacy attack simulations (membership inference, etc.)
+3. Utility-privacy tradeoff curves
+4. Latency benchmarks
+5. User acceptance testing
+6. Security audits
+
+**Constraints:**
+- No proprietary APIs
+- Regulatory compliance (HIPAA, GDPR)
+- Computational resources
+- Model size vs quality
+- No internet requirement for sensitive operations
+
+**Checkpoints:**
+- Literature review
+- Tool selection
+- Prototype
+- Privacy audit
+- Clinical validation
+- Deployment readiness
+
+I should structure this as a formal research plan with phases, specific experiments, measurable constraints, and clear checkpoints. The tone should be professional and practical for someone actually implementing this.
+
+Let me organize this into a clear, actionable plan.
+</thinking>
+
+# Privacy-Preserving Mental Health Chatbot Research Plan
+
+## Core Architecture Philosophy
+**"Never trust, always verify"** - All data processing happens on-device or in zero-trust environments. No plaintext mental health data leaves user control.
+
+---
+
+## Phase 1: Foundation & Tool Selection (Weeks 1-4)
+
+### Constraints (Non-Negotiable)
+1. **Zero proprietary APIs**: No OpenAI, Anthropic, or closed-source models
+2. **Data residency**: All PHI remains on-device or in user-controlled infrastructure
+3. **HIPAA/GDPR-ready**: End-to-end encryption, audit logging, right-to-deletion
+4. **Air-gap capability**: Must function without internet for core features
+5. **Model size limit**: ≤7B parameters for on-device deployment (consumer hardware)
+6. **Transparent ops**: All inference decisions must be explainable
+
+### Open-Source Tool Stack
+- **Base Models**: Llama 2 7B Chat (Apache 2.0), Mistral 7B (Apache 2.0), or Zephyr (MIT)
+- **Local Inference**: 
+  - **Ollama** (MIT) - Simple local deployment
+  - **LocalAI** (MIT) - OpenAI API compatible, supports GPU offloading
+  - **text-generation-webui** (AGPL) - Feature-rich Gradio interface
+- **Privacy Layer**:
+  - **PySyft** (Apache 2.0) - Differential privacy & SMPC
+  - **Opacus** (Apache 2.0) - DP-SGD for fine-tuning
+  - **age** (BSD) - File encryption
+  - **minisign** (ISC) - Signature verification
+- **Vector DB**: **ChromaDB** (Apache 2.0) with client-side encryption
+- **Framework**: **LangChain** (MIT) with custom privacy-preserving chains
+- **Security**: **SELinux** profiles, **Docker** rootless mode, **AppArmor**
+
+---
+
+## Phase 2: Privacy-Preserving Experiments
+
+### Experiment 1: Differential Privacy Fine-Tuning
+**Goal**: Train on mental health dialogues without memorizing PII
+
+**Setup**:
+- Dataset: ~10k synthetic therapy sessions (generated via GPT-4 then human-reviewed) + public datasets like PsyQA
+- Baseline: Standard LoRA fine-tuning
+- Treatment: DP-SGD (ε=2.0, δ=1e-5) with Opacus
+- Metrics:
+  - **Utility**: BLEU score on therapy response quality, clinical safety rating (1-5)
+  - **Privacy**: Membership inference attack success rate, extractable PII count
+
+**Checkpoint**: DP model achieves <5% attack success rate with <10% utility drop
+
+### Experiment 2: On-Device vs Federated Learning
+**Goal**: Compare privacy-utility tradeoffs
+
+**Arms**:
+1. **Pure on-device**: Model runs on Pixel 8 (8GB RAM) - no data leaves
+2. **Federated**: Flower framework, 100 clients, FedAvg, secure aggregation
+3. **Hybrid**: Embeddings generated locally, encrypted retrieval from homomorphic index
+
+**Metrics**:
+- Latency: Time-to-first-token <2s on-device
+- Accuracy: Clinical intent classification F1 score
+- Privacy leakage: Gradient inversion attack reconstruction PSNR
+
+**Checkpoint**: On-device arm meets latency; federated arm shows no privacy loss vs centralized
+
+### Experiment 3: Encrypted Memory & Retrieval
+**Goal**: Store conversation history without server access
+
+**Setup**:
+- Encrypt each turn with **age** using per-session key derived from user password
+- Store embeddings in ChromaDB with **encrypted payloads**
+- Test retrieval quality with encrypted vs plaintext queries
+
+**Metrics**:
+- Retrieval recall@5: Should be >90% of plaintext baseline
+- Key rotation overhead: <100ms per operation
+- Forward secrecy: Compromised key can't decrypt past sessions
+
+**Checkpoint**: Encrypted retrieval maintains 95% recall with <5% latency overhead
+
+### Experiment 4: Adversarial Privacy Auditing
+**Goal**: Simulate real-world attacks
+
+**Red Team Tasks**:
+1. **Prompt injection**: Extract system prompts, training data
+2. **Model inversion**: Reconstruct training examples from weights
+3. **PII extraction**: Use `facebook/nlptown/bert-base-multilingual-uncased-sentiment` to detect emotional leakage
+
+**Tools**: 
+- **Garak** (Apache 2.0) - LLM vulnerability scanner
+- **PrivacyRaven** (MIT) - ML privacy testing suite
+
+**Success Criteria**: Zero successful PII extraction, <1% training data reconstruction
+
+---
+
+## Phase 3: Clinical & Safety Validation
+
+### Experiment 5: Safety Alignment Under Privacy Constraints
+**Goal**: Maintain crisis detection without data exposure
+
+**Setup**:
+- Fine-tune with **Constitutional AI** principles using synthetic data
+- Run **Llama Guard** (Meta) locally for content filtering
+- Test on **CrisisChat** dataset (suicidal ideation detection)
+
+**Metrics**:
+- Crisis detection recall: >95%
+- False positive rate: <5%
+- No safety logs contain plaintext user messages
+
+**Checkpoint**: Safety model runs on-device with no cloud fallback
+
+### Experiment 6: User Perceived Privacy vs Utility
+**Goal**: Measure acceptance
+
+**Design**: 200 participants, 2-week usage
+- **Group A**: Full privacy mode (on-device, encrypted)
+- **Group B**: Standard mode (cloud-based, anonymized)
+
+**Instruments**:
+- **UCLA Loneliness Scale** (pre/post)
+- **System Usability Scale**
+- **Privacy Concern Questionnaire** (custom 7-point Likert)
+
+**Checkpoint**: Group A shows non-inferior clinical outcomes with higher privacy satisfaction
+
+---
+
+## Phase 4: Deployment & Monitoring
+
+### Technical Checkpoints
+1. **Week 6**: Functional prototype with Ollama + ChromaDB + age encryption
+2. **Week 8**: DP fine-tuning pipeline reproducible (Dockerfile + DVC)
+3. **Week 10**: Garak audit shows 0 critical vulnerabilities
+4. **Week 12**: Clinical safety board approval (IRB exempt determination)
+5. **Week 14**: On-device latency <1.5s for 7B model on mid-range phone
+6. **Week 16**: Open-source release with SBOM and threat model
+
+### Ongoing Constraints
+- **Update mechanism**: Signed updates via **minisign**, no auto-updates without user consent
+- **Telemetry**: Only anonymous usage stats (opt-in), using **Matomo** self-hosted
+- **Key management**: **age** plugin for hardware security modules (YubiKey support)
+- **Audit log**: Immutable local log, hashed with **blake3**, user can export
+
+---
+
+## Risk Mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| Model hallucinates dangerous advice | Local Llama Guard + rule-based crisis keywords + mandatory disclaimer |
+| Device theft exposes data | Full-disk encryption + per-message encryption + remote wipe |
+| Side-channel attacks | Constant-time crypto ops, disable hyperthreading, use `memfd_secret` |
+| Regulatory changes | Modular design: swap encryption, add logging without architecture change |
+| Model quality degradation | A/B testing framework built into LocalAI, canary prompts for drift detection |
+
+---
+
+## Success Metrics (Go/No-Go)
+
+- **Privacy**: Passes Garak + PrivacyRaven with <2% leakage
+- **Performance**: 90th percentile latency <2s on Pixel 6a
+- **Clinical**: Non-inferior to baseline on PHQ-9 reduction (margin: 2 points)
+- **Legal**: HIPAA Security Rule compliance checklist >95% green
+- **Community**: 3 independent security audits in first 6 months
+
+---
+
+## Deliverables
+1. **GitHub repo**: Full stack + reproducible training pipeline
+2. **Paper**: "Privacy-Preserving Mental Health LLMs: A Zero-Trust Architecture"
+3. **Deployment guide**: For clinics, self-hosters, and end-users
+4. **Threat model**: STRIDE analysis with mitigations
+5. **IRB protocol**: Template for other institutions
+
+This plan ensures you build something that is not just private in theory, but verifiably private under adversarial testing—while maintaining clinical utility.

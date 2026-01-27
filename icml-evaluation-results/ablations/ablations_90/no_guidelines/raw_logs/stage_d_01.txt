@@ -1,0 +1,93 @@
+<thinking>
+  The user is asking me to reproduce the training and evaluation pipeline from a "Hierarchical Transformer paper" that they say is attached. However, I don't see any attachment in this conversation. The user wants:
+
+1. Key components (data preprocessing, hierarchical blocks, training schedule)
+2. Comparability requirements
+3. Leakage risks between pretraining and evaluation
+
+Since I don't have the specific paper, I need to make an educated guess about which paper they're referring to. "Hierarchical Transformer" could refer to several papers:
+- Hierarchical Transformers for Multi-Document Summarization (Zhang et al.)
+- Hierarchical Transformer for Long Document Modeling (e.g., HiBERT, HIBERT)
+- Hierarchical Multi-Scale Transformer
+- Other similar works
+
+Given the context of pretraining and evaluation leakage risks, this sounds like a paper that deals with document-level tasks where hierarchical modeling is important. The most likely candidate is a paper about hierarchical transformers for document modeling, possibly the "Hierarchical Transformer for Long Document Modeling" or similar.
+
+Since I don't have the actual paper, I should:
+1. Acknowledge that I don't see the attachment
+2. Provide a general but detailed framework based on common practices in hierarchical transformer papers
+3. Focus on the key aspects they mentioned: data preprocessing, hierarchical blocks, training schedule, comparability, and leakage risks
+4. Be clear about what is standard practice vs. what might be specific to a particular paper
+
+Let me structure my response to cover all the requested components comprehensively, drawing from my knowledge of standard hierarchical transformer implementations.
+
+Key components to cover:
+- **Data preprocessing**: Document segmentation, tokenization, hierarchy creation (sentence/paragraph/document levels)
+- **Hierarchical blocks**: Local encoders (sentence-level), global encoders (document-level), pooling mechanisms, cross-attention
+- **Training schedule**: Pretraining objectives (MLM, etc.), learning rates, warmup, fine-tuning protocols
+- **Comparability requirements**: Baselines, metrics, controlled experiments
+- **Leakage risks**: Data contamination, overlapping documents, temporal leakage, vocabulary leakage
+
+I'll provide a detailed, actionable list that would allow someone to implement such a pipeline, while being honest about the lack of the specific paper.
+</thinking>
+
+I don't see an attached paper in your message. To give you the most accurate reproduction guide, could you please share the PDF or provide the exact title and authors?
+
+In the meantime, here's a comprehensive framework based on leading Hierarchical Transformer implementations (e.g., HIBERT, Hi-Transformer, Hierarchical BERT for document modeling). This covers the standard components you're asking about:
+
+---
+
+### **Key Pipeline Components**
+
+**1. Data Preprocessing**
+- **Segmentation**: Split documents into hierarchical chunks (e.g., sentences → paragraphs → document). Typically fixed-length sentence tokenization with `[CLS]` at each level.
+- **Tokenization**: Apply subword tokenization (WordPiece/BPE) with special tokens: `[CLS_s]`, `[CLS_p]`, `[SEP]` for sentence/paragraph boundaries.
+- **Hierarchy Construction**: Build tree structures with position IDs for two levels: *local* (intra-sentence) and *global* (inter-sentence/paragraph).
+- **Memory Optimization**: Use sliding windows over long sequences; cache segment embeddings during pretraining.
+
+**2. Hierarchical Transformer Blocks**
+- **Local Encoder**: Standard Transformer layers processing each sentence/segment independently (e.g., 12 layers, 768-dim).
+- **Global Encoder**: Separate Transformer that attends to *aggregated* segment representations (mean-pooled or `[CLS_s]` tokens from local encoder).
+- **Cross-Level Fusion**: 
+  - **Bottom-up**: Local → Global pooling → Global self-attention
+  - **Top-down**: Global context injected back into local representations via cross-attention
+- **Pooling Strategy**: Learned weighted pooling or simple mean/max over segment `[CLS]` tokens.
+
+**3. Training Schedule**
+- **Pretraining**: 
+  - **MLM at both levels**: Mask tokens in local encoder; mask entire sentences/segments for global encoder
+  - **Next Sentence/Segment Prediction**: Predict adjacency at paragraph/document level
+  - **Batch size**: 256-1024 sequences; **LR**: 1e-4 with 10K step warmup; **Optimizer**: AdamW (β=0.9, 0.999)
+- **Fine-tuning**: 
+  - Freeze local encoder for first 2-3 epochs if domain shift is high
+  - Use hierarchical learning rate decay: global encoder LR = 0.5 × local encoder LR
+
+---
+
+### **Comparability Requirements**
+
+- **Baseline Control**: Must compare against flat Transformer with identical parameter count (not layer count). Calculate FLOPs equivalence.
+- **Sequence Length Matching**: Flat baseline should process same total tokens (e.g., 512 tokens vs. 32 segments × 16 tokens).
+- **Pretraining Data**: Use *exact* same corpus and training steps. Hierarchical models need longer pretraining to converge.
+- **Evaluation Metrics**: For classification, use macro-F1 (not accuracy) due to class imbalance in document datasets.
+
+---
+
+### **Leakage Risks (Critical)**
+
+**1. Pretraining → Evaluation Leakage**
+- **Document Overlap**: If pretraining corpus includes documents from evaluation dataset (even different splits), contamination occurs. **Mitigation**: Use temporal splits or verify document IDs.
+- **Vocabulary Leakage**: Custom vocab built on full corpus leaks test set tokens. **Mitigation**: Build vocab *only* on training split.
+- **Segmentation Artifacts**: If segmentation (sentence boundaries) uses models trained on evaluation data, leakage occurs. **Mitigation**: Use rule-based segmentation.
+
+**2. Within-Evaluation Leakage**
+- **Hierarchical Label Leakage**: In multi-label tasks, parent labels can leak to child segments. **Mitigation**: Mask labels at segment level during training; only use document-level labels.
+- **Temporal Leakage**: For news/document datasets, future documents in pretraining can leak information. **Mitigation**: Strict time-based splits.
+
+**3. Reproducibility Traps**
+- **Random Segment Shuffling**: Shuffling segments during pretraining but not fine-tuning creates distribution shift. **Mitigation**: Fix random seeds and document ordering.
+- **Checkpoint Selection**: Using validation set from evaluation domain for early stopping leaks information. **Mitigation**: Use separate development set from pretraining domain.
+
+---
+
+**To tailor this precisely, please share the paper, and I'll map these components to their exact specifications.**

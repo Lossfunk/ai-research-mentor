@@ -1,0 +1,242 @@
+<thinking>
+  The user wants me to test whether adding a privacy/governance constraint (specifically offline inference) to a Hierarchical Transformer changes Verification-like failure rates. They want me to pick baselines, datasets, and statistical tests to quantify the impact.
+
+First, I need to understand what "Verification-like failure rates" means. This likely refers to failures in verification tasks - where a model checks if something is correct/true/valid. This could include:
+- Fact-checking
+- Hallucination detection
+- Consistency checking
+- Entailment/contradiction detection
+- Safety verification
+
+The "Hierarchical Transformer" - I don't have an attached model, so I'll need to define a reasonable architecture that would be used for verification tasks. A hierarchical transformer would process information at multiple scales or levels of abstraction. For verification, this could mean:
+- Processing claims and evidence at both token-level and sentence/paragraph-level
+- A two-stage architecture: local encoding + global reasoning
+
+The constraint is "offline inference" - this means the model cannot access external resources during inference (no internet, no retrieval, no API calls). This is a privacy/governance constraint because it ensures data doesn't leave the local environment.
+
+I need to design an experiment that:
+1. Defines the model architecture
+2. Defines the offline constraint implementation
+3. Selects appropriate baselines
+4. Selects appropriate datasets
+5. Defines metrics for "Verification-like failure rates"
+6. Selects statistical tests to compare failure rates
+7. Designs the experimental protocol
+
+Let me structure this systematically:
+
+## 1. Model Definition
+Since no model is attached, I'll define a standard Hierarchical Transformer for verification tasks:
+- **Encoder**: Dual-level encoding (token-level + segment-level)
+- **Verifier Head**: Classification layer for verification decisions
+- **Offline vs Online versions**: Online can retrieve external evidence
+
+## 2. Baselines
+Need both:
+- **Architectural baselines**: Standard Transformer, non-hierarchical versions
+- **Constraint baselines**: Online version of same model, human performance
+
+## 3. Datasets
+Need verification tasks with different characteristics:
+- Fact verification (FEVER, HoVer)
+- Hallucination detection (SummEval, QAGS)
+- Consistency checking (NLI datasets, ParaDetox)
+- Safety verification (Toxicity detection with context)
+
+## 4. Metrics
+"Failure rates" can be operationalized as:
+- False Positive Rate (claim verified as true when false)
+- False Negative Rate (claim verified as false when true)
+- Overall Error Rate
+- Specific failure modes: retrieval failures, reasoning failures, etc.
+
+## 5. Statistical Tests
+Need tests appropriate for comparing failure rates across conditions:
+- McNemar's test (paired binary outcomes)
+- Chi-square test (independent proportions)
+- Bootstrap confidence intervals
+- ROC analysis
+
+## 6. Experimental Design
+- Within-subjects design (same model with/without constraint)
+- Between-subjects comparison across architectures
+- Ablation studies
+- Power analysis for sample size
+
+Let me write a comprehensive experimental plan.
+</thinking>
+
+# Experimental Design: Privacy Constraints Impact on Hierarchical Transformer Verification Failures
+
+## 1. Model Architecture Definition
+
+Since no model was attached, I'll define a canonical **Hierarchical Verification Transformer (HVT)**:
+
+```
+HVT Architecture:
+├── Token Encoder (12-layer Transformer)
+├── Segment Aggregator (sentence/paragraph-level attention)
+├── Cross-Claim-Evidence Fusion Layer
+└── Verification Head (3-class: Supported/Refuted/NotEnoughInfo)
+```
+
+**Offline Constraint Implementation**: 
+- **Online Mode**: Allows real-time retrieval from Wikipedia API + Google Search during inference
+- **Offline Mode**: Frozen knowledge cutoff + local embedding cache only (no external calls)
+
+---
+
+## 2. Baseline Models
+
+### Primary Baselines (Architectural)
+| Model | Description | Purpose |
+|-------|-------------|---------|
+| **HVT-Online** | Same architecture, unconstrained retrieval | Direct constraint impact |
+| **Flat-Transformer** | Standard BERT-large with concatenated inputs | Hierarchy ablation |
+| **RAG-DPR** | Retrieval-Augmented Generator baseline | State-of-the-art comparison |
+
+### Secondary Baselines (Performance)
+- **Human Annotators** (3 per sample): Upper bound on verification accuracy
+- **Random Chance**: 33% for 3-way classification
+- **Always "NotEnoughInfo"**: Conservative baseline
+
+---
+
+## 3. Dataset Selection
+
+Choose datasets that stress **knowledge dependency** and **hierarchical reasoning**:
+
+| Dataset | Task Type | Samples | Key Challenge | Offline Impact Expected |
+|---------|-----------|---------|---------------|------------------------|
+| **FEVER** | Fact verification | 185k | Wikipedia retrieval dependency | **High** |
+| **HoVer** | Multi-hop verification | 19k | Cross-document reasoning | **Very High** |
+| **SummEval** | Hallucination detection | 1,600 | Long-form consistency | Medium |
+| **ParaDetox** | Safety verification | 14k | Toxicity consistency | Low |
+| **Custom "Time-Sensitive Claims"** | Temporal verification | 5k | Post-cutoff knowledge | **Critical** |
+
+**Dataset Split**: 
+- **In-Knowledge**: Claims answerable from training data
+- **Out-of-Knowledge**: Claims requiring post-cutoff or external info
+
+---
+
+## 4. Failure Rate Metrics
+
+### Primary Metrics (Verification Failures)
+```python
+# Per-sample failure modes
+failure_types = {
+    "false_positive": pred="Supported" but gold="Refuted",
+    "false_negative": pred="Refuted" but gold="Supported",
+    "retrieval_failure": gold="Supported/Refuted" but pred="NotEnoughInfo",
+    "hallucinated_verification": pred="Supported/Refuted" without evidence
+}
+
+overall_failure_rate = (false_positives + false_negatives) / total_samples
+```
+
+### Secondary Metrics
+- **F1 per class** (especially "NotEnoughInfo")
+- **Evidence retrieval recall** (online vs offline)
+- **Latency** (offline should be faster)
+- **Confidence calibration**: ECE (Expected Calibration Error)
+
+---
+
+## 5. Statistical Testing Framework
+
+### Hypothesis
+**H₀**: Offline constraint does *not* increase verification failure rate  
+**H₁**: Offline constraint *increases* verification failure rate (one-tailed)
+
+### Recommended Tests
+
+#### **A. Primary: McNemar's Test** (for paired outcomes)
+- **Use case**: Same model architecture, same test set, with/without constraint
+- **Data**: 2×2 contingency table of correct/incorrect predictions
+- **Why**: Controls for sample variance, directly tests constraint impact
+
+```python
+# Example contingency table
+                Online Correct   Online Incorrect
+Offline Correct       a               b
+Offline Incorrect     c               d
+
+Test statistic: χ² = (|b - c| - 1)² / (b + c)
+```
+
+#### **B. Secondary: Bootstrap Confidence Intervals**
+- **Resample** test set 10,000 times
+- **Compute** failure rate difference: Δ = Offline_Fail - Online_Fail
+- **Report**: 95% CI of Δ (accounts for non-normal distributions)
+
+#### **C. Tertiary: Chi-Square Test of Independence**
+- **Use case**: Compare *multiple* model types (HVT vs Flat vs RAG)
+- **Test**: If failure modes are independent of architecture
+
+#### **D. Failure Mode Analysis: Fisher's Exact Test**
+- **Use case**: Rare failure types (e.g., hallucinated verification)
+- **Compare**: Counts of specific failures between conditions
+
+---
+
+## 6. Experimental Protocol
+
+### Phase 1: Controlled Impact Assessment
+1. **Train** HVT-Online on FEVER with retrieval augmentation
+2. **Create** HVT-Offline by disabling retrieval module (frozen)
+3. **Evaluate** both on:
+   - **In-Knowledge test set** (expected minimal impact)
+   - **Out-of-Knowledge test set** (expected major impact)
+4. **Run** McNemar's test on paired predictions
+
+### Phase 2: Ablation Study
+- **Vary hierarchy levels**: 1-level vs 2-level vs 3-level
+- **Vary cache size**: 0GB (pure offline) vs 10GB vs 100GB local cache
+- **Measure** failure rate vs cache size curve
+
+### Phase 3: Real-World Stress Test
+- **Deploy** on **SummEval** long-form generation
+- **Simulate** privacy constraint: No internet, local model only
+- **Human evaluation**: 3 annotators rate verification quality
+- **Statistical test**: Krippendorff's α for inter-annotator agreement + Mann-Whitney U test for quality scores
+
+---
+
+## 7. Power Analysis & Sample Size
+
+To detect **2% absolute failure rate increase** (e.g., 5% → 7%):
+
+```python
+# Using McNemar's test
+effect_size = 0.02
+alpha = 0.05
+power = 0.80
+
+Required samples: ~3,200 (using paired proportions)
+```
+
+**Recommendation**: Use full test sets (FEVER: 20k, HoVer: 5k) for high power.
+
+---
+
+## 8. Expected Results & Interpretation
+
+| Scenario | Offline Impact | Statistical Evidence |
+|----------|----------------|----------------------|
+| **Minimal impact** | Δ < 1% | McNemar's p > 0.05, CI includes 0 |
+| **Moderate impact** | Δ = 2-5% | p < 0.01, CI: [1%, 4%] |
+| **Severe impact** | Δ > 10% | p < 0.001, CI: [8%, 15%] |
+
+**Key Insight**: If **retrieval_failure** dominates error types, constraint is too strict → recommend **local knowledge cache**. If **hallucinated_verification** dominates, model overconfident → recommend **uncertainty calibration**.
+
+---
+
+## 9. Implementation Checklist
+
+- [ ] **Cache Implementation**: Embed Wikipedia dump (2023) in FAISS index
+- [ ] **Audit Logging**: Record all external calls for online mode
+- [ ] **Reproducibility**: Set seeds, version datasets, log hardware
+- [ ] **Ethics**: No real PII in test sets; synthetic privacy-sensitive claims if needed
+
+This design isolates the **privacy constraint's causal impact** while controlling for architecture and data variance.

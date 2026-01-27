@@ -1,0 +1,45 @@
+<thinking>
+  <thinking>
+The user wants to run an ablation on local attention window sizes in a Hierarchical Transformer. They want:
+1. Benchmark suite recommendation
+2. Minimal code changes
+3. Compute budget
+4. Failure modes to monitor
+
+I need to be critical and direct. Let me think about what's actually important here.
+
+First, I should ask: what is the actual research question? "Run an ablation on local attention window sizes" is vague. Are they trying to understand tradeoffs between efficiency and performance? Are they trying to find optimal windows for different hierarchy levels?
+
+For a Hierarchical Transformer, window size ablation is tricky because different layers have different effective resolutions. A naive grid search across all layers is wasteful.
+
+Benchmark suite: Need something that stresses both local and global context. Long Range Arena is outdated. Need something better.
+
+Code changes: Should be minimal - just parameter sweeps.
+
+Compute budget: Need to be realistic. This can blow up fast.
+
+Failure modes: Long-context degradation is mentioned, but there are others like training instability, hierarchical collapse, etc.
+
+Let me structure this critically and directly.
+</thinking>
+
+This is a poorly specified experiment that will waste compute if you don't narrow your hypothesis. "Ablation on window sizes" across a hierarchical model is too broad—different stages have different receptive fields, and sweeping blindly will give you noise.
+
+**Benchmark Suite**: Use **PangeaBench** (geospatial) or **X-Long Range Arena** (replaced LRA). Both have explicit long-context tasks where hierarchical models actually matter. Avoid generic NLP benchmarks—they won't stress the hierarchy.
+
+**Minimal Code Changes**: 
+- Expose `window_sizes` as a list parameter (one per stage) in your config
+- Single line change: `attn = LocalAttention(window_size=w)` where `w` is stage-dependent
+- Log effective receptive field per stage: `receptive_field = window_size * stride_accumulation`
+
+**Compute Budget**: 
+- **2-3 GPU-days max**. Run a **coarse-to-fine** sweep: test [32, 64, 128] at lowest stage only, fix others at 64. Then refine the best.
+- Each run: 10k steps max (you'll see degradation patterns early). Use a small model variant (e.g., 6 layers total).
+
+**Failure Modes to Monitor**:
+1. **Long-context degradation**: Track perplexity on 8k+ token sequences. If it spikes vs. baseline, your top-stage window is too small.
+2. **Hierarchical collapse**: Monitor cross-stage attention entropy. If it drops to near-zero, the model is ignoring higher stages—your windows are too large at lower stages, making them "good enough."
+3. **Training instability**: Watch for loss spikes when windows < 32 at early stages (too little context for reliable gradients).
+
+**What to do instead**: Fix the top 1-2 stages at 128, only sweep the bottom stage. The hierarchy's value is in the *interaction* between scales, not per-stage optima.
+</thinking>

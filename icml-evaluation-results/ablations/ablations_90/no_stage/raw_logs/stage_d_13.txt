@@ -1,0 +1,32 @@
+<thinking>
+  <thinking>
+The user is asking about instrumenting a Hierarchical Transformer for real-time/streaming inputs. This is a technical question about ML systems engineering and research methodology. I need to:
+
+1. Assess whether this is feasible and what the challenges are
+2. Give specific, critical feedback on the approach
+3. Provide concrete direction on logging, failure capture, and evaluation
+
+Key concerns:
+- Hierarchical Transformers are typically designed for offline/batch processing
+- Real-time inference has latency constraints that may conflict with hierarchical architectures
+- "Live notes" is vague - need to clarify what domain/task
+- Longitudinal evaluation requires careful hypothesis preregistration
+
+I should be direct about the challenges and not sugarcoat the difficulties.
+</thinking>
+
+This is likely a bad idea without major architectural changes. Hierarchical Transformers process sequences in multiple stages (local → global context), creating inherent latency that conflicts with real-time constraints. For "live notes," you'll need to define your latency budget first—most streaming applications require <100ms per token.
+
+**Logging architecture:**
+- **Input drift**: Log token distribution shifts, embedding space drift (cosine similarity to training centroid), and OOV rate per hour
+- **Latency percentiles**: P50/P95/P99 per hierarchy level, not just average
+- **Failure modes**: Cache invalidation errors, attention pattern collapse, gradient staleness if using online updates
+
+**Failure subtype capture:**
+Don't just log "errors." Instrument specific failure modes: (1) Hierarchical misalignment (local/global predictions diverge >30%), (2) Context window saturation (attention entropy collapse), (3) Domain shift (feature bank KL-divergence >threshold). Use per-subtype counters, not aggregated logs.
+
+**Preregistered hypotheses:**
+Your hypotheses must be falsifiable. Bad: "Model performance will degrade over time." Good: "Per-token accuracy will decay by >5% within 72 hours of deployment (measured via delayed ground truth) due to input distribution shift, not concept drift." Preregister: (1) Decay rate threshold, (2) Minimum detectable effect size, (3) Exact statistical test (e.g., sequential permutation test), (4) Stopping criteria for rollback.
+
+**First step:** Define your latency requirement and prove the hierarchical model can meet it on your hardware. If not, this entire discussion is moot.
+</thinking>

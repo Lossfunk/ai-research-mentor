@@ -1,0 +1,316 @@
+<thinking>
+  The user is asking for a plan to benchmark open-weight LLMs on multilingual fact-checking, with constraints of limited GPU access. This is a research methodology question. I need to design a comprehensive but practical plan that accounts for resource constraints.
+
+Key aspects to cover:
+1. **Task definition**: What is multilingual fact-checking? (detecting misinformation, verifying claims across languages)
+2. **Model selection**: Which open-weight models? Should consider size vs performance tradeoff given GPU limits
+3. **Dataset selection**: Multilingual fact-checking datasets
+4. **Evaluation metrics**: What to measure?
+5. **Experimental design**: How to structure the benchmark given limited GPUs
+6. **Expected outputs**: What results should look like
+7. **Sanity checks**: How to verify the setup is working correctly
+
+Given limited GPU access, I should recommend:
+- Smaller models (7B-13B parameters)
+- Quantization (4-bit, 8-bit)
+- Efficient inference frameworks
+- Subsampling strategies
+- Sequential evaluation rather than parallel
+- Cloud spot instances as an option
+- Focus on representative subsets
+
+Let me structure this systematically:
+
+## 1. Problem Formulation
+Multilingual fact-checking can be framed as:
+- **Claim verification**: 3-way classification (Supported/Refuted/NotEnoughInfo)
+- **Evidence retrieval + verification**: More complex pipeline
+- **Zero-shot cross-lingual transfer**: Train on English, test on other languages
+
+Given GPU constraints, I should focus on the first framing as it's most straightforward.
+
+## 2. Model Selection Strategy
+Recommend a tiered approach:
+- **Base tier**: 7B models (Llama-2-7B, Mistral-7B, Gemma-7B) - can run on 1xA10G or even high-end CPU with quantization
+- **Mid tier**: 13B models (Llama-2-13B, Mistral-7Bx8-MoE) - need 1xA100 or 2xA10G
+- **Large tier**: 70B models - probably too big for limited GPU, but can mention API-based alternatives
+
+Given limited GPU, focus on 7B models with quantization.
+
+## 3. Dataset Selection
+Need multilingual fact-checking datasets:
+- **X-FACT**: Good multilingual dataset (Arabic, Bengali, Chinese, English, German, Hindi, Indonesian, Portuguese, Russian, Spanish, Telugu, Turkish, Vietnamese)
+- **MultiFC**: Multilingual fact-checking dataset
+- **FakeNewsNet**: English only but can use for translation
+- **ClaimReview**: Multilingual but unstructured
+- **CONSTRAINT@AAAI2021**: Has multilingual data
+
+X-FACT seems most suitable as it's specifically designed for multilingual claim verification.
+
+## 4. Evaluation Metrics
+- Accuracy, Macro-F1 (important for class imbalance)
+- Per-language performance
+- Cross-lingual transfer performance (if doing zero-shot)
+- Calibration metrics (ECE - Expected Calibration Error) - important for fact-checking
+- Efficiency metrics: tokens/sec, memory usage, cost
+
+## 5. Experimental Design for Limited GPUs
+
+### Hardware assumptions:
+Let's assume user has access to:
+- 1x GPU with 24GB RAM (e.g., RTX 3090, A10G) OR
+- Limited hours on A100/H100 OR
+- Only CPU access
+
+### Strategies:
+1. **Quantization**: Use 4-bit/8-bit quantization (bitsandbytes, GPTQ)
+2. **Efficient frameworks**: vLLM, TGI, or llama.cpp for CPU offloading
+3. **Progressive evaluation**: Start with 1-2 languages, then expand
+4. **Subsampling**: Use stratified samples of test sets
+5. **Sequential processing**: Run models one after another, not in parallel
+6. **Checkpointing**: Save intermediate results
+7. **Cloud spot instances**: Use cheap preemptible instances
+
+## 6. Implementation Steps
+
+### Phase 1: Setup & Validation (1-2 days)
+- Install dependencies
+- Load smallest model
+- Run on tiny subset
+- Sanity checks
+
+### Phase 2: Baseline (3-5 days)
+- Evaluate 2-3 small models on 3 languages (EN, ES, ZH)
+- Full test set but with quantization
+- Measure throughput
+
+### Phase 3: Expansion (1-2 weeks)
+- Add more languages
+- Add more models
+- Ablation studies
+
+### Phase 4: Analysis (2-3 days)
+- Compile results
+- Statistical significance tests
+- Error analysis
+
+## 7. Expected Outputs
+
+Should include:
+- Performance tables (model vs language)
+- Efficiency tables (speed, memory)
+- Calibration plots
+- Error analysis examples
+- Cost analysis
+
+## 8. Sanity Checks
+
+Critical checks:
+- **Reproducibility**: Same seed gives same results
+- **Data leakage**: No train/test overlap
+- **Label distribution**: Check class balance
+- **Random baseline**: Should be below model performance
+- **Overfitting check**: Performance on small sample should be reasonable
+- **Memory profiling**: No OOM errors
+- **Tokenization check**: Verify special tokens handled correctly
+- **Perplexity check**: Model perplexity should be reasonable
+- **Consistency check**: Same claim in different languages should give similar predictions
+
+Let me write this up in a clear, actionable plan.
+</thinking>
+
+# Benchmarking Open-Weight LLMs on Multilingual Fact-Checking: A Limited-GPU Plan
+
+Here's a practical, resource-conscious plan for benchmarking open-weight LLMs on multilingual fact-checking, assuming **1x 24GB GPU** (e.g., RTX 3090/A10G) or **~50 hours of A100 access**.
+
+---
+
+## 1. Task Definition & Scope
+
+**Task**: **Multilingual Claim Verification**  
+Classify claims into 3 categories: **{Supported, Refuted, NotEnoughInfo}** given evidence documents.
+
+**Scope Constraints**:
+- **Models**: 7B-13B parameter range (quantized)
+- **Languages**: 5 representative languages (EN, ES, ZH, AR, HI) covering different scripts/families
+- **Dataset**: X-FACT (13 languages, 130k+ claims with evidence)
+- **Focus**: Zero-shot and few-shot performance; no full fine-tuning
+
+---
+
+## 2. Model Selection (Tiered by GPU Cost)
+
+| Tier | Model | Quantization | GPU RAM | A100 Hours* | Why |
+|------|-------|--------------|---------|-------------|-----|
+| **Core** | Llama-2-7B-chat | 4-bit | ~6GB | 5h | Baseline, widely used |
+| **Core** | Mistral-7B-v0.1 | 4-bit | ~6GB | 5h | Best-in-class 7B |
+| **Core** | Gemma-7B | 4-bit | ~6GB | 5h | Google, multilingual |
+| **Extended** | Llama-2-13B-chat | 8-bit | ~15GB | 8h | Scaling comparison |
+| **Extended** | Mixtral-8x7B | 4-bit | ~12GB | 10h | MoE architecture |
+
+*A100 hours = estimated for full benchmark (5 languages, 5k claims total)
+
+**GPU-Limited Strategy**: Start with 3 core models in 4-bit. If time permits, add one extended model.
+
+---
+
+## 3. Dataset Preparation
+
+### Primary: X-FACT
+```python
+# Sample split for limited compute
+languages = ['en', 'es', 'zh', 'ar', 'hi']  # 5 languages
+n_samples_per_lang = 1000  # Adjust based on time
+test_split = datasets.load_dataset('x_fact', split='test')
+# Stratified sample: 300 Supported / 300 Refuted / 400 NEI per language
+```
+
+### Sanity Check Dataset:
+- **X-FACT English dev set** (500 samples): For rapid iteration
+- **Translated claims**: 50 claims manually translated across 5 languages to test consistency
+
+---
+
+## 4. Experimental Design
+
+### Phase 1: Setup & Validation (2 days)
+```bash
+# Install efficient inference
+pip install vllm transformers bitsandbytes
+
+# Test smallest config
+python benchmark.py --model mistral-7b --lang en --n_samples 50 --bits 4
+```
+
+**Sanity Checks**:
+- ✅ **Reproducibility**: Set `torch.manual_seed(42)` → identical outputs on re-run
+- ✅ **Memory profiling**: Log `nvidia-smi` every batch; ensure <22GB usage
+- ✅ **Tokenization**: Verify non-Latin scripts tokenize correctly (no  symbols)
+- ✅ **Random baseline**: Run uniform random classifier; expect ~33% accuracy
+
+### Phase 2: Core Benchmarking (5-7 days)
+**Configuration**:
+- **Prompt template** (few-shot):
+```
+Verify this claim given the evidence. Respond ONLY with: Supported, Refuted, or NotEnoughInfo.
+
+Claim: [CLAIM]
+Evidence: [EVIDENCE]
+Label:
+```
+- **Generation params**: `temperature=0.0, max_new_tokens=5`
+- **Batch size**: 8-16 for 7B models (4-bit)
+- **Evaluation**: Per-language and macro-averaged metrics
+
+**Expected Outputs**:
+```json
+{
+  "mistral-7b-4bit": {
+    "en": {"accuracy": 0.68, "macro_f1": 0.65, "ece": 0.18},
+    "es": {"accuracy": 0.61, "macro_f1": 0.58, "ece": 0.22},
+    "zh": {"accuracy": 0.59, "macro_f1": 0.55, "ece": 0.25},
+    "ar": {"accuracy": 0.56, "macro_f1": 0.52, "ece": 0.28},
+    "hi": {"accuracy": 0.54, "macro_f1": 0.50, "ece": 0.30},
+    "avg_tokens_per_sec": 45.2,
+    "gpu_memory_mb": 14200
+  }
+}
+```
+
+### Phase 3: Efficiency & Analysis (2 days)
+- **Calibration**: Plot reliability diagrams per language
+- **Error analysis**: Sample 50 errors per model, categorize:
+  - Evidence misreading
+  - Language-specific nuance loss
+  - NEI confusion
+- **Consistency check**: Run 50 translated claim pairs; expect >80% agreement
+
+---
+
+## 5. Key Sanity Checks & Guardrails
+
+### Technical Checks
+| Check | Command/Method | Expected Result | Action if Failed |
+|-------|----------------|-----------------|------------------|
+| **OOM prevention** | `torch.cuda.mem_get_info()` before each batch | Free >2GB | Reduce batch size by 50% |
+| **Token overflow** | Count tokens; flag >2048 | <5% of data | Truncate evidence |
+| **Label parsing** | Regex: `^(Supported\|Refuted\|NotEnoughInfo)` | >95% parseable | Adjust prompt/temperature |
+| **Model load** | `model.config.vocab_size` | >32000 | Check tokenizer alignment |
+
+### Performance Checks
+- **Floor**: All models >40% accuracy (random = 33%)
+- **Ceiling**: English performance <85% (human ~90%)
+- **Cross-lingual gap**: English vs. avg(other langs) gap <15% points
+- **Speed**: >30 tokens/sec for 7B-4bit on A10G
+
+### Data Integrity
+```python
+# Check for train/test leakage
+def sanity_check_leakage(train_texts, test_texts):
+    # Embed with sentence-transformers
+    # Check cosine similarity >0.95 between any train-test pair
+    # Should be <1% matches
+```
+
+---
+
+## 6. Expected Final Deliverables
+
+### 1. Performance Table
+```
+Model          | EN   | ES   | ZH   | AR   | HI   | Avg  | Tokens/sec
+---------------|------|------|------|------|------|------|-----------
+Mistral-7B-4b  | 68.2 | 61.4 | 59.1 | 56.8 | 54.3 | 60.0 | 45.2
+Llama-2-7B-4b  | 65.1 | 58.2 | 56.5 | 54.1 | 52.7 | 57.3 | 42.8
+Gemma-7B-4b    | 66.8 | 60.1 | 58.3 | 55.9 | 53.4 | 58.9 | 48.5
+```
+
+### 2. Efficiency Report
+- Memory usage per model (GB)
+- Latency per claim (ms)
+- Estimated cost per 1k claims on AWS g5.xlarge ($0.53/hr)
+
+### 3. Calibration Analysis
+- Reliability curves per language
+- ECE (Expected Calibration Error) scores
+- **Sanity**: ECE should be <0.25 for well-calibrated models
+
+### 4. Error Analysis Summary
+- Top error types with examples
+- Language-specific failure modes (e.g., Arabic diacritics, Chinese entity linking)
+
+---
+
+## 7. Resource Management Plan
+
+### If GPU is **interrupted** (preemptible instance):
+```python
+# Save results every batch
+results.to_json("checkpoint.json", orient="records")
+# Resume from last completed language-model pair
+```
+
+### If **CPU-only** fallback:
+- Use `llama.cpp` with Q4_0 quantization
+- Expect 5-10x slowdown; reduce to 500 samples/language
+- Focus on 1-2 core models only
+
+### Time Budget (50 GPU hours):
+- Setup: 4h
+- Mistral-7B: 10h
+- Llama-2-7B: 10h
+- Gemma-7B: 10h
+- Analysis & re-runs: 16h
+
+---
+
+## 8. Red Flags & Abort Criteria
+
+Stop and debug if:
+- **Accuracy <40%** on any language → Check prompt/parsing
+- **Memory usage >23GB** → Quantization failed, restart
+- **Cross-lingual consistency <60%** → Tokenizer issue
+- **English performance >85%** → Possible data contamination
+- **Tokens/sec <20** → Framework misconfiguration
+
+This plan gives you **reliable, publishable results** within tight GPU constraints while building in multiple layers of validation.

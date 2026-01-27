@@ -1,0 +1,83 @@
+<thinking>
+  The user is asking about the PeerRead paper and its aspect score prediction models. They want help framing the limitations of these models (given that the gains were modest) and outlining a contingency plan for future work.
+
+First, I need to recall what the PeerRead paper is about. PeerRead is a dataset and set of tasks for peer review analysis, including aspect score prediction (predicting scores for aspects like "originality", "clarity", etc.). The paper likely found that models achieved only modest improvements over baselines.
+
+Let me think about the typical limitations that would lead to modest gains:
+
+1. **Data limitations**: Small dataset size, label noise, subjective annotations, class imbalance
+2. **Model limitations**: Simple architectures, lack of domain adaptation, not leveraging structure of reviews
+3. **Task formulation limitations**: Treating it as simple regression/classification without considering the nuanced nature of peer review
+4. **Evaluation limitations**: Metrics may not capture practical utility, poor correlation with human judgment
+5. **Domain mismatch**: Models trained on one venue/domain don't generalize well
+
+For a contingency plan, I should think about concrete next steps that address these limitations:
+
+1. **Data improvements**: Collect more data, multi-venue data, handle noise, few-shot learning
+2. **Model improvements**: Incorporate review structure, author-response interactions, citation graphs, multi-task learning
+3. **Task reformulation**: Calibrated uncertainty, ordinal regression, pairwise preference learning
+4. **Evaluation improvements**: Human evaluation, error analysis, practical utility metrics
+5. **Alternative approaches**: Semi-supervised learning, domain adaptation, human-AI collaboration
+
+I should structure this as:
+- First, frame the limitations clearly and academically
+- Then provide a concrete, actionable contingency plan
+- Make sure the plan is prioritized and realistic
+
+Let me draft a response that is helpful for a researcher planning next steps.
+</thinking>
+
+Here’s a structured way to frame the limitations and a concrete contingency plan:
+
+---
+
+### **Framing the Limitations**
+
+The modest gains suggest fundamental challenges rather than superficial modeling issues. Frame them as:
+
+1. **Data-Centric Bottlenecks**
+   - **Scale & Diversity**: PeerRead's ~2K reviews/venue may be insufficient for fine-grained aspect modeling; scores are highly venue-specific and subjective.
+   - **Annotation Noise**: Single-reviewer scores are noisy ground truth; inter-annotator agreement is likely low, creating a low ceiling for supervised learning.
+   - **Distribution Mismatch**: Train/test splits by paper may not reflect real-world domain shift (e.g., across venues or time periods).
+
+2. **Modeling Gaps**
+   - **Surface-Level Features**: Models may be capturing lexical proxies (e.g., "novel" → high originality) rather than deeper argument structure or scientific contribution.
+   - **Isolated Prediction**: Treating aspects independently ignores their correlations (e.g., clarity ↔ impact) and the holistic nature of review reasoning.
+   - **Lack of Context**: Not leveraging paper metadata (citations, author seniority), review discourse structure (strengths/weaknesses), or author responses.
+
+3. **Evaluation & Utility Mismatch**
+   - **Metric Limitations**: RMSE or accuracy may not align with practical goals (e.g., calibrating reviewer leniency, detecting outlier reviews).
+   - **No Human Baseline**: Modest gains over a naive baseline may still be far from human-level agreement; the gap to *useful* performance is unclear.
+
+---
+
+### **Contingency Plan: Tiered Approach**
+
+**Phase 1: Diagnose & De-risk (Immediate, 1-2 months)**
+- **Error Analysis**: Cluster errors by paper type (theory vs. experimental), review length, and score distribution. Identify which aspects are systematically hard.
+- **Inter-Annotator Study**: Compute venue-specific inter-reviewer correlations per aspect. If <0.3, the task may be ill-defined; pivot to *relative* scoring.
+- **Data Augmentation**: Scrape 5K more reviews from similar venues (e.g., ICLR, NeurIPS). Use consistency checks (e.g., does the text justify the score?) to filter noisy labels.
+
+**Phase 2: Model Enhancements (If Phase 1 shows promise)**
+- **Structured Input**: Encode review sections (summary, strengths, weaknesses) with segment embeddings; use a hierarchical transformer (paper → review → sections).
+- **Multi-Task + Metadata**: Jointly predict aspects + overall score + reviewer confidence; concatenate paper’s citation count, author h-index as side features.
+- **Preference Learning**: Reformulate as pairwise ranking: "Given two reviews, which assigns a higher originality score?" This sidesteps absolute score noise.
+
+**Phase 3: Pivot or Expand (If gains remain modest)**
+- **Pivot to Calibration**: Instead of predicting scores, predict *reviewer bias* (leniency/stringency) and calibrate existing scores. This is a higher-utility, easier task.
+- **Pivot to Explanation**: Generate justification snippets for scores; evaluate via overlap with human-highlighted rationales (more tractable than regression).
+- **Expand to Temporal Setting**: Predict how scores change after author rebuttal—leverages richer signal and aligns with real peer review workflow.
+
+**Phase 4: Human-AI Collaboration (Long-term)**
+- Build a reviewer assistance tool: highlight passages that contradict the assigned score, flag outlier aspects, *don’t* auto-predict. Measure utility via reviewer satisfaction and review quality proxies.
+
+---
+
+### **Decision Gates**
+
+After each phase, evaluate:
+- **Phase 1**: Is inter-reviewer agreement >0.4 for any aspect? If not, abandon score prediction.
+- **Phase 2**: Does the structured model achieve >5% relative RMSE improvement on at least 2 aspects? If not, the architecture is not the bottleneck.
+- **Phase 3**: Does the pivoted task show clear user value? If not, the dataset may lack signal for *any* high-level prediction.
+
+This plan hedges against sunk-cost bias while building toward a maximally useful outcome—even if that’s not the original score prediction task.

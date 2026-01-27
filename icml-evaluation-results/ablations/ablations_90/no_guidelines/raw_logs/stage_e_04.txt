@@ -1,0 +1,105 @@
+<thinking>
+  The user is asking about the PeerRead paper and what targeted ablations and error analyses reviewers would expect for the paper acceptance classification task, particularly regarding hand-engineered features.
+
+First, I need to recall what the PeerRead paper is. PeerRead is a dataset and study from 2018 by Kang et al. (or similar authors) about predicting paper acceptance. The key aspect is that it compares hand-engineered features with neural/textual features.
+
+The user is specifically asking about:
+1. Targeted ablations reviewers would expect
+2. Error analyses reviewers would expect
+3. Especially concerning hand-engineered features
+
+Let me think about the PeerRead paper's setup:
+- Task: Predicting paper acceptance (accept/reject)
+- Features: Hand-engineered features (metadata, author stats, etc.) vs. textual features from the paper content
+- Models: Various classifiers (LR, SVM, etc.) on different feature sets
+
+Key hand-engineered features in PeerRead typically include:
+- Author-related features (h-index, past acceptance rate, seniority)
+- Venue-related features (impact factor, acceptance rate)
+- Paper metadata (number of references, pages, etc.)
+- Abstract/summary features (but these might be textual)
+
+Reviewers would expect ablations that test the importance and interaction of these feature groups. They'd want to know:
+- Which feature groups are most predictive?
+- Do hand-engineered features add value beyond text?
+- Are there confounding factors?
+- How robust are the results?
+
+For error analysis, reviewers would expect:
+- Analysis of false positives/negatives
+- Domain-specific errors (e.g., certain venues, author types)
+- Temporal analysis (data leakage, train/test splits)
+- Feature importance analysis
+- Qualitative examples
+
+Let me structure a comprehensive answer covering:
+1. Expected ablation studies
+2. Expected error analyses
+3. Specific considerations for hand-engineered features
+4. Potential reviewer concerns and how to address them
+
+I should be specific and actionable, suggesting concrete experiments and analyses that would strengthen the paper.
+</thinking>
+
+Based on typical reviewer expectations for the PeerRead acceptance classification task, here are the targeted ablations and error analyses they'd likely demand, especially concerning hand-engineered features:
+
+## **Expected Ablations**
+
+### **1. Feature Group Ablation (Most Critical)**
+Reviewers will expect systematic removal of hand-engineered feature groups to isolate contributions:
+- **Author prestige features only**: h-index, past acceptance rates, seniority, institution rank
+- **Venue features only**: impact factor, historical acceptance rate, venue prestige scores
+- **Paper metadata only**: page count, reference count, figure/table counts, appendix presence
+- **Textual features only**: abstract, title, introduction (TF-IDF or embeddings)
+- **Combinations**: Author+Venue vs. Author+Text vs. Venue+Text
+
+**Key test**: Show that hand-engineered features provide *incremental* value beyond text by demonstrating a significant drop in performance when removed from a joint model.
+
+### **2. Temporal Ablation**
+- **Train on older papers, test on recent papers**: This tests if hand-engineered features capture stable signals vs. spurious temporal correlations
+- **Remove features that could leak future information**: e.g., author h-index *at submission time* vs. *current h-index* (critical to avoid data leakage)
+
+### **3. Interaction Ablation**
+- **Linear vs. non-linear interactions**: Test if tree-based models (XGBoost) on hand-features outperform logistic regression, suggesting complex interactions
+- **Feature crossing ablation**: Explicitly test crossed features (e.g., author seniority × venue tier)
+
+### **4. Ablation by Venue Subset**
+- **High-impact vs. low-impact venues**: Hand-features may matter more at selective venues
+- **Single-blind vs. double-blind venues**: If double-blind data exists, test if author features still "work" (suggests bias or leakage)
+
+## **Expected Error Analyses**
+
+### **1. Confusion Matrix Stratification**
+- **False positives**: Papers with low hand-feature scores but accepted (text quality triumphs)
+- **False negatives**: Papers with high hand-feature scores but rejected (maybe controversial or off-topic)
+- **Quantify**: "What % of errors are from high-prestige authors?"
+
+### **2. Feature Importance Sanity Checks**
+- **SHAP/LIME on hand-features**: Are models using plausible features? Reviewers will flag if "author name length" is top-weighted
+- **Permutation importance**: Show that shuffling author identity features hurts performance more than shuffling reference count
+
+### **3. Temporal Drift Analysis**
+- **Plot performance by year**: If hand-feature model degrades faster than text model, it suggests overfitting to historical biases
+- **Author feature stability**: Do models rely on features that change over time (e.g., h-index inflation)?
+
+### **4. Qualitative Case Studies**
+Reviewers expect **3-5 concrete examples**:
+- **High-prestige author, rejected**: Show text signals (weak methods, limited novelty) that overrode features
+- **Unknown author, accepted**: Show strong textual signals that compensated for weak hand-features
+- **Borderline cases**: Where hand-features tipped the balance
+
+### **5. Bias and Fairness Analysis**
+- **Demographic parity**: Do acceptance predictions for female/underrepresented authors differ when controlling for text quality?
+- **Institution bias**: Are state university papers under-predicted vs. Ivy League papers with similar text?
+
+### **6. Cross-Venue Generalization**
+- **Train on CS venues, test on Physics/Econ**: Hand-features (especially venue-specific ones) should fail; text features should generalize better
+- **This directly tests if hand-features are just memorizing venue biases**
+
+## **Reviewer Red Flags to Preempt**
+
+1. **"You're just predicting author prestige"**: Include an ablation where author features are replaced with *random* author IDs to show the model isn't just memorizing a few famous names
+2. **"Data leakage through h-index"**: Explicitly state h-index is computed *up to submission date only* and provide an ablation using *pre-submission* metrics only
+3. **"Hand-features are just proxies for text quality"**: Show partial dependence plots: for papers with *identical BERT embeddings*, do hand-features still vary predictions?
+
+**Bottom line**: Reviewers want evidence that hand-features capture *signal*, not *noise or bias*, and that they complement rather than duplicate textual information.

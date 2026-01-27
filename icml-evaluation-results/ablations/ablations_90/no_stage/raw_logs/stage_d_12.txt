@@ -1,0 +1,30 @@
+<thinking>
+  <thinking>
+The user wants to swap a base model in a Hierarchical Transformer with a committee of smaller models and evaluate it. This is a concrete technical proposal that needs critical evaluation.
+
+Key aspects to evaluate:
+1. Technical feasibility - does this make sense for hierarchical transformers?
+2. Evaluation metrics - are agreement, coverage, and regressions the right ones?
+3. Potential pitfalls - what will go wrong?
+
+My honest assessment: This is a bad idea that will likely fail. Hierarchical transformers rely on a single coherent representation space. Using a committee of smaller models will break the architecture's assumptions and create more problems than it solves.
+
+I need to be direct about why this won't work and suggest what they should do instead.
+</thinking>
+
+This won't work. Hierarchical Transformers depend on a **single, coherent representation space** across layers. Swapping the base model for a committee of smaller models breaks the fundamental architecture—you'll get representation misalignment, gradient path conflicts, and no clean way to aggregate outputs from heterogeneous models.
+
+**The real problem:** If you're trying to improve performance or efficiency, you're solving the wrong problem. A hierarchical architecture already *is* a committee mechanism (different layers specialize). Adding another committee layer is redundant architecture.
+
+**What you should do instead:**
+1. **If you want efficiency**: Distill the hierarchical model into a smaller single model. Use layer dropping or attention pruning.
+2. **If you want robustness**: Keep the base model but add **test-time ensembling** at the final prediction layer. Train 3-4 smaller heads that vote.
+3. **If you want coverage**: Use **mixture-of-experts** at the *input routing* level, not base model replacement.
+
+**Evaluation (if you insist on the broken approach):**
+- **Agreement**: Measure KL divergence between committee and original model's output distributions across 1k random inputs
+- **Coverage**: Track what % of inputs trigger >50% of committee members (should be high; low = dead experts)
+- **Regressions**: Run your original test suite; any performance drop >2% is a failure
+
+But seriously—**don't do this**. You'll spend weeks debugging representation alignment issues that have no clean solution. Pick one of the three alternatives above based on your actual goal.
+</thinking>

@@ -1,0 +1,275 @@
+<thinking>
+  The user is asking about instrumenting a Hierarchical Transformer for real-time/streaming inputs, specifically mentioning "live notes". They want descriptions of:
+1. Logging
+2. Failure subtype capture
+3. Preregistered hypotheses for longitudinal evaluation
+
+Since they mention "attached Hierarchical Transformer" but there's no actual attachment, I need to make reasonable assumptions about what this model might be. Given the context of "live notes", this is likely a model for clinical note processing or similar sequential text data in a healthcare setting. A Hierarchical Transformer would process notes at multiple levels (e.g., token-level, sentence-level, document-level).
+
+I should provide a comprehensive technical answer covering:
+- Real-time/streaming architecture modifications
+- Instrumentation/logging strategy
+- Failure mode detection and categorization
+- Longitudinal evaluation framework with preregistered hypotheses
+
+Let me structure this response:
+
+1. **Streaming Architecture Adaptation**: How to modify a hierarchical transformer for streaming
+2. **Instrumentation & Logging**: What to log, how to structure it
+3. **Failure Subtype Capture**: Taxonomy of failures, detection mechanisms
+4. **Preregistered Hypotheses**: Specific, testable hypotheses for longitudinal evaluation
+
+I'll make this concrete by assuming a clinical note processing use case, but keep it general enough to apply elsewhere.
+
+Key considerations for streaming:
+- Partial sequence handling
+- State management across chunks
+- Latency requirements
+- Concept drift detection
+- Online learning capabilities
+
+For logging:
+- Structured logging with context
+- Performance metrics
+- Input/Output snapshots
+- Resource utilization
+- User interactions
+
+For failure subtypes:
+- Model-level failures (prediction errors, uncertainty)
+- Data-level failures (distribution shift, anomalies)
+- System-level failures (latency, resource exhaustion)
+- Domain-specific failures (clinical safety)
+
+For hypotheses:
+- Performance degradation over time
+- Distribution shift impact
+- Rare event detection
+- Human-AI interaction effects
+- Bias amplification
+
+Let me write a detailed technical response.
+</thinking>
+
+# Instrumenting Hierarchical Transformers for Real-Time Clinical Note Processing
+
+## 1. Streaming Architecture Adaptation
+
+For "live notes" (e.g., partially written clinical documentation), modify the standard hierarchical transformer as follows:
+
+**Chunked Hierarchical Processing:**
+- **Token-level**: Process characters/tokens as they arrive using a sliding window (e.g., 512 tokens) with 25% overlap
+- **Sentence-level**: Maintain a buffer of incomplete sentences; emit sentence embeddings only upon sentence termination (period, line break)
+- **Document-level**: Use a recurrent state aggregator (LSTM/GRU) over sentence embeddings to maintain document context across chunks
+- **State Management**: Implement `StreamingHierarchicalCache` that persists:
+  - Last k sentence embeddings (k=32)
+  - Document-level attention weights
+  - Uncertainty estimates per segment
+  - Timestamp metadata for each hierarchy level
+
+**Latency Optimization:**
+- **Early Exit**: Add confidence-based early termination at each hierarchy level
+- **Asynchronous Pipeline**: Decouple tokenization, encoding, and prediction into separate queues
+- **Model Sharding**: Deploy sentence encoder and document aggregator on separate GPUs
+
+---
+
+## 2. Structured Logging Framework
+
+Implement three-tier logging with `live_notes_instrumentation` package:
+
+### **Tier 1: Operational Metrics (High Frequency)**
+```json
+{
+  "timestamp_ms": 1695234567890,
+  "session_id": "clinician_123_20230920",
+  "note_id": "note_456",
+  "hierarchy_level": "sentence",
+  "latency_ms": {
+    "tokenization": 2.3,
+    "encoding": 45.1,
+    "prediction": 8.7
+  },
+  "resource_util": {
+    "gpu_memory_mb": 2340,
+    "cpu_percent": 34.2
+  },
+  "input_stats": {
+    "token_count": 47,
+    "char_count": 312,
+    "completion_percentage": 0.15
+  }
+}
+```
+
+### **Tier 2: Model Behavior (Medium Frequency)**
+```json
+{
+  "timestamp_ms": 1695234567890,
+  "session_id": "clinician_123_20230920",
+  "note_id": "note_456",
+  "predictions": [
+    {
+      "label": "diagnosis_suspected_sepsis",
+      "probability": 0.73,
+      "uncertainty": 0.18,
+      "attention_weights": {...},
+      "hierarchy_contributions": {
+        "token_level": 0.31,
+        "sentence_level": 0.52,
+        "document_level": 0.17
+      }
+    }
+  ],
+  "calibration_error": 0.042
+}
+```
+
+### **Tier 3: Input/Output Snapshots (Low Frequency, Sampled)**
+- Store full note text every 30 seconds or upon significant prediction change (>0.3 probability shift)
+- Capture clinician corrections/edits as "ground truth" signals
+- Record UI interactions (hover time, click-through rates on suggestions)
+
+**Logging Infrastructure:**
+- **Stream**: Apache Kafka → Apache Flink for real-time aggregation
+- **Storage**: Parquet files in S3 (partitioned by date/clinician/specialty)
+- **Retention**: Tier 1 (7 days), Tier 2 (90 days), Tier 3 (365 days, HIPAA-compliant)
+
+---
+
+## 3. Failure Subtype Taxonomy & Capture
+
+Implement automated failure detection with `FailureCaptureModule`:
+
+### **A. Model-Level Failures**
+| Subtype | Detection Mechanism | Action |
+|---------|-------------------|--------|
+| **High Uncertainty** | `uncertainty > 0.4` for >3 consecutive predictions | Flag for human review, suppress suggestion |
+| **Prediction Flip-Flop** | Label changes >2 times within 10 edits | Log attention pattern shift, trigger model refresh check |
+| **Calibration Drift** | ECE increases >0.05 vs. baseline (7-day rolling) | Alert MLOps, schedule recalibration |
+| **Semantic Hallucination** | Entity linking failure (e.g., ICD code doesn't exist) | Block prediction, log to "hallucination" bucket |
+
+### **B. Data-Level Failures**
+| Subtype | Detection Mechanism | Action |
+|---------|-------------------|--------|
+| **Distribution Shift** | KL divergence >0.3 on token/sentence embeddings vs. training | Log to drift dashboard, trigger retraining pipeline |
+| **Out-of-Vocabulary Spike** | OOV rate >15% in 50-token window | Switch to character-level fallback, log specialty-specific terms |
+| **Adversarial Pattern** | Repetitive token sequences, extreme punctuation | Rate limit, log IP/session, security alert |
+
+### **C. System-Level Failures**
+| Subtype | Detection Mechanism | Action |
+|---------|-------------------|--------|
+| **Latency Degradation** | p99 latency >200ms per hierarchy level | Auto-scale, circuit breaker to backup model |
+| **Memory Leak** | GPU memory growth >5% per hour | Restart container, heap dump analysis |
+| **Stale State** | Document-level cache age >4 hours | Auto-invalidate, log clinician session patterns |
+
+### **D. Clinical Safety Failures** (Domain-Specific)
+| Subtype | Detection Mechanism | Action |
+|---------|-------------------|--------|
+| **Contradiction** | New prediction conflicts with locked diagnosis | Require explicit override, log to safety review board |
+| **Severity Mismatch** | Predicted acuity doesn't match vital signs | Cross-check with EHR data, flag if discordant |
+| **Missing Critical Finding** | "Chest pain" + "troponin" but no MI prediction | Rule-based override, log to "missed finding" registry |
+
+**Capture Implementation:**
+```python
+class FailureCaptureModule:
+    def __init__(self):
+        self.failure_buffer = deque(maxlen=1000)
+        self.alert_thresholds = {...}
+    
+    def capture(self, prediction_context, failure_type, severity):
+        failure_event = {
+            "failure_id": uuid.uuid4(),
+            "type": failure_type,
+            "severity": severity,
+            "context": prediction_context,
+            "clinician_override": self.check_override(),
+            "timestamp": time.time()
+        }
+        self.failure_buffer.append(failure_event)
+        # Emit to dedicated Kafka topic: "model_failures"
+        # Trigger PagerDuty for severity >= 7
+```
+
+---
+
+## 4. Preregistered Hypotheses for Longitudinal Evaluation
+
+Design a 12-month prospective study with these pre-specified hypotheses:
+
+### **H1: Performance Degradation**
+*Hypothesis:* Model F1-score for sepsis detection will degrade by ≥0.03 per quarter due to concept drift in antibiotic terminology.
+
+*Operationalization:*
+- Primary outcome: F1-score on held-out weekly batch
+- Covariates: New drug mentions, guideline changes
+- Analysis: Bayesian change-point detection with 0.95 credible intervals
+- Trigger: If H1 confirmed at 6 months, trigger active learning pipeline
+
+### **H2: Rare Event Capture**
+*Hypothesis:* The model will miss 40% of rare diseases (<1% prevalence) but capture 80% of common conditions (>5% prevalence) after 12 months.
+
+*Operationalization:*
+- Stratify performance by prevalence deciles
+- Log "surprise index": `log(p_pred / p_train_prevalence)`
+- Action: Implement rarity-aware threshold adjustment
+
+### **H3: Human-AI Interaction Drift**
+*Hypothesis:* Clinician acceptance rate will decline from 70% to 50% over 6 months due to "alert fatigue," independent of model accuracy.
+
+*Operationalization:*
+- Track acceptance rate per clinician per week
+- Measure time-to-dismiss suggestions
+- Control for case mix using propensity scoring
+- Mitigation: A/B test suggestion frequency capping
+
+### **H4: Bias Amplification**
+*Hypothesis:* Disparities in suggestion acceptance across racial groups will increase by ≥0.15 odds ratio over 12 months.
+
+*Operationalization:*
+- Log clinician demographics (optional, IRB-approved)
+- Compute acceptance OR stratified by patient race
+- Monitor embedding space clustering by demographic groups
+- Ethical trigger: Pause deployment if OR >2.0
+
+### **H5: Hierarchical Attention Decay**
+*Hypothesis:* Contribution of document-level context to predictions will decrease by 30% as note length increases (streaming effect).
+
+*Operationalization:*
+- Regression: `document_contribution ~ note_length + days_since_training`
+- Segment analysis: Notes <100 tokens vs. >500 tokens
+- Architectural implication: If confirmed, increase sentence-level cache size
+
+### **H6: Catastrophic Forgetting**
+*Hypothesis:* After monthly fine-tuning on new data, model performance on 3-month-old data will drop by ≥0.05 F1.
+
+*Operationalization:*
+- Rolling evaluation on 30-day age-stratified test sets
+- Measure backward transfer: `perf(t) - perf(t-1) on D_{t-3}`
+- Solution: Implement Elastic Weight Consolidation if confirmed
+
+### **H7: Streaming vs. Batch Discrepancy**
+*Hypothesis:* Predictions on fully completed notes differ from final streaming prediction in 15% of cases, with higher variance for incomplete notes.
+
+*Operationalization:*
+- Log both streaming predictions and batch re-evaluation
+- Compute Jensen-Shannon divergence per note
+- Safety rule: Require batch confirmation for high-risk predictions
+
+---
+
+## 5. Longitudinal Evaluation Dashboard
+
+**Real-Time Monitoring:**
+- **Drift Radar**: t-SNE of daily embeddings vs. training set
+- **Failure Heatmap**: Failure subtypes by clinician/specialty/time-of-day
+- **Acceptance Trajectory**: Rolling 7-day acceptance with 95% CI
+- **Latency Budget**: p50/p95/p99 per hierarchy level with SLO alerts
+
+**Quarterly Deep Dives:**
+1. **Failure Autopsy**: Manual review of 100 random failures + all safety-critical misses
+2. **Clinician Interview**: Thematic analysis of 20 users on trust/utility
+3. **Bias Audit**: Disparate impact analysis across protected characteristics
+4. **Model Refresh Decision**: Bayesian model comparison of current vs. retrained version
+
+This instrumentation turns the hierarchical transformer into a continuously monitored clinical decision support system with rigorous failure tracking and hypothesis-driven improvement.

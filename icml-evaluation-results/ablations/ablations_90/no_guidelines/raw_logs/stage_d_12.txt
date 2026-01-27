@@ -1,0 +1,209 @@
+<thinking>
+  The user is asking me to:
+1. Swap the base model in the attached Hierarchical Transformer with a committee of smaller open-weight models
+2. Propose an evaluation to measure agreement, coverage, and regressions versus the original model
+
+However, I don't see any attachment. The user mentions "the attached Hierarchical Transformer" but there's no file or code provided. I need to address this missing information.
+
+Since I don't have the specific model architecture, I should:
+1. Acknowledge that I don't see an attachment
+2. Provide a general framework for how this could be done with a typical Hierarchical Transformer
+3. Propose a concrete evaluation plan that covers the three metrics mentioned: agreement, coverage, and regressions
+4. Make reasonable assumptions about what the original model might look like
+
+Let me think about what a Hierarchical Transformer typically is:
+- It's often used for document-level tasks where you have a hierarchy (e.g., word -> sentence -> document)
+- It usually has a base encoder that processes at one level, and then higher-level transformers aggregate information
+- The "base model" could be the initial token/sentence encoder
+
+The user wants to replace this with a "committee of smaller open-weight models". This suggests:
+- Using multiple smaller models instead of one large base model
+- These should be open-weight (like Llama 2, Mistral, Gemma, etc.)
+- Committee implies some form of ensembling or voting mechanism
+
+I should propose:
+1. A concrete architecture modification
+2. A clear evaluation plan with specific metrics for:
+   - Agreement: how often the committee agrees with the original model
+   - Coverage: whether the committee can handle all cases the original could
+   - Regressions: where the committee performs worse
+
+Let me structure my response:
+
+**Part 1: Acknowledge missing attachment and make reasonable assumptions**
+
+**Part 2: Propose the committee architecture**
+- Choose specific open-weight models (e.g., Mistral-7B, Gemma-7B, Llama-2-7B)
+- Describe how to integrate them (voting, ensemble, mixture of experts style)
+- Explain the swapping process
+
+**Part 3: Propose evaluation framework**
+- Agreement metrics: 
+  - Prediction overlap
+  - Correlation of confidence scores
+  - KL divergence of output distributions
+- Coverage metrics:
+  - Task coverage (can it handle all input types?)
+  - Performance on edge cases
+  - Failure rate comparison
+- Regression metrics:
+  - Direct performance comparison on benchmarks
+  - Error analysis
+  - Statistical significance testing
+
+**Part 4: Implementation details**
+- Specific datasets to use
+- Statistical tests
+- Visualization suggestions
+
+**Part 5: Practical considerations**
+- Computational cost
+- Latency
+- Memory requirements
+
+I should be concrete and actionable. Let me write this out clearly.
+</thinking>
+
+I don't see an attachment in your message. To provide specific guidance, I'll assume you're referring to a typical **Hierarchical Transformer** architecture (e.g., for document modeling with sentence→document levels, or a vision-text hierarchy). Here's a general framework you can adapt.
+
+---
+
+## 1. Committee Architecture Proposal
+
+### Base Model Replacement
+**Assumption**: Your original Hierarchical Transformer uses a single large encoder (e.g., BERT-large, T5-base) at the bottom level.
+
+**Committee of Smaller Models**:
+- **Members**: 3-4 diverse open-weight models of ~3B-7B parameters each:
+  - `Mistral-7B-v0.1` (Apache 2.0)
+  - `Gemma-7B` (Gemma Terms)
+  - `Llama-2-7B` (Llama 2 License)
+  - `Zephyr-7B-β` (MIT, for diversity)
+
+- **Integration Strategy**: 
+  - **Token-level ensemble**: Each committee member encodes inputs independently. Their hidden states are averaged (or weighted) before feeding to the hierarchical attention layers.
+  - **Mixture-of-Experts routing**: Train a lightweight router to send different input types to specialized committee members.
+  - **Late fusion**: Concatenate representations from each model and project down to original dimension.
+
+```python
+# Pseudo-code for token-level ensemble
+class CommitteeEncoder(nn.Module):
+    def __init__(self):
+        self.members = {
+            'mistral': AutoModel.from_pretrained("mistralai/Mistral-7B-v0.1"),
+            'gemma': AutoModel.from_pretrained("google/gemma-7b"),
+            'llama': AutoModel.from_pretrained("meta-llama/Llama-2-7b-hf")
+        }
+        self.gate = nn.Linear(len(members) * hidden_dim, hidden_dim)
+    
+    def forward(self, x):
+        # Get representations from all members
+        reps = [model(x).last_hidden_state for model in self.members.values()]
+        # Concatenate and project
+        combined = torch.cat(reps, dim=-1)
+        return self.gate(combined)
+```
+
+---
+
+## 2. Evaluation Framework
+
+### **A. Agreement Metrics** (How aligned are committee vs. original?)
+
+1. **Prediction Overlap**
+   - **Metric**: Exact match rate between committee's top-1 prediction and original model's prediction
+   - **Threshold**: >85% overlap expected for successful swap
+
+2. **Confidence Correlation**
+   - **Metric**: Spearman correlation of prediction probabilities
+   - **Implementation**: Run both models on 5K random validation samples; compute correlation per class
+
+3. **Output Distribution Similarity**
+   - **Metric**: KL Divergence `D_KL(P_original || P_committee)`
+   - **Target**: Mean KL < 0.5 for in-distribution data
+
+### **B. Coverage Metrics** (Can committee handle all scenarios?)
+
+1. **Task Coverage Score**
+   - **Metric**: % of test cases where *all* committee members produce valid outputs (no errors, no degenerate predictions)
+   - **Stress Test**: Feed adversarial/edge cases (long sequences, rare tokens, multilingual inputs)
+
+2. **Capability Matrix**
+   - Create a grid of input types (short/long, clean/noisy, domain-specific) vs. committee members
+   - **Coverage**: Fraction of cells where committee performance ≥ 95% of original
+
+3. **Failure Mode Analysis**
+   - Track failure reasons: OOM, timeout, nonsense generation, confidence collapse
+   - **Target**: ≤2% absolute increase in failure rate vs. original
+
+### **C. Regression Metrics** (Where does committee underperform?)
+
+1. **Benchmark Suite**
+   - **Primary**: Original model's key metric (e.g., F1, accuracy)
+   - **Secondary**: Per-task breakdown on 3-5 representative datasets
+   - **Statistical Test**: Paired bootstrap test with p<0.05 for significance
+
+2. **Error Attribution**
+   - **Metric**: % of original model's errors that committee *also* makes (shared errors)
+   - **Critical**: % of original's correct predictions that committee gets wrong (new regressions)
+   - **Target**: <5% new regressions, >70% shared errors
+
+3. **Performance Profile**
+   - **Latency**: P50, P95, P99 inference time
+   - **Throughput**: Requests/second on fixed hardware (e.g., A100)
+   - **Memory**: Peak VRAM usage
+   - **Regression Threshold**: <10% slowdown, <15% memory increase
+
+---
+
+## 3. Evaluation Protocol
+
+### **Phase 1: Agreement Check** (Fast)
+```bash
+# Run on 10K validation samples
+python evaluate_agreement.py \
+  --original_model path/to/original \
+  --committee_config configs/committee.yaml \
+  --output agreement_report.json
+```
+
+**Report includes**:
+- Prediction overlap heatmap per class
+- Confidence scatter plots
+- KL divergence histograms
+
+### **Phase 2: Coverage Stress Test** (Medium)
+- **Input length sweep**: 128, 512, 1024, 2048 tokens
+- **Noise injection**: 0%, 5%, 10% token corruption
+- **Domain shift**: Test on 3 out-of-domain datasets
+- **Metric**: Coverage drop-off curve
+
+### **Phase 3: Regression Analysis** (Thorough)
+- **Full benchmark**: Run both models on complete test suite (≥3 runs each)
+- **Statistical rigor**: Bootstrap 95% confidence intervals
+- **Error inspection**: Sample 200 disagreements for human review
+- **Compute budget**: Track total GPU-hours
+
+---
+
+## 4. Decision Criteria
+
+| Metric | Green Light | Yellow Flag | Red Light |
+|--------|-------------|-------------|-----------|
+| Agreement | >90% | 85-90% | <85% |
+| New Regressions | <3% | 3-7% | >7% |
+| Coverage Drop | <2% | 2-5% | >5% |
+| Latency Increase | <10% | 10-20% | >20% |
+
+**Proceed if ≥3 Green Lights and no Red Lights.**
+
+---
+
+## 5. Practical Considerations
+
+- **Loading Strategy**: Use `accelerate` with device mapping to fit committee on limited GPUs
+- **Caching**: Pre-compute committee representations for static datasets
+- **Fallback**: If committee disagrees (high variance), default to most conservative member
+- **Cost**: 3×7B models ≈ 21B parameters but more FLOPs; expect 2-3x slower inference than single large model
+
+If you share the specific architecture and task, I can tailor the committee design and evaluation metrics precisely.
