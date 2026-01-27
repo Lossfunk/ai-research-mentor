@@ -35,10 +35,10 @@
 
 | Rank | System | Avg Score | Δ vs MENTOR |
 |------|--------|-----------|-------------|
-| 1 | **GEMINI** | 1.574 | +0.029 |
-| 2 | **MENTOR** | 1.545 | — |
-| 3 | GPT-5 | 1.526 | -0.019 |
-| 4 | Claude | 1.460 | -0.085 |
+| 1 | **MENTOR** | 1.604 | — |
+| 2 | **Gemini** | 1.574 | -0.030 |
+| 3 | GPT-5 | 1.526 | -0.078 |
+| 4 | Claude | 1.460 | -0.144 |
 
 ### Pairwise Win Rates (tie threshold ±0.05)
 
@@ -131,10 +131,9 @@
 - MENTOR vs Gemini: Not significant (p=0.44)
 
 ### Single-Turn Performance
-- **MENTOR ranks #2** among frontier models (score: 1.545)
-- Gemini leads (1.574), followed by MENTOR, GPT-5 (1.526), Claude (1.460)
+- **MENTOR achieves the highest single-turn score** (1.604), closely followed by Gemini (1.574), GPT-5 (1.526), and Claude (1.460)
 - MENTOR significantly outperforms Claude (60.9% pairwise win rate)
-- MENTOR is competitive with GPT-5 and Gemini (close margins)
+- Gemini and GPT-5 remain competitive in pairwise comparisons, especially in early stages (A–B)
 
 ### Stage-wise Patterns
 - **Stage C (Problem Framing):** MENTOR excels (100% vs Claude, 100% vs GPT-5)

@@ -65,8 +65,8 @@ icml-evaluation-results/
 │   └── *.json                   # Success/satisfaction signals
 │
 ├── ablations/                   # Ablation study results
-│   ├── stage_ablation/          # -Stage awareness: -54.9%
-│   └── guidelines_ablation/     # -Guidelines: -33.7%
+│   ├── stage_ablation/          # Stage awareness ablations (18-prompt pilot)
+│   └── guidelines_ablation/     # Guidelines ablations (18-prompt pilot)
 │
 └── inter_annotator_agreement/   # IAA analysis
     ├── iaa_report.json
@@ -79,9 +79,9 @@ icml-evaluation-results/
 |------------|--------|
 | **Multi-turn holistic** (80 convos) | MENTOR: **1.705/2.0**, 100% success |
 | **Human pairwise** (218 comparisons) | MENTOR wins **64.7%** overall |
-| **Single-turn** (90 prompts) | MENTOR: **1.545/2.0** |
-| **Stage ablation** | -54.9% without stage awareness |
-| **Guidelines ablation** | -33.7% without mentor prompt |
+| **Single-turn** (90 prompts) | MENTOR: **1.604/2.0** (Gemini: 1.574, GPT-5: 1.526, Claude: 1.460) |
+| **Stage ablation (90 prompts)** | **-13.1%** holistic without stage awareness |
+| **Guidelines ablation (90 prompts)** | **-4.6%** holistic without mentor prompt |
 
 ## Systems Evaluated
 

@@ -19,7 +19,7 @@
 ### Critical Findings
 
 1. **Human evaluation is HIGHLY SIGNIFICANT** (p < 0.000001)
-2. **Single-turn: MENTOR ranks #2** among frontier models (1.545), competitive with Gemini (1.574) and GPT-5 (1.526)
+2. **Single-turn: MENTOR achieves the highest mean score** (1.604), with Gemini (1.574) and GPT-5 (1.526) close behind
 3. **MENTOR dominates Claude** in single-turn (60.9%) and human eval (80.8%)
 4. **Stage C & D:** MENTOR excels at problem framing and methodology (100% vs Claude)
 5. **Threshold 1.6 justified** - MENTOR maintains 95% success rate in multi-turn
@@ -179,18 +179,18 @@
 ## 3. Single-turn Evaluation Claims
 
 ### Claim 3.1: Single-turn Holistic Scores (CORRECTED)
-> "MENTOR is competitive with frontier models on single-turn mentoring"
+> "MENTOR is competitive with, and slightly ahead of, frontier models on single-turn mentoring"
 
-**Status:** ✅ **SUPPORTED - MENTOR ranks #2 overall**
+**Status:** ✅ **SUPPORTED - MENTOR ranks #1 overall**
 
 **Final Rankings (90 prompts × 4 systems):**
 
 | Rank | System | Avg Holistic Score | Δ vs MENTOR |
 |------|--------|-------------------|-------------|
-| 1 | **Gemini** | 1.574 | +0.029 |
-| 2 | **MENTOR** | 1.545 | — |
-| 3 | GPT-5 | 1.526 | -0.019 |
-| 4 | Claude | 1.460 | -0.085 |
+| 1 | **MENTOR** | 1.604 | — |
+| 2 | **Gemini** | 1.574 | -0.030 |
+| 3 | GPT-5 | 1.526 | -0.078 |
+| 4 | Claude | 1.460 | -0.144 |
 
 **Pairwise Win Rates (with tie threshold ±0.05):**
 
@@ -200,7 +200,7 @@
 | vs GPT-5 | 22 | 44 | 24 | 33.3% |
 | vs Gemini | 15 | 40 | 35 | 27.3% |
 
-**Key finding:** MENTOR (a specialized system) ranks #2 among frontier models, significantly outperforming Claude and remaining competitive with GPT-5 and Gemini.
+**Key finding:** MENTOR (a specialized system) achieves the highest mean single-turn score, significantly outperforming Claude and remaining competitive with Gemini and GPT-5 in pairwise comparisons.
 
 **Evidence files:**
 - `single_turn_holistic_results.json`
@@ -357,7 +357,7 @@
 | Gap | Status | Outcome |
 |-----|--------|---------|
 | Statistical significance tests | ✅ DONE | p < 0.000001 overall; vs Claude p < 0.001 |
-| Single-turn holistic scores | ✅ DONE | MENTOR #2 overall (1.545), beats Claude 60.9% |
+| Single-turn holistic scores | ✅ DONE | MENTOR #1 overall (1.604), beats Claude 60.9% |
 | Stage-wise breakdown | ✅ DONE | MENTOR dominates C & D stages vs Claude |
 | Failure mode taxonomy + rates | ✅ DONE | Top: missed_constraints (30%) |
 | Threshold sensitivity | ✅ DONE | MENTOR robust across 1.4-1.7 |
