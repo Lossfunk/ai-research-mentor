@@ -15,11 +15,13 @@ class WebSearchTool(BaseTool):
         self._client: Any = None
         self._config: Dict[str, Any] = {}
         self._init_error: Optional[str] = None
+        self._dotenv_cache: Optional[Dict[str, str]] = None
         self._default_limit = 8
 
     def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
         super().initialize(config)
         self._config = dict(config or {})
+        self._dotenv_cache = None
         client = self._config.get("client")
         if client is not None:
             self._client = client
@@ -39,6 +41,68 @@ class WebSearchTool(BaseTool):
         )
         return any(k in goal for k in keywords)
 
+    def _resolve_api_key(self, config_key: str, env_key: str) -> str:
+        configured = str(self._config.get(config_key, "")).strip()
+        if configured:
+            return configured
+
+        from_env = os.getenv(env_key, "").strip()
+        if from_env:
+            return from_env
+
+        cached = self._load_dotenv_cache().get(env_key, "").strip()
+        if cached and not os.getenv(env_key):
+            os.environ[env_key] = cached
+        return cached
+
+    def _load_dotenv_cache(self) -> Dict[str, str]:
+        if self._dotenv_cache is not None:
+            return self._dotenv_cache
+
+        values: Dict[str, str] = {}
+        dotenv_path = self._find_dotenv_path()
+        if dotenv_path:
+            try:
+                with open(dotenv_path, "r", encoding="utf-8") as fh:
+                    for raw_line in fh:
+                        line = raw_line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if line.startswith("export "):
+                            line = line[7:].strip()
+                        if "=" not in line:
+                            continue
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip()
+                        if not key:
+                            continue
+                        if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
+                            value = value[1:-1]
+                        values[key] = value
+            except Exception:
+                values = {}
+
+        self._dotenv_cache = values
+        return values
+
+    def _find_dotenv_path(self) -> Optional[str]:
+        if bool(self._config.get("disable_dotenv_lookup")):
+            return None
+        configured = str(self._config.get("dotenv_path", "")).strip()
+        if configured and os.path.isfile(configured):
+            return configured
+
+        current = os.path.abspath(os.getcwd())
+        while True:
+            candidate = os.path.join(current, ".env")
+            if os.path.isfile(candidate):
+                return candidate
+            parent = os.path.dirname(current)
+            if parent == current:
+                return None
+            current = parent
+
     def _ensure_client(self) -> bool:
         if self._client is not None:
             return True
@@ -48,7 +112,7 @@ class WebSearchTool(BaseTool):
             self._init_error = f"tavily import failed: {exc}"
             return False
 
-        api_key = str(self._config.get("api_key") or os.getenv("TAVILY_API_KEY", "")).strip()
+        api_key = self._resolve_api_key("api_key", "TAVILY_API_KEY")
         if not api_key:
             self._init_error = "TAVILY_API_KEY not configured"
             return False
@@ -112,7 +176,7 @@ class WebSearchTool(BaseTool):
             return True
         if self._ensure_client():
             return True
-        api_key = str(self._config.get("openrouter_api_key") or os.getenv("OPENROUTER_API_KEY", "")).strip()
+        api_key = self._resolve_api_key("openrouter_api_key", "OPENROUTER_API_KEY")
         if api_key and HTTPX_AVAILABLE:
             return True
         return False
@@ -151,12 +215,17 @@ class WebSearchTool(BaseTool):
         if tavily_result is not None:
             return tavily_result
 
+        openrouter_key = self._resolve_api_key("openrouter_api_key", "OPENROUTER_API_KEY")
+        config = dict(self._config)
+        if openrouter_key and not config.get("openrouter_api_key"):
+            config["openrouter_api_key"] = openrouter_key
+
         openrouter_result, openrouter_error = execute_openrouter_search(
             query=query,
             limit=limit,
             domain=domain,
             mode=mode,
-            config=self._config,
+            config=config,
         )
         if openrouter_result is not None:
             return openrouter_result

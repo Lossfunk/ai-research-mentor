@@ -542,6 +542,7 @@ export const MentorChat = ({
       let buffer = ""; 
       let isThinking = false; 
       let eventBuffer = ""; 
+      let streamErrorMessage: string | null = null;
       
       while (true) {
         const { value, done } = await reader.read();
@@ -629,12 +630,15 @@ export const MentorChat = ({
               finalizeStream();
             } else if (event.type === 'error') {
               console.error('Stream error:', event.content);
-              addAiMessage(`Error: ${event.content}`);
-              setStreaming(false);
+              streamErrorMessage = event.content || 'Stream error';
+              break;
             }
           } catch (parseErr) {
             console.warn('Failed to parse SSE event:', line);
           }
+        }
+        if (streamErrorMessage) {
+          throw new Error(streamErrorMessage);
         }
       }
       

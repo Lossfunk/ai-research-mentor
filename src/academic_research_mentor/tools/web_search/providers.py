@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...citations import Citation, CitationFormatter
+from .openrouter_parser import parse_openrouter_content
 
 try:  # pragma: no cover - optional dependency guard
     import httpx  # type: ignore
@@ -133,7 +133,7 @@ def execute_openrouter_search(
     except Exception as exc:
         return None, f"OpenRouter invalid JSON: {exc}"
 
-    content = ""
+    content: Any = ""
     try:
         choices = payload.get("choices") or []
         if choices:
@@ -141,21 +141,17 @@ def execute_openrouter_search(
     except Exception:
         content = ""
 
-    if not content:
-        return None, "OpenRouter response missing content"
-
-    try:
-        parsed = _parse_json_block(content)
-    except ValueError as exc:
-        return None, f"OpenRouter content parse error: {exc}"
+    parsed, parse_error = parse_openrouter_content(content, limit=limit)
+    if parse_error:
+        return None, f"OpenRouter content parse error: {parse_error}"
 
     results_section = parsed.get("results")
-    if not isinstance(results_section, list):
+    if not isinstance(results_section, list) and not parsed.get("summary"):
         return None, "OpenRouter response missing results"
 
     formatted = _format_results(
         query=query,
-        entries=results_section,
+        entries=results_section if isinstance(results_section, list) else [],
         limit=limit,
         domain=domain,
         mode=mode,
@@ -165,14 +161,6 @@ def execute_openrouter_search(
         search_depth=None,
     )
     return formatted, None
-
-
-def _parse_json_block(content: str) -> Dict[str, Any]:
-    text = content.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-    return json.loads(text)
 
 
 def _format_results(

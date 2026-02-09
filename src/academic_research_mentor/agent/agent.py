@@ -115,18 +115,33 @@ class MentorAgent:
         for _ in range(self.MAX_TOOL_ITERATIONS):
             full_content = ""
             streamed_tool_calls: list[ToolCall] = []
-
-            async for chunk in self.client.stream_async(
-                messages,
-                tools=tool_definitions,
-                include_reasoning=include_reasoning,
-            ):
-                if chunk.tool_calls:
-                    streamed_tool_calls.extend(chunk.tool_calls)
-                    continue
-                if chunk.content:
-                    full_content += chunk.content
-                yield chunk
+            try:
+                async for chunk in self.client.stream_async(
+                    messages,
+                    tools=tool_definitions,
+                    include_reasoning=include_reasoning,
+                ):
+                    if chunk.tool_calls:
+                        streamed_tool_calls.extend(chunk.tool_calls)
+                        continue
+                    if chunk.content:
+                        full_content += chunk.content
+                    yield chunk
+            except Exception:
+                # Fallback to non-stream completion if streaming fails before emitting text.
+                if full_content.strip() or streamed_tool_calls:
+                    raise
+                response, fallback_tool_calls = await self.client.chat_async(messages, tools=tool_definitions)
+                if fallback_tool_calls:
+                    streamed_tool_calls = fallback_tool_calls
+                else:
+                    fallback_text = response.content or ""
+                    if fallback_text:
+                        full_content += fallback_text
+                        yield StreamChunk(content=fallback_text)
+                    self._history.append(Message.user(user_message))
+                    self._history.append(Message.assistant(full_content))
+                    return
 
             if streamed_tool_calls:
                 messages.append(Message.assistant("", streamed_tool_calls))

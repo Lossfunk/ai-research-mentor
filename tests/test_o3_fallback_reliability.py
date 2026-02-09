@@ -54,7 +54,7 @@ def test_web_search_handles_missing_api_key(monkeypatch) -> None:  # type: ignor
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     tool = WebSearchTool()
-    tool.initialize()
+    tool.initialize({"disable_dotenv_lookup": True})
 
     result = tool.execute({"query": "test query"})
 
@@ -71,7 +71,7 @@ def test_web_search_handles_client_exception(monkeypatch) -> None:  # type: igno
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     client = _DummyTavilyClient({}, should_raise=True)
     tool = WebSearchTool()
-    tool.initialize({"client": client})
+    tool.initialize({"client": client, "disable_dotenv_lookup": True})
 
     result = tool.execute({"query": "ai research trends"})
 
@@ -137,7 +137,7 @@ def test_web_search_fallbacks_to_openrouter(monkeypatch) -> None:  # type: ignor
     )
 
     tool = WebSearchTool()
-    tool.initialize()
+    tool.initialize({"disable_dotenv_lookup": True})
 
     result = tool.execute({"query": "latest ai policy", "limit": 3})
 
@@ -154,6 +154,76 @@ def test_web_search_reports_available_with_openrouter(monkeypatch) -> None:  # t
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
 
     tool = WebSearchTool()
-    tool.initialize()
+    tool.initialize({"disable_dotenv_lookup": True})
 
     assert tool.is_available() is True
+
+
+def test_web_search_resolves_tavily_key_from_dotenv(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("TAVILY_API_KEY=tavily-from-dotenv\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    tool = WebSearchTool()
+    tool.initialize()
+
+    assert tool._resolve_api_key("api_key", "TAVILY_API_KEY") == "tavily-from-dotenv"
+
+
+def test_web_search_openrouter_parses_non_json_content(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from academic_research_mentor.tools.web_search.tool import WebSearchTool
+
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    response_payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": (
+                        "Recent sources:\n"
+                        "- [OpenAI policy update](https://example.org/openai-policy)\n"
+                        "- [EU AI Act briefing](https://example.org/eu-ai-act)\n"
+                    )
+                }
+            }
+        ]
+    }
+
+    class _DummyResponse:
+        status_code = 200
+
+        def json(self):
+            return response_payload
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.requests: list[Dict[str, Any]] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url: str, headers: Dict[str, Any], json: Dict[str, Any]) -> _DummyResponse:
+            self.requests.append({"url": url, "headers": headers, "json": json})
+            return _DummyResponse()
+
+    monkeypatch.setattr(
+        "academic_research_mentor.tools.web_search.providers.httpx.Client",
+        _DummyClient,
+        raising=False,
+    )
+
+    tool = WebSearchTool()
+    tool.initialize({"disable_dotenv_lookup": True})
+
+    result = tool.execute({"query": "latest ai policy", "limit": 2})
+
+    assert result["results"], "Expected parsed results from non-JSON content"
+    assert result["results"][0]["url"].startswith("https://example.org")
+    assert result["metadata"]["provider"] == "openrouter-web"

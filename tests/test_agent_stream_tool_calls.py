@@ -4,7 +4,7 @@ from typing import Any, AsyncIterator, Optional
 
 from academic_research_mentor.agent.agent import MentorAgent
 from academic_research_mentor.agent.tools import ToolRegistry
-from academic_research_mentor.llm.types import StreamChunk, ToolCall
+from academic_research_mentor.llm.types import Message, StreamChunk, ToolCall
 
 
 class _FakeStreamingClient:
@@ -27,6 +27,32 @@ class _FakeStreamingClient:
             )
             return
         yield StreamChunk(content="final-response")
+
+
+class _FailThenFallbackClient:
+    def __init__(self) -> None:
+        self.stream_calls = 0
+        self.chat_calls = 0
+
+    async def stream_async(  # type: ignore[override]
+        self,
+        _messages: list[Any],
+        tools: Optional[list[Any]] = None,  # noqa: ARG002
+        include_reasoning: bool = False,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
+    ) -> AsyncIterator[StreamChunk]:
+        self.stream_calls += 1
+        raise RuntimeError("stream failed")
+        yield  # pragma: no cover
+
+    async def chat_async(  # type: ignore[override]
+        self,
+        _messages: list[Any],
+        tools: Optional[list[Any]] = None,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ARG002
+    ) -> tuple[Message, Optional[list[ToolCall]]]:
+        self.chat_calls += 1
+        return Message.assistant("fallback-response"), None
 
 
 async def _collect_chunks(agent: MentorAgent) -> list[StreamChunk]:
@@ -61,3 +87,12 @@ def test_stream_executes_tool_calls_then_continues_stream() -> None:
     assert "executing" in statuses
     assert "completed" in statuses
     assert any((c.content or "") == "final-response" for c in chunks)
+
+
+def test_stream_falls_back_to_chat_async_on_pre_content_failure() -> None:
+    client = _FailThenFallbackClient()
+    agent = MentorAgent(system_prompt="test", client=client, tools=ToolRegistry())
+    chunks = __import__("asyncio").run(_collect_chunks(agent))
+    assert client.stream_calls == 1
+    assert client.chat_calls == 1
+    assert any((c.content or "") == "fallback-response" for c in chunks)
