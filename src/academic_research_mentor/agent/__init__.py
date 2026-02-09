@@ -6,6 +6,7 @@ from .tool_adapters import (
     WebSearchToolAdapter,
     ArxivSearchToolAdapter,
     GuidelinesToolAdapter,
+    CitationIntegrityToolAdapter,
     create_default_tools,
 )
 
@@ -16,5 +17,6 @@ __all__ = [
     "WebSearchToolAdapter",
     "ArxivSearchToolAdapter",
     "GuidelinesToolAdapter",
+    "CitationIntegrityToolAdapter",
     "create_default_tools",
 ]

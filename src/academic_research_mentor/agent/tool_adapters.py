@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, Optional
+from typing import Any
 
 from .tools import Tool
 
@@ -221,6 +220,58 @@ class GuidelinesToolAdapter(Tool):
         return "\n\n".join(formatted)
 
 
+class CitationIntegrityToolAdapter(Tool):
+    """Audits references for broken links and malformed metadata."""
+
+    @property
+    def name(self) -> str:
+        return "citation_integrity_audit"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Audit citations/references for integrity. Extracts URLs/DOIs/arXiv IDs, "
+            "checks for dead links, validates DOI/arXiv existence, and flags weak BibTeX entries."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "reference_text": {
+                    "type": "string",
+                    "description": "References section, BibTeX, or text containing citations/links.",
+                },
+                "urls": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional additional URLs to verify.",
+                },
+                "check_urls": {"type": "boolean", "default": True},
+                "verify_doi": {"type": "boolean", "default": True},
+                "verify_arxiv": {"type": "boolean", "default": False},
+            },
+            "required": ["reference_text"],
+        }
+
+    def execute(self, **kwargs: Any) -> str:
+        text = str(kwargs.get("reference_text", "")).strip()
+        if not text:
+            return "Citation audit failed: no reference_text provided."
+
+        from academic_research_mentor.citations.integrity import audit_reference_text, format_integrity_report
+
+        report = audit_reference_text(
+            text,
+            extra_urls=kwargs.get("urls") if isinstance(kwargs.get("urls"), list) else None,
+            check_urls=bool(kwargs.get("check_urls", True)),
+            verify_doi=bool(kwargs.get("verify_doi", True)),
+            verify_arxiv=bool(kwargs.get("verify_arxiv", False)),
+        )
+        return format_integrity_report(report)
+
+
 def create_default_tools() -> list[Tool]:
     """Create all default tools for the mentor agent."""
     tools = []
@@ -240,5 +291,10 @@ def create_default_tools() -> list[Tool]:
         tools.append(GuidelinesToolAdapter())
     except Exception as e:
         print(f"Warning: Could not initialize research_guidelines tool: {e}")
+
+    try:
+        tools.append(CitationIntegrityToolAdapter())
+    except Exception as e:
+        print(f"Warning: Could not initialize citation_integrity_audit tool: {e}")
     
     return tools

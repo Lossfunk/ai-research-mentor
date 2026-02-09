@@ -8,6 +8,7 @@ import tempfile
 from typing import Optional, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,7 +16,7 @@ from supermemory import Supermemory
 
 from academic_research_mentor.agent import MentorAgent, ToolRegistry, create_default_tools
 from academic_research_mentor.llm import create_client
-from academic_research_mentor.llm.types import StreamChunk, Message, Role
+from academic_research_mentor.llm.types import Message
 
 app = FastAPI(title="Academic Research Mentor API")
 
@@ -118,6 +119,23 @@ def search_supermemory(query: str, limit: int = 5) -> list[dict]:
     except Exception as e:
         print(f"Supermemory search failed: {e}")
         return []
+
+
+async def search_supermemory_async(query: str, limit: int = 5) -> list[dict]:
+    return await run_in_threadpool(search_supermemory, query, limit)
+
+
+async def store_in_supermemory_async(doc_id: str, filename: str, content: str) -> bool:
+    return await run_in_threadpool(store_in_supermemory, doc_id, filename, content)
+
+
+async def build_context_with_memory(prompt: str, document_context: Optional[str]) -> Optional[str]:
+    context = document_context or ""
+    memory_results = await search_supermemory_async(prompt, limit=3)
+    if memory_results:
+        memory_ctx = "\n".join(f"[Memory] {r['content'][:2000]}" for r in memory_results)
+        context = f"{context}\n\n{memory_ctx}" if context else memory_ctx
+    return context if context else None
 
 
 def _clean_title(raw: str) -> str:
@@ -250,16 +268,10 @@ async def chat(request: ChatRequest):
     if not mentor_agent:
         raise HTTPException(503, "Agent not initialized")
     
-    # Build context
-    context = request.document_context or ""
-    memory_results = search_supermemory(request.prompt, limit=3)
-    if memory_results:
-        memory_ctx = "\n".join(f"[Memory] {r['content'][:2000]}" for r in memory_results)
-        context = f"{context}\n\n{memory_ctx}" if context else memory_ctx
-    
     try:
+        context = await build_context_with_memory(request.prompt, request.document_context)
         user_payload = request.content_parts if request.content_parts else request.prompt
-        response = await mentor_agent.chat_async(user_payload, context=context if context else None)
+        response = await mentor_agent.chat_async(user_payload, context=context)
         return ChatResponse(response=response)
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -272,18 +284,12 @@ async def chat_stream(request: ChatRequest):
         raise HTTPException(503, "Agent not initialized")
     
     async def sse_generator() -> AsyncIterator[str]:
-        # Build context
-        context = request.document_context or ""
-        memory_results = search_supermemory(request.prompt, limit=3)
-        if memory_results:
-            memory_ctx = "\n".join(f"[Memory] {r['content'][:2000]}" for r in memory_results)
-            context = f"{context}\n\n{memory_ctx}" if context else memory_ctx
-        
+        context = await build_context_with_memory(request.prompt, request.document_context)
         try:
             user_payload = request.content_parts if request.content_parts else request.prompt
             async for chunk in mentor_agent.stream_async(
                 user_payload,
-                context=context if context else None,
+                context=context,
                 include_reasoning=True
             ):
                 # Handle tool status events
@@ -326,7 +332,7 @@ async def upload(file: UploadFile = File(...)):
                 tmp.write(content_bytes)
                 tmp_path = tmp.name
             try:
-                text, pages = extract_text_from_pdf(tmp_path)
+                text, pages = await run_in_threadpool(extract_text_from_pdf, tmp_path)
             finally:
                 os.unlink(tmp_path)
         elif ext == 'docx':
@@ -334,7 +340,7 @@ async def upload(file: UploadFile = File(...)):
                 tmp.write(content_bytes)
                 tmp_path = tmp.name
             try:
-                text = extract_text_from_docx(tmp_path)
+                text = await run_in_threadpool(extract_text_from_docx, tmp_path)
             finally:
                 os.unlink(tmp_path)
         else:
@@ -347,7 +353,7 @@ async def upload(file: UploadFile = File(...)):
     
     doc_id = f"doc-{len(document_store) + 1}"
     document_store[doc_id] = {"id": doc_id, "filename": file.filename, "content": text, "pages": pages}
-    store_in_supermemory(doc_id, file.filename, text)
+    await store_in_supermemory_async(doc_id, file.filename, text)
     
     return UploadResponse(id=doc_id, filename=file.filename, content=text, pages=pages)
 
@@ -367,7 +373,7 @@ async def delete_document(doc_id: str):
 
 @app.post("/api/memory/search")
 async def search_memory(request: MemorySearchRequest):
-    results = search_supermemory(request.query, request.limit)
+    results = await search_supermemory_async(request.query, request.limit)
     return {"results": results, "count": len(results)}
 
 

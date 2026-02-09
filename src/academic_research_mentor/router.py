@@ -2,147 +2,105 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
+
 from .rich_formatter import print_agent_reasoning
 
 
 def _run_arxiv_search_and_print(query: str) -> None:
-    from .mentor_tools import arxiv_search  # lazy import
+    from .mentor_tools import arxiv_search
+
     result: Dict[str, Any] = arxiv_search(query=query, from_year=None, limit=5)
     papers: List[Dict[str, Any]] = result.get("papers", []) if isinstance(result, dict) else []
     if not papers:
         note = result.get("note") if isinstance(result, dict) else None
-        print(f"Mentor.tools: No papers found. {note or ''}")
+        print_agent_reasoning(f"Mentor.tools: No papers found. {note or ''}".strip())
         return
-    print_agent_reasoning("Mentor.tools (arXiv):")
-    for p in papers[:5]:
-        title = p.get("title")
-        year = p.get("year")
-        url = p.get("url")
-        print_agent_reasoning(f"- {title} ({year}) → {url}")
 
-    # The following block seems out of place and references 'urls' which is undefined.
-    # Commenting it out to fix indentation and undefined variable issues.
-    # if not urls.get("guide") and not urls.get("template"):
-    #     print("- No known URLs. Try checking the venue website.")
+    print_agent_reasoning("Mentor.tools (arXiv):")
+    for paper in papers[:5]:
+        title = paper.get("title")
+        year = paper.get("year")
+        url = paper.get("url")
+        print_agent_reasoning(f"- {title} ({year}) -> {url}")
 
 
 def _run_math_ground_and_print(text: str) -> None:
-    from .mentor_tools import math_ground  # lazy import
+    from .mentor_tools import math_ground
+
     result: Dict[str, Any] = math_ground(text_or_math=text, options={})
     findings = (result or {}).get("findings", {})
     print_agent_reasoning("Mentor.tools (Math Ground):")
     for key in ["assumptions", "symbol_glossary", "dimensional_issues", "proof_skeleton"]:
         items = findings.get(key) or []
         if items:
-            print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items[:3])}{'...' if len(items) > 3 else ''}")
-
-
-def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
-    """Fallback direct guidelines tool usage."""
-    try:
-        from .tools.guidelines.tool import GuidelinesTool
-        tool = GuidelinesTool()
-        tool.initialize()
-        
-        inputs = {"query": query}
-        if topic:
-            inputs["topic"] = topic
-            
-        result = tool.execute(inputs, {"goal": f"research mentorship guidance about {query}"})
-        
-        guidelines = result.get("retrieved_guidelines", [])
-        if guidelines:
-            print_agent_reasoning("Mentor.tools (Research Guidelines):")
-            for guideline in guidelines[:3]:
-                source = guideline.get("source_domain", "Research guidance")
-                content = guideline.get("content", "")[:100]
-                print_agent_reasoning(f"- {source}: {content}...")
-        else:
-            print_agent_reasoning("Mentor.tools: No specific guidelines found.")
-    except Exception as e:
-        print_agent_reasoning(f"Mentor.tools: Guidelines search failed: {e}")
+            suffix = "..." if len(items) > 3 else ""
+            print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items[:3])}{suffix}")
 
 
 def _run_methodology_validate_and_print(plan: str) -> None:
-    from .mentor_tools import methodology_validate  # lazy import
+    from .mentor_tools import methodology_validate
+
     result: Dict[str, Any] = methodology_validate(plan=plan, checklist=[])
     report = (result or {}).get("report", {})
-    print_agent_reasoning("Mentor.tools (Methodology Validate):")
+    print_agent_reasoning("Mentor.tools (Methodology Check):")
     for key in ["risks", "missing_controls", "ablation_suggestions", "reproducibility_gaps"]:
         items = report.get(key) or []
         if items:
             print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items)}")
-
-
-def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
-    """Run guidelines tool and print results."""
-    # Try to use orchestrator first if available
-    try:
-        from .core.orchestrator import Orchestrator
-        orchestrator = Orchestrator()
-        context = {"goal": query, "query": query}
-        if topic:
-            context["topic"] = topic
-        
-        result = orchestrator.execute_task("guidelines_search", {"query": query, "topic": topic or query}, context)
-        
-        if result.get("execution", {}).get("executed"):
-            guidelines_result = result.get("results", {})
-            print_agent_reasoning("Mentor.tools (Research Guidelines):")
-            
-            if guidelines_result.get("retrieved_guidelines"):
-                for guideline in guidelines_result["retrieved_guidelines"]:
-                    source_type = guideline.get("source_type", "Unknown source")
-                    guide_id = guideline.get("guide_id", "unknown")
-                    print_agent_reasoning(f"- {source_type} [ID: {guide_id}]")
-                    
-                if guidelines_result.get("formatted_content"):
-                    content = guidelines_result["formatted_content"]
-                    # Show first 500 chars of formatted content
-                    if len(content) > 500:
-                        content = content[:500] + "..."
-                    print_agent_reasoning(f"\nGuidelines summary: {content}")
-            else:
-                print_agent_reasoning("- No guidelines found for this query")
-        else:
-            # Fallback to direct tool usage
-            _run_guidelines_fallback(query, topic)
-            
-    except Exception:
-        # Fallback to direct tool usage
-        _run_guidelines_fallback(query, topic)
+    sample_size_notes = report.get("sample_size_notes")
+    if sample_size_notes:
+        print_agent_reasoning(f"- sample_size: {sample_size_notes}")
 
 
 def _run_guidelines_fallback(query: str, topic: Optional[str] = None) -> None:
-    """Fallback direct guidelines tool usage."""
     try:
         from .tools.guidelines.tool import GuidelinesTool
+
         tool = GuidelinesTool()
         tool.initialize()
-        
-        inputs = {"query": query}
-        if topic:
-            inputs["topic"] = topic
-            
-        result = tool.execute(inputs)
-        
-        print("Mentor.tools (Research Guidelines):")
-        if result.get("retrieved_guidelines"):
-            for guideline in result["retrieved_guidelines"]:
-                source_type = guideline.get("source_type", "Unknown source")
-                guide_id = guideline.get("guide_id", "unknown")
-                print(f"- {source_type} [ID: {guide_id}]")
-                
-            if result.get("formatted_content"):
-                content = result["formatted_content"]
-                if len(content) > 500:
-                    content = content[:500] + "..."
-                print(f"\nGuidelines summary: {content}")
+        result = tool.execute({"query": query, "topic": topic or query})
+        print_agent_reasoning("Mentor.tools (Research Guidelines):")
+
+        guidelines = result.get("retrieved_guidelines", [])
+        if guidelines:
+            for guideline in guidelines[:4]:
+                source = guideline.get("source_domain") or guideline.get("source") or "Unknown source"
+                title = guideline.get("title") or "Guideline"
+                print_agent_reasoning(f"- {title} ({source})")
         else:
-            print(f"- {result.get('note', 'No guidelines found')}")
-            
-    except Exception as e:
-        print(f"Mentor.tools (Research Guidelines): Error - {e}")
+            note = result.get("note", "No guidelines found")
+            print_agent_reasoning(f"- {note}")
+    except Exception as exc:
+        print_agent_reasoning(f"Mentor.tools (Research Guidelines): Error - {exc}")
+
+
+def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
+    try:
+        from .core.orchestrator import Orchestrator
+
+        orchestrator = Orchestrator()
+        result = orchestrator.execute_task(
+            "research_guidelines",
+            {"query": query, "topic": topic or query},
+            {"goal": f"research mentorship guidance about {query}", "query": query},
+        )
+
+        if not result.get("execution", {}).get("executed"):
+            _run_guidelines_fallback(query, topic)
+            return
+
+        guidelines_result = result.get("results", {}) or {}
+        guidelines = guidelines_result.get("retrieved_guidelines", []) or guidelines_result.get("evidence", [])
+        print_agent_reasoning("Mentor.tools (Research Guidelines):")
+        if not guidelines:
+            print_agent_reasoning("- No guidelines found for this query")
+            return
+        for guideline in guidelines[:4]:
+            source = guideline.get("source_domain") or guideline.get("source") or "Unknown source"
+            title = guideline.get("title") or "Guideline"
+            print_agent_reasoning(f"- {title} ({source})")
+    except Exception:
+        _run_guidelines_fallback(query, topic)
 
 
 def _extract_topic_from_text(text: str) -> Optional[str]:
@@ -167,13 +125,13 @@ def _extract_topic_from_text(text: str) -> Optional[str]:
         r"\bWhat\s*(?:do\s*you\s*know\s*)?about\s+(.+)$",
         r"^(.+?)(?:\s*research|\s*papers|\s*literature)(?:\s*field|\s*area)?$",
     ]
-    for pat in patterns:
-        m = re.search(pat, s, flags=re.IGNORECASE)
-        if m:
-            topic = m.group(1).strip()
-            topic = re.sub(r"[.?!\s]+$", "", topic)
-            if 2 <= len(topic) <= 200:
-                return topic
+    for pattern in patterns:
+        match = re.search(pattern, s, flags=re.IGNORECASE)
+        if not match:
+            continue
+        topic = re.sub(r"[.?!\s]+$", "", match.group(1).strip())
+        if 2 <= len(topic) <= 200:
+            return topic
     return None
 
 
@@ -182,7 +140,6 @@ def route_and_maybe_run_tool(user: str) -> Optional[Dict[str, str]]:
     if not s:
         return None
 
-    # Check for research guidelines queries first (before venue guidelines)
     guidelines_patterns = [
         r"\b(?:research\s+)?guidelines?\s+(?:for|on|about)?\s+(.+)$",
         r"\b(?:how\s+to\s+)?(?:choose|select|pick)\s+(?:a\s+)?(?:good\s+)?(?:research\s+)?(?:problem|project|topic)\b",
@@ -194,7 +151,6 @@ def route_and_maybe_run_tool(user: str) -> Optional[Dict[str, str]]:
         r"\b(?:research\s+)?(?:best\s+)?practices?\b",
         r"\b(?:hamming|lesswrong|colah|nielsen)\s+(?:research\s+)?(?:advice|guidance)\b",
     ]
-    
     for pattern in guidelines_patterns:
         match = re.search(pattern, s, flags=re.IGNORECASE)
         if match:
@@ -224,19 +180,19 @@ def route_and_maybe_run_tool(user: str) -> Optional[Dict[str, str]]:
         r"\bshow\s+me\s+(?:papers|research)\s+(?:on|about|in)\s+(.+)$",
         r"\bcan\s+you\s+find\s+(?:papers|research)\s+(?:on|about|in)\s+(.+)$",
     ]
-    for pat in arxiv_patterns:
-        m3 = re.search(pat, s, flags=re.IGNORECASE)
-        if m3:
-            topic = m3.group(1).strip()
-            topic = re.sub(r"[.?!\s]+$", "", topic)
-            if topic:
-                _run_arxiv_search_and_print(topic)
-                return {"tool_name": "arxiv_search", "topic": str(topic)}
-    
+    for pattern in arxiv_patterns:
+        match = re.search(pattern, s, flags=re.IGNORECASE)
+        if not match:
+            continue
+        topic = re.sub(r"[.?!\s]+$", "", match.group(1).strip())
+        if topic:
+            _run_arxiv_search_and_print(topic)
+            return {"tool_name": "arxiv_search", "topic": topic}
+
     topic = _extract_topic_from_text(s)
     if topic:
-        print_agent_reasoning(f"Mentor.tools: Detected topic → {topic}")
+        print_agent_reasoning(f"Mentor.tools: Detected topic -> {topic}")
         _run_arxiv_search_and_print(topic)
         return {"tool_name": "arxiv_search", "topic": topic}
-    
+
     return None

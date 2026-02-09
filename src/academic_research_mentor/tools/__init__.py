@@ -7,7 +7,7 @@ WS1 goal: provide a minimal API for registering and fetching tools without
 altering existing code paths. Auto-discovery will be added later.
 """
 
-from typing import Dict, Optional, Type
+from typing import Dict, Optional
 import importlib
 import pkgutil
 import inspect
@@ -20,6 +20,7 @@ class ToolBase(BaseTool):
 
 
 _registry: Dict[str, BaseTool] = {}
+_discovered_packages: set[str] = set()
 
 
 def register_tool(tool: BaseTool) -> None:
@@ -40,6 +41,9 @@ def auto_discover(package: str = __name__) -> None:
     Convention: any subpackage containing a module named `tool` with at least
     one subclass of BaseTool will be imported and an instance registered.
     """
+    if package in _discovered_packages:
+        return
+
     # Walk submodules of the tools package recursively
     pkg = importlib.import_module(package)
     for modinfo in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
@@ -62,6 +66,7 @@ def auto_discover(package: str = __name__) -> None:
                 except Exception:
                     # Skip tools that fail to initialize
                     continue
+    _discovered_packages.add(package)
 
 
 def validate_tool_instance(tool: BaseTool) -> bool:

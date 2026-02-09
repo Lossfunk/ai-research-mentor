@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 import os
+from threading import Lock
 
 from .summarizer import generate_document_summary
 from .pdf_loader import load_pdfs
@@ -14,6 +15,9 @@ _chunk_meta: list[dict] = []
 _retriever: Any | None = None
 _summary: dict[str, Any] = {"files": 0, "pages": 0, "chunks": 0}
 _doc_summary: str = ""
+_doc_summary_ready = False
+_docs_for_summary: list[Any] = []
+_doc_summary_lock = Lock()
 _LIMITS = {"max_mb": 50, "max_pages": 500}
 _DEFAULT_K = 12
 
@@ -78,7 +82,7 @@ def attach_pdfs(paths: list[str]) -> dict[str, Any]:
 
     Returns summary with counts. Safe to call multiple times; rebuilds index.
     """
-    global _retriever, _chunk_texts, _chunk_meta, _summary, _doc_summary
+    global _retriever, _chunk_texts, _chunk_meta, _summary, _doc_summary, _doc_summary_ready, _docs_for_summary
 
     docs, stats = _load_pdfs(paths)
     if not docs:
@@ -86,6 +90,8 @@ def attach_pdfs(paths: list[str]) -> dict[str, Any]:
         _chunk_texts = []
         _chunk_meta = []
         _doc_summary = ""
+        _doc_summary_ready = False
+        _docs_for_summary = []
         _summary = {"files": 0, "pages": 0, "chunks": 0, "backend": "none", "skipped_large": 0, "truncated": 0}
         return _summary
 
@@ -101,8 +107,10 @@ def attach_pdfs(paths: list[str]) -> dict[str, Any]:
     backend_name, retr = _try_build_vector_retriever(chunks)
     _retriever = retr
 
-    # Generate document summary for context awareness
-    _doc_summary = generate_document_summary(docs)
+    # Lazy summary generation to keep attachment ingestion fast.
+    _docs_for_summary = docs[:40]
+    _doc_summary = ""
+    _doc_summary_ready = False
 
     _summary = {
         "files": len({(d.metadata or {}).get("source") for d in docs}),
@@ -217,7 +225,18 @@ def get_document_summary() -> str:
     Returns structured summary with experiments, findings, methods, and questions.
     Empty string if no attachments or summary generation failed.
     """
-    return _doc_summary
+    global _doc_summary, _doc_summary_ready
+    if _doc_summary_ready:
+        return _doc_summary
+    if not _docs_for_summary:
+        return ""
+
+    with _doc_summary_lock:
+        if _doc_summary_ready:
+            return _doc_summary
+        _doc_summary = generate_document_summary(_docs_for_summary)
+        _doc_summary_ready = True
+        return _doc_summary
 
 
 def get_attached_files() -> list[str]:

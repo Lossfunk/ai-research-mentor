@@ -12,6 +12,7 @@ from .formatter import CitationFormatter
 from .validator import CitationValidator
 from .aggregator import CitationAggregator
 from .merger import CitationMerger
+from .integrity import audit_reference_text, format_integrity_report
 
 __all__ = [
     "Citation",
@@ -19,6 +20,7 @@ __all__ = [
     "CitationValidator",
     "CitationAggregator",
     "CitationMerger",
+    "audit_reference_text",
+    "format_integrity_report",
 ]
-
 

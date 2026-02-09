@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Optional
@@ -121,12 +122,53 @@ class LLMClient:
             **kwargs
         )
 
+        tool_call_parts: dict[int, dict[str, Any]] = {}
+
         async for chunk in stream:
             if not chunk.choices:
                 continue
 
             choice = chunk.choices[0]
             delta = choice.delta
+
+            raw_tool_calls = getattr(delta, "tool_calls", None)
+            if raw_tool_calls:
+                for tc in raw_tool_calls:
+                    index = int(getattr(tc, "index", 0) or 0)
+                    entry = tool_call_parts.setdefault(
+                        index,
+                        {"id": "", "name": "", "arguments_parts": []},
+                    )
+                    call_id = getattr(tc, "id", None)
+                    if call_id:
+                        entry["id"] = call_id
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        fn_name = getattr(fn, "name", None)
+                        if fn_name:
+                            entry["name"] = fn_name
+                        arg_part = getattr(fn, "arguments", None)
+                        if arg_part:
+                            entry["arguments_parts"].append(str(arg_part))
+
+            if choice.finish_reason in {"tool_calls", "function_call"} and tool_call_parts:
+                parsed_calls: list[ToolCall] = []
+                for idx in sorted(tool_call_parts.keys()):
+                    entry = tool_call_parts[idx]
+                    arguments_raw = "".join(entry.get("arguments_parts", []))
+                    try:
+                        parsed_args = json.loads(arguments_raw) if arguments_raw.strip() else {}
+                    except Exception:
+                        parsed_args = {}
+                    parsed_calls.append(
+                        ToolCall(
+                            id=str(entry.get("id") or f"call_{idx}"),
+                            name=str(entry.get("name") or "unknown_tool"),
+                            arguments=parsed_args,
+                        )
+                    )
+                yield StreamChunk(tool_calls=parsed_calls, finish_reason=choice.finish_reason)
+                continue
 
             # Extract reasoning if available (OpenRouter)
             reasoning = None
