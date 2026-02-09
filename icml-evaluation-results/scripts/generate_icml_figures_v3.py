@@ -49,27 +49,27 @@ COLORS = {
 }
 
 SYSTEM_COLORS = {
-    'MENTOR': COLORS['blue'],
+    'METIS': COLORS['blue'],
     'Gemini 3 Pro': COLORS['bluish_green'],
     'GPT-5': COLORS['orange'],
     'Claude Sonnet 4.5': COLORS['reddish_purple'],
 }
 
 SYSTEM_SHORT = {
-    'MENTOR': 'MENTOR',
-    'Gemini 3 Pro': 'Gemini 3',
+    'METIS': 'METIS',
+    'Gemini 3 Pro': 'Gemini 3 Pro',
     'GPT-5': 'GPT-5',
-    'Claude Sonnet 4.5': 'Claude 4.5',
+    'Claude Sonnet 4.5': 'Sonnet-4.5',
 }
 
 SYSTEM_MARKERS = {
-    'MENTOR': 'o',
+    'METIS': 'o',
     'Gemini 3 Pro': 's',
     'GPT-5': 'D',
     'Claude Sonnet 4.5': '^',
 }
 
-SYSTEM_ORDER = ['MENTOR', 'Gemini 3 Pro', 'GPT-5', 'Claude Sonnet 4.5']
+SYSTEM_ORDER = ['METIS', 'Gemini 3 Pro', 'GPT-5', 'Claude Sonnet 4.5']
 
 # Plot styling (ICML compliant - larger fonts for readability)
 plt.rcParams.update({
@@ -121,7 +121,7 @@ def load_data(base_path: Path) -> Dict[str, Any]:
 
 def map_system_id(system_id: str) -> str:
     mapping = {
-        'openrouter:moonshotai/kimi-k2-thinking': 'MENTOR',
+        'openrouter:moonshotai/kimi-k2-thinking': 'METIS',
         'openrouter:google/gemini-3-pro-preview': 'Gemini 3 Pro',
         'openrouter:openai/gpt-5': 'GPT-5',
         'openrouter:anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
@@ -184,28 +184,30 @@ def fig1_main_results(data: Dict[str, Any], output_dir: Path):
     ax_a.set_xticklabels([SYSTEM_SHORT[s] for s in SYSTEM_ORDER], fontsize=7)
     ax_a.set_ylabel('Holistic Score (0-2)', fontsize=8)
     ax_a.set_ylim(1.3, 1.85)
-    ax_a.set_title('(a) Multi-turn Mentoring Quality', fontsize=9, fontweight='bold', loc='left')
+    # Panel label only (no title inside figure per ICML template)
+    ax_a.text(0.0, 1.02, '(a)', transform=ax_a.transAxes,
+              fontsize=9, fontweight='bold', ha='left', va='bottom')
     
     # Annotations in top-right corner, clearly visible
     ax_a.text(0.97, 0.97, 'n=20 per system\nthreshold=1.5', transform=ax_a.transAxes, 
-              ha='right', va='top', fontsize=6, color=COLORS['gray'], linespacing=1.3)
+              ha='right', va='top', fontsize=7, color=COLORS['gray'], linespacing=1.3)
     
     # --- Panel (b): Human pairwise evaluation ---
     ax_b = axes[1]
     
-    # Human evaluation data - simple horizontal bars showing MENTOR win rate
+    # Human evaluation data - simple horizontal bars showing METIS win rate
     # Clean design: just show win rates with 50% reference line, no significance markers
     matchups = [
-        ('vs Claude', 79.7),
+        ('vs Sonnet-4.5', 79.7),
         ('vs GPT-5', 58.7),
-        ('vs Gemini', 53.1),
+        ('vs Gemini 3 Pro', 53.1),
         ('Overall', 64.7),
     ]
     
     y_pos = np.arange(len(matchups))
     bar_height = 0.6
     
-    # Colors: use baseline color for comparison, MENTOR blue for overall
+    # Colors: use baseline color for comparison, METIS blue for overall
     bar_colors = [COLORS['reddish_purple'], COLORS['orange'], 
                   COLORS['bluish_green'], COLORS['blue']]
     
@@ -218,13 +220,15 @@ def fig1_main_results(data: Dict[str, Any], output_dir: Path):
     
     ax_b.set_yticks(y_pos)
     ax_b.set_yticklabels([m[0] for m in matchups], fontsize=7)
-    ax_b.set_xlabel('MENTOR Win Rate (%)', fontsize=8)
+    ax_b.set_xlabel('METIS Win Rate (%)', fontsize=8)
     ax_b.set_xlim(0, 100)
-    ax_b.set_title('(b) Human Pairwise Evaluation', fontsize=9, fontweight='bold', loc='left')
+    # Panel label only (no title inside figure per ICML template)
+    ax_b.text(0.0, 1.02, '(b)', transform=ax_b.transAxes,
+              fontsize=9, fontweight='bold', ha='left', va='bottom')
     
     # Sample size annotation only
-    ax_b.text(0.97, 0.97, 'n=218, 15 raters', 
-              transform=ax_b.transAxes, ha='right', va='top', fontsize=6, 
+    ax_b.text(0.97, 1.03, 'n=218, 15 raters', 
+              transform=ax_b.transAxes, ha='right', va='top', fontsize=7, 
               color=COLORS['gray'])
     
     plt.tight_layout(w_pad=1.5)
@@ -252,7 +256,7 @@ def fig2_ablations(data: Dict[str, Any], output_dir: Path):
     no_stage = ablation_data['ablations']['no_stage']
     no_guidelines = ablation_data['ablations']['no_guidelines']
     
-    conditions = ['Full\nMENTOR', '− Stage\nAwareness', '− Guidelines']
+    conditions = ['Full\nMETIS', 'minus \nStage Awareness', 'minus Guidelines']
     scores = [baseline_score, no_stage['ablated_mean'], no_guidelines['ablated_mean']]
     deltas = [0, no_stage['delta_pct'], no_guidelines['delta_pct']]
     colors = [COLORS['blue'], COLORS['vermillion'], COLORS['orange']]
@@ -262,19 +266,23 @@ def fig2_ablations(data: Dict[str, Any], output_dir: Path):
                   edgecolor='white', linewidth=0.8)
     
     # Annotations
-    for i, (score, delta) in enumerate(zip(scores, deltas)):
+    for i, (score, delta, bar_color) in enumerate(zip(scores, deltas, colors)):
         # Score value above bar
         ax.text(i, score + 0.04, f'{score:.2f}', ha='center', va='bottom', 
                 fontsize=8, fontweight='bold')
         # Delta inside bar (if negative)
         if delta != 0:
-            delta_color = 'white'
+            # Use dark text on bright warm colors to improve print readability
+            if bar_color in (COLORS['vermillion'], COLORS['orange']):
+                delta_color = '#000000'
+            else:
+                delta_color = '#FFFFFF'
             ax.text(i, score - 0.12, f'{delta:.1f}%', ha='center', va='top',
-                    fontsize=7, fontweight='bold', color=delta_color)
+                    fontsize=8, fontweight='bold', color=delta_color)
     
     # Threshold line
     ax.axhline(y=1.5, color=COLORS['gray'], linestyle='--', linewidth=0.8, alpha=0.7)
-    ax.text(2.4, 1.52, 'threshold', fontsize=6, color=COLORS['gray'], va='bottom')
+    ax.text(2.4, 1.52, 'threshold', fontsize=7, color=COLORS['gray'], va='bottom')
     
     ax.set_xticks(x_pos)
     ax.set_xticklabels(conditions, fontsize=7)
@@ -283,7 +291,7 @@ def fig2_ablations(data: Dict[str, Any], output_dir: Path):
     
     # Sample size
     ax.text(0.97, 0.97, 'n=90', transform=ax.transAxes, ha='right', va='top',
-            fontsize=6, color=COLORS['gray'])
+            fontsize=7, color=COLORS['gray'])
     
     plt.tight_layout()
     save_figure(fig, output_dir, 'fig2_ablations')
@@ -309,7 +317,7 @@ def fig3_stage_analysis(data: Dict[str, Any], output_dir: Path):
     
     stages = ['A', 'B', 'C', 'D', 'E', 'F']
     
-    system_keys = {'MENTOR': 'mentor', 'Gemini 3 Pro': 'gemini', 
+    system_keys = {'METIS': 'mentor', 'Gemini 3 Pro': 'gemini', 
                    'GPT-5': 'gpt5', 'Claude Sonnet 4.5': 'claude'}
     
     x = np.arange(len(stages))
@@ -351,9 +359,11 @@ def fig3_stage_analysis(data: Dict[str, Any], output_dir: Path):
     ax_a.set_xlabel('Research Stage', fontsize=8)
     ax_a.set_ylabel('Holistic Score (0-2)', fontsize=8)
     ax_a.set_ylim(1.15, 1.72)
-    ax_a.set_title('(a) Single-turn by Research Stage', fontsize=9, fontweight='bold', loc='left')
+    # Panel label only (no title inside figure per ICML template)
+    ax_a.text(0.0, 1.02, '(a)', transform=ax_a.transAxes,
+              fontsize=9, fontweight='bold', ha='left', va='bottom')
     ax_a.text(0.97, 0.97, 'n=15/stage', transform=ax_a.transAxes, 
-              fontsize=6, color=COLORS['gray'], va='top', ha='right')
+              fontsize=7, color=COLORS['gray'], va='top', ha='right')
     
     # --- Panel (b): Multi-turn dimension breakdown ---
     ax_b = axes[1]
@@ -386,9 +396,11 @@ def fig3_stage_analysis(data: Dict[str, Any], output_dir: Path):
     ax_b.set_xticklabels(dim_labels, fontsize=7)
     ax_b.set_ylabel('Score (0-2)', fontsize=8)
     ax_b.set_ylim(1.0, 1.9)
-    ax_b.set_title('(b) Multi-turn Evaluation Dimensions', fontsize=9, fontweight='bold', loc='left')
+    # Panel label only (no title inside figure per ICML template)
+    ax_b.text(0.0, 1.02, '(b)', transform=ax_b.transAxes,
+              fontsize=9, fontweight='bold', ha='left', va='bottom')
     ax_b.text(0.97, 0.97, 'n=20/system', transform=ax_b.transAxes,
-              ha='right', fontsize=6, color=COLORS['gray'], va='top')
+              ha='right', fontsize=7, color=COLORS['gray'], va='top')
     
     # Shared legend at the bottom center
     fig.legend(bars_for_legend, labels_for_legend, 
@@ -408,7 +420,7 @@ def fig3_stage_analysis(data: Dict[str, Any], output_dir: Path):
 def main():
     script_path = Path(__file__).resolve()
     base_path = script_path.parent.parent
-    output_dir = base_path / 'figures_v3'
+    output_dir = base_path / 'figures'
     output_dir.mkdir(exist_ok=True)
     
     print(f"Loading data from: {base_path}")

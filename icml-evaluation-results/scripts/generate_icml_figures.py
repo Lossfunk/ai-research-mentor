@@ -33,14 +33,14 @@ COLORS = {
 
 # System color mapping
 SYSTEM_COLORS = {
-    'MENTOR': COLORS['blue'],
+    'METIS': COLORS['blue'],
     'Gemini 3': COLORS['bluish_green'],
     'GPT-5': COLORS['orange'],
     'Claude 4.5': COLORS['reddish_purple'],
 }
 
 SYSTEM_MARKERS = {
-    'MENTOR': 'o',
+    'METIS': 'o',
     'Gemini 3': 's',
     'GPT-5': 'D',
     'Claude 4.5': '^',
@@ -113,7 +113,7 @@ def fig1_multi_turn_holistic(data: dict, output_dir: Path):
 
     # Map system IDs to display names
     system_map = {
-        'openrouter:moonshotai/kimi-k2-thinking': 'MENTOR',
+        'openrouter:moonshotai/kimi-k2-thinking': 'METIS',
         'openrouter:google/gemini-3-pro-preview': 'Gemini 3',
         'openrouter:openai/gpt-5': 'GPT-5',
         'openrouter:anthropic/claude-sonnet-4.5': 'Claude 4.5',
@@ -121,7 +121,7 @@ def fig1_multi_turn_holistic(data: dict, output_dir: Path):
     df['system'] = df['system_id'].map(system_map)
 
     # Order systems by score
-    order = ['MENTOR', 'Gemini 3', 'GPT-5', 'Claude 4.5']
+    order = ['METIS', 'Gemini 3', 'GPT-5', 'Claude 4.5']
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -196,7 +196,7 @@ def fig2_success_rates(data: dict, output_dir: Path):
     df = data['agent_summary']
 
     system_map = {
-        'openrouter:moonshotai/kimi-k2-thinking': 'MENTOR',
+        'openrouter:moonshotai/kimi-k2-thinking': 'METIS',
         'openrouter:google/gemini-3-pro-preview': 'Gemini 3',
         'openrouter:openai/gpt-5': 'GPT-5',
         'openrouter:anthropic/claude-sonnet-4.5': 'Claude 4.5',
@@ -207,7 +207,7 @@ def fig2_success_rates(data: dict, output_dir: Path):
     df['success_pct'] = df['success_rate'].str.rstrip('%').astype(float)
     df['positive_stop_pct'] = df['positive_stop_rate'].str.rstrip('%').astype(float)
 
-    order = ['MENTOR', 'Gemini 3', 'GPT-5', 'Claude 4.5']
+    order = ['METIS', 'Gemini 3', 'GPT-5', 'Claude 4.5']
     df = df.set_index('system').loc[order].reset_index()
 
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -277,7 +277,7 @@ def fig3_ablations(data: dict, output_dir: Path):
     no_guidelines_score = guidelines_ablation.get('ablated_mean', 1.026)
     no_guidelines_delta = guidelines_ablation.get('delta_pct', -33.7)
 
-    conditions = ['Full MENTOR', '− Stage Awareness', '− Guidelines']
+    conditions = ['Full METIS', 'minus Stage Awareness', 'minus Guidelines']
     scores = [baseline_score, no_stage_score, no_guidelines_score]
     deltas = [0, no_stage_delta, no_guidelines_delta]
 
@@ -306,7 +306,7 @@ def fig3_ablations(data: dict, output_dir: Path):
     ax.set_ylim(0, 2.0)
 
     # Annotation box
-    textstr = 'Stage awareness accounts for\n54.9% of MENTOR\'s effectiveness'
+    textstr = 'Stage awareness accounts for\n54.9% of METIS\'s effectiveness'
     props = dict(boxstyle='round,pad=0.5', facecolor='#f0f0f0', alpha=0.8)
     ax.text(0.98, 0.25, textstr, transform=ax.transAxes, fontsize=10,
             verticalalignment='top', horizontalalignment='right', bbox=props)
@@ -335,9 +335,9 @@ def fig4_human_evaluation(data: dict, output_dir: Path):
     y_pos = np.arange(len(matchups))
     bar_height = 0.5
 
-    # MENTOR wins (from left)
+    # METIS wins (from left)
     ax.barh(y_pos, mentor_wins, bar_height,
-            label='MENTOR wins', color=COLORS['blue'], alpha=0.9)
+            label='METIS wins', color=COLORS['blue'], alpha=0.9)
 
     # Baseline wins (from right, stacked)
     ax.barh(y_pos, [-w for w in baseline_wins], bar_height,
@@ -361,7 +361,7 @@ def fig4_human_evaluation(data: dict, output_dir: Path):
 
     # Custom legend
     legend_elements = [
-        mpatches.Patch(facecolor=COLORS['blue'], alpha=0.9, label='MENTOR wins'),
+        mpatches.Patch(facecolor=COLORS['blue'], alpha=0.9, label='METIS wins'),
         mpatches.Patch(facecolor=COLORS['reddish_purple'], alpha=0.7, label='Baseline wins'),
     ]
     ax.legend(handles=legend_elements, loc='lower right')
@@ -392,7 +392,7 @@ def fig5_efficiency(data: dict, output_dir: Path):
         return
 
     system_map = {
-        'mentor': 'MENTOR',
+        'mentor': 'METIS',
         'gemini': 'Gemini 3',
         'gpt5': 'GPT-5',
         'claude': 'Claude 4.5',
@@ -484,7 +484,7 @@ def fig6_single_turn_by_stage(data: dict, output_dir: Path):
     ]
 
     systems = ['mentor', 'gemini', 'gpt5', 'claude']
-    display_names = ['MENTOR', 'Gemini 3', 'GPT-5', 'Claude 4.5']
+    display_names = ['METIS', 'Gemini 3', 'GPT-5', 'Claude 4.5']
 
     fig, ax = plt.subplots(figsize=(10, 5))
 
