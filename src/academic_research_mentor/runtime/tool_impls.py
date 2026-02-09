@@ -74,11 +74,31 @@ def method_tool_fn(text: str, *, internal_delimiters: tuple[str, str] | None = N
     report = (res or {}).get("report", {})
     keys = ["risks", "missing_controls", "ablation_suggestions", "reproducibility_gaps"]
     lines = []
+
+    guidelines = report.get("guidelines") or []
+    if guidelines:
+        lines.append("Relevant guidelines:")
+        for guideline in guidelines[:3]:
+            title = guideline.get("title", "Guideline")
+            content = guideline.get("content", "")
+            lines.append(f"- {title}: {content}")
+
     for k in keys:
         vals = report.get(k) or []
         if vals:
             lines.append(f"- {k}: {', '.join(str(x) for x in vals)}")
-    reasoning = "\n".join(["Methodology validation:"] + (lines or ["No issues detected"]))
+
+    sample_size_notes = report.get("sample_size_notes")
+    if sample_size_notes:
+        lines.append(f"- sample_size: {sample_size_notes}")
+
+    alignment_prompt = report.get("alignment_prompt")
+    if alignment_prompt:
+        lines.append(f"- llm_check: {alignment_prompt}")
+
+    lines.append("Note: This check is heuristic and does not guarantee correctness; consult domain experts.")
+
+    reasoning = "\n".join(["Methodology check (guideline-assisted):"] + (lines or ["No issues detected"]))
     print_agent_reasoning(reasoning)
     return f"{begin}{reasoning}{end}" if begin or end else reasoning
 

@@ -43,7 +43,7 @@ GEMINI_FUNCTION_DECLARATIONS: List[Dict[str, Any]] = [
     },
     {
         "name": "methodology_validate",
-        "description": "Heuristic validation of experiment plan.",
+        "description": "Guideline-assisted methodology check; flags potential issues (heuristic).",
         "parameters": {
             "type": "object",
             "properties": {

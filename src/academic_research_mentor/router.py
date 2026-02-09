@@ -67,11 +67,30 @@ def _run_methodology_validate_and_print(plan: str) -> None:
     from .mentor_tools import methodology_validate  # lazy import
     result: Dict[str, Any] = methodology_validate(plan=plan, checklist=[])
     report = (result or {}).get("report", {})
-    print_agent_reasoning("Mentor.tools (Methodology Validate):")
+    print_agent_reasoning("Mentor.tools (Methodology Check):")
+
+    guidelines = report.get("guidelines") or []
+    if guidelines:
+        print_agent_reasoning("Relevant guidelines:")
+        for guideline in guidelines[:3]:
+            title = guideline.get("title", "Guideline")
+            content = guideline.get("content", "")
+            print_agent_reasoning(f"- {title}: {content}")
+
     for key in ["risks", "missing_controls", "ablation_suggestions", "reproducibility_gaps"]:
         items = report.get(key) or []
         if items:
             print_agent_reasoning(f"- {key}: {', '.join(str(x) for x in items)}")
+
+    sample_size_notes = report.get("sample_size_notes")
+    if sample_size_notes:
+        print_agent_reasoning(f"- sample_size: {sample_size_notes}")
+
+    alignment_prompt = report.get("alignment_prompt")
+    if alignment_prompt:
+        print_agent_reasoning(f"- llm_check: {alignment_prompt}")
+
+    print_agent_reasoning("Note: heuristic guidance only; consult domain experts.")
 
 
 def _run_guidelines_and_print(query: str, topic: Optional[str] = None) -> None:
